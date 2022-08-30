@@ -377,12 +377,22 @@ impl DomainTrait for ConicDomain {
     }
 }
 
-
-
+impl DomainTrait for &[i32] {
+    fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable {
+        m.linear_variable(name,LinearDomainType::Free,vec![0.0; self.iter().product::<i32>().try_into().unwrap()]).with_shape(self.iter().map(|&v| v.try_into().unwrap()).collect::<Vec<usize>>())
+    }
+}
 
 impl DomainTrait for &[usize] {
     fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable {
         m.linear_variable(name,LinearDomainType::Free,vec![0.0; self.iter().product()]).with_shape(self.to_vec())
+    }
+}
+
+impl DomainTrait for Vec<usize> {
+    fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable {
+        let n = self.iter().product();
+        m.linear_variable(name,LinearDomainType::Free,vec![0.0; n]).with_shape(self)
     }
 }
 impl DomainTrait for usize {
@@ -392,7 +402,7 @@ impl DomainTrait for usize {
 }
 
 impl LinearDomain {
-    fn with_shape(self,shape : Vec<usize>) -> LinearDomain {
+    pub fn with_shape(self,shape : Vec<usize>) -> LinearDomain {
         match self.sp {
             Some(ref sp) => if ! sp.last().map_or_else(|| true,|&v| v < shape.iter().product()) {
                 panic!("Shaped does not match sparsity");
@@ -409,7 +419,7 @@ impl LinearDomain {
         }
     }
 
-    fn with_sparsity(self,sp : Vec<usize>) -> LinearDomain {
+    pub fn with_sparsity(self,sp : Vec<usize>) -> LinearDomain {
         if sp.len() > 1 {
             if ! sp[..sp.len()-1].iter().zip(sp[1..].iter()).all(|(a,b)| a < b) {
                 panic!("Sparsity pattern is not sorted");
@@ -426,7 +436,7 @@ impl LinearDomain {
         }
     }
 
-    fn with_shape_and_sparsity(self,shape : Vec<usize>, sp : Vec<usize>) -> LinearDomain {
+    pub fn with_shape_and_sparsity(self,shape : Vec<usize>, sp : Vec<usize>) -> LinearDomain {
         if sp.len() > 1 {
             if ! sp[..sp.len()-1].iter().zip(sp[1..].iter()).all(|(a,b)| a < b) {
                 panic!("Sparsity pattern is not sorted");
@@ -465,6 +475,12 @@ impl OffsetTrait for Vec<f64> {
     fn greater_than(self) -> LinearDomain { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:self, shape:vec![n], sp : None } }
     fn less_than(self)    -> LinearDomain { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:self, shape:vec![n], sp : None } }
     fn equal_to(self)     -> LinearDomain { let n = self.len(); LinearDomain{ dt : LinearDomainType::Zero, ofs:self, shape:vec![n], sp : None } }
+}
+
+impl OffsetTrait for &[f64] {
+    fn greater_than(self) -> LinearDomain { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:self.to_vec(), shape:vec![n], sp : None } }
+    fn less_than(self)    -> LinearDomain { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:self.to_vec(), shape:vec![n], sp : None } }
+    fn equal_to(self)     -> LinearDomain { let n = self.len(); LinearDomain{ dt : LinearDomainType::Zero, ofs:self.to_vec(), shape:vec![n], sp : None } }
 }
 
 pub fn greater_than<T : OffsetTrait>(v : T) -> LinearDomain { v.greater_than() }
@@ -626,7 +642,6 @@ impl Model {
     // fn constraint(& mut self, name : Option<&str>,
     //               expr : & Expr,
     //               dom  : Domain) -> Constraint;
-                  
 }
 
 #[cfg(test)]
@@ -634,13 +649,12 @@ mod tests {
     use super::*;
     #[test]
     fn it_works() {
-
         let mut m = Model::new(Some("SuperModel"));
         let mut v1 = m.variable(None, greater_than(5.0));
         let mut v2 = m.variable(None, 10);
         let mut v3 = m.variable(None, vec![3,3]);
         let mut v4 = m.variable(None, in_quadratic_cone(5));
         let mut v5 = m.variable(None, greater_than(vec![1.0,2.0,3.0,4.0]).with_shape(vec![2,2]));
-        let mut v6 = m.variable(None, greater_than(vec![1.0,3.0].with_shape_and_sparsity(vec![2,2],vec![0,3])));
+        let mut v6 = m.variable(None, greater_than(vec![1.0,3.0]).with_shape_and_sparsity(vec![2,2],vec![0,3]));
     }
 }
