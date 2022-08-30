@@ -1,4 +1,7 @@
 extern crate mosek;
+extern crate itertools;
+
+use itertools::{iproduct};
 
 pub struct Model {
     task : mosek::Task,
@@ -333,6 +336,9 @@ pub enum ParamConicDomainType {
     DualPowerCone
 }
 
+pub trait DomainTrait {
+    fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable;
+}
 
 pub struct LinearDomain {
     dt    : LinearDomainType,
@@ -348,12 +354,31 @@ pub struct ConicDomain {
     conedim : usize
 }
 
-
-
-
-pub trait DomainTrait {
-    fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable;
+impl DomainTrait for ConicDomain {
+    fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable {
+        let size = self.shape[self.conedim];
+        let num = self.shape.iter().product::<usize>() / size;
+        let v = m.conic_variable(name,size,num,self.dt,Some(self.ofs));
+        if self.conedim < self.shape.len()-1 {
+            // permute the indexes
+            let d0 = self.shape[..self.conedim].iter().product();
+            let d1 = self.shape[self.conedim];
+            let d2 = self.shape[self.conedim+1..].iter().product();
+            let idxs : Vec<usize> = iproduct!(0..d0,0..d1,0..d2).map(|(i0,i1,i2)| unsafe { *v.idxs.get_unchecked(i0*d1*d2+i2*d1+i1) }).collect();
+            Variable{
+                idxs : idxs,
+                sparsity : None,
+                shape : self.shape
+            }
+        }
+        else {
+            v
+        }
+    }
 }
+
+
+
 
 impl DomainTrait for &[usize] {
     fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable {
@@ -530,7 +555,7 @@ impl Model {
         Variable::new((firstidx..firstidx+size).collect())
     }
 
-    fn conic_variable(&mut self, _name : Option<&str>, size : usize, num : usize, ct : ConicDomainType, ofs : Option<&[f64]>) -> Variable {
+    fn conic_variable(&mut self, _name : Option<&str>, size : usize, num : usize, ct : ConicDomainType, ofs : Option<Vec<f64>>) -> Variable {
         let n = size * num;
         let (firstidx,firsttaskidx) = self.alloc_linear_var(n);
         let lasttaskidx = firsttaskidx + n as i32;
@@ -558,7 +583,7 @@ impl Model {
             Some(offset) => self.task.append_accs_seq(vec![dom; num].as_slice(),
                                                       n as i64,
                                                       firstafeidx,
-                                                      offset).unwrap()
+                                                      offset.as_slice()).unwrap()
         }
 
         Variable::new((firstidx..firstidx+size).collect())
@@ -606,9 +631,16 @@ impl Model {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     #[test]
     fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
+
+        let mut m = Model::new(Some("SuperModel"));
+        let mut v1 = m.variable(None, greater_than(5.0));
+        let mut v2 = m.variable(None, 10);
+        let mut v3 = m.variable(None, vec![3,3]);
+        let mut v4 = m.variable(None, in_quadratic_cone(5));
+        let mut v5 = m.variable(None, greater_than(vec![1.0,2.0,3.0,4.0]).with_shape(vec![2,2]));
+        let mut v6 = m.variable(None, greater_than(vec![1.0,3.0].with_shape_and_sparsity(vec![2,2],vec![0,3])));
     }
 }
