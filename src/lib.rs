@@ -3,18 +3,78 @@ extern crate itertools;
 
 use itertools::{iproduct};
 
+// mod Utils {
+//     pub struct Permutation {
+//         n : usize,
+//         perm : Vec<usize>
+//     }
+
+//     pub struct AppliedPermutation<T,'a,'b> {
+//         perm : & 'a Permutation,
+//         data : & 'b [T]
+//     }
+
+//     pub struct AppliedPermutationMut<T,'a,'b> {
+//         perm : & 'a Permutation,
+//         data : & 'b mut [T]
+//     }
+
+//     pub impl Permutation {
+//         pub fn new(n : usize, perm : Vec<usize>) -> Option<Pemutation> {
+//             let mut b = vec![false; n];
+//             if perm.len() != n {
+//                 None
+//             }
+//             else {
+//                 perm.iter().for_each(|&i| unsafe { *b.get_unchecked(i) = true } );
+//                 if ! perm.iter().all(|&c|c) {
+//                     None
+//                 }
+//                 else {
+//                     Some(Permutation {
+//                         n,
+//                         perm : perm
+//                     })
+//                 }
+//             }
+//         }
+
+//         pub fn apply<T,'a,'b>(&'a self,data : &'b[T]) -> Option<AppliedPermutation<T>> {
+//             if data.len() != self.n {
+//                 None
+//             }
+//             else {
+//                 Some(AppliedPermutation{perm : self ,data : data})
+//             }
+//         }
+//     }
+// }
+
+
+
+
 pub struct Model {
     task : mosek::Task,
 
     vars      : Vec<i64>,
     barvarelm : Vec<(usize,usize)>,
-    cons      : Vec<(usize,usize)>
+    cons      : Vec<(usize,usize)>,
+
+    rs : WorkStack,
+    ws : WorkStack,
+    xs : WorkStack
 }
 
 #[derive(Clone)]
 pub struct Variable {
     idxs     : Vec<usize>,
     sparsity : Option<Vec<usize>>,
+    shape    : Vec<usize>
+}
+
+#[derive(Clone)]
+pub struct Constraint {
+    idxs     : Vec<usize>,
     shape    : Vec<usize>
 }
 
@@ -106,6 +166,39 @@ pub struct Expr {
     sparsity : Option<Vec<usize>>
 }
 
+impl<E : ExprTrait> ExprTrait for ExprPrepare<E> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.expr.eval(ws,rs,xs);
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+        let mut perm : Vec<usize> = Vec::with_capacity(subj.len());
+        let mut rptr  = Vec::with_capacity(ptr.len());
+        let mut rsubj = Vec::with_capacity(subj.len());
+        let mut rcof  = Vec::with_capacity(cof.len());
+
+        rptr.push(0);
+        ptr[0..ptr.len()-1].iter().join(ptr[1..].iter()).for_each(|(&p0,&p1)| {
+            if p0 + 1 == p1 {
+                rsubj.push(subj[p0]);
+                rcof.push(cof[p0]);
+                rptr.push(subj.len());
+            }
+            else if p0 + 1 < p1 && p1 < subj.len() {
+                perm.clear();
+                for i in 0..(p1-p0) { perm.push(i); }
+                perm.sort_by(|&i| *unsafe { subj.get_unchecked(i) } );
+
+                rsubj.push(*unsafe { subj.get_unchecked(perm[p0]) } );
+                perm[p0..p1-1].iter()
+                    .zip(perm[p0+1..p1].iter())
+                    .for_each(|(j0,j1)| if j0 == j1 { rcof.push(cof) } else { rsubj.push(subj.get_unchecked()); });
+            }
+            else {
+                panic!("invalid ptr construction");
+            }
+        });
+    }
+}
+
 /// Structure of a computed expression on the workstack:
 /// stack top <---> bottom
 /// susize: [ ndim, nnz, nelm, shape[ndim], ptr[nnz+1], { nzidx[nnz] if nnz < shape.product() else []}], asubj[nnz]
@@ -119,7 +212,6 @@ pub struct WorkStack {
 }
 
 impl WorkStack {
-
     pub fn new(cap : usize) -> WorkStack {
         WorkStack{
             susize : Vec::with_capacity(cap),
@@ -135,7 +227,7 @@ impl WorkStack {
     /// - nsp None if the expression is dense, otherwise the number of nonzeros. This must ne
     ///   strictly smaller than the product of the dimensions.
     /// Returns (ptr,sp,subj,cof)
-    /// 
+    ///
     fn alloc_expr(& mut self, shape : &[usize], nnz : usize, nelm : usize) -> (& mut [usize], Option<& mut [usize]>,& mut [usize], & mut [f64]) {
         let nd = shape.len();
         let ubase = self.utop;
@@ -178,34 +270,8 @@ impl WorkStack {
 
     /// Returns a list of views of the `n` top-most expressions on the stack, first in the result
     /// list if the top-most.
-    fn pop_expr(&mut self, n : usize) -> Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])> {
+    fn pop_exprs(&mut self, n : usize) -> Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])> {
         let mut res = Vec::with_capacity(n);
-
-        // let utop = self.utop;
-        // let ftop = self.ftop;
-
-        // {
-        //     let mut utop = self.utop;
-        //     let mut ftop = self.ftop;
-
-        //     for _ in 0..n {
-        //         let nd = self.susize[utop-1];
-        //         let nnz = self.susize[utop-2];
-        //         let nelm = self.susize[utop-3];
-        //         let fullsize = self.susize[utop-3-nd..utop-3].iter().product();
-
-        //         utop -= 3 + nd + nelm + 1 + nnz;
-        //         if nelm < fullsize { utop -= nelm }
-        //         ftop -= nnz;
-        //     }
-
-        //     self.utop = utop;
-        //     self.ftop = ftop;
-        // }
-
-        // let mut ustack = & self.susize[..utop];
-        // let mut fstack = & self.sf64[..ftop];
-
         for _ in 0..n {
             let nd   = self.susize[self.utop-1];
             let nnz  = self.susize[self.utop-2];
@@ -234,10 +300,138 @@ impl WorkStack {
 
         res
     }
+    fn pop_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
+        let nd   = self.susize[self.utop-1];
+        let nnz  = self.susize[self.utop-2];
+        let nelm = self.susize[self.utop-3];
+        let shape = &self.susize[self.utop-3-nd..self.utop-3];
+        let fullsize : usize = shape.iter().product();
+
+        let utop = self.utop-3-nd;
+        let (ptr,utop) = (&self.susize[utop-nelm-1..utop],utop - nelm - 1);
+        let (sp,utop) =
+            if fullsize > nnz {
+                (Some(&self.susize[utop-nelm..utop]),utop-nelm)
+            }
+        else {
+            (None,utop)
+        };
+
+        let subj = &self.susize[utop-nnz..utop];
+        let cof  = &self.sf64[self.ftop-nnz..self.ftop];
+
+        self.utop = utop - nnz;
+        self.ftop -= nnz;
+
+        (shape,ptr,sp,subj,cof)
+    }
 }
 
 pub trait ExprTrait {
-    fn eval(&self,ws : & mut WorkStack, rs : & mut WorkStack, xs : & mut WorkStack);
+    /// eval_child() will evaluate the expression and put the result on the `rs` stack.
+    fn eval_child(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack);
+    /// eval() will evaluate the expression, then cleanit up and put
+    /// it on the `rs` stack. I will guarantee that:
+    /// - all rows are sorted
+    /// - expression contains no zeros or duplicate elements.
+    /// - the expression is dense
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.eval_child(ws,rs,xs);
+
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+        let nnz = subj.size();
+        let nelm = shape.iter().product();
+        let mut perm : Vec<usize> = (0..n).collect();
+
+        rptr.push(0);
+        ptr[0..ptr.len()-1].iter().join(ptr[1..].iter()).for_each(|(&p0,&p1)| {
+            let mut prevsubj = usize::MAX;
+            if p0+1 < p1 {
+                perm.sort_by(|&i| * unsafe{ subj.get_unchecked(i) });
+            }
+        });
+
+        let mut rptr  = Vec::with_capacity(nelm+1);
+        let mut rsubj = Vec::with_capacity(nnz);
+        let mut rcof  = Vec::with_capacity(nnz);
+
+        rptr.push(0);
+        match sp {
+            None => ptr[0..ptr.len()-1].iter().zip(ptr[1..].iter()).for_each(|(&p0,&p1)| {
+                let mut curcof = 0.0;
+                let mut prevsubj = usize::MAX;
+                subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
+                    if prevsubj == j {
+                        curcof += c;
+                    }
+                    else {
+                        prevsubj = j;
+                        rsubj.push(j);
+                        rcof.push(curcof);
+                        curcof = 0.0;
+                    }
+                });
+                if p0 < p1 {
+                    rcof.push(curcof);
+                }
+                rptr.push(rsubj.len());
+            }),
+            Some(sp) => {
+                let mut i : usize = 0;
+                izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),sp.iter()).for_each(|(&p0,&p1,&spi)| {
+                    while i < spi { rptr.push(rsubj.len()); i += 1; }
+                    let mut curcof = 0.0;
+                    let mut prevsubj = usize::MAX;
+                    subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
+                        if prevsubj == j {
+                            curcof += c;
+                        }
+                        else {
+                            prevsubj = j;
+                            rsubj.push(j);
+                            rcof.push(curcof);
+                            curcof = 0.0;
+                        }
+                    });
+                    if p0 < p1 {
+                        rcof.push(curcof);
+                    }
+                    rptr.push(rsubj.len());
+                    i += 1;
+                });
+                while i < nelm { rptr.push(rsubj.len()); i += 1; }
+            }
+        }
+
+        let mut rptr  = Vec::with_capacity(ptr.len());
+        let mut rsubj = Vec::with_capacity(subj.len());
+        let mut rcof  = Vec::with_capacity(cof.len());
+
+        
+
+        if p0 + 1 == p1 {
+                rsubj.push(subj[p0]);
+                rcof.push(cof[p0]);
+                rptr.push(subj.len());
+            }
+            else if p0 + 1 < p1 && p1 < subj.len() {
+                for i in 0..(p1-p0) { perm.push(i); }
+                perm.sort_by(|&i| *unsafe { subj.get_unchecked(i) } );
+
+                rsubj.push(*unsafe { subj.get_unchecked(perm[p0]) } );
+                perm[p0..p1-1].iter()
+                    .zip(perm[p0+1..p1].iter())
+                    .for_each(|(j0,j1)| if j0 == j1 { rcof.push(cof) } else { rsubj.push(subj.get_unchecked()); });
+            }
+            else {
+                panic!("invalid ptr construction");
+            }
+        });
+        let mut rptr  = Vec::with_capacity(ptr.len());
+        let mut rsubj = Vec::with_capacity(subj.len());
+        let mut rcof  = Vec::with_capacity(cof.len());
+        
+    }
 }
 
 impl Expr {
@@ -304,18 +498,19 @@ impl Expr {
 
 impl ExprTrait for Expr {
     fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
-        match self.sparsity {
-            Some(ref sp) => rs.susize.extend_from_slice(sp.as_slice()),
-            None => {}
-        }
-        rs.susize.extend_from_slice(self.aptr.as_slice());
-        rs.susize.extend_from_slice(self.shape.as_slice());
-        rs.susize.push(self.asubj.len());
-        rs.susize.push(self.aptr.len()-1);
-        rs.susize.push(self.shape.len());
+        let nnz = self.asubj.len();
+        let nelm = self.aptr.len()-1;
 
-        rs.susize.extend_from_slice(self.asubj.as_slice());
-        rs.sf64.extend_from_slice(self.acof.as_slice());
+        let (aptr,sp,asubj,acof) = rs.alloc_expr(self.shape,nnz,nelm);
+
+        match (self.sparsity,sp) {
+            (Some(ref ssp),Some(dsp)) => dsp.clone_from_slice(ssp.as_slice()),
+            _ => {}
+        }
+
+        aptr.clone_from_slice(self.aptr.as_slice());
+        asubj.clone_from_slice(self.asubj.as_slice());
+        acof.clone_from_slice(self.acof.as_slice());
     }
 }
 ////////////////////////////////////////////////////////////
@@ -338,6 +533,7 @@ pub enum ParamConicDomainType {
 
 pub trait DomainTrait {
     fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable;
+    fn create_constraint(self, m : & mut Model, name : Option<&str>, rs : & mut WorkStack) -> Constraint;
 }
 
 pub struct LinearDomain {
@@ -639,9 +835,74 @@ impl Model {
 
         Variable::new((firstidx..firstidx+size).collect())
     }
-    // fn constraint(& mut self, name : Option<&str>,
-    //               expr : & Expr,
-    //               dom  : Domain) -> Constraint;
+
+
+    fn constraint_(& mut self,
+                   name : Option<&str>,
+                   domidx : i64) {
+    }
+
+
+    pub fn constraint<E : ExprTrait, D : DomainTrait>(& mut self, name : Option<&str>, expr : &E, dom : D) -> Constraint {
+        expr.prepare().eval(& mut self.rs,& mut self.ws,& mut self.xs);
+        dom.create_constraint(& mut self);
+    }
+
+    fn linear_constraint(& mut self,
+                         name : Option<&str>,
+                         dom  : LinearDomain) -> Constraint {
+        let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
+        if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
+            panic!("Mismatching shapes of expression and domain");
+        }
+        let nnz = subj.len();
+        let nelm = ptr.len()-1;
+
+        if subj.iter().max() >= self.vars.len() {
+            panic!("Invalid subj index in evaluated expression");
+        }
+
+        let acci = self.task.get_num_acc()?;
+        let afei = self.task.get_num_afe()?;
+
+        self.task.append_afes(nelm)?;
+        let domidx = match dom.dt {
+            NonNegative => self.task.append_rplus_domain(nelm as i64)?,
+            NonPositive => self.task.append_rminus_domain(nelm as i64)?,
+            Zero => self.task.append_rzero_domain(nelm as i64)?,
+            Free => self.task.append_r_domain(nelm as i64)?,
+        };
+
+        self.task.append_acc_seq(domidx, afei,dom.ofs.as_slice())?;
+
+        let asubj : Vec<i32> = Vec::with_capacity(nnz);
+        let acof  : Vec<f64> = Vec::with_capacity(nnz);
+        let aptr  : Vec<i64> = Vec::with_capacity(nelm+1);
+        let afix  : Vec<f64> = Vec::with_capacity(nelm);
+        aptr.push(0);
+        ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).for_each(|(&p0,&p1)| {
+            let mut cfix = 0.0;
+            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&idx,&c)| {
+                let j = *unsafe{ self.vars.get_unchecked(idx) };
+                if j == 0 {
+                    cfix += c;
+                }
+                else if j > 0 {
+                    asubj.push((j-1) as i32);
+                    acof.push(c);
+                }
+            });
+            aptr.push(asubj.len());
+            afix.push(cfix);
+        });
+
+        for ((p0,p1),fixterm) in aptr[0..aptr.len()-1].iter().zip(aptr[1..].iter()).zip(afix.iter()) {
+            self.task.put_afe_f_row(afei,afei+nelm,&asubj[p0..p1],&acof[p0..p1]);
+            self.task.put_afe_g(afei,fixterm);
+        }
+
+        //let idxs = vec![0usize; ]
+    }
 }
 
 #[cfg(test)]
