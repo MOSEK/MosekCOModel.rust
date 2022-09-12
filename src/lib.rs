@@ -1,6 +1,8 @@
 extern crate mosek;
 extern crate itertools;
 
+mod utils;
+
 use itertools::{iproduct};
 
 // mod Utils {
