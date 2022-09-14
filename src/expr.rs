@@ -115,6 +115,12 @@ impl WorkStack {
         (ptr,sp,subj,cof)
     }
 
+    fn alloc(&mut self, nint : usize, nfloat : usize) -> (& mut [usize], & mut [f64]) {
+        self.susize.resize(nint,0);
+        self.sf64.resize(nfloat,0.0);
+        (self.susize.as_mut_slice(),self.sf64.as_mut_slice())
+    }
+
     /// Returns a list of views of the `n` top-most expressions on the stack, first in the result
     /// list if the top-most.
     fn pop_exprs(&mut self, n : usize) -> Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])> {
@@ -186,55 +192,51 @@ pub trait ExprTrait {
         self.eval_child(ws,rs,xs);
 
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-        let nnz = subj.size();
+        let nnz  = subj.size();
         let nelm = shape.iter().product();
+        let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,nnz,nelm);
 
-        let mut p     = utils::Mutation::id(0,nnz);
-        let mut rptr  = Vec::with_capacity(nelm+1);
-        let mut rsubj = Vec::with_capacity(nnz);
-        let mut rcof  = Vec::with_capacity(nnz);
-        ptr[0..ptr.len()-1].iter().join(ptr[1..].iter()).for_each(|(&p0,&p1)| {
-            p.sort_arg_slice(p0,p1-p0,subj);
-        });
+        let maxj = rsubj.iter().max().unwrap_or(0);
+        let (jj,ff) = xs.alloc(maxj*2+2,maxj+1);
+        let (jj,jjind) = jj.split_at_mut(maxj+1);
 
 
-        rptr.push(0);
-
-        let mut ii = 0;
+        let mut ii  = 0;
+        let mut nzi = 0;
+        rptr[0] = 0;
         ptr[0..ptr.len()-1].iter().zip(ptr[1..].iter()).enumerate().for_each(|(i,(&p0,&p1))| {
-            (ii..i).for_each(|_| { rptr.push(rsubj.len()); ii += 1; } );
-            ii = i+1;
+            rptr[ii..i].iter().for_each(|v| *v = nzi); ii = i;
 
-            let mut ic = p.apply_slice(p0,p1-p0,subj).zip(p.apply_slice(p0,p1-p0,cof));
-
-            if let Some((&j,&c)) = ic.next() {
-                let mut prevj = j;
-                let mut cumc = c;
-
-                ic.for_each(|(j,c)| {
-                    if prevj == j {
-                        cumc += c
+            let mut rownzi : usize = 0;
+            p.apply_slice(p0,p1-p0,subj).for_each(|&j| unsafe{ *jjind.get_unchecked(j) = 0; });
+            p.apply_slice(p0,p1-p0,subj).zip(p.apply_slice(p0,p1-p0,cof)).for_each(|(&j,&c)| {
+                if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
+                    unsafe{
+                        *jjind.get_unchecked(j)   = 1;
+                        *jj.get_unchecked(rownzi) = j;
+                        *ff.get_unchecked(j)      = c;
                     }
-                    else {
-                        rsubj.push(prevj);
-                        rcof.push(cumc);
-                        cumc  = c;
-                        prevj = j;
+                    rownzi += 1;
+                }
+                else {
+                    unsafe{
+                        *ff.get_unchecked(j) += c;
                     }
-                });
-                rsubj.push(prevj);
-                rcof.push(cumc);
+                }
+            });
 
-                rptr.push(rsubj.len());
-            }
-            else {
-                rptr.push(rsubj.len());
-            }
+            izip!(jj[0..rownzi].iter(),
+                  rsubj[nzi..nzi+rownzi].iter_mut(),
+                  rcof[nzi..nzi+rownzi].iter_mut()).for_each(|(&j,rj,rc)| {
+                      rc = unsafe{ *ff.get_unchecked(j) };
+                      unsafe{ *jjind.get_unchecked(j) = 0; };
+                      rj = j;
+                  });
+
+            nzi += rownzi;
+            rptr[i] = nzi;
+            ii += 1;
         });
-
-        let (ptr,sp,subj,cof) = rs.alloc_expr(shape,rsubj.len(),nelm);
-        subj.clone_from_slice(rsubj.as_slice());
-        cof.clone_from_slice(rcof.as_slice());
     }
 }
 
@@ -301,8 +303,8 @@ impl Expr {
 }
 
 impl ExprTrait for Expr {
-    fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
-        let nnz = self.asubj.len();
+    fn eval_child(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+        let nnz  = self.asubj.len();
         let nelm = self.aptr.len()-1;
 
         let (aptr,sp,asubj,acof) = rs.alloc_expr(self.shape,nnz,nelm);

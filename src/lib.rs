@@ -577,7 +577,7 @@ impl Model {
         let nnz  = subj.len();
         let nelm = ptr.len()-1;
 
-        if subj.iter().max() >= self.cons.len() {
+        if subj.iter().max() >= self.vars.len() {
             panic!("Invalid subj index in evaluated expression");
         }
         if shape.iter().zip(dom.shape.iter()).all(|(&d0,&d1)| d0==d1 ) {
@@ -586,6 +586,97 @@ impl Model {
 
         let acci = self.task.get_num_acc()?;
         let afei = self.task.get_num_afe()?;
+
+        let nlinnz = subj.iter().filter(|&j| 0 < self.vars.get_uncheched(j) ).count();
+        let npsdnz = nnz - nlinnz;
+
+        let mut asubj : Vec<i32> = Vec::with_capacity(nlinnz);
+        let mut acof  : Vec<f64> = Vec::with_capacity(nlinnz);
+        let mut aptr  : Vec<i64> = Vec::with_capacity(nelm+1);
+
+        let mut afix  : Vec<f64> = Vec::with_capacity(nelm);
+
+        let mut abarsubi : Vec<i64> = Vec::with_capacity(nlinnz);
+        let mut abarsubj : Vec<i32> = Vec::with_capacity(nlinnz);
+        let mut abarsubk : Vec<i32> = Vec::with_capacity(nlinnz);
+        let mut abarsubl : Vec<i32> = Vec::with_capacity(nlinnz);
+        let mut abarcof  : Vec<f64> = Vec::with_capacity(nlinnz);
+
+        aptr.push(0);
+        ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).enumerate().for_each(|(i,(&p0,&p1))| {
+            let mut cfix = 0.0;
+            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&idx,&c)| {
+                let j = *unsafe{ self.vars.get_unchecked(idx) };
+                if j == 0 {
+                    cfix += c;
+                }
+                else if j > 0 {
+                    asubj.push((j-1) as i32);
+                    acof.push(c);
+                }
+                else {
+                    let (j,ofs) = unsafe { *self.barvarelm.get_unchecked(-j-1) };
+                    abarsubi.push(afei+i as i64);
+                    abarsubj.push(j as i32);
+                    let k = ((((1+2*ofs) as f64).sqrt() - 1.0) / 2.0).floor() as usize;
+                    let l = ofs - k;
+                    abarsubk.push(k);
+                    abarsubl.push(l);
+                }
+            });
+            aptr.push(asubj.len());
+            afix.push(cfix);
+        });
+
+        let conesize = shape[self.conedim];
+        let numcone  = shape.iter().product::<usize>() / conesize;
+
+        let domidx = match ct {
+            ConicDomainType::QuadraticCone        => self.task.append_quadratic_cone_domain(size.try_into().unwrap()).unwrap(),
+            ConicDomainType::RotatedQuadraticCone => self.task.append_r_quadratic_cone_domain(size.try_into().unwrap()).unwrap(),
+        };
+
+        task.append_afes(nelm).unwrap();
+        task.append_accs_seq(vec![domidx; numcone].as_slice(),afei,afix.as_slice()).unwrap();
+
+
+        let d0 : usize = shape[0..self.conedim].iter().product();
+        let d1 : usize = shape[self.conedim].iter().product();
+        let d2 : usize = shape[self.conedim+1..].iter().product();
+        let afeidxs : Vec<i64> = iproduct!(0..d0,0..d2,0..d1)
+            .for_each(|(i0,i2,i1)| (i0*d1*d2 + i1*d2 + i2) as i64)
+            .collect();
+
+        task.put_afe_f_row_list(afeidx.as_slice(),
+                                aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i64).collect::<Vec<f64>>(),
+                                &aptr[..nelm],
+                                asubj.as_slice(),
+                                acof.as_slice()).unwrap();
+
+
+
+
+            .....
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
         self.task.append_afes(nelm)?;
 
@@ -597,15 +688,36 @@ impl Model {
             RotatedQuadraticCone => task.append_rquadratic_cone_domain(conesize as i64),
         };
 
-        self.task.append_accs_seq(vec![domidx; numcone],afei,dom.ofs.as_slice())?;
+        self.task.append_acc_seq(vec![domidx; numcone],afei,dom.ofs.as_slice())?;
+
+        let firstcon = self.cons.len();
+        self.cons.resize(conesize*numcone,0);
 
 
 
-        .....
+
+
+
+
+
+
+
+
+
+        let d0 : usize = shape[0..self.conedim].iter().product();
+        let d1 : usize = shape[self.conedim].iter().product();
+        let d2 : usize = shape[self.conedim+1..].iter().product();
+        iproduct!(0..d0,0..d2,0..d1).zip(self.cons[firstcon..firstcon+conesize*numcone].iter_mut())
+            .for_each(|((i0,i2,i1),(cacci,coffset))| {
+                cacci   = acci + (i0 * d1 + i1) as i64;
+                coffset = i2 as i64;
+            });
 
         let firstcon = self.cons.len();
         self.cons.reserve(nelm);
         (0..nelm).for_each(|i| self.cons.push((acci,i)));
+
+
 
         let asubj : Vec<i32> = Vec::with_capacity(nnz);
         let acof  : Vec<f64> = Vec::with_capacity(nnz);
