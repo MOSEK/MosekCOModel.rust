@@ -7,7 +7,6 @@ use itertools::{iproduct,izip};
 
 /////////////////////////////////////////////////////////////////////
 // Model, constraint and variables
-use itertools::{iproduct};
 
 pub struct Model {
     /// The MOSEK task
@@ -15,14 +14,18 @@ pub struct Model {
 
     /// Mapping from Model variable atoms to Mosek variables.
     ///
-    /// If `i` is the Model variable index, then
-    /// - if `k = vars[i] > 0` then `k-1` is the index of the Task variable
-    /// - if `vars[i] == 0` then it is a const term (interpreted as vars[0] being a variable fixed to 1.0)
-    /// - if `k = vars[i] < 0` then i is a PSD variable entry and `-(k+1)` the index into barvarelm
-    vars      : Vec<i64>,
+    /// If `i` is the Model variable index and `(k,l) = vars[i]` then
+    /// - if `k > 0` then `k-1` is the index of
+    ///   the Task variable, and if `l>0` then then `l-1` is the index
+    ///   of a constraint element defining the conic constraint of the
+    ///   variable. If `l` == 0 then the variable will have an upper
+    ///   bound, a lower bound, be fixed or be free.
+    /// - if `k == 0` then it is a const term (interpreted as vars[0] being a variable fixed to 1.0)
+    /// - if `k < 0` then i is a PSD variable entry and `-(k+1)` the index into barvarelm
+    vars      : Vec<(i64,usize)>,
     /// Mapping from Model PSD variable index to `(barj,offset)`.  If
     /// `(barj,ofs) = barvarelm[i] `, then the `i`th entry corresponds
-    /// to linear offset `ofs`, counting in colunm-major format, into
+    /// to linear offset `ofs`, counting in row-major format, into
     /// PSD variable `barj`. A side-effect is that when fetching a PSD
     /// solution from mosek for all barvars, the result entries
     /// correspond directly to the indexes in barvarelm.
@@ -31,9 +34,9 @@ pub struct Model {
     cons      : Vec<(usize,usize)>,
 
     /// Workstacks for evaluating expressions
-    rs : WorkStack,
-    ws : WorkStack,
-    xs : WorkStack
+    rs : expr::WorkStack,
+    ws : expr::WorkStack,
+    xs : expr::WorkStack
 }
 
 /// A Variable object is basically a wrapper around a variable index
@@ -173,6 +176,8 @@ pub struct ConicDomain {
 
 impl DomainTrait for ConicDomain {
     fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable {
+        let idxs = m.conic_variable(name,size,num,self.dt,Some(self.ofs));
+
         let size = self.shape[self.conedim];
         let num  = self.shape.iter().product::<usize>() / size;
         let idxs = m.conic_variable(name,size,num,self.dt,Some(self.ofs));
@@ -197,27 +202,7 @@ impl DomainTrait for ConicDomain {
 
     /// Add a constraint with expression expected to be on the top of the rs stack.
     fn create_constraint(self, m : & mut Model, name : Option<&str>) -> Constraint {
-        let nelm : usize = self.shape.iter().product();
-
-        if self.conedim < self.shape.len()-1 {
-            // permute the indexes
-            let d0 = self.shape[..self.conedim].iter().product();
-            let d1 = self.shape[self.conedim];
-            let d2 = self.shape[self.conedim+1..].iter().product();
-            let perm = utils::Mutation::new(iproduct!(0..d0,0..d1,0..d2).map(|(i0,i1,i2)| i0*d1*d2+i2*d1+i1).collect());
-            let idxs = m.conic_constraint(name,size,num,self);
-
-            Constraint{
-                idxs  : m.conic_constraint(name,size,num,self.dt,(0..nelm).collect()),
-                shape : self.shape
-            }
-        }
-        else {
-            Constraint{
-                idxs  : m.conic_constraint(name,size,num,self.dt,(0..nelm).collect()),
-                shape : self.shape
-            }
-        }
+        m.conic_constraint(name,self).collect())
     }
 }
 
@@ -391,26 +376,28 @@ impl Model {
         dom.create_variable(self,name)
     }
 
-    fn alloc_linear_var(&mut self, size : usize) -> (usize,i32) {
-        let firstidx = self.vars.len();
-        let firsttaskidx = self.task.get_num_var().unwrap();
-        let nvaridx : i32 = size.try_into().unwrap();
-        let lasttaskidx = firsttaskidx+nvaridx;
-        self.task.append_vars(size as i32).unwrap();
+    // fn alloc_linear_var(&mut self, size : usize) -> (usize,i32) {
+    //     let firstidx = self.vars.len();
+    //     let firsttaskidx = self.task.get_num_var().unwrap();
+    //     let nvaridx : i32 = size.try_into().unwrap();
+    //     let lasttaskidx = firsttaskidx+nvaridx;
+    //     self.task.append_vars(size as i32).unwrap();
 
-        self.vars.resize(self.vars.len() + size,0);
-        self.vars[firstidx..].iter_mut().zip(firsttaskidx..lasttaskidx).for_each(|(a,b)| *a = b as i64);
+    //     self.vars.resize(self.vars.len() + size,0);
+    //     self.vars[firstidx..].iter_mut().zip(firsttaskidx..lasttaskidx).for_each(|(a,b)| *a = b as i64);
 
-        (firstidx,firsttaskidx)
-    }
+    //     (firstidx,firsttaskidx)
+    // }
 
-    fn linear_variable(&mut self, _name : Option<&str>,bt : LinearDomainType, bound : Vec<f64>) -> Vec<usize> {
-        let size = bound.len();
-        let (firstidx,firsttaskidx) = self.alloc_linear_var(size);
-        let lasttaskidx = firsttaskidx + size as i32;
+    fn linear_variable(&mut self, _name : Option<&str>,dom : LinearDomain) -> Vec<usize> {
+        let n = dom.ofs.len();
+        let vari = self.task.get_num_var().unwrap();
+        self.task.append_vars(n.try_into().unwrap()).unwrap();
+        self.vars.reserve(n);
+        (vari..vari+n as i32).for_each(|j| self.vars.push((1+vari as i64,0)));
 
         match bt {
-            LinearDomainType::Free        => self.task.put_var_bound_slice_const(firsttaskidx,lasttaskidx,mosek::Boundkey::FR,0.0,0.0).unwrap(),
+            LinearDomainType::Free        => self.task.put_var_bound_slice_const(vari,vari+n as i32,mosek::Boundkey::FR,0.0,0.0).unwrap(),
             LinearDomainType::Zero        => {
                 let bk = vec![mosek::Boundkey::FX; size];
                 self.task.put_var_bound_slice(firsttaskidx,lasttaskidx,bk.as_slice(),bound.as_slice(),bound.as_slice()).unwrap();
@@ -425,9 +412,7 @@ impl Model {
             }
         }
 
-        //Variable::new((firstidx..firstidx+size).collect())
-        (firstidx..firstidx+size).collect()
-
+        Variable::new((firstidx..firstidx+size).collect())
     }
 
     fn free_variable(&mut self, _name : Option<&str>, size : usize) -> Vec<usize> {
@@ -437,74 +422,82 @@ impl Model {
         (firstidx..firstidx+size).collect()
     }
 
-    fn conic_variable(&mut self, _name : Option<&str>, size : usize, num : usize, ct : ConicDomainType, ofs : Option<Vec<f64>>) -> Vec<usize> {
-        let n = size * num;
-        let (firstidx,firsttaskidx) = self.alloc_linear_var(n);
-        let lasttaskidx = firsttaskidx + n as i32;
+    fn conic_variable(&mut self, _name : Option<&str>, dom : ConicDomain, ofs : Option<Vec<f64>>) -> Vec<usize> {
+        let n    = dom.shape.iter().product();
+        let acci = self.task.get_num_acc()?;
+        let afei = self.task.get_num_afe()?;
+        let vari = self.task.get_num_var()?;
 
-        let firstafeidx = self.task.get_num_afe().unwrap();
-        self.task.append_afes(size.try_into().unwrap()).unwrap();
-        let lastafeidx = firstafeidx + n as i64;
-        let afeidxs : Vec<i64> = (firstafeidx..lastafeidx).collect();
-        let varidxs : Vec<i32> = (firsttaskidx..lasttaskidx).collect();
-        self.task.put_afe_f_entry_list(afeidxs.as_slice(),
-                                  varidxs.as_slice(),
-                                       vec![1.0; n].as_slice()).unwrap();
-        self.task.put_var_bound_slice_const(firsttaskidx,lasttaskidx,mosek::Boundkey::FR,0.0,0.0).unwrap();
-        let firstaccidx = self.task.get_num_acc().unwrap();
-        let dom = match ct {
-            ConicDomainType::QuadraticCone        => self.task.append_quadratic_cone_domain(size.try_into().unwrap()).unwrap(),
-            ConicDomainType::RotatedQuadraticCone => self.task.append_r_quadratic_cone_domain(size.try_into().unwrap()).unwrap(),
+        let mut asubi : Vec<i64> = (acci..acci+n).collect();
+        let mut asubj : Vec<i32> = (vari..vari+n).collect();
+        let mut acof  : Vec<f64> = vec![1.0; n];
+
+        let d0 : usize = shape[0..self.conedim].iter().product();
+        let d1 : usize = shape[self.conedim].iter().product();
+        let d2 : usize = shape[self.conedim+1..].iter().product();
+        let conesize = d1;
+        let numcone  = d0*d2;
+
+        let domidx = match ct {
+            ConicDomainType::QuadraticCone        => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::RotatedQuadraticCone => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
         };
 
-        match ofs {
-            None => self.task.append_accs_seq(vec![dom; num].as_slice(),
-                                              n as i64,
-                                              firstafeidx,
-                                              vec![0.0; n].as_slice()).unwrap(),
-            Some(offset) => self.task.append_accs_seq(vec![dom; num].as_slice(),
-                                                      n as i64,
-                                                      firstafeidx,
-                                                      offset.as_slice()).unwrap()
-        }
+        task.append_afes(n as i64).unwrap();
+        task.append_vars(n.try_into().unwrap());
+        task.append_accs_seq(vec![domidx; numcone].as_slice(),afei,dom.ofs.as_slice()).unwrap();
+        task.put_afe_f_entry_list(asubi.as_slice(),asubj.as_slice(),acof.as_slice()).unwrap();
 
-        (firstidx..firstidx+size).collect()
+        self.vars.reserve(n);
+        self.cons.reserve(n);
+
+        iproduct!(0..d0,0..d1,0..d2).enumerate()
+            .for_each(|(i,(i0,i1,i2))| {
+                self.vars.push((vari+i,-(self.cons.len() as i64 + 1)));
+                self.cons.push((acci+i1,i0*d2+i2))
+            } );
+
+        Variable{
+            idxs     : (vari..vari+n).collect(),
+            sparsity : None,
+            shape    : dom.shape
+        }
     }
 
 
-    fn parametrized_conic_variable(&mut self, _name : Option<&str>, size : usize, num : usize, ct : ParamConicDomainType, alpha : &[f64], ofs : Option<&[f64]>) -> Vec<usize> {
-        let n = size * num;
-        let (firstidx,firsttaskidx) = self.alloc_linear_var(n);
-        let lasttaskidx = firsttaskidx + n as i32;
+    // fn parametrized_conic_variable(&mut self, _name : Option<&str>, size : usize, num : usize, ct : ParamConicDomainType, alpha : &[f64], ofs : Option<&[f64]>) -> Vec<usize> {
+    //     let n = size * num;
+    //     let (firstidx,firsttaskidx) = self.alloc_linear_var(n);
+    //     let lasttaskidx = firsttaskidx + n as i32;
 
-        let firstafeidx = self.task.get_num_afe().unwrap();
-        self.task.append_afes(size.try_into().unwrap()).unwrap();
-        let lastafeidx = firstafeidx + n as i64;
-        let afeidxs : Vec<i64> = (firstafeidx..lastafeidx).collect();
-        let varidxs : Vec<i32> = (firsttaskidx..lasttaskidx).collect();
-        self.task.put_afe_f_entry_list(afeidxs.as_slice(),
-                                  varidxs.as_slice(),
-                                  vec![1.0; n].as_slice()).unwrap();
-        self.task.put_var_bound_slice_const(firsttaskidx,lasttaskidx,mosek::Boundkey::FR,0.0,0.0).unwrap();
-        let firstaccidx = self.task.get_num_acc().unwrap();
-        let dom = match ct {
-            ParamConicDomainType::PrimalPowerCone => self.task.append_primal_power_cone_domain(size.try_into().unwrap(), alpha).unwrap(),
-            ParamConicDomainType::DualPowerCone   => self.task.append_dual_power_cone_domain(size.try_into().unwrap(), alpha).unwrap()
-        };
+    //     let firstafeidx = self.task.get_num_afe().unwrap();
+    //     self.task.append_afes(size.try_into().unwrap()).unwrap();
+    //     let lastafeidx = firstafeidx + n as i64;
+    //     let afeidxs : Vec<i64> = (firstafeidx..lastafeidx).collect();
+    //     let varidxs : Vec<i32> = (firsttaskidx..lasttaskidx).collect();
+    //     self.task.put_afe_f_entry_list(afeidxs.as_slice(),
+    //                               varidxs.as_slice(),
+    //                               vec![1.0; n].as_slice()).unwrap();
+    //     self.task.put_var_bound_slice_const(firsttaskidx,lasttaskidx,mosek::Boundkey::FR,0.0,0.0).unwrap();
+    //     let firstaccidx = self.task.get_num_acc().unwrap();
+    //     let dom = match ct {
+    //         ParamConicDomainType::PrimalPowerCone => self.task.append_primal_power_cone_domain(size.try_into().unwrap(), alpha).unwrap(),
+    //         ParamConicDomainType::DualPowerCone   => self.task.append_dual_power_cone_domain(size.try_into().unwrap(), alpha).unwrap()
+    //     };
 
-        match ofs {
-            None => self.task.append_accs_seq(vec![dom; num].as_slice(),
-                                              n as i64,
-                                              firstafeidx,
-                                              vec![0.0; n].as_slice()).unwrap(),
-            Some(offset) => self.task.append_accs_seq(vec![dom; num].as_slice(),
-                                                      n as i64,
-                                                      firstafeidx,
-                                                      offset).unwrap()
-        }
+    //     match ofs {
+    //         None => self.task.append_accs_seq(vec![dom; num].as_slice(),
+    //                                           n as i64,
+    //                                           firstafeidx,
+    //                                           vec![0.0; n].as_slice()).unwrap(),
+    //         Some(offset) => self.task.append_accs_seq(vec![dom; num].as_slice(),
+    //                                                   n as i64,
+    //                                                   firstafeidx,
+    //                                                   offset).unwrap()
+    //     }
 
-        (firstidx..firstidx+size).collect()
-    }
+    //     (firstidx..firstidx+size).collect()
+    // }
 
     ////////////////////////////////////////////////////////////
     // Constraint interface
@@ -654,116 +647,38 @@ impl Model {
         };
 
         task.append_afes(nelm).unwrap();
-        task.append_accs_seq(vec![domidx; numcone].as_slice(),afei,afix.as_slice()).unwrap();
-
+        task.append_accs_seq(vec![domidx; numcone].as_slice(),afei,dom.ofs.as_slice()).unwrap();
 
         let d0 : usize = shape[0..self.conedim].iter().product();
         let d1 : usize = shape[self.conedim].iter().product();
         let d2 : usize = shape[self.conedim+1..].iter().product();
         let afeidxs : Vec<i64> = iproduct!(0..d0,0..d2,0..d1)
-            .for_each(|(i0,i2,i1)| (i0*d1*d2 + i1*d2 + i2) as i64)
+            .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64)
             .collect();
 
-        task.put_afe_f_row_list(afeidx.as_slice(),
-                                aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i64).collect::<Vec<f64>>(),
-                                &aptr[..nelm],
-                                asubj.as_slice(),
-                                acof.as_slice()).unwrap();
-
-
-
-
-            .....
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        self.task.append_afes(nelm)?;
-
-        let conesize = shape[self.conedim];
-        let numcone  = shape.iter().product::<usize>() / conesize;
-
-        let domidx = match dom.dt {
-            QuadraticCone        => task.append_quadratic_cone_domain(conesize as i64),
-            RotatedQuadraticCone => task.append_rquadratic_cone_domain(conesize as i64),
-        };
-
-        self.task.append_acc_seq(vec![domidx; numcone],afei,dom.ofs.as_slice())?;
-
-        let firstcon = self.cons.len();
-        self.cons.resize(conesize*numcone,0);
-
-
-
-
-
-
-
-
-
-
-
-
-        let d0 : usize = shape[0..self.conedim].iter().product();
-        let d1 : usize = shape[self.conedim].iter().product();
-        let d2 : usize = shape[self.conedim+1..].iter().product();
-        iproduct!(0..d0,0..d2,0..d1).zip(self.cons[firstcon..firstcon+conesize*numcone].iter_mut())
-            .for_each(|((i0,i2,i1),(cacci,coffset))| {
-                cacci   = acci + (i0 * d1 + i1) as i64;
-                coffset = i2 as i64;
-            });
-
-        let firstcon = self.cons.len();
-        self.cons.reserve(nelm);
-        (0..nelm).for_each(|i| self.cons.push((acci,i)));
-
-
-
-        let asubj : Vec<i32> = Vec::with_capacity(nnz);
-        let acof  : Vec<f64> = Vec::with_capacity(nnz);
-        let aptr  : Vec<i64> = Vec::with_capacity(nelm+1);
-        let afix  : Vec<f64> = Vec::with_capacity(nelm);
-        aptr.push(0);
-        ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).for_each(|(&p0,&p1)| {
-            let mut cfix = 0.0;
-            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&idx,&c)| {
-                let j = *unsafe{ self.vars.get_unchecked(idx) };
-                if j == 0 {
-                    cfix += c;
-                }
-                else if j > 0 {
-                    asubj.push((j-1) as i32);
-                    acof.push(c);
-                }
-            });
-            aptr.push(asubj.len());
-            afix.push(cfix);
-        });
-
-        for (p0,p1,fixterm) in izip!(aptr[0..aptr.len()-1].iter(),aptr[1..].iter(),afix.iter()) {
-            self.task.put_afe_f_row(afei,afei+nelm,&asubj[p0..p1],&acof[p0..p1]);
-            self.task.put_afe_g(afei,fixterm);
+        if nlinnz > 0 {
+            task.put_afe_f_row_list(afeidx.as_slice(),
+                                    aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i64).collect::<Vec<f64>>(),
+                                    &aptr[..nelm],
+                                    asubj.as_slice(),
+                                    acof.as_slice()).unwrap();
+        }
+        task.put_afe_g_list(afeidx.as_slice(),afix.as_slice()).unwrap();
+        if nbarnz > 0 {
+            task.put_afe_barf_block_triplet(abarsubi.as_slice(),
+                                            abarsubj.as_slice(),
+                                            abarsubk.as_slice(),
+                                            abarsubl.as_slice(),
+                                            abarcof.as_slice()).unwrap();
         }
 
+        let coni = self.cons.len();
+        self.cons.reserve(nelm);
+        iproduct!(0..d0,0..d1,0..d2)
+            .for_each(|(i0,i1,i2)| self.cons.push((acci+i1,i0*d2+i2)));
+
         Constraint{
-            idxs : (firstcon..firstcon+nelm).collect(),
+            idxs : (coni..coni+nelm).collect(),
             shape : dom.shape
         }
     }

@@ -3,6 +3,7 @@ extern crate itertools;
 //use itertools::{iproduct,izip};
 use super::utils;
 use super::Variable;
+use itertools::{izip};
 
 #[derive(Clone)]
 pub struct Expr {
@@ -208,8 +209,8 @@ pub trait ExprTrait {
             rptr[ii..i].iter().for_each(|v| *v = nzi); ii = i;
 
             let mut rownzi : usize = 0;
-            p.apply_slice(p0,p1-p0,subj).for_each(|&j| unsafe{ *jjind.get_unchecked(j) = 0; });
-            p.apply_slice(p0,p1-p0,subj).zip(p.apply_slice(p0,p1-p0,cof)).for_each(|(&j,&c)| {
+            subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked(j) = 0; });
+            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
                 if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
                     unsafe{
                         *jjind.get_unchecked(j)   = 1;
