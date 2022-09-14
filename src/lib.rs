@@ -7,20 +7,37 @@ use itertools::{iproduct,izip};
 
 /////////////////////////////////////////////////////////////////////
 // Model, constraint and variables
+use itertools::{iproduct};
+
 pub struct Model {
+    /// The MOSEK task
     task : mosek::Task,
 
+    /// Mapping from Model variable atoms to Mosek variables.
+    ///
+    /// If `i` is the Model variable index, then
+    /// - if `k = vars[i] > 0` then `k-1` is the index of the Task variable
+    /// - if `vars[i] == 0` then it is a const term (interpreted as vars[0] being a variable fixed to 1.0)
+    /// - if `k = vars[i] < 0` then i is a PSD variable entry and `-(k+1)` the index into barvarelm
     vars      : Vec<i64>,
+    /// Mapping from Model PSD variable index to `(barj,offset)`.  If
+    /// `(barj,ofs) = barvarelm[i] `, then the `i`th entry corresponds
+    /// to linear offset `ofs`, counting in colunm-major format, into
+    /// PSD variable `barj`. A side-effect is that when fetching a PSD
+    /// solution from mosek for all barvars, the result entries
+    /// correspond directly to the indexes in barvarelm.
     barvarelm : Vec<(usize,usize)>,
+    /// Mapping from Model constraint index to `(acci,ofs)`.
     cons      : Vec<(usize,usize)>,
 
-    rs : expr::WorkStack,
-    ws : expr::WorkStack,
-    xs : expr::WorkStack
+    /// Workstacks for evaluating expressions
+    rs : WorkStack,
+    ws : WorkStack,
+    xs : WorkStack
 }
 
-/// A Variable object is a wrapper around an array of variable
-/// indexes, a shape and optionally a sparsity pattern.
+/// A Variable object is basically a wrapper around a variable index
+/// list with a shape and a sparsity pattern. 
 #[derive(Clone)]
 pub struct Variable {
     idxs     : Vec<usize>,
