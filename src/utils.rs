@@ -1,12 +1,13 @@
 
 
-struct Mutation {
+pub struct Mutation {
     tgtsize : usize,
     idxs : Vec<usize>
 }
 
-struct MutationIter<'a,'b,T> {
+pub struct MutationIter<'a,'b,T> {
     i : usize,
+    n : usize,
     m : & 'a Mutation,
     t : & 'b [T]
 }
@@ -16,14 +17,13 @@ struct MutationIter<'a,'b,T> {
 //     t : & 'b mut [T]
 // }
 
-
 impl Mutation {
-    pub fn new(idxs : &[usize]) -> Mutation {
+    pub fn new(idxs : Vec<usize>) -> Mutation {
         let &n = idxs.iter().max().unwrap_or(&0);
 
         Mutation{
             tgtsize : n,
-            idxs : idxs.to_vec()
+            idxs : idxs
         }
     }
     pub fn id(n : usize) -> Mutation {
@@ -38,11 +38,6 @@ impl Mutation {
             idxs : (first..first+n).collect()
         }
     }
-
-    // pub fn sort_by_key<F,T:Ord>(& mut self,f : F) where
-    //     F : FnMut(&usize) -> &T {
-    //     self.idxs.sort_by_key(f);
-    // }
 
     pub fn sort_arg<T:Ord>(& mut self,target : &[T]) {
         if self.tgtsize > target.len() {
@@ -67,22 +62,32 @@ impl Mutation {
         }
         MutationIter {
             i : 0,
+            n : self.idxs.len(),
             m : self,
             t : target
         }
     }
-    // pub fn apply_mut<'a,'b,T>(& 'a self, target : & mut 'b [T]) -> AppliedMutationMut {
-    //     AppliedMutationMut {
-    //         m : self,
-    //         t : target
-    //     }
-    // }
+
+    pub fn apply_slice<'a,'b,T>(& 'a self, first : usize, num : usize, target : & 'b [T]) -> MutationIter<'a,'b,T> {
+        if self.tgtsize > target.len() {
+            panic!("Incompatible mutation");
+        }
+        else if first+num > self.idxs.len() {
+            panic!("Invalid slice range");
+        }
+        MutationIter {
+            i : first,
+            n : num,
+            m : self,
+            t : target
+        }
+    }
 }
 
 impl<'a,'b,T> std::iter::Iterator for MutationIter<'a,'b,T> {
     type Item = & 'b T;
     fn next(& mut self) -> Option<& 'b T> {
-        if self.i < self.m.idxs.len() {
+        if self.i < self.n {
             let idx = unsafe { * self.m.idxs.get_unchecked(self.i) };
             self.i += 1;
             Some(unsafe { & * self.t.get_unchecked(idx) })
