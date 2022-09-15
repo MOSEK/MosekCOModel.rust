@@ -1,7 +1,7 @@
 extern crate itertools;
 
 //use itertools::{iproduct,izip};
-use super::utils;
+//use super::utils;
 use super::Variable;
 use itertools::{izip};
 
@@ -76,7 +76,7 @@ impl WorkStack {
     ///   strictly smaller than the product of the dimensions.
     /// Returns (ptr,sp,subj,cof)
     ///
-    fn alloc_expr(& mut self, shape : &[usize], nnz : usize, nelm : usize) -> (& mut [usize], Option<& mut [usize]>,& mut [usize], & mut [f64]) {
+    pub fn alloc_expr(& mut self, shape : &[usize], nnz : usize, nelm : usize) -> (& mut [usize], Option<& mut [usize]>,& mut [usize], & mut [f64]) {
         let nd = shape.len();
         let ubase = self.utop;
         let fbase = self.ftop;
@@ -116,7 +116,7 @@ impl WorkStack {
         (ptr,sp,subj,cof)
     }
 
-    fn alloc(&mut self, nint : usize, nfloat : usize) -> (& mut [usize], & mut [f64]) {
+    pub fn alloc(&mut self, nint : usize, nfloat : usize) -> (& mut [usize], & mut [f64]) {
         self.susize.resize(nint,0);
         self.sf64.resize(nfloat,0.0);
         (self.susize.as_mut_slice(),self.sf64.as_mut_slice())
@@ -124,7 +124,7 @@ impl WorkStack {
 
     /// Returns a list of views of the `n` top-most expressions on the stack, first in the result
     /// list if the top-most.
-    fn pop_exprs(&mut self, n : usize) -> Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])> {
+    pub fn pop_exprs(&mut self, n : usize) -> Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])> {
         let mut res = Vec::with_capacity(n);
         for _ in 0..n {
             let nd   = self.susize[self.utop-1];
@@ -154,7 +154,7 @@ impl WorkStack {
 
         res
     }
-    fn pop_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
+    pub fn pop_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
         let nd   = self.susize[self.utop-1];
         let nnz  = self.susize[self.utop-2];
         let nelm = self.susize[self.utop-3];
@@ -183,21 +183,21 @@ impl WorkStack {
 
 pub trait ExprTrait {
     /// eval_child() will evaluate the expression and put the result on the `rs` stack.
-    fn eval_child(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack);
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack);
     /// eval() will evaluate the expression, then cleanit up and put
     /// it on the `rs` stack. I will guarantee that:
     /// - all rows are sorted
     /// - expression contains no zeros or duplicate elements.
     /// - the expression is dense
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.eval_child(ws,rs,xs);
+    fn eval_finalize(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.eval(ws,rs,xs);
 
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-        let nnz  = subj.size();
+        let nnz  = subj.len();
         let nelm = shape.iter().product();
         let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,nnz,nelm);
 
-        let maxj = rsubj.iter().max().unwrap_or(0);
+        let maxj = rsubj.iter().max().unwrap_or(&0);
         let (jj,ff) = xs.alloc(maxj*2+2,maxj+1);
         let (jj,jjind) = jj.split_at_mut(maxj+1);
 
@@ -229,9 +229,9 @@ pub trait ExprTrait {
             izip!(jj[0..rownzi].iter(),
                   rsubj[nzi..nzi+rownzi].iter_mut(),
                   rcof[nzi..nzi+rownzi].iter_mut()).for_each(|(&j,rj,rc)| {
-                      rc = unsafe{ *ff.get_unchecked(j) };
-                      unsafe{ *jjind.get_unchecked(j) = 0; };
-                      rj = j;
+                      *rc = unsafe{ *ff.get_unchecked(j) };
+                      unsafe{ *jjind.get_unchecked_mut(j) = 0; };
+                      *rj = j;
                   });
 
             nzi += rownzi;
@@ -304,11 +304,11 @@ impl Expr {
 }
 
 impl ExprTrait for Expr {
-    fn eval_child(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+    fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
         let nnz  = self.asubj.len();
         let nelm = self.aptr.len()-1;
 
-        let (aptr,sp,asubj,acof) = rs.alloc_expr(self.shape,nnz,nelm);
+        let (aptr,sp,asubj,acof) = rs.alloc_expr(self.shape.as_slice(),nnz,nelm);
 
         match (self.sparsity,sp) {
             (Some(ref ssp),Some(dsp)) => dsp.clone_from_slice(ssp.as_slice()),
