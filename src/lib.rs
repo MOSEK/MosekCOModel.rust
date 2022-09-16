@@ -3,15 +3,18 @@ extern crate itertools;
 
 mod utils;
 mod expr;
-use itertools::{iproduct,izip};
+use itertools::{iproduct};
 
 /////////////////////////////////////////////////////////////////////
 // Model, constraint and variables
 
 #[derive(Clone,Copy)]
 enum VarAtom {
+    // Task variable index
     Linear(i32),
-    PSDElm(i32,usize),
+    // Task bar element (barj,k,l)
+    BarElm(i32,i32,i32),
+    // Conic variable (j,offset)
     ConicElm(i32,usize)
 }
 enum ConAtom {
@@ -20,26 +23,7 @@ enum ConAtom {
 pub struct Model {
     /// The MOSEK task
     task : mosek::Task,
-
-    /// Mapping from Model variable atoms to Mosek variables.
-    ///
-    /// If `i` is the Model variable index and `(k,l) = vars[i]` then
-    /// - if `k > 0` then `k-1` is the index of
-    ///   the Task variable, and if `l>0` then then `l-1` is the index
-    ///   of a constraint element defining the conic constraint of the
-    ///   variable. If `l` == 0 then the variable will have an upper
-    ///   bound, a lower bound, be fixed or be free.
-    /// - if `k == 0` then it is a const term (interpreted as vars[0] being a variable fixed to 1.0)
-    /// - if `k < 0` then i is a PSD variable entry and `-(k+1)` the index into barvarelm
     vars      : Vec<VarAtom>,
-    /// Mapping from Model PSD variable index to `(barj,offset)`.  If
-    /// `(barj,ofs) = barvarelm[i] `, then the `i`th entry corresponds
-    /// to linear offset `ofs`, counting in row-major format, into
-    /// PSD variable `barj`. A side-effect is that when fetching a PSD
-    /// solution from mosek for all barvars, the result entries
-    /// correspond directly to the indexes in barvarelm.
-    barvarelm : Vec<(usize,usize)>,
-    /// Mapping from Model constraint index to `(acci,ofs)`.
     cons      : Vec<ConAtom>,
 
     /// Workstacks for evaluating expressions
@@ -376,7 +360,6 @@ impl Model {
         Model{
             task      : task,
             vars      : Vec::new(),
-            barvarelm : Vec::new(),
             cons      : Vec::new(),
             rs : expr::WorkStack::new(0),
             ws : expr::WorkStack::new(0),
@@ -553,6 +536,9 @@ impl Model {
         let acci = self.task.get_num_acc().unwrap();
         let afei = self.task.get_num_afe().unwrap();
 
+        let nlinnz = subj.iter().filter(|&&j| if let VarAtom::BarElm(_,_,_) = unsafe { *self.vars.get_unchecked(j) } { false } else { true } ).count();
+        let npsdnz = nnz - nlinnz;
+
         self.task.append_afes(nelm as i64).unwrap();
         let domidx = match dom.dt {
             NonNegative => self.task.append_rplus_domain(nelm as i64).unwrap(),
@@ -561,9 +547,16 @@ impl Model {
             Free        => self.task.append_r_domain(nelm as i64).unwrap(),
         };
 
-
-        self.task.append_acc_seq(domidx, afei,dom.ofs.as_slice()).unwrap();
-
+        match dom.sp {
+            None => self.task.append_acc_seq(domidx, afei,dom.ofs.as_slice()).unwrap(),
+            Some(sp) => {
+                let mut ofs = vec![0.0; nelm];
+                if sp.len() != dom.ofs.len() { panic!("Broken sparsity pattern") };
+                if let Some(v) = sp.iter().max() { if v >= nelm { panic!("Broken sparsity pattern"); } }
+                sp.iter().zip(dom.ofs.iter()).for_each(|(&ix,&c)| unsafe { *ofs.get_unchecked_mut(ix) = c; } );
+                self.task.append_acc_seq(domidx, afei,ofs.as_slice()).unwrap();
+            }
+        }
 
         let firstcon = self.cons.len();
         self.cons.reserve(nelm);
@@ -573,29 +566,58 @@ impl Model {
         let acof  : Vec<f64> = Vec::with_capacity(nnz);
         let aptr  : Vec<i64> = Vec::with_capacity(nelm+1);
         let afix  : Vec<f64> = Vec::with_capacity(nelm);
+        let mut abarsubi : Vec<i64> = Vec::with_capacity(nlinnz);
+        let mut abarsubj : Vec<i32> = Vec::with_capacity(nlinnz);
+        let mut abarsubk : Vec<i32> = Vec::with_capacity(nlinnz);
+        let mut abarsubl : Vec<i32> = Vec::with_capacity(nlinnz);
+        let mut abarcof  : Vec<f64> = Vec::with_capacity(nlinnz);
+
         aptr.push(0);
-        ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).for_each(|(&p0,&p1)| {
+        ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).enumerate().for_each(|(i,(&p0,&p1))| {
             let mut cfix = 0.0;
             subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&idx,&c)| {
-                match *unsafe{ self.vars.get_unchecked(idx) } {
-                    VarAtom::Linear(j) => {},
-                    VarAtom::ConicElm()
-                    if j == 0 {
+                if idx == 0 {
                     cfix += c;
                 }
-                else if j > 0 {
-                    asubj.push((j-1) as i32);
-                    acof.push(c);
-                }
+                else {
+                    match *unsafe{ self.vars.get_unchecked(idx-1) } {
+                        VarAtom::Linear(j) => {
+                            asubj.push(j);
+                            acof.push(c);
+                        },
+                        VarAtom::ConicElm(j,coni) => {
+                            asubj.push(j);
+                            acof.push(c);
+                        },
+                        VarAtom::BarElm(j,k,l) => {
+                            abarsubi.push(afei+i as i64);
+                            abarsubj.push(j);
+                            abarsubk.push(k);
+                            abarsubl.push(l);
+                        }
+                    }
                 }
             });
             aptr.push(asubj.len());
             afix.push(cfix);
         });
 
-        for (p0,p1,fixterm) in izip!(aptr[0..aptr.len()-1].iter(),aptr[1..].iter(),afix.iter()) {
-            self.task.put_afe_f_row(afei,afei+nelm,&asubj[p0..p1],&acof[p0..p1]);
-            self.task.put_afe_g(afei,fixterm);
+        let afeidxs = (afei..afei+nelm as i64).collect::<Vec<f64>>();
+        self.task.put_afe_f_row_list(
+            afeidxs.as_slice(),
+            aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i64).collect::<Vec<f64>>(),
+            &aptr[..nelm],
+            asubj.as_slice(),
+            acof.as_slice());
+            self.task.put_afe_g(afei,afix);
+
+        self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
+        if npsdnz > 0 {
+            self.task.put_afe_barf_block_triplet(abarsubi.as_slice(),
+                                                 abarsubj.as_slice(),
+                                                 abarsubk.as_slice(),
+                                                 abarsubl.as_slice(),
+                                                 abarcof.as_slice()).unwrap();
         }
 
         Constraint{
@@ -643,22 +665,26 @@ impl Model {
         ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).enumerate().for_each(|(i,(&p0,&p1))| {
             let mut cfix = 0.0;
             subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&idx,&c)| {
-                let j = *unsafe{ self.vars.get_unchecked(idx) };
-                if j == 0 {
+                if idx == 0 {
                     cfix += c;
                 }
-                else if j > 0 {
-                    asubj.push((j-1) as i32);
-                    acof.push(c);
-                }
                 else {
-                    let (j,ofs) = unsafe { *self.barvarelm.get_unchecked(-j-1) };
-                    abarsubi.push(afei+i as i64);
-                    abarsubj.push(j as i32);
-                    let k = ((((1+2*ofs) as f64).sqrt() - 1.0) / 2.0).floor() as usize;
-                    let l = ofs - k;
-                    abarsubk.push(k);
-                    abarsubl.push(l);
+                    match *unsafe{ self.vars.get_unchecked(idx-1) } {
+                        VarAtom::Linear(j) => {
+                            asubj.push(j);
+                            acof.push(c);
+                        },
+                        VarAtom::ConicElm(j,coni) => {
+                            asubj.push(j);
+                            acof.push(c);
+                        },
+                        VarAtom::BarElm(j,k,l) => {
+                            abarsubi.push(afei+i as i64);
+                            abarsubj.push(j);
+                            abarsubk.push(k);
+                            abarsubl.push(l);
+                        }
+                    }
                 }
             });
             aptr.push(asubj.len());
