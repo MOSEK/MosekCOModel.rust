@@ -1,8 +1,8 @@
 extern crate mosek;
 extern crate itertools;
 
-mod utils;
-mod expr;
+//mod utils;
+pub mod expr;
 use itertools::{iproduct};
 
 /////////////////////////////////////////////////////////////////////
@@ -50,14 +50,14 @@ pub struct Constraint {
 }
 /////////////////////////////////////////////////////////////////////
 impl Variable {
-    fn new(idxs : Vec<usize>) -> Variable {
-        let n = idxs.len();
-        Variable {
-            idxs : idxs,
-            sparsity : None,
-            shape : vec![n]
-        }
-    }
+    // fn new(idxs : Vec<usize>) -> Variable {
+    //     let n = idxs.len();
+    //     Variable {
+    //         idxs : idxs,
+    //         sparsity : None,
+    //         shape : vec![n]
+    //     }
+    // }
 
     fn with_shape(self, shape : Vec<usize>) -> Variable {
         match self.sparsity {
@@ -395,7 +395,7 @@ impl Model {
         self.vars.reserve(n);
 
         let firstvar = self.vars.len();
-        (vari..vari+n as i32).for_each(|j| self.vars.push(VarAtom::Linear(vari)));
+        (vari..vari+n as i32).for_each(|j| self.vars.push(VarAtom::Linear(j)));
 
         match dom.dt {
             LinearDomainType::Free        => self.task.put_var_bound_slice_const(vari,vari+n as i32,mosek::Boundkey::FR,0.0,0.0).unwrap(),
@@ -439,9 +439,9 @@ impl Model {
         let afei = self.task.get_num_afe().unwrap();
         let vari = self.task.get_num_var().unwrap();
 
-        let mut asubi : Vec<i64> = (acci..acci+n as i64).collect();
-        let mut asubj : Vec<i32> = (vari..vari+n as i32).collect();
-        let mut acof  : Vec<f64> = vec![1.0; n];
+        let asubi : Vec<i64> = (acci..acci+n as i64).collect();
+        let asubj : Vec<i32> = (vari..vari+n as i32).collect();
+        let acof  : Vec<f64> = vec![1.0; n];
 
         let d0 : usize = dom.shape[0..dom.conedim].iter().product();
         let d1 : usize = dom.shape[dom.conedim];
@@ -455,7 +455,7 @@ impl Model {
         };
 
         self.task.append_afes(n as i64).unwrap();
-        self.task.append_vars(n.try_into().unwrap());
+        self.task.append_vars(n.try_into().unwrap()).unwrap();
         self.task.append_accs_seq(vec![domidx; numcone].as_slice(),n as i64,afei,dom.ofs.as_slice()).unwrap();
         self.task.put_afe_f_entry_list(asubi.as_slice(),asubj.as_slice(),acof.as_slice()).unwrap();
 
@@ -516,11 +516,11 @@ impl Model {
 
     pub fn constraint<E : expr::ExprTrait, D : DomainTrait>(& mut self, name : Option<&str>, expr : &E, dom : D) -> Constraint {
         expr.eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs);
-        dom.create_constraint(& mut self,name)
+        dom.create_constraint(self,name)
     }
 
     fn linear_constraint(& mut self,
-                         name : Option<&str>,
+                         _name : Option<&str>,
                          dom  : LinearDomain) -> Constraint {
         let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
         if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
@@ -541,10 +541,10 @@ impl Model {
 
         self.task.append_afes(nelm as i64).unwrap();
         let domidx = match dom.dt {
-            NonNegative => self.task.append_rplus_domain(nelm as i64).unwrap(),
-            NonPositive => self.task.append_rminus_domain(nelm as i64).unwrap(),
-            Zero        => self.task.append_rzero_domain(nelm as i64).unwrap(),
-            Free        => self.task.append_r_domain(nelm as i64).unwrap(),
+            LinearDomainType::NonNegative => self.task.append_rplus_domain(nelm as i64).unwrap(),
+            LinearDomainType::NonPositive => self.task.append_rminus_domain(nelm as i64).unwrap(),
+            LinearDomainType::Zero        => self.task.append_rzero_domain(nelm as i64).unwrap(),
+            LinearDomainType::Free        => self.task.append_r_domain(nelm as i64).unwrap(),
         };
 
         match dom.sp {
@@ -552,7 +552,7 @@ impl Model {
             Some(sp) => {
                 let mut ofs = vec![0.0; nelm];
                 if sp.len() != dom.ofs.len() { panic!("Broken sparsity pattern") };
-                if let Some(v) = sp.iter().max() { if v >= nelm { panic!("Broken sparsity pattern"); } }
+                if let Some(&v) = sp.iter().max() { if v >= nelm { panic!("Broken sparsity pattern"); } }
                 sp.iter().zip(dom.ofs.iter()).for_each(|(&ix,&c)| unsafe { *ofs.get_unchecked_mut(ix) = c; } );
                 self.task.append_acc_seq(domidx, afei,ofs.as_slice()).unwrap();
             }
@@ -562,10 +562,10 @@ impl Model {
         self.cons.reserve(nelm);
         (0..nelm).for_each(|i| self.cons.push(ConAtom::ConicElm(acci,i)));
 
-        let asubj : Vec<i32> = Vec::with_capacity(nnz);
-        let acof  : Vec<f64> = Vec::with_capacity(nnz);
-        let aptr  : Vec<i64> = Vec::with_capacity(nelm+1);
-        let afix  : Vec<f64> = Vec::with_capacity(nelm);
+        let mut asubj : Vec<i32> = Vec::with_capacity(nnz);
+        let mut acof  : Vec<f64> = Vec::with_capacity(nnz);
+        let mut aptr  : Vec<i64> = Vec::with_capacity(nelm+1);
+        let mut afix  : Vec<f64> = Vec::with_capacity(nelm);
         let mut abarsubi : Vec<i64> = Vec::with_capacity(nlinnz);
         let mut abarsubj : Vec<i32> = Vec::with_capacity(nlinnz);
         let mut abarsubk : Vec<i32> = Vec::with_capacity(nlinnz);
@@ -585,7 +585,7 @@ impl Model {
                             asubj.push(j);
                             acof.push(c);
                         },
-                        VarAtom::ConicElm(j,coni) => {
+                        VarAtom::ConicElm(j,_coni) => {
                             asubj.push(j);
                             acof.push(c);
                         },
@@ -594,23 +594,22 @@ impl Model {
                             abarsubj.push(j);
                             abarsubk.push(k);
                             abarsubl.push(l);
+                            abarcof.push(c);
                         }
                     }
                 }
             });
-            aptr.push(asubj.len());
+            aptr.push(asubj.len() as i64);
             afix.push(cfix);
         });
 
-        let afeidxs = (afei..afei+nelm as i64).collect::<Vec<f64>>();
+        let afeidxs : Vec<i64> = (afei..afei+nelm as i64).collect();
         self.task.put_afe_f_row_list(
             afeidxs.as_slice(),
-            aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i64).collect::<Vec<f64>>(),
+            aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0).try_into().unwrap()).collect::<Vec<i32>>().as_slice(),
             &aptr[..nelm],
             asubj.as_slice(),
-            acof.as_slice());
-            self.task.put_afe_g(afei,afix);
-
+            acof.as_slice()).unwrap();
         self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
         if npsdnz > 0 {
             self.task.put_afe_barf_block_triplet(abarsubi.as_slice(),
@@ -627,7 +626,7 @@ impl Model {
     }
 
     fn conic_constraint(& mut self,
-                        name : Option<&str>,
+                        _name : Option<&str>,
                         dom  : ConicDomain) -> Constraint {
         let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
         if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
@@ -636,7 +635,7 @@ impl Model {
         let nnz  = subj.len();
         let nelm = ptr.len()-1;
 
-        if subj.iter().max() >= self.vars.len() {
+        if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
             panic!("Invalid subj index in evaluated expression");
         }
         if shape.iter().zip(dom.shape.iter()).all(|(&d0,&d1)| d0==d1 ) {
@@ -646,7 +645,7 @@ impl Model {
         let acci = self.task.get_num_acc().unwrap();
         let afei = self.task.get_num_afe().unwrap();
 
-        let nlinnz = subj.iter().filter(|&j| 0 < self.vars.get_uncheched(j) ).count();
+        let nlinnz = subj.iter().filter(|&&j| if let VarAtom::BarElm(_,_,_) = unsafe { *self.vars.get_unchecked(j) } { false } else { true } ).count();
         let npsdnz = nnz - nlinnz;
 
         let mut asubj : Vec<i32> = Vec::with_capacity(nlinnz);
@@ -674,7 +673,7 @@ impl Model {
                             asubj.push(j);
                             acof.push(c);
                         },
-                        VarAtom::ConicElm(j,coni) => {
+                        VarAtom::ConicElm(j,_coni) => {
                             asubj.push(j);
                             acof.push(c);
                         },
@@ -683,35 +682,45 @@ impl Model {
                             abarsubj.push(j);
                             abarsubk.push(k);
                             abarsubl.push(l);
+                            abarcof.push(c);
                         }
                     }
                 }
             });
-            aptr.push(asubj.len());
+            aptr.push(asubj.len() as i64);
             afix.push(cfix);
         });
 
-        let conesize = shape[self.conedim];
+        let conesize = shape[dom.conedim];
         let numcone  = shape.iter().product::<usize>() / conesize;
 
-        let domidx = match self.dt {
+        let domidx = match dom.dt {
             ConicDomainType::QuadraticCone        => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::RotatedQuadraticCone => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
         };
 
-        self.task.append_afes(nelm).unwrap();
-        self.task.append_accs_seq(vec![domidx; numcone].as_slice(),afei,dom.ofs.as_slice()).unwrap();
-
-        let d0 : usize = shape[0..self.conedim].iter().product();
-        let d1 : usize = shape[self.conedim].iter().product();
-        let d2 : usize = shape[self.conedim+1..].iter().product();
+        self.task.append_afes(nelm as i64).unwrap();
+        self.task.append_accs_seq(vec![domidx; numcone].as_slice(),
+                                  nelm as i64,
+                                  afei,
+                                  dom.ofs.as_slice()).unwrap();
+        let d0 : usize = shape[0..dom.conedim].iter().product();
+        let d1 : usize = shape[dom.conedim];
+        let d2 : usize = shape[dom.conedim+1..].iter().product();
         let afeidxs : Vec<i64> = iproduct!(0..d0,0..d2,0..d1)
             .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64)
             .collect();
 
+        // if let Some(name) = name {
+        //     let accshape = shape[0..dom.conedim].iter().join(shape[dom.conedim+1..].iter()).collect();
+        //     //iproduct!(0..d0,0..d2).for_each(|(i0,i2)| self.task.put_acc_name(format!("{}[{},*,{}]")).unwrap() )
+                
+        //     }
+        // }
+        
         if nlinnz > 0 {
             self.task.put_afe_f_row_list(afeidxs.as_slice(),
-                                         aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i64).collect::<Vec<f64>>(),
+                                         aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
                                          &aptr[..nelm],
                                          asubj.as_slice(),
                                          acof.as_slice()).unwrap();
@@ -728,7 +737,7 @@ impl Model {
         let coni = self.cons.len();
         self.cons.reserve(nelm);
         iproduct!(0..d0,0..d1,0..d2)
-            .for_each(|(i0,i1,i2)| self.cons.push(ConAtom::ConicElm(acci+i1,i0*d2+i2)));
+            .for_each(|(i0,i1,i2)| self.cons.push(ConAtom::ConicElm(acci+i1 as i64,i0*d2+i2)));
 
         Constraint{
             idxs : (coni..coni+nelm).collect(),

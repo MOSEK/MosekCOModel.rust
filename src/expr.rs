@@ -192,7 +192,7 @@ pub trait ExprTrait {
     fn eval_finalize(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.eval(ws,rs,xs);
 
-        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+        let (shape,ptr,_sp,subj,cof) = ws.pop_expr();
         let nnz  = subj.len();
         let nelm = shape.iter().product();
         let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,nnz,nelm);
@@ -206,22 +206,22 @@ pub trait ExprTrait {
         let mut nzi = 0;
         rptr[0] = 0;
         ptr[0..ptr.len()-1].iter().zip(ptr[1..].iter()).enumerate().for_each(|(i,(&p0,&p1))| {
-            rptr[ii..i].iter().for_each(|v| *v = nzi); ii = i;
+            rptr[ii..i].iter_mut().for_each(|v| *v = nzi); ii = i;
 
             let mut rownzi : usize = 0;
-            subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked(j) = 0; });
+            subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
             subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
                 if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
                     unsafe{
-                        *jjind.get_unchecked(j)   = 1;
-                        *jj.get_unchecked(rownzi) = j;
-                        *ff.get_unchecked(j)      = c;
+                        *jjind.get_unchecked_mut(j)   = 1;
+                        *jj.get_unchecked_mut(rownzi) = j;
+                        *ff.get_unchecked_mut(j)      = c;
                     }
                     rownzi += 1;
                 }
                 else {
                     unsafe{
-                        *ff.get_unchecked(j) += c;
+                        *ff.get_unchecked_mut(j) += c;
                     }
                 }
             });
@@ -310,7 +310,7 @@ impl ExprTrait for Expr {
 
         let (aptr,sp,asubj,acof) = rs.alloc_expr(self.shape.as_slice(),nnz,nelm);
 
-        match (self.sparsity,sp) {
+        match (&self.sparsity,sp) {
             (Some(ref ssp),Some(dsp)) => dsp.clone_from_slice(ssp.as_slice()),
             _ => {}
         }
