@@ -405,19 +405,36 @@ impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rnnz,rnelm);
 
         rptr[0] = 0;
-        let mut elmi = 0;
+        let mut elmi = i;
         let mut nzi  = 0;
         if let Some(sp) = sp {
-            let (perm,_) = xs.alloc(sp.len(),0);
+            let (perm_spptr,_) = xs.alloc(sp.len()+rdimj+1,0);
+            let (perm,spptr) = perm_spptr.split_at_mut(sp.len());
+            spptr.iter_mut().for_each(|v| *v = 0);
             perm.iter().enumerate().for_each(|(i,pi)| *pi = i );
             perm.sort_by_key(|&k| {
                 let spi = unsafe{ sp.get_unchecked(k) };
                 let ii = spi / rdimj; let jj = spi - ii*dimj;
+                unsafe { *spptr[jj+1] += 1 };
                 jj * edimi + ii
             });
 
+            { let mut cum = 0; spptr.iter_mut().for_each(|v| let tv = *v; *v = cum; cum = tv; ); }
+
+            // loop over matrix rows
             iproduct!((0..mdimi).zip(mrowdata.chunks(mdimj)),(0..shape[1])) {
-                
+                spptr[..rdimj].iter().zip(spptr[1..].iter()).for_each(|(sp0,sp1)| {
+                    izip!(sp[sp0..sp1].iter(),ptr[sp0..sp1].iter(),ptr[sp0+1..sp1+1].iter()).for_each(|(spi,p0,p1)| {
+                        izip!(subj[p0..p1].iter(),
+                              cof[p0..p1].iter(),
+                              rsubj[nzi..nzi+p1-p0].iter_mut(),
+                              rcof[nzi..nzi+p1-p0].iter_mut())
+                            .for_each(|&j,&c,rj,rc| { &rj = j; &rc = c; });
+                        nzi += p1-p0;
+                        nelm += 1;
+                        rptr[nelm] = nzi;
+                    });
+                });
             }
         }
         else {
@@ -432,5 +449,16 @@ impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
                     rptr[elmi] = nzi;
                 });
         }
+    }
+}
+
+
+impl<E:ExprTrait> ExprTrait for ExprMulScalar<E> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.item.eval(ws,rs,xs);
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+
+        
+        ...
     }
 }
