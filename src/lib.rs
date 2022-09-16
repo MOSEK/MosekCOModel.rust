@@ -59,7 +59,7 @@ impl Variable {
     //     }
     // }
 
-    fn with_shape(self, shape : Vec<usize>) -> Variable {
+    pub fn with_shape(self, shape : Vec<usize>) -> Variable {
         match self.sparsity {
             None =>
                 if self.idxs.len() != shape.iter().product() {
@@ -78,7 +78,7 @@ impl Variable {
         }
     }
 
-    fn with_sparsity(self, sp : Vec<usize>) -> Variable {
+    pub fn with_sparsity(self, sp : Vec<usize>) -> Variable {
         if sp.len() != self.idxs.len() {
             panic!("Sparsity does not match the size");
         }
@@ -100,7 +100,7 @@ impl Variable {
         }
     }
 
-    fn with_shape_and_sparsity(self,shape : Vec<usize>, sp : Vec<usize>) -> Variable {
+    pub fn with_shape_and_sparsity(self,shape : Vec<usize>, sp : Vec<usize>) -> Variable {
         if sp.len() != self.idxs.len() {
             panic!("Sparsity does not match the size");
         }
@@ -121,13 +121,22 @@ impl Variable {
         }
     }
 
-    fn flatten(self) -> Variable {
+    pub fn flatten(self) -> Variable {
         Variable {
             idxs : self.idxs,
             sparsity : self.sparsity,
             shape : vec![self.shape.iter().product()]
         }
     }
+
+    // Other functions to be implemented:
+    ///// Take the diagonal element of a square, cube,... variable
+    //pub fn diag(&self) -> Variable
+    //pub fn into_diag(&self) -> Variable
+    //pub slice(& self,from : &[usize], to : &[usize])
+    //pub stack(dim : usize, xs : &[&Variable]) -> Variable
+    //pub hstack(xs : &[Variable]) -> Variable
+    //pub vstack(xs : &[Variable]) -> Variable
 }
 
 ////////////////////////////////////////////////////////////

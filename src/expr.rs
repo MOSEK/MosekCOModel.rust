@@ -4,15 +4,7 @@ extern crate itertools;
 //use super::utils;
 use super::Variable;
 use itertools::{izip};
-
-#[derive(Clone)]
-pub struct Expr {
-    aptr  : Vec<usize>,
-    asubj : Vec<usize>,
-    acof  : Vec<f64>,
-    shape : Vec<usize>,
-    sparsity : Option<Vec<usize>>
-}
+use super::utils;
 
 // impl<E : ExprTrait> ExprTrait for ExprPrepare<E> {
 //     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
@@ -182,7 +174,7 @@ impl WorkStack {
 }
 
 pub trait ExprTrait {
-    /// eval_child() will evaluate the expression and put the result on the `rs` stack.
+    /// eval_chil`d() will evaluate the expression and put the result on the `rs` stack.
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack);
     /// eval() will evaluate the expression, then cleanit up and put
     /// it on the `rs` stack. I will guarantee that:
@@ -239,6 +231,30 @@ pub trait ExprTrait {
             ii += 1;
         });
     }
+
+    //fn into_diag(self) -> ExprIntoDiag<Self> { ExprIntoDiag{ item : self } }
+    //fn reshape(self, shape : &[usize]) -> ExprReshape<Self>  { ExprReshape{  item : self, shape : shape.to_vec() } }
+    //fn mul_scalar(self, c : f64) -> ExprMulScalar<Self> { ExprMulScalar{ item:self, c : c } }
+    //fn mul_vec_left(self, v : Vec<f64>) -> ExprMulVec<Self>
+    //fn mul_matrix_left(self, matrix : Matrix) -> ExprMulMatrixLeft<Self>
+    //fn mul_matrix_right(self, matrix : Matrix) -> ExprMulMatrixRight<Self>
+    //fn transpose(self) -> ExprPermuteAxes<Self>
+    //fn axispermute(self) -> ExprPermuteAxes<Self>
+}
+
+
+
+////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////
+// Expression objects
+
+#[derive(Clone)]
+pub struct Expr {
+    aptr  : Vec<usize>,
+    asubj : Vec<usize>,
+    acof  : Vec<f64>,
+    shape : Vec<usize>,
+    sparsity : Option<Vec<usize>>
 }
 
 impl Expr {
@@ -301,6 +317,20 @@ impl Expr {
             sparsity : Some((0..d*d).step_by(d+1).collect())
         }
     }
+
+    pub fn reshape(self,shape:&[usize]) -> Expr {
+        if self.shape.iter().product() != shape.iter().product() {
+            panic!("Invalid shape for this expression");
+        }
+
+        Expr{
+            aptr : self.aptr,
+            asubj : self.asubj,
+            acof : self.acof,
+            shape : shape.to_vec(),
+            sparsity : self.sparsity
+        }
+    }
 }
 
 impl ExprTrait for Expr {
@@ -318,5 +348,89 @@ impl ExprTrait for Expr {
         aptr.clone_from_slice(self.aptr.as_slice());
         asubj.clone_from_slice(self.asubj.as_slice());
         acof.clone_from_slice(self.acof.as_slice());
+    }
+}
+
+////////////////////////////////////////////////////////////
+// Multiply
+struct Matrix {
+    dim  : (usize,usize),
+    rows : bool,
+    data : Vec<f64>
+}
+
+struct ExprMulLeft<E:ExprTrait> {
+    item : E,
+    lhs  : Matrix
+}
+
+struct ExprMulRight<E:ExprTrait> {
+    item : E,
+    rhs  : Matrix
+}
+
+struct ExprMulScalar<E:ExprTrait> {
+    item : E,
+    lhs  : f64
+}
+
+impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.item.eval(ws,rs,xs);
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+
+        let nd = shape.ldn();
+        let nnz = subj.len();
+        let nelm = ptr.len()-1;
+        let (mdimi,mdimj) = self.lhs.dim;
+
+        if nd != 2 { panic!("Invalid shape for multiplication") }
+        if mdimj != shape[0] { panic!("Mismatching shapes for multiplication") }
+
+        let mrowdata = {
+            if self.lhs.rows { self.lhs.data }
+            else {
+                (0..mdimi).zip(0..mdimj)
+                    .map(|(i,j)| unsafe { * self.lhs.data.get_unchecked(j*mdimi+i) })
+                    .collect()
+            }
+        };
+
+        let rdimi = dimi;
+        let rdimj = shape[1];
+        let edimi = shape[0];
+        let rshape = [ rdimi, rdimj ];
+        let rnnz = nnz * mdimi;
+        let rnelm = mdimi * rdimj;
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rnnz,rnelm);
+
+        rptr[0] = 0;
+        let mut elmi = 0;
+        let mut nzi  = 0;
+        if let Some(sp) = sp {
+            let (perm,_) = xs.alloc(sp.len(),0);
+            perm.iter().enumerate().for_each(|(i,pi)| *pi = i );
+            perm.sort_by_key(|&k| {
+                let spi = unsafe{ sp.get_unchecked(k) };
+                let ii = spi / rdimj; let jj = spi - ii*dimj;
+                jj * edimi + ii
+            });
+
+            iproduct!((0..mdimi).zip(mrowdata.chunks(mdimj)),(0..shape[1])) {
+                
+            }
+        }
+        else {
+            iproduct!((0..mdimi).zip(mrowdata.chunks(mdimj)),(0..shape[1]))
+                .for_each(|((i,mrowi),j)| {
+                    izip!(mrowi.iter(), ptr.iter().step_by(rdimj), ptr[1..].iter().step_by(rdimi)).for_each(|(&c,&p0,&p1)| {
+                        rsubj[nzi..nzi+p1-p0].iter().zip(subj[p0..p1]).for_each(|(rj,&j) *rj = j );
+                        rcof[nzi..nzi+p1-p0].iter().zip(cof[p0..p1]).for_each(|(rv,&v) *rv = c*v );
+                        nzi += p1-p0;
+                    });
+                    nelmi += 1;
+                    rptr[elmi] = nzi;
+                });
+        }
     }
 }
