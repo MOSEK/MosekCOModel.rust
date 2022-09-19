@@ -139,6 +139,22 @@ impl Variable {
     //pub vstack(xs : &[Variable]) -> Variable
 }
 
+impl expr::ExprTrait for &Variable {
+    fn eval(&self,rs : & mut expr::WorkStack, _ws : & mut expr::WorkStack, _xs : & mut expr::WorkStack) {
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),
+                                                  self.idxs.len(),
+                                                  self.idxs.len());
+        rptr.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+        rsubj.clone_from_slice(self.idxs.as_slice());
+        rcof.fill(1.0);
+        match (rsp,&self.sparsity) {
+            (Some(rsp),Some(sp)) => rsp.clone_from_slice(sp.as_slice()),
+            _ => {}
+        }
+    }
+}
+
+
 ////////////////////////////////////////////////////////////
 // Domain definitions
 pub enum LinearDomainType {
@@ -771,8 +787,7 @@ mod tests {
         let mut v5 = m.variable(None, greater_than(vec![1.0,2.0,3.0,4.0]).with_shape(vec![2,2]));
         let mut v6 = m.variable(None, greater_than(vec![1.0,3.0]).with_shape_and_sparsity(vec![2,2],vec![0,3]));
 
-        let e1 = Expr::from_variable(v1);
-        let e2 = Expr::from_variable(v3);
-        let e4 = Expr::new();
+        let e1 = Expr::from_variable(&v1);
+        let e2 = Expr::from_variable(&v3);
     }
 }

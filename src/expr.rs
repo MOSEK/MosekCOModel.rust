@@ -85,8 +85,11 @@ impl WorkStack {
         let (_,upart) = self.susize.split_at_mut(ubase);
         let (_,fpart) = self.sf64.split_at_mut(fbase);
 
+        // println!("nd = {}, nnz = {}, nelm = {}",nd, nnz, nelm);
+        // println!("upart size = {}, unnz = {}",upart.len(),unnz);
 
         let (subj,upart) = upart.split_at_mut(nnz);
+        // println!("1 upart size = {}",upart.len());
         let (sp,upart)   =
             if nelm < fullsize {
                 let (sp,upart) = upart.split_at_mut(nelm);
@@ -98,9 +101,9 @@ impl WorkStack {
         let (shape_,head)  = upart.split_at_mut(nd);
         shape_.clone_from_slice(shape);
 
-        head[nd]   = nelm;
-        head[nd+1] = nnz;
-        head[nd+2] = nd;
+        head[0]   = nelm;
+        head[1] = nnz;
+        head[2] = nd;
 
         let cof = fpart;
 
@@ -142,12 +145,12 @@ impl WorkStack {
             let cof  = &self.sf64[sftop-nnz..sftop];
 
             if let Some(sp) = sp {
-                if sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack dies not contain a valid expression: invalid Sparsity"); }
-                if let Some(&n) = sp.last() { if n >= fullsize { panic!("Stack dies not contain a valid expression: invalid Sparsity"); } }
+                if ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack dies not contain a valid expression: invalid Sparsity"); }
+                if let Some(&n) = sp.last() { if n > fullsize { panic!("Stack dies not contain a valid expression: invalid Sparsity"); } }
             }
 
-            if ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a < b) {  panic!("Stack dies not contain a valid expression: invalid ptr"); }
-            if let Some(&p) = ptr.last() { if p >= nnz { panic!("Stack dies not contain a valid expression: invalid ptr"); } }
+            if ! ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a < b) {  panic!("Stack dies not contain a valid expression: invalid ptr"); }
+            if let Some(&p) = ptr.last() { if p > nnz { panic!("Stack dies not contain a valid expression: invalid ptr"); } }
 
             sutop = utop - nnz;
             sftop -= nnz;
@@ -182,12 +185,12 @@ impl WorkStack {
         let cof  = &self.sf64[self.ftop-nnz..self.ftop];
 
         if let Some(sp) = sp {
-            if sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack dies not contain a valid expression: invalid Sparsity"); }
-            if let Some(&n) = sp.last() { if n >= fullsize { panic!("Stack dies not contain a valid expression: invalid Sparsity"); } }
+            if ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack dies not contain a valid expression: invalid Sparsity"); }
+            if let Some(&n) = sp.last() { if n > fullsize { panic!("Stack dies not contain a valid expression: invalid Sparsity"); } }
         }
 
-        if ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a < b) {  panic!("Stack dies not contain a valid expression: invalid ptr"); }
-        if let Some(&p) = ptr.last() { if p >= nnz { panic!("Stack dies not contain a valid expression: invalid ptr"); } }
+        if ! ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a <= b) { println!("ptr = {:?}",ptr); panic!("Stack dies not contain a valid expression: invalid ptr"); }
+        if let Some(&p) = ptr.last() { if p > nnz { println!("p = {}, nnz = {}",p,nnz); panic!("Stack does not contain a valid expression: invalid ptr"); } }
 
         let nnz : usize = if let Some(&p) = ptr.last() { p } else { 0 };
 
@@ -400,6 +403,8 @@ impl Expr {
             sparsity : self.sparsity
         }
     }
+
+    pub fn mul_left<E : ExprTrait>(m : Matrix, e : E) -> ExprMulLeft<E> { ExprMulLeft{item : e, lhs : m} }
 }
 
 impl ExprTrait for Expr {
@@ -422,13 +427,39 @@ impl ExprTrait for Expr {
 
 ////////////////////////////////////////////////////////////
 // Multiply
-struct Matrix {
+pub struct Matrix {
     dim  : (usize,usize),
     rows : bool,
     data : Vec<f64>
 }
 
-struct ExprMulLeft<E:ExprTrait> {
+impl Matrix {
+    pub fn new(height : usize, width : usize, data : Vec<f64>) -> Matrix {
+        if height*width != data.len() { panic!("Invalid data size for matrix")  }
+        Matrix{
+            dim : (height,width),
+            rows : true,
+            data : data
+        }
+    }
+    pub fn ones(height : usize, width : usize) -> Matrix {
+        Matrix{
+            dim : (height,width),
+            rows : true,
+            data : vec![1.0; height*width]
+        }
+    }
+    pub fn diag(data : &[f64]) -> Matrix {
+        Matrix{
+            dim : (data.len(),data.len()),
+            rows : true,
+            data : izip!((0..data.len()).zip(data.iter()),0..data.len()).map(|((i,&c),j)| if i == j {c} else { 0.0 }).collect()
+        }
+    }
+}
+
+
+pub struct ExprMulLeft<E:ExprTrait> {
     item : E,
     lhs  : Matrix
 }
@@ -438,7 +469,7 @@ struct ExprMulLeft<E:ExprTrait> {
 //     rhs  : Matrix
 // }
 
-struct ExprMulScalar<E:ExprTrait> {
+pub struct ExprMulScalar<E:ExprTrait> {
     item : E,
     lhs  : f64
 }
@@ -453,13 +484,13 @@ impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
         let nelm = ptr.len()-1;
         let (mdimi,mdimj) = self.lhs.dim;
 
-        if nd != 2 { panic!("Invalid shape for multiplication") }
+
+        if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
         if mdimj != shape[0] { panic!("Mismatching shapes for multiplication") }
 
         let rdimi = mdimi;
-        let rdimj = shape[1];
+        let rdimj = if nd == 1 { 1 } else { shape[1] };
         let edimi = shape[0];
-        let rshape = [ rdimi, rdimj ];
         let rnnz = nnz * mdimi;
         let rnelm = mdimi * rdimj;
 
@@ -470,7 +501,12 @@ impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
                 .for_each(|((i,j),dst)| *dst = unsafe { * self.lhs.data.get_unchecked(j*mdimi+i) });
         }
 
-        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&rshape,rnnz,rnelm);
+        let (rptr,_rsp,rsubj,rcof) = if nd == 2 {
+            rs.alloc_expr(&[rdimi,rdimj],rnnz,rnelm)
+        }
+        else {
+            rs.alloc_expr(&[rdimi],rnnz,rnelm)
+        };
 
         rptr[0] = 0;
         let mut elmi = 0;
@@ -519,16 +555,18 @@ impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
                     });
                     elmi += 1;
                     rptr[elmi] = nzi;
+                    println!("nzi = {}",nzi);
                 });
             });
         }
     }
 }
 
+
 impl<E:ExprTrait> ExprTrait for ExprMulScalar<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(rs,ws,xs);
-        let (_shape,_ptr,_sp,_subj,cof) = ws.peek_expr_mut();
+        let (_shape,_ptr,_sp,_subj,cof) = rs.peek_expr_mut();
         cof.iter_mut().for_each(|c| *c *= self.lhs)
     }
 }
