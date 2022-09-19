@@ -1,10 +1,9 @@
 extern crate itertools;
 
-//use itertools::{iproduct,izip};
+use itertools::{iproduct,izip};
 //use super::utils;
 use super::Variable;
-use itertools::{izip};
-use super::utils;
+//use super::utils;
 
 // impl<E : ExprTrait> ExprTrait for ExprPrepare<E> {
 //     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
@@ -114,10 +113,14 @@ impl WorkStack {
         (self.susize.as_mut_slice(),self.sf64.as_mut_slice())
     }
 
-    /// Returns a list of views of the `n` top-most expressions on the stack, first in the result
+    /// Returns and validatas a list of views of the `n` top-most expressions on the stack, first in the result
     /// list if the top-most.
     pub fn pop_exprs(&mut self, n : usize) -> Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])> {
         let mut res = Vec::with_capacity(n);
+
+        let mut sutop = self.utop;
+            let mut sftop = self.ftop;
+
         for _ in 0..n {
             let nd   = self.susize[self.utop-1];
             let nnz  = self.susize[self.utop-2];
@@ -125,7 +128,7 @@ impl WorkStack {
             let shape = &self.susize[self.utop-3-nd..self.utop-3];
             let fullsize : usize = shape.iter().product();
 
-            let utop = self.utop-3-nd;
+            let utop = sutop-3-nd;
             let (ptr,utop) = (&self.susize[utop-nelm-1..utop],utop - nelm - 1);
             let (sp,utop) =
                 if fullsize > nnz {
@@ -136,20 +139,32 @@ impl WorkStack {
                 };
 
             let subj = &self.susize[utop-nnz..utop];
-            let cof  = &self.sf64[self.ftop-nnz..self.ftop];
+            let cof  = &self.sf64[sftop-nnz..sftop];
 
-            self.utop = utop - nnz;
-            self.ftop -= nnz;
+            if let Some(sp) = sp {
+                if sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack dies not contain a valid expression: invalid Sparsity"); }
+                if let Some(&n) = sp.last() { if n >= fullsize { panic!("Stack dies not contain a valid expression: invalid Sparsity"); } }
+            }
+
+            if ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a < b) {  panic!("Stack dies not contain a valid expression: invalid ptr"); }
+            if let Some(&p) = ptr.last() { if p >= nnz { panic!("Stack dies not contain a valid expression: invalid ptr"); } }
+
+            sutop = utop - nnz;
+            sftop -= nnz;
 
             res.push((shape,ptr,sp,subj,cof));
         }
 
+        self.utop = sutop;
+        self.ftop = sftop;
+
         res
     }
+    /// Returns and validatas a view of the top-most expression on the stack.
     pub fn pop_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
-        let nd   = self.susize[self.utop-1];
-        let nnz  = self.susize[self.utop-2];
-        let nelm = self.susize[self.utop-3];
+        let nd   : usize = self.susize[self.utop-1];
+        let nnz  : usize = self.susize[self.utop-2];
+        let nelm : usize = self.susize[self.utop-3];
         let shape = &self.susize[self.utop-3-nd..self.utop-3];
         let fullsize : usize = shape.iter().product();
 
@@ -166,8 +181,62 @@ impl WorkStack {
         let subj = &self.susize[utop-nnz..utop];
         let cof  = &self.sf64[self.ftop-nnz..self.ftop];
 
+        if let Some(sp) = sp {
+            if sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack dies not contain a valid expression: invalid Sparsity"); }
+            if let Some(&n) = sp.last() { if n >= fullsize { panic!("Stack dies not contain a valid expression: invalid Sparsity"); } }
+        }
+
+        if ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a < b) {  panic!("Stack dies not contain a valid expression: invalid ptr"); }
+        if let Some(&p) = ptr.last() { if p >= nnz { panic!("Stack dies not contain a valid expression: invalid ptr"); } }
+
+        let nnz : usize = if let Some(&p) = ptr.last() { p } else { 0 };
+
         self.utop = utop - nnz;
         self.ftop -= nnz;
+
+        (shape,ptr,sp,&subj[..nnz],&cof[..nnz])
+    }
+    /// Returns without validation a mutable view of the top-most
+    /// expression on the stack, but does not remove it from the stack
+    pub fn peek_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
+        let nd   = self.susize[self.utop-1];
+        let nnz  = self.susize[self.utop-2];
+        let nelm = self.susize[self.utop-3];
+        let totalsize : usize = self.susize[self.utop-3-nd..self.utop-3].iter().product();
+
+        let totalusize = nd+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
+        let totalfsize = nnz;
+
+        let utop = self.utop-3;
+        let ftop = self.utop-3;
+
+        let uslice : &[usize] = & self.susize[utop-totalusize..utop];
+        let cof    : &[f64]   = & self.sf64[ftop-totalfsize..ftop];
+        let (subj,uslice) = uslice.split_at(nnz);
+        let (sp,uslice) = if totalsize < nelm { let (a,b) = uslice.split_at(nelm); (Some(a),b) } else { (None,uslice) };
+        let (ptr,shape) = uslice.split_at(nelm+1);
+
+        (shape,ptr,sp,subj,cof)
+    }
+    /// Returns without validation a mutable view of the top-most
+    /// expression on the stack, but does not remove it from the stack
+    pub fn peek_expr_mut(&mut self) -> (&mut [usize],&mut [usize],Option<&mut [usize]>,&mut [usize],&mut [f64]) {
+        let nd   = self.susize[self.utop-1];
+        let nnz  = self.susize[self.utop-2];
+        let nelm = self.susize[self.utop-3];
+        let totalsize : usize = self.susize[self.utop-3-nd..self.utop-3].iter().product();
+
+        let totalusize = nd+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
+        let totalfsize = nnz;
+
+        let utop = self.utop-3;
+        let ftop = self.utop-3;
+
+        let uslice : &mut[usize] = & mut self.susize[utop-totalusize..utop];
+        let cof    : &mut[f64]   = & mut self.sf64[ftop-totalfsize..ftop];
+        let (subj,uslice) = uslice.split_at_mut(nnz);
+        let (sp,uslice) = if totalsize < nelm { let (a,b) = uslice.split_at_mut(nelm); (Some(a),b) } else { (None,uslice) };
+        let (ptr,shape) = uslice.split_at_mut(nelm+1);
 
         (shape,ptr,sp,subj,cof)
     }
@@ -319,7 +388,7 @@ impl Expr {
     }
 
     pub fn reshape(self,shape:&[usize]) -> Expr {
-        if self.shape.iter().product() != shape.iter().product() {
+        if self.shape.iter().product::<usize>() != shape.iter().product::<usize>() {
             panic!("Invalid shape for this expression");
         }
 
@@ -364,10 +433,10 @@ struct ExprMulLeft<E:ExprTrait> {
     lhs  : Matrix
 }
 
-struct ExprMulRight<E:ExprTrait> {
-    item : E,
-    rhs  : Matrix
-}
+// struct ExprMulRight<E:ExprTrait> {
+//     item : E,
+//     rhs  : Matrix
+// }
 
 struct ExprMulScalar<E:ExprTrait> {
     item : E,
@@ -379,86 +448,87 @@ impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
         self.item.eval(ws,rs,xs);
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
-        let nd = shape.ldn();
-        let nnz = subj.len();
+        let nd   = shape.len();
+        let nnz  = subj.len();
         let nelm = ptr.len()-1;
         let (mdimi,mdimj) = self.lhs.dim;
 
         if nd != 2 { panic!("Invalid shape for multiplication") }
         if mdimj != shape[0] { panic!("Mismatching shapes for multiplication") }
 
-        let mrowdata = {
-            if self.lhs.rows { self.lhs.data }
-            else {
-                (0..mdimi).zip(0..mdimj)
-                    .map(|(i,j)| unsafe { * self.lhs.data.get_unchecked(j*mdimi+i) })
-                    .collect()
-            }
-        };
-
-        let rdimi = dimi;
+        let rdimi = mdimi;
         let rdimj = shape[1];
         let edimi = shape[0];
         let rshape = [ rdimi, rdimj ];
         let rnnz = nnz * mdimi;
         let rnelm = mdimi * rdimj;
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rnnz,rnelm);
+
+        let (perm_spptr,mrowdata) = xs.alloc(nelm+rdimj+1,self.lhs.data.len());
+        if self.lhs.rows { mrowdata.clone_from_slice(self.lhs.data.as_slice()); }
+        else {
+            iproduct!((0..mdimi),(0..mdimj)).zip(mrowdata.iter_mut())
+                .for_each(|((i,j),dst)| *dst = unsafe { * self.lhs.data.get_unchecked(j*mdimi+i) });
+        }
+
+        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&rshape,rnnz,rnelm);
 
         rptr[0] = 0;
-        let mut elmi = i;
+        let mut elmi = 0;
         let mut nzi  = 0;
+
+
         if let Some(sp) = sp {
-            let (perm_spptr,_) = xs.alloc(sp.len()+rdimj+1,0);
             let (perm,spptr) = perm_spptr.split_at_mut(sp.len());
             spptr.iter_mut().for_each(|v| *v = 0);
-            perm.iter().enumerate().for_each(|(i,pi)| *pi = i );
+            perm.iter_mut().enumerate().for_each(|(i,pi)| *pi = i );
             perm.sort_by_key(|&k| {
                 let spi = unsafe{ sp.get_unchecked(k) };
-                let ii = spi / rdimj; let jj = spi - ii*dimj;
-                unsafe { *spptr[jj+1] += 1 };
+                let ii = spi / rdimj; let jj = spi - ii*rdimj;
+                unsafe { *spptr.get_unchecked_mut(jj+1) += 1 };
                 jj * edimi + ii
             });
 
-            { let mut cum = 0; spptr.iter_mut().for_each(|v| let tv = *v; *v = cum; cum = tv; ); }
+            { let mut cum = 0; spptr.iter_mut().for_each(|v| { let tv = *v; *v = cum; cum = tv; } ); }
 
-            // loop over matrix rows
-            iproduct!((0..mdimi).zip(mrowdata.chunks(mdimj)),(0..shape[1])) {
-                spptr[..rdimj].iter().zip(spptr[1..].iter()).for_each(|(sp0,sp1)| {
-                    izip!(sp[sp0..sp1].iter(),ptr[sp0..sp1].iter(),ptr[sp0+1..sp1+1].iter()).for_each(|(spi,p0,p1)| {
+            // loop over matrix rows x expr columns
+            iproduct!(mrowdata.chunks(mdimj),
+                      spptr[..rdimj].iter().zip(spptr[1..].iter()))
+                .for_each(|(mrow,(&sp0,&sp1))| {
+                    izip!(sp[sp0..sp1].iter(),ptr[sp0..sp1].iter(),ptr[sp0+1..sp1+1].iter()).for_each(|(&spi,&p0,&p1)| {
+                        let spi_i = spi / rdimj;
+                        //let spi_j = spi % rdimj;
+                        let v = unsafe { *mrow.get_unchecked(spi_i) };
                         izip!(subj[p0..p1].iter(),
                               cof[p0..p1].iter(),
                               rsubj[nzi..nzi+p1-p0].iter_mut(),
                               rcof[nzi..nzi+p1-p0].iter_mut())
-                            .for_each(|&j,&c,rj,rc| { &rj = j; &rc = c; });
+                            .for_each(|(&j,&c,rj,rc)| { *rj = j; *rc = v*c; });
                         nzi += p1-p0;
-                        nelm += 1;
+                        elmi += 1;
                         rptr[nelm] = nzi;
                     });
                 });
-            }
         }
         else {
-            iproduct!((0..mdimi).zip(mrowdata.chunks(mdimj)),(0..shape[1]))
-                .for_each(|((i,mrowi),j)| {
-                    izip!(mrowi.iter(), ptr.iter().step_by(rdimj), ptr[1..].iter().step_by(rdimi)).for_each(|(&c,&p0,&p1)| {
-                        rsubj[nzi..nzi+p1-p0].iter().zip(subj[p0..p1]).for_each(|(rj,&j) *rj = j );
-                        rcof[nzi..nzi+p1-p0].iter().zip(cof[p0..p1]).for_each(|(rv,&v) *rv = c*v );
+            mrowdata.chunks(mdimj).for_each(|mrowi| { // for each matrix row
+                (0..rdimj).for_each(|j| { // for each expression column
+                    izip!(mrowi.iter(), ptr[j..].iter().step_by(rdimj), ptr[j+1..].iter().step_by(rdimj)).for_each(|(&c,&p0,&p1)| {
+                        rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                        rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rv,&v)| *rv = c*v );
                         nzi += p1-p0;
                     });
-                    nelmi += 1;
+                    elmi += 1;
                     rptr[elmi] = nzi;
                 });
+            });
         }
     }
 }
 
-
 impl<E:ExprTrait> ExprTrait for ExprMulScalar<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
-        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-
-        
-        ...
+        self.item.eval(rs,ws,xs);
+        let (_shape,_ptr,_sp,_subj,cof) = ws.peek_expr_mut();
+        cof.iter_mut().for_each(|c| *c *= self.lhs)
     }
 }
