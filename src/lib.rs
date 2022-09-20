@@ -450,6 +450,8 @@ impl Model {
         let n : usize = shape.iter().product();
         let varend : i32 = ((vari as usize) + n).try_into().unwrap();
         let firstvar = self.vars.len();
+        self.vars.reserve(n);
+        (vari..vari+n as i32).for_each(|j| self.vars.push(VarAtom::Linear(j)));
         self.task.append_vars(n as i32).unwrap();
         self.task.put_var_bound_slice_const(vari,varend,mosek::Boundkey::FR,0.0,0.0).unwrap();
         Variable{

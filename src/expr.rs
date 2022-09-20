@@ -145,12 +145,12 @@ impl WorkStack {
             let cof  = &self.sf64[sftop-nnz..sftop];
 
             if let Some(sp) = sp {
-                if ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack dies not contain a valid expression: invalid Sparsity"); }
-                if let Some(&n) = sp.last() { if n > fullsize { panic!("Stack dies not contain a valid expression: invalid Sparsity"); } }
+                if ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack does not contain a valid expression: invalid Sparsity"); }
+                if let Some(&n) = sp.last() { if n > fullsize { panic!("Stack does not contain a valid expression: invalid Sparsity"); } }
             }
 
-            if ! ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a < b) {  panic!("Stack dies not contain a valid expression: invalid ptr"); }
-            if let Some(&p) = ptr.last() { if p > nnz { panic!("Stack dies not contain a valid expression: invalid ptr"); } }
+            if ! ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a < b) {  panic!("Stack does not contain a valid expression: invalid ptr"); }
+            if let Some(&p) = ptr.last() { if p > nnz { panic!("Stack does not contain a valid expression: invalid ptr"); } }
 
             sutop = utop - nnz;
             sftop -= nnz;
@@ -165,6 +165,7 @@ impl WorkStack {
     }
     /// Returns and validatas a view of the top-most expression on the stack.
     pub fn pop_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
+        // |subj[nnz],sp[nelm],ptr[nelm+1],shape[nd],nelm,nnz,nd|
         let nd   : usize = self.susize[self.utop-1];
         let nnz  : usize = self.susize[self.utop-2];
         let nelm : usize = self.susize[self.utop-3];
@@ -185,14 +186,16 @@ impl WorkStack {
         let cof  = &self.sf64[self.ftop-nnz..self.ftop];
 
         if let Some(sp) = sp {
-            if ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack dies not contain a valid expression: invalid Sparsity"); }
-            if let Some(&n) = sp.last() { if n > fullsize { panic!("Stack dies not contain a valid expression: invalid Sparsity"); } }
+            if ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack does not contain a valid expression: invalid Sparsity"); }
+            if let Some(&n) = sp.last() { if n > fullsize { panic!("Stack does not contain a valid expression: invalid Sparsity"); } }
         }
 
-        if ! ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a <= b) { println!("ptr = {:?}",ptr); panic!("Stack dies not contain a valid expression: invalid ptr"); }
+
+        if ! ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a <= b) { println!("ptr = {:?}",ptr); panic!("Stack does not contain a valid expression: invalid ptr"); }
         if let Some(&p) = ptr.last() { if p > nnz { println!("p = {}, nnz = {}",p,nnz); panic!("Stack does not contain a valid expression: invalid ptr"); } }
 
         let nnz : usize = if let Some(&p) = ptr.last() { p } else { 0 };
+        println!("shape = {:?}\n\tptr = {:?}\n\tsubj = {:?}\n\tcof = {:?}\n\tsp = {:?}",shape,ptr,&subj[..nnz],&cof[..nnz],sp);
 
         self.utop = utop - nnz;
         self.ftop -= nnz;
@@ -200,7 +203,9 @@ impl WorkStack {
         (shape,ptr,sp,&subj[..nnz],&cof[..nnz])
     }
     /// Returns without validation a mutable view of the top-most
-    /// expression on the stack, but does not remove it from the stack
+    /// expression on the stack, but does not remove it from the
+    /// stack.  Note that this returns the full subj and cof, not just
+    /// the part indexes by ptr.
     pub fn peek_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
         let nd   = self.susize[self.utop-1];
         let nnz  = self.susize[self.utop-2];
@@ -256,6 +261,7 @@ pub trait ExprTrait {
     fn eval_finalize(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.eval(ws,rs,xs);
 
+        println!("ExprTrait::eval_finalize");
         let (shape,ptr,_sp,subj,cof) = ws.pop_expr();
         let nnz  = subj.len();
         let nelm = shape.iter().product();
@@ -270,12 +276,13 @@ pub trait ExprTrait {
         let mut nzi = 0;
         rptr[0] = 0;
         ptr[0..ptr.len()-1].iter().zip(ptr[1..].iter()).enumerate().for_each(|(i,(&p0,&p1))| {
-            rptr[ii..i].iter_mut().for_each(|v| *v = nzi); ii = i;
+            rptr[ii+1..i+1].fill(nzi); ii = i;
 
             let mut rownzi : usize = 0;
             subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
             subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
-                if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
+                if c == 0.0 {}
+                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
                     unsafe{
                         *jjind.get_unchecked_mut(j)   = 1;
                         *jj.get_unchecked_mut(rownzi) = j;
@@ -299,7 +306,7 @@ pub trait ExprTrait {
                   });
 
             nzi += rownzi;
-            rptr[i] = nzi;
+            rptr[i+1] = nzi;
             ii += 1;
         });
     }
@@ -453,7 +460,7 @@ impl Matrix {
         Matrix{
             dim : (data.len(),data.len()),
             rows : true,
-            data : izip!((0..data.len()).zip(data.iter()),0..data.len()).map(|((i,&c),j)| if i == j {c} else { 0.0 }).collect()
+            data : iproduct!((0..data.len()).zip(data.iter()),0..data.len()).map(|((i,&c),j)| if i == j {c} else { 0.0 }).collect()
         }
     }
 }
@@ -477,8 +484,9 @@ pub struct ExprMulScalar<E:ExprTrait> {
 impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
+        println!("ExprMulLeft eval");
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-
+        
         let nd   = shape.len();
         let nnz  = subj.len();
         let nelm = ptr.len()-1;
@@ -512,6 +520,7 @@ impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
         let mut elmi = 0;
         let mut nzi  = 0;
 
+        rptr[0] = 0;
 
         if let Some(sp) = sp {
             let (perm,spptr) = perm_spptr.split_at_mut(sp.len());
@@ -555,10 +564,11 @@ impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
                     });
                     elmi += 1;
                     rptr[elmi] = nzi;
-                    println!("nzi = {}",nzi);
+                    println!("rptr[{}] = {}",elmi,nzi);
                 });
             });
         }
+        println!("rptr = {:?}",rptr);
     }
 }
 
