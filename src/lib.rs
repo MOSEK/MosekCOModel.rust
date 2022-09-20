@@ -392,6 +392,10 @@ impl Model {
         }
     }
 
+    pub fn write_problem(&self, filename : &str) {
+        self.task.write_data(filename).unwrap();
+    }
+    
     ////////////////////////////////////////////////////////////
     // Variable interface
 
