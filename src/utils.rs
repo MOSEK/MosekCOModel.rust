@@ -114,6 +114,99 @@ impl<'a,'b,T> std::iter::Iterator for MutationIter<'a,'b,T> {
 
 
 
+/// An interator that produces an accumulation map, a bit like fold+map.
+///
+/// The iterator is initialized with a value, a mapping function and
+/// an iterator. The iterator will produce
+/// - i_0 -> v0
+/// - i_{n+1} -> f(i_{n-1},it_n
+///
+/// Example:
+///   [1,2,5,4,3].cummulate(0, |&v,&i| v+i)
+///   -> [1,3,8,12,15]
+struct FoldMapIter<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> {
+    it : I,
+    v : T,
+    f : F
+}
+
+
+impl<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> Iterator for FoldMapIter<I,T,F> {
+    type Item = T;
+    fn next(& mut self) -> Option<Self::Item> {
+        if let Some(v) = self.it.next() {
+            let v = self.f(&self.v,v);
+            self.v = v;
+            Some(self.v)
+        }
+        else {
+            None
+        }
+    }
+    fn size_hint(&self) -> (usize,Option<usize>) {
+        let (lb,ub) = self.it.size_hint();
+        if let Some(ub) = ub { (lb,Some(ub+1)) }
+        else { (lb,None) }
+    }
+}
+
+trait FoldMapExt<T:Copy,F:FnMut(&T,Self::Item) -> T> : Iterator {
+    /// Create a cummulating iterator
+    fn fold_map(self, v0 : T, f : F) -> FoldMapIter<Self,T,F> where Self:Sized{
+        FoldMapIter{it : self, v : v0, f : f}
+    }
+}
+impl<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> FoldMapExt<T,F> for I {}
+
+
+////////////////////////////////////////////////////////////
+pub struct IJKLSliceIterator<'a,'b,'c,'d,'e> {
+    subi : & 'a [i32],
+    subj : & 'b [i32],
+    subk : & 'c [i32],
+    subl : & 'd [i32],
+    cof  : & 'e [f64],
+
+    pos  : usize
+}
+
+pub fn ijkl_slice_iterator<'a,'b,'c,'d,'e>(subi : & 'a [i32],
+                                           subj : & 'b [i32],
+                                           subk : & 'c [i32],
+                                           subl : & 'd [i32],
+                                           cof  : & 'e [f64]) -> IJKLSliceIterator<'a,'b,'c,'d,'e> {
+    if subi.len() != subj.len()
+        || subi.len() != subk.len()
+        || subi.len() != subl.len()
+        || subi.len() != cof.len() {
+        panic!("Mismatching array length");
+    }
+    IJKLSliceIterator{subi,subj,subj,subj,cof,pos:0}
+}
+
+impl<'a,'b,'c,'d,'e> Iterator for IJKLSliceIterator<'a,'b,'c,'d,'e> {
+    type Item = (i32,i32,&'c[i32],&'d[i32],&'e[f64]);
+    fn next(& mut self) -> Option<Self::Item> {
+        if self.pos < self.subi.len() {
+            let p0 = self.pos;
+            let i = unsafe{ *self.subi.get_unchecked(self.pos) };
+            let j = unsafe{ *self.subj.get_unchecked(self.pos) };
+            self.pos += 1;
+
+            while unsafe{ *self.subi.get_unchecked(self.pos) == i } &&
+                  unsafe{ *self.subj.get_unchecked(self.pos) == j } {
+                self.pos += 1;
+            }
+            Some((i,j,&self.subk[p0..self.pos],&self.subl[p0..self.pos],&self.cof[p0..self.pos]))
+        }
+        else {
+            None
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use super::*;
