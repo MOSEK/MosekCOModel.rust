@@ -8,6 +8,7 @@ use itertools::{iproduct};
 /////////////////////////////////////////////////////////////////////
 // Model, constraint and variables
 
+/// Objective sense
 #[derive(Clone,Copy)]
 pub enum Sense {
     Maximize,
@@ -19,18 +20,63 @@ enum VarAtom {
     // Task variable index
     Linear(i32),
     // Task bar element (barj,k,l)
-    BarElm(i32,i32,i32),
+    BarElm(i32,usize),
     // Conic variable (j,offset)
     ConicElm(i32,usize)
 }
 enum ConAtom {
     ConicElm(i64,usize)
 }
+
+pub enum SolutionType {
+    Default,
+    Basic,
+    Interior,
+    Integer
+}
+
+
+enum SolutionStatus {
+    Optimal,
+    Feasible,
+    CertInfeas,
+    CertIllposed,
+    Unknown,
+    Undefined
+}
+
+struct SolutionPart {
+    status : SolutionStatus,
+    var : Vec<f64>,
+    con : Vec<f64>
+}
+impl SolutionPart {
+    fn new(numvar : usize, numcon : usize) -> SolutionPart { SolutionPart{status : SolutionStatus::Unknown, var : vec![0.0; numvar], con : vec![0.0; numcon] } }
+    fn resize(& mut self,numvar : usize, numcon : usize) {
+        self.var.resize(numvar, 0.0);
+        self.con.resize(numcon, 0.0);
+    }
+}
+
+struct Solution {
+    primal : SolutionPart,
+    dual   : SolutionPart
+}
+
+impl Solution {
+    fn new() -> Solution { Solution{primal : SolutionPart::new(0,0) , dual : SolutionPart::new(0,0)  } }
+}
+/// The Model object encapsulates an optimization problem and a
+/// mapping from the structured API to the internal Task items.
 pub struct Model {
     /// The MOSEK task
     task : mosek::Task,
     vars      : Vec<VarAtom>,
     cons      : Vec<ConAtom>,
+
+    sol_bas : Solution,
+    sol_itr : Solution,
+    sol_itg : Solution,
 
     /// Workstacks for evaluating expressions
     rs : expr::WorkStack,
@@ -38,13 +84,55 @@ pub struct Model {
     xs : expr::WorkStack
 }
 
+trait ModelItem {
+    fn len(&self) -> usize;
+    fn primal(&self,m : &Model,solid : SolutionType) -> Result<Vec<f64>,String> {
+        let mut res = vec![0.0; self.len()];
+        self.primal_into(m,solid,res.as_mut_slice())?;
+        Ok(res)
+    }
+    fn dual(&self,m : &Model,solid : SolutionType) -> Result<Vec<f64>,String> {
+        let mut res = vec![0.0; self.len()];
+        self.dual_into(m,solid,res.as_mut_slice())?;
+        Ok(res)
+    }
+    fn primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64]) -> Result<usize,String>;
+    fn dual_into(&self,m : &Model,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String>;
+}
+
 /// A Variable object is basically a wrapper around a variable index
-/// list with a shape and a sparsity pattern. 
+/// list with a shape and a sparsity pattern.
 #[derive(Clone)]
 pub struct Variable {
     idxs     : Vec<usize>,
     sparsity : Option<Vec<usize>>,
     shape    : Vec<usize>
+}
+
+impl ModelItem for Variable {
+    fn len(&self) -> usize { return self.shape.iter().product(); }
+    fn primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64]) -> Result<usize,String> {
+        let sz = self.shape.iter().product();
+        if res.len() < sz { panic!("Result array too small") }
+        else {
+            m.primal_var_solution(solid,self.idxs.as_slice(),res)?;
+            if let Some(sp) = self.sparsity {
+                sp.iter().enumerate().rev().for_each(|(i,&ix)| unsafe { *res.get_unchecked_mut(ix) = *res.get_unchecked(i); *res.get_unchecked_mut(i) = 0.0; });
+            }
+            Ok(sz)
+        }
+    }
+    fn dual_into(&self,m : &Model,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String> {
+        let sz = self.shape.iter().product();
+        if res.len() < sz { panic!("Result array too small") }
+        else {
+            m.dual_var_solution(solid,self.idxs.as_slice(),res)?;
+            if let Some(sp) = self.sparsity {
+                sp.iter().enumerate().rev().for_each(|(i,&ix)| unsafe { *res.get_unchecked_mut(ix) = *res.get_unchecked(i); *res.get_unchecked_mut(i) = 0.0; })
+            }
+            Ok(sz)
+        }
+    }
 }
 
 /// A Constraint object is a wrapper around an array of constraint
@@ -54,6 +142,27 @@ pub struct Constraint {
     idxs     : Vec<usize>,
     shape    : Vec<usize>
 }
+
+impl ModelItem for Constraint {
+    fn len(&self) -> usize { return self.shape.iter().product(); }
+    fn primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64]) -> Result<usize,String> {
+        let sz = self.shape.iter().product();
+        if res.len() < sz { panic!("Result array too small") }
+        else {
+            m.primal_con_solution(solid,self.idxs.as_slice(),res)?;
+            Ok(sz)
+        }
+    }
+    fn dual_into(&self,m : &Model,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String> {
+        let sz = self.shape.iter().product();
+        if res.len() < sz { panic!("Result array too small") }
+        else {
+            m.dual_con_solution(solid,self.idxs.as_slice(),res)?;
+            Ok(sz)
+        }
+    }
+}
+
 /////////////////////////////////////////////////////////////////////
 impl Variable {
     // fn new(idxs : Vec<usize>) -> Variable {
@@ -392,6 +501,9 @@ impl Model {
             task      : task,
             vars      : Vec::new(),
             cons      : Vec::new(),
+            sol_bas   : Solution::new(),
+            sol_itr   : Solution::new(),
+            sol_itg   : Solution::new(),
             rs : expr::WorkStack::new(0),
             ws : expr::WorkStack::new(0),
             xs : expr::WorkStack::new(0)
@@ -562,7 +674,7 @@ impl Model {
         if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
             panic!("Mismatching shapes of expression and domain");
         }
-        let nnz = subj.len();
+        // let nnz = subj.len();
         let nelm = ptr.len()-1;
 
         if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
@@ -572,8 +684,8 @@ impl Model {
         let acci = self.task.get_num_acc().unwrap();
         let afei = self.task.get_num_afe().unwrap();
 
-        let nlinnz = subj.iter().filter(|&&j| if let VarAtom::BarElm(_,_,_) = unsafe { *self.vars.get_unchecked(j) } { false } else { true } ).count();
-        let npsdnz = nnz - nlinnz;
+        // let nlinnz = subj.iter().filter(|&&j| if let VarAtom::BarElm(_,_) = unsafe { *self.vars.get_unchecked(j) } { false } else { true } ).count();
+        // let npsdnz = nnz - nlinnz;
 
         self.task.append_afes(nelm as i64).unwrap();
         let domidx = match dom.dt {
@@ -641,7 +753,7 @@ impl Model {
         if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
             panic!("Mismatching shapes of expression and domain");
         }
-        let nnz  = subj.len();
+        // let nnz  = subj.len();
         let nelm = ptr.len()-1;
 
         if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
@@ -719,7 +831,7 @@ impl Model {
     }
 
     ////////////////////////////////////////////////////////////
-
+    // Objective 
     fn set_objective(& mut self, name : Option<&str>, sense : Sense) {
         let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
         if ptr.len()-1 > 1 { panic!("Objective expressions may only contain one element"); }
@@ -738,12 +850,12 @@ impl Model {
 
         let numvar : usize = self.task.get_num_var().unwrap().try_into().unwrap();
 
-        if let Some(&j) = subj.iter().min() { if j < 0 { panic!("Invalid expression") } }
-        if let Some(&j) = subj.iter().max() { if j as usize >= numvar { panic!("Invalid expression") } }
+        if let Some(&j) = csubj.iter().min() { if j < 0 { panic!("Invalid expression") } }
+        if let Some(&j) = csubj.iter().max() { if j as usize >= numvar { panic!("Invalid expression") } }
 
-        let csubj : Vec<i32> = (0i32..numvar as i32).collect();
         let mut c = vec![0.0; numvar];
-        subj.iter().zip(ccof.iter()).for_each(|(&j,&v)| unsafe{ * c.get_unchecked_mut(j as usize) = v });
+        csubj.iter().zip(ccof.iter()).for_each(|(&j,&v)| unsafe{ * c.get_unchecked_mut(j as usize) = v });
+        let csubj : Vec<i32> = (0i32..numvar as i32).collect();
         self.task.put_c_list(csubj.as_slice(),
                              c.as_slice()).unwrap();
         self.task.put_cfix(cfix[0]).unwrap();
@@ -764,6 +876,175 @@ impl Model {
         expr.eval_finalize(& mut self.rs,& mut self.ws, & mut self.xs);
         self.set_objective(name,sense);
     }
+
+    ////////////////////////////////////////////////////////////
+    // Optimize
+
+    pub fn solve(& mut self) {
+        self.task.put_int_param(mosek::Iparam::REMOVE_UNUSED_SOLUTIONS, 1);
+        self.task.optimize().unwrap();
+
+        let numvar = self.task.get_num_var().unwrap() as usize;
+        let numcon = self.task.get_num_con().unwrap() as usize;
+        let numacc = self.task.get_num_acc().unwrap() as usize;
+        let numaccelm = self.task.get_acc_n_tot().unwrap() as usize;
+        let numbarvar = self.task.get_num_barvar().unwrap() as usize;
+        let numbarvarelm : usize = (0..numbarvar).map(|j| self.task.get_len_barvar_j(j as i32).unwrap() as usize).sum();
+
+        let mut xx = vec![0.0; numvar];
+        let mut xc = vec![0.0; numvar];
+        let mut slx = vec![0.0; numvar];
+        let mut sux = vec![0.0; numvar];
+        let mut xc = vec![0.0; numcon];
+        let mut y = vec![0.0; numcon];
+        let mut slc = vec![0.0; numcon];
+        let mut suc = vec![0.0; numcon];
+        let mut accx = vec![0.0; numaccelm];
+        let mut doty = vec![0.0; numaccelm];
+        let mut barx = vec![0.0; numbarvarelm];
+        let mut bars = vec![0.0; numbarvarelm];
+
+        let mut dimbarvar : Vec<usize> = (0..numbarvar).map(|j| self.task.get_dim_barvar_j(j as i32).unwrap() as usize).collect();
+        let accptr = vec![0usize; numacc+1]; accptr[1..].iter_mut().enumerate().for_each(|(i,p)| *p =  self.task.get_acc_n(i as i64).unwrap() as usize);
+        let barvarptr = vec![0usize; numbarvar+1]; barvarptr[1..].iter_mut().enumerate().for_each(|(j,p)| *p =  self.task.get_len_barvar_j(j as i32).unwrap() as usize);
+
+        // extract solutions
+        [(mosek::Soltype::BAS,& mut self.sol_bas),
+         (mosek::Soltype::ITR,& mut self.sol_itr),
+         (mosek::Soltype::ITG,& mut self.sol_itg)].iter().for_each(|&(whichsol,sol)| {
+             if ! self.task.solution_def(whichsol).unwrap() {
+                 sol.primal.status = SolutionStatus::Undefined;
+                 sol.dual.status   = SolutionStatus::Undefined;
+             }
+             else {
+                 let (psta,dsta) = split_sol_sta(self.task.get_sol_sta(whichsol).unwrap());
+                 sol.primal.status = psta;
+                 sol.dual.status   = dsta;
+
+                 if let SolutionStatus::Undefined = psta {}
+                 else {
+                     sol.primal.resize(self.vars.len(),self.cons.len());
+                     self.task.get_xx(whichsol,xx.as_mut_slice()).unwrap();
+                     self.task.get_xc(whichsol,xc.as_mut_slice()).unwrap();
+                     if numbarvar > 0 { self.task.get_barx_slice(whichsol,0,numbarvar as i32,barx.len() as i64,barx.as_mut_slice()).unwrap(); }
+                     if numacc > 0 { self.task.evaluate_accs(whichsol,accx.as_mut_slice()).unwrap(); }
+
+                     self.vars.iter().zip(sol.primal.var.iter_mut()).for_each(|(&v,r)| {
+                         *r = match v {
+                             VarAtom::Linear(j) => xx[j as usize],
+                             VarAtom::BarElm(j,ofs) => barx[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                             VarAtom::ConicElm(j,idx) => xx[j as usize]
+                         };
+                     });
+                     self.cons.iter().zip(sol.primal.con.iter_mut()).for_each(|(&v,r)| {
+                         *r = match v {
+                             ConAtom::ConicElm(acci,ofs) => accx[accptr[acci as usize]+ofs]
+                         };
+                     });
+                 }
+
+                 if let SolutionStatus::Undefined = dsta {}
+                 else {
+                     sol.dual.resize(self.vars.len(),self.cons.len());
+                     self.task.get_slx(whichsol,slx.as_mut_slice()).unwrap();
+                     self.task.get_sux(whichsol,sux.as_mut_slice()).unwrap();
+                     self.task.get_slc(whichsol,slc.as_mut_slice()).unwrap();
+                     self.task.get_suc(whichsol,suc.as_mut_slice()).unwrap();
+                     if numbarvar > 0 { self.task.get_bars_slice(whichsol,0,numbarvar as i32,bars.len() as i64,bars.as_mut_slice()).unwrap(); }
+                     if numacc > 0 { self.task.get_acc_dot_y_s(whichsol,doty.as_mut_slice()).unwrap(); }
+
+                     self.vars.iter().zip(sol.dual.var.iter_mut()).for_each(|(&v,r)| {
+                         *r = match v {
+                             VarAtom::Linear(j) => slc[j as usize] - suc[j as usize],
+                             VarAtom::BarElm(j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                             VarAtom::ConicElm(j,coni) => {
+                                 match self.cons[coni] {
+                                     ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs]
+                                 }
+                             }
+                         };
+                     });
+                     self.cons.iter().zip(sol.dual.con.iter_mut()).for_each(|(&v,r)| {
+                         *r = match v {
+                             ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs]
+                         };
+                     });
+                 }
+             }
+        })
+    }
+    ////////////////////////////////////////////////////////////
+    // Solutions
+
+    fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+        let sol = match solid {
+            SolutionType::Basic    => self.sol_bas,
+            SolutionType::Interior => self.sol_itr,
+            SolutionType::Integer  => self.sol_itg
+        };
+
+        if let SolutionStatus::Undefined = sol.primal.status {
+            Err("Solution part is not defined".to_string())
+        }
+        else {
+            if let Some(&v) = idxs.iter().max() { if v >= sol.primal.var.len() { panic!("Variable indexes are outside of range") } }
+            res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.var.get_unchecked(i) });
+            Ok(())
+        }
+    }
+    fn dual_var_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+        let sol = match solid {
+            SolutionType::Basic    => self.sol_bas,
+            SolutionType::Interior => self.sol_itr,
+            SolutionType::Integer  => self.sol_itg
+        };
+
+        if let SolutionStatus::Undefined = sol.dual.status {
+            Err("Solution part is not defined".to_string())
+        }
+        else {
+            if let Some(&v) = idxs.iter().max() { if v >= sol.dual.var.len() { panic!("Variable indexes are outside of range") } }
+            res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.dual.var.get_unchecked(i) });
+            Ok(())
+        }
+    }
+    fn primal_con_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+        let sol = match solid {
+            SolutionType::Basic    => self.sol_bas,
+            SolutionType::Interior => self.sol_itr,
+            SolutionType::Integer  => self.sol_itg
+        };
+
+        if let SolutionStatus::Undefined = sol.primal.status {
+            Err("Solution part is not defined".to_string())
+        }
+        else {
+            if let Some(&v) = idxs.iter().max() { if v >= sol.primal.con.len() { panic!("Constraint indexes are outside of range") } }
+            res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.con.get_unchecked(i) });
+            Ok(())
+        }
+    }
+    fn dual_con_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+        let sol = match solid {
+            SolutionType::Basic    => self.sol_bas,
+            SolutionType::Interior => self.sol_itr,
+            SolutionType::Integer  => self.sol_itg
+        };
+
+        if let SolutionStatus::Undefined = sol.dual.status  {
+            Err("Solution part is not defined".to_string())
+        }
+        else {
+            if let Some(&v) = idxs.iter().max() { if v >= sol.dual.con.len() { panic!("Constraint indexes are outside of range") } }
+            res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.con.get_unchecked(i) });
+            Ok(())
+        }
+    }
+
+    pub fn primal_solution<I:ModelItem>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> { item.primal(self,solid) }
+    pub fn dual_solution<I:ModelItem>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> { item.dual(self,solid) }
+    pub fn primal_solution_into<I:ModelItem>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> { item.primal_into(self,solid,res) }
+    pub fn dual_solution_into<I:ModelItem>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> { item.primal_into(self,solid,res) }
 }
 
 
@@ -782,29 +1063,18 @@ fn split_expr(eptr    : &[usize],
                                         Vec<f64>) { //barcof
     let nnz = *eptr.last().unwrap();
     let nelm = eptr.len()-1;
-    let nlinnz = esubj.iter().filter(|&&j| if let VarAtom::BarElm(_,_,_) = unsafe { *vars.get_unchecked(j) } { false } else { true } ).count();
+    let nlinnz = esubj.iter().filter(|&&j| if let VarAtom::BarElm(_,_) = unsafe { *vars.get_unchecked(j) } { false } else { true } ).count();
     let npsdnz = nnz - nlinnz;
 
-    let mut subj : Vec<i32> = Vec::with_capacity(nnz);
-    let mut cof  : Vec<f64> = Vec::with_capacity(nnz);
+    let mut subj : Vec<i32> = Vec::with_capacity(nlinnz);
+    let mut cof  : Vec<f64> = Vec::with_capacity(nlinnz);
     let mut ptr  : Vec<i64> = Vec::with_capacity(nelm+1);
     let mut fix  : Vec<f64> = Vec::with_capacity(nelm);
-    let mut barsubi : Vec<i64> = Vec::with_capacity(nlinnz);
-    let mut barsubj : Vec<i32> = Vec::with_capacity(nlinnz);
-    let mut barsubk : Vec<i32> = Vec::with_capacity(nlinnz);
-    let mut barsubl : Vec<i32> = Vec::with_capacity(nlinnz);
-    let mut barcof  : Vec<f64> = Vec::with_capacity(nlinnz);
-    subj.reserve(nlinnz);
-    cof.reserve(nlinnz);
-    ptr.reserve(nelm+1);
-
-    fix.reserve(nelm);
-
-    barsubi.reserve(nlinnz);
-    barsubj.reserve(nlinnz);
-    barsubk.reserve(nlinnz);
-    barsubl.reserve(nlinnz);
-    barcof.reserve(nlinnz);
+    let mut barsubi : Vec<i64> = Vec::with_capacity(npsdnz);
+    let mut barsubj : Vec<i32> = Vec::with_capacity(npsdnz);
+    let mut barsubk : Vec<i32> = Vec::with_capacity(npsdnz);
+    let mut barsubl : Vec<i32> = Vec::with_capacity(npsdnz);
+    let mut barcof  : Vec<f64> = Vec::with_capacity(npsdnz);
 
     ptr.push(0);
     eptr[..nelm].iter().zip(eptr[1..].iter()).enumerate().for_each(|(i,(&p0,&p1))| {
@@ -823,11 +1093,12 @@ fn split_expr(eptr    : &[usize],
                         subj.push(j);
                         cof.push(c);
                     },
-                    VarAtom::BarElm(j,k,l) => {
+                    VarAtom::BarElm(j,ofs) => {
+                        let (k,l) = row_major_offset_to_ij(ofs);
                         barsubi.push(i as i64);
                         barsubj.push(j);
-                        barsubk.push(k);
-                        barsubl.push(l);
+                        barsubk.push(k as i32);
+                        barsubl.push(l as i32);
                         barcof.push(c);
                     }
                 }
@@ -848,6 +1119,36 @@ fn split_expr(eptr    : &[usize],
      barcof)
 }
 
+fn split_sol_sta(solsta : i32) -> (SolutionStatus,SolutionStatus) {
+    match solsta {
+        mosek::Solsta::UNKNOWN => (SolutionStatus::Unknown,SolutionStatus::Unknown),
+        mosek::Solsta::OPTIMAL => (SolutionStatus::Optimal,SolutionStatus::Optimal),
+        mosek::Solsta::PRIM_FEAS => (SolutionStatus::Feasible,SolutionStatus::Unknown),
+        mosek::Solsta::DUAL_FEAS => (SolutionStatus::Feasible,SolutionStatus::Unknown),
+        mosek::Solsta::PRIM_AND_DUAL_FEAS => (SolutionStatus::Unknown,SolutionStatus::Feasible),
+        mosek::Solsta::PRIM_INFEAS_CER => (SolutionStatus::Undefined,SolutionStatus::CertInfeas),
+        mosek::Solsta::DUAL_INFEAS_CER => (SolutionStatus::CertInfeas,SolutionStatus::Undefined),
+        mosek::Solsta::PRIM_ILLPOSED_CER => (SolutionStatus::Undefined,SolutionStatus::CertIllposed),
+        mosek::Solsta::DUAL_ILLPOSED_CER => (SolutionStatus::CertIllposed,SolutionStatus::Undefined),
+        mosek::Solsta::INTEGER_OPTIMAL => (SolutionStatus::Optimal,SolutionStatus::Undefined),
+        _ => (SolutionStatus::Unknown,SolutionStatus::Unknown)
+    }
+}
+
+/// Convert linear row-major order offset into a lower triangular
+/// matrix to an (i,j) pair.
+fn row_major_offset_to_ij(ofs : usize) -> (usize,usize) {
+    let i = (((1.0+8.0*ofs as f64).sqrt()-1.0)/2.0).floor() as usize;
+    let j = ofs - i*(i+1)/2;
+    (i,j)
+}
+/// Convert linear column-major order offset into a lower triangular
+/// matrix and a dimension to a (i,j) pair`
+fn row_major_offset_to_col_major(ofs : usize, dim : usize) -> usize {
+    let (i,j) = row_major_offset_to_ij(ofs);
+    ((2*dim-1)*j - j*j)/2 + i
+}
+    
 
 
 #[cfg(test)]
