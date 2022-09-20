@@ -434,6 +434,7 @@ impl ExprTrait for Expr {
 
 ////////////////////////////////////////////////////////////
 // Multiply
+#[derive(Clone)]
 pub struct Matrix {
     dim  : (usize,usize),
     rows : bool,

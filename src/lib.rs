@@ -139,7 +139,7 @@ impl Variable {
     //pub vstack(xs : &[Variable]) -> Variable
 }
 
-impl expr::ExprTrait for &Variable {
+impl expr::ExprTrait for Variable {
     fn eval(&self,rs : & mut expr::WorkStack, _ws : & mut expr::WorkStack, _xs : & mut expr::WorkStack) {
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),
                                                   self.idxs.len(),
@@ -384,7 +384,7 @@ impl Model {
         }
         Model{
             task      : task,
-            vars      : Vec::new(),
+            vars      : vec![VarAtom::Linear(-1)],
             cons      : Vec::new(),
             rs : expr::WorkStack::new(0),
             ws : expr::WorkStack::new(0),
@@ -611,7 +611,7 @@ impl Model {
                     cfix += c;
                 }
                 else {
-                    match *unsafe{ self.vars.get_unchecked(idx-1) } {
+                    match *unsafe{ self.vars.get_unchecked(idx) } {
                         VarAtom::Linear(j) => {
                             asubj.push(j);
                             acof.push(c);
@@ -699,7 +699,7 @@ impl Model {
                     cfix += c;
                 }
                 else {
-                    match *unsafe{ self.vars.get_unchecked(idx-1) } {
+                    match *unsafe{ self.vars.get_unchecked(idx) } {
                         VarAtom::Linear(j) => {
                             asubj.push(j);
                             acof.push(c);
