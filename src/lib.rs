@@ -9,6 +9,12 @@ use itertools::{iproduct};
 // Model, constraint and variables
 
 #[derive(Clone,Copy)]
+pub enum Sense {
+    Maximize,
+    Minimize
+}
+
+#[derive(Clone,Copy)]
 enum VarAtom {
     // Task variable index
     Linear(i32),
@@ -395,22 +401,17 @@ impl Model {
     ////////////////////////////////////////////////////////////
     // Variable interface
 
+    /// Add a Variable
+    ///
+    /// # Arguments
+    /// - `name` Optional constraint name
+    /// - `dom` The domain of the variable. This defines the bound
+    ///   type, shape and sparsity of the variable. For sparse
+    ///   variables, elements outside of the sparsity pattern are
+    ///   treated as variables fixed to 0.0.
     pub fn variable<D : DomainTrait>(& mut self, name : Option<&str>, dom : D) -> Variable {
         dom.create_variable(self,name)
     }
-
-    // fn alloc_linear_var(&mut self, size : usize) -> (usize,i32) {
-    //     let firstidx = self.vars.len();
-    //     let firsttaskidx = self.task.get_num_var().unwrap();
-    //     let nvaridx : i32 = size.try_into().unwrap();
-    //     let lasttaskidx = firsttaskidx+nvaridx;
-    //     self.task.append_vars(size as i32).unwrap();
-
-    //     self.vars.resize(self.vars.len() + size,0);
-    //     self.vars[firstidx..].iter_mut().zip(firsttaskidx..lasttaskidx).for_each(|(a,b)| *a = b as i64);
-
-    //     (firstidx,firsttaskidx)
-    // }
 
     fn linear_variable(&mut self, _name : Option<&str>,dom : LinearDomain) -> Variable {
         let n = dom.ofs.len();
@@ -539,10 +540,20 @@ impl Model {
     ////////////////////////////////////////////////////////////
     // Constraint interface
 
+
+    /// Add a constraint
+    ///
+    /// Note that even if the domain or the expression are sparse, a constraint will always be full.
+    ///
+    /// # Arguments
+    /// - `name` Optional constraint name
+    /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
+    /// - `dom`  The domain of the constraint. This defines the bound type and shape.
     pub fn constraint<E : expr::ExprTrait, D : DomainTrait>(& mut self, name : Option<&str>, expr : &E, dom : D) -> Constraint {
         expr.eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs);
         dom.create_constraint(self,name)
     }
+
 
     fn linear_constraint(& mut self,
                          _name : Option<&str>,
@@ -587,56 +598,29 @@ impl Model {
         self.cons.reserve(nelm);
         (0..nelm).for_each(|i| self.cons.push(ConAtom::ConicElm(acci,i)));
 
-        let mut asubj : Vec<i32> = Vec::with_capacity(nnz);
-        let mut acof  : Vec<f64> = Vec::with_capacity(nnz);
-        let mut aptr  : Vec<i64> = Vec::with_capacity(nelm+1);
-        let mut afix  : Vec<f64> = Vec::with_capacity(nelm);
-        let mut abarsubi : Vec<i64> = Vec::with_capacity(nlinnz);
-        let mut abarsubj : Vec<i32> = Vec::with_capacity(nlinnz);
-        let mut abarsubk : Vec<i32> = Vec::with_capacity(nlinnz);
-        let mut abarsubl : Vec<i32> = Vec::with_capacity(nlinnz);
-        let mut abarcof  : Vec<f64> = Vec::with_capacity(nlinnz);
-
-        aptr.push(0);
-        ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).enumerate().for_each(|(i,(&p0,&p1))| {
-            let mut cfix = 0.0;
-            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&idx,&c)| {
-                if idx == 0 {
-                    cfix += c;
-                }
-                else {
-                    match *unsafe{ self.vars.get_unchecked(idx-1) } {
-                        VarAtom::Linear(j) => {
-                            asubj.push(j);
-                            acof.push(c);
-                        },
-                        VarAtom::ConicElm(j,_coni) => {
-                            asubj.push(j);
-                            acof.push(c);
-                        },
-                        VarAtom::BarElm(j,k,l) => {
-                            abarsubi.push(afei+i as i64);
-                            abarsubj.push(j);
-                            abarsubk.push(k);
-                            abarsubl.push(l);
-                            abarcof.push(c);
-                        }
-                    }
-                }
-            });
-            aptr.push(asubj.len() as i64);
-            afix.push(cfix);
-        });
+        let (asubj,
+             acof,
+             aptr,
+             afix,
+             abarsubi,
+             abarsubj,
+             abarsubk,
+             abarsubl,
+             abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
+        let abarsubi : Vec<i64> = abarsubi.iter().map(|&i| i + afei).collect();
 
         let afeidxs : Vec<i64> = (afei..afei+nelm as i64).collect();
-        self.task.put_afe_f_row_list(
-            afeidxs.as_slice(),
-            aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0).try_into().unwrap()).collect::<Vec<i32>>().as_slice(),
-            &aptr[..nelm],
-            asubj.as_slice(),
-            acof.as_slice()).unwrap();
+        if asubj.len() > 0 {
+            self.task.put_afe_f_row_list(
+                afeidxs.as_slice(),
+                aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0).try_into().unwrap()).collect::<Vec<i32>>().as_slice(),
+                &aptr[..nelm],
+                asubj.as_slice(),
+                acof.as_slice()).unwrap();
+        }
         self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
-        if npsdnz > 0 {
+
+        if abarsubi.len() > 0 {
             self.task.put_afe_barf_block_triplet(abarsubi.as_slice(),
                                                  abarsubj.as_slice(),
                                                  abarsubk.as_slice(),
@@ -670,51 +654,16 @@ impl Model {
         let acci = self.task.get_num_acc().unwrap();
         let afei = self.task.get_num_afe().unwrap();
 
-        let nlinnz = subj.iter().filter(|&&j| if let VarAtom::BarElm(_,_,_) = unsafe { *self.vars.get_unchecked(j) } { false } else { true } ).count();
-        let npsdnz = nnz - nlinnz;
-
-        let mut asubj : Vec<i32> = Vec::with_capacity(nlinnz);
-        let mut acof  : Vec<f64> = Vec::with_capacity(nlinnz);
-        let mut aptr  : Vec<i64> = Vec::with_capacity(nelm+1);
-
-        let mut afix  : Vec<f64> = Vec::with_capacity(nelm);
-
-        let mut abarsubi : Vec<i64> = Vec::with_capacity(nlinnz);
-        let mut abarsubj : Vec<i32> = Vec::with_capacity(nlinnz);
-        let mut abarsubk : Vec<i32> = Vec::with_capacity(nlinnz);
-        let mut abarsubl : Vec<i32> = Vec::with_capacity(nlinnz);
-        let mut abarcof  : Vec<f64> = Vec::with_capacity(nlinnz);
-
-        aptr.push(0);
-        ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).enumerate().for_each(|(i,(&p0,&p1))| {
-            let mut cfix = 0.0;
-            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&idx,&c)| {
-                if idx == 0 {
-                    cfix += c;
-                }
-                else {
-                    match *unsafe{ self.vars.get_unchecked(idx-1) } {
-                        VarAtom::Linear(j) => {
-                            asubj.push(j);
-                            acof.push(c);
-                        },
-                        VarAtom::ConicElm(j,_coni) => {
-                            asubj.push(j);
-                            acof.push(c);
-                        },
-                        VarAtom::BarElm(j,k,l) => {
-                            abarsubi.push(afei+i as i64);
-                            abarsubj.push(j);
-                            abarsubk.push(k);
-                            abarsubl.push(l);
-                            abarcof.push(c);
-                        }
-                    }
-                }
-            });
-            aptr.push(asubj.len() as i64);
-            afix.push(cfix);
-        });
+        let (asubj,
+             acof,
+             aptr,
+             afix,
+             abarsubi,
+             abarsubj,
+             abarsubk,
+             abarsubl,
+             abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
+        let abarsubi : Vec<i64> = abarsubi.iter().map(|&i| i + afei).collect();
 
         let conesize = shape[dom.conedim];
         let numcone  = shape.iter().product::<usize>() / conesize;
@@ -739,11 +688,10 @@ impl Model {
         // if let Some(name) = name {
         //     let accshape = shape[0..dom.conedim].iter().join(shape[dom.conedim+1..].iter()).collect();
         //     //iproduct!(0..d0,0..d2).for_each(|(i0,i2)| self.task.put_acc_name(format!("{}[{},*,{}]")).unwrap() )
-                
         //     }
         // }
-        
-        if nlinnz > 0 {
+
+        if asubj.len() > 0 {
             self.task.put_afe_f_row_list(afeidxs.as_slice(),
                                          aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
                                          &aptr[..nelm],
@@ -751,7 +699,7 @@ impl Model {
                                          acof.as_slice()).unwrap();
         }
         self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
-        if npsdnz > 0 {
+        if abarsubi.len() > 0 {
             self.task.put_afe_barf_block_triplet(abarsubi.as_slice(),
                                                  abarsubj.as_slice(),
                                                  abarsubk.as_slice(),
@@ -771,7 +719,136 @@ impl Model {
     }
 
     ////////////////////////////////////////////////////////////
+
+    fn set_objective(& mut self, name : Option<&str>, sense : Sense) {
+        let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
+        if ptr.len()-1 > 1 { panic!("Objective expressions may only contain one element"); }
+
+        if let Some(name) = name { self.task.put_obj_name(name).unwrap(); }
+        else { self.task.put_obj_name("").unwrap(); }
+        let (csubj,
+             ccof,
+             cptr,
+             cfix,
+             _barsubi,
+             barsubj,
+             barsubk,
+             barsubl,
+             barcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
+
+        let numvar : usize = self.task.get_num_var().unwrap().try_into().unwrap();
+
+        if let Some(&j) = subj.iter().min() { if j < 0 { panic!("Invalid expression") } }
+        if let Some(&j) = subj.iter().max() { if j as usize >= numvar { panic!("Invalid expression") } }
+
+        let csubj : Vec<i32> = (0i32..numvar as i32).collect();
+        let mut c = vec![0.0; numvar];
+        subj.iter().zip(ccof.iter()).for_each(|(&j,&v)| unsafe{ * c.get_unchecked_mut(j as usize) = v });
+        self.task.put_c_list(csubj.as_slice(),
+                             c.as_slice()).unwrap();
+        self.task.put_cfix(cfix[0]).unwrap();
+
+        self.task.put_barc_block_triplet(barsubj.as_slice(),barsubk.as_slice(),barsubl.as_slice(),barcof.as_slice()).unwrap();
+
+        match sense {
+            Sense::Minimize => self.task.put_obj_sense(mosek::Objsense::MINIMIZE).unwrap(),
+            Sense::Maximize => self.task.put_obj_sense(mosek::Objsense::MAXIMIZE).unwrap()
+        }
+    }
+
+    /// Set the objective
+    pub fn objective<E : expr::ExprTrait>(& mut self,
+                                    name  : Option<&str>,
+                                    sense : Sense,
+                                    expr  : & E) {
+        expr.eval_finalize(& mut self.rs,& mut self.ws, & mut self.xs);
+        self.set_objective(name,sense);
+    }
 }
+
+
+/// Split an evaluated expression into linear and semidefinite parts
+fn split_expr(eptr    : &[usize],
+              esubj   : &[usize],
+              ecof    : &[f64],
+              vars    : &[VarAtom]) -> (Vec<i32>, //subj
+                                        Vec<f64>, //cof
+                                        Vec<i64>, //ptr
+                                        Vec<f64>, //fix
+                                        Vec<i64>, //barsubi
+                                        Vec<i32>, //barsubj
+                                        Vec<i32>, //barsubk
+                                        Vec<i32>, //barsubl
+                                        Vec<f64>) { //barcof
+    let nnz = *eptr.last().unwrap();
+    let nelm = eptr.len()-1;
+    let nlinnz = esubj.iter().filter(|&&j| if let VarAtom::BarElm(_,_,_) = unsafe { *vars.get_unchecked(j) } { false } else { true } ).count();
+    let npsdnz = nnz - nlinnz;
+
+    let mut subj : Vec<i32> = Vec::with_capacity(nnz);
+    let mut cof  : Vec<f64> = Vec::with_capacity(nnz);
+    let mut ptr  : Vec<i64> = Vec::with_capacity(nelm+1);
+    let mut fix  : Vec<f64> = Vec::with_capacity(nelm);
+    let mut barsubi : Vec<i64> = Vec::with_capacity(nlinnz);
+    let mut barsubj : Vec<i32> = Vec::with_capacity(nlinnz);
+    let mut barsubk : Vec<i32> = Vec::with_capacity(nlinnz);
+    let mut barsubl : Vec<i32> = Vec::with_capacity(nlinnz);
+    let mut barcof  : Vec<f64> = Vec::with_capacity(nlinnz);
+    subj.reserve(nlinnz);
+    cof.reserve(nlinnz);
+    ptr.reserve(nelm+1);
+
+    fix.reserve(nelm);
+
+    barsubi.reserve(nlinnz);
+    barsubj.reserve(nlinnz);
+    barsubk.reserve(nlinnz);
+    barsubl.reserve(nlinnz);
+    barcof.reserve(nlinnz);
+
+    ptr.push(0);
+    eptr[..nelm].iter().zip(eptr[1..].iter()).enumerate().for_each(|(i,(&p0,&p1))| {
+        let mut cfix = 0.0;
+        esubj[p0..p1].iter().zip(ecof[p0..p1].iter()).for_each(|(&idx,&c)| {
+            if idx == 0 {
+                cfix += c;
+            }
+            else {
+                match *unsafe{ vars.get_unchecked(idx) } {
+                    VarAtom::Linear(j) => {
+                        subj.push(j);
+                        cof.push(c);
+                    },
+                    VarAtom::ConicElm(j,_coni) => {
+                        subj.push(j);
+                        cof.push(c);
+                    },
+                    VarAtom::BarElm(j,k,l) => {
+                        barsubi.push(i as i64);
+                        barsubj.push(j);
+                        barsubk.push(k);
+                        barsubl.push(l);
+                        barcof.push(c);
+                    }
+                }
+            }
+        });
+        ptr.push(subj.len() as i64);
+        fix.push(cfix);
+    });
+
+    (subj,
+     cof,
+     ptr,
+     fix,
+     barsubi,
+     barsubj,
+     barsubk,
+     barsubl,
+     barcof)
+}
+
+
 
 #[cfg(test)]
 mod tests {
