@@ -4,6 +4,7 @@ extern crate itertools;
 mod utils;
 pub mod expr;
 use itertools::{iproduct};
+use std::iter::once;
 
 use utils::FoldMapExt;
 
@@ -41,7 +42,7 @@ pub enum SolutionType {
 
 
 #[derive(Clone,Copy)]
-enum SolutionStatus {
+pub enum SolutionStatus {
     Optimal,
     Feasible,
     CertInfeas,
@@ -72,6 +73,10 @@ impl Solution {
     fn new() -> Solution { Solution{primal : SolutionPart::new(0,0) , dual : SolutionPart::new(0,0)  } }
 }
 
+////////////////////////////////////////////////////////////
+// Model
+////////////////////////////////////////////////////////////
+
 /// The Model object encapsulates an optimization problem and a
 /// mapping from the structured API to the internal Task items.
 pub struct Model {
@@ -90,6 +95,9 @@ pub struct Model {
     xs : expr::WorkStack
 }
 
+////////////////////////////////////////////////////////////
+// ModelItem
+////////////////////////////////////////////////////////////
 pub trait ModelItem {
     fn len(&self) -> usize;
     fn primal(&self,m : &Model,solid : SolutionType) -> Result<Vec<f64>,String> {
@@ -105,6 +113,10 @@ pub trait ModelItem {
     fn primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64]) -> Result<usize,String>;
     fn dual_into(&self,m : &Model,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String>;
 }
+
+////////////////////////////////////////////////////////////
+// Variable and Constraint
+////////////////////////////////////////////////////////////
 
 /// A Variable object is basically a wrapper around a variable index
 /// list with a shape and a sparsity pattern.
@@ -140,6 +152,74 @@ impl ModelItem for Variable {
         }
     }
 }
+
+trait ModelItemIndex<I> {
+    type Output;
+    fn index(&self, index : I) -> Self::Output;
+}
+impl ModelItemIndex<usize> for Variable {
+    type Output = Variable;
+    fn index(&self, index: usize) -> Variable {
+        if self.shape.len() != 1 { panic!("Cannot index into multi-dimensional variable"); }
+        if let Some(ref sp) = self.sparsity {
+            if let Ok(i) = sp.binary_search(&index) {
+                Variable{
+                    idxs     : vec![self.idxs[i]],
+                    sparsity : None,
+                    shape    : vec![]
+                }
+            }
+            else {
+                Variable{
+                    idxs     : vec![],
+                    sparsity : Some(vec![]),
+                    shape    : vec![]
+                }
+            }
+        }
+        else {
+            Variable{
+                idxs     : vec![self.idxs[index]],
+                sparsity : None,
+                shape    : vec![]
+            }
+        }
+    }
+}
+
+impl ModelItemIndex<std::ops::Range<usize>> for Variable {
+    type Output = Variable;
+    fn index(&self, index: std::ops::Range<usize>) -> Variable {
+        if self.shape.len() != 1 { panic!("Cannot index into multi-dimensional variable"); }
+        let n = index.len();
+        if let Some(ref sp) = self.sparsity {
+            let first = match sp.binary_search(&index.start) {
+                Ok(i)  => i,
+                Err(i) => i
+            };
+            let last = match sp.binary_search(&index.start) {
+                Ok(i) => i+1,
+                Err(i) => i
+            };
+
+            Variable{
+                idxs     : self.idxs[first..last].to_vec(),
+                sparsity : Some(sp[first..last].iter().map(|&i| i - index.start).collect()),
+                shape    : vec![n]
+            }
+        }
+        else {
+            Variable{
+                idxs     : self.idxs[index].to_vec(),
+                sparsity : None,
+                shape    : vec![n]
+            }
+        }
+    }
+}
+
+// impl std::ops::Index<&[usize]> for Variable { ... }
+// impl std::ops::Index<&[std::ops::Range]> for Variable { ... }
 
 /// A Constraint object is a wrapper around an array of constraint
 /// indexes and a shape. Note that constraint objects are never sparse.
@@ -324,25 +404,6 @@ impl ConDomainTrait for ConicDomain {
     }
 }
 
-// impl DomainTrait for &[i32] {
-//     fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable {
-//         m.linear(name,
-//                           LinearDomain{
-//                               dt:LinearDomainType::Free,
-//                               ofs:vec![0.0; self.iter().product::<usize>()],
-//                               shape:self.map(|i| i as usize).collect(),
-//                               sp:None})
-//     }
-//     fn create(self, m : & mut Model, name : Option<&str>, rs : & mut expr::WorkStack) -> Constraint {
-//         let c = m.linear_constraint(name,
-//                                     LinearDomain{
-//                                         dt:LinearDomainType::Free,
-//                                         ofs:vec![0.0; self.iter().product::<i32>()],
-//                                         shape:self.map(|i| i as usize).collect(),
-//                                         sp:None})
-//     }
-// }
-
 impl VarDomainTrait for &[usize] {
     fn create(self, m : & mut Model, name : Option<&str>) -> Variable {
         m.free_variable(name,self)
@@ -485,6 +546,10 @@ impl OffsetTrait for &[f64] {
     fn equal_to(self)     -> LinearDomain { let n = self.len(); LinearDomain{ dt : LinearDomainType::Zero, ofs:self.to_vec(), shape:vec![n], sp : None } }
 }
 
+////////////////////////////////////////////////////////////
+// Domain constructors
+////////////////////////////////////////////////////////////
+
 pub fn greater_than<T : OffsetTrait>(v : T) -> LinearDomain { v.greater_than() }
 pub fn less_than<T : OffsetTrait>(v : T) -> LinearDomain { v.less_than() }
 pub fn equal_to<T : OffsetTrait>(v : T) -> LinearDomain { v.equal_to() }
@@ -508,9 +573,34 @@ pub fn in_rotated_quadratic_cones(shape : Vec<usize>, conedim : usize) -> ConicD
                 shape   : shape,
                 conedim : conedim}
 }
+pub fn in_psd_cone(dim : usize) -> PSDDomain {
+    PSDDomain{
+        shape : vec![dim,dim],
+        conedims : (0,1)
+    }
+}
+pub fn in_psd_cones(shape : Vec<usize>, conedim1 : usize, conedim2 : usize) -> PSDDomain {
+    if conedim1 == conedim2 || conedim1 >= shape.len() || conedim2 >= shape.len() {
+        panic!("Invalid shape or cone dimensions");
+    }
+    if shape[conedim1] != shape[conedim2] {
+        panic!("Mismatching cone dimensions");
+    }
+    PSDDomain{
+        shape    : shape,
+        conedims : (conedim1,conedim2)
+    }
+}
 
+////////////////////////////////////////////////////////////
+// Model
+////////////////////////////////////////////////////////////
 
 impl Model {
+    /// Create new Model object
+    ///
+    /// Arguments:
+    /// - `name` An optional name
     pub fn new(name : Option<&str>) -> Model {
         let mut task = mosek::Task::new().unwrap();
         match name {
@@ -530,10 +620,11 @@ impl Model {
         }
     }
 
+    /// Write problem to a file
     pub fn write_problem(&self, filename : &str) {
         self.task.write_data(filename).unwrap();
     }
-    
+
     ////////////////////////////////////////////////////////////
     // Variable interface
 
@@ -957,6 +1048,12 @@ impl Model {
     }
 
     /// Set the objective
+    ///
+    /// Arguments:
+    /// - `name` Optional objective name
+    /// - `sense` Objective sense
+    /// - `expr` Objective expression, this must contain exactly one
+    ///   element. The shape is otherwise ignored.
     pub fn objective<E : expr::ExprTrait>(& mut self,
                                     name  : Option<&str>,
                                     sense : Sense,
@@ -968,6 +1065,7 @@ impl Model {
     ////////////////////////////////////////////////////////////
     // Optimize
 
+    /// Solve the problem and extract the solution.
     pub fn solve(& mut self) {
         self.task.put_int_param(mosek::Iparam::REMOVE_UNUSED_SOLUTIONS, 1).unwrap();
         self.task.optimize().unwrap();
@@ -992,12 +1090,12 @@ impl Model {
         let mut bars = vec![0.0; numbarvarelm];
 
         let dimbarvar : Vec<usize> = (0..numbarvar).map(|j| self.task.get_dim_barvar_j(j as i32).unwrap() as usize).collect();
-        let accptr : Vec<usize>    = (0usize..1usize).chain((0..numacc)
-                                                            .map(|i| self.task.get_acc_n(i as i64).unwrap() as usize)
-                                                            .fold_map(0,|&p,n| n+p)).collect();
-        let barvarptr : Vec<usize> = (0usize..1usize).chain((0..numbarvar)
-                                                            .map(|j| self.task.get_len_barvar_j(j as i32).unwrap() as usize)
-                                                            .fold_map(0,|&p,n| n+p)).collect();
+        let accptr : Vec<usize>    = once(0usize).chain((0..numacc)
+                                                        .map(|i| self.task.get_acc_n(i as i64).unwrap() as usize)
+                                                        .fold_map(0,|&p,n| n+p)).collect();
+        let barvarptr : Vec<usize> = once(0usize).chain((0..numbarvar)
+                                                        .map(|j| self.task.get_len_barvar_j(j as i32).unwrap() as usize)
+                                                        .fold_map(0,|&p,n| n+p)).collect();
         // let mut accptr    = (0usize..1usize).iter().join((0..numacc).iter().map(|i| self.task.get_acc_n(i as i64).unwrap() as usize).
         // }
         //     vec![0usize; numacc+1]; accptr[1..].iter_mut().enumerate().for_each(|(i,p)| *p =  self.task.get_acc_n(i as i64).unwrap() as usize);
@@ -1161,9 +1259,42 @@ impl Model {
         }
     }
 
+    /// Get solution status for the given solution
+    pub fn solution_status(&self, solid : SolutionType) -> (SolutionStatus,SolutionStatus) {
+        if let Some(sol) = self.select_sol(solid) {
+            (sol.primal.status,sol.dual.status)
+        }
+        else {
+            (SolutionStatus::Undefined,SolutionStatus::Undefined)
+        }
+    }
+
+    /// Get primal solution values for an item
+    ///
+    /// Returns: If solution item is defined, return the solution, otherwise a n error message.
     pub fn primal_solution<I:ModelItem>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> { item.primal(self,solid) }
+
+    /// Get dual solution values for an item
+    ///
+    /// Returns: If solution item is defined, return the solution, otherwise a n error message.
     pub fn dual_solution<I:ModelItem>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> { item.dual(self,solid) }
+
+    /// Get primal solution values for an item
+    ///
+    /// Arguments:
+    /// - `solid` Which solution
+    /// - `item`  The item to get solution for
+    /// - `res`   Copy the solution values into this slice
+    /// Returns: The number of values copied if solution is available, otherwise an error string.
     pub fn primal_solution_into<I:ModelItem>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> { item.primal_into(self,solid,res) }
+
+    /// Get dual solution values for an item
+    ///
+    /// Arguments:
+    /// - `solid` Which solution
+    /// - `item`  The item to get solution for
+    /// - `res`   Copy the solution values into this slice
+    /// Returns: The number of values copied if solution is available, otherwise an error string.
     pub fn dual_solution_into<I:ModelItem>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> { item.primal_into(self,solid,res) }
 }
 

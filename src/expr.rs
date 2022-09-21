@@ -412,6 +412,10 @@ impl Expr {
     }
 
     pub fn mul_left<E : ExprTrait>(m : Matrix, e : E) -> ExprMulLeft<E> { ExprMulLeft{item : e, lhs : m} }
+
+    pub fn dot<E : ExprTrait>(expr : E, data:Vec<f64>) -> ExprDot<E> {
+        ExprDot{ data, expr }
+    }
 }
 
 impl ExprTrait for Expr {
@@ -579,5 +583,54 @@ impl<E:ExprTrait> ExprTrait for ExprMulScalar<E> {
         self.item.eval(rs,ws,xs);
         let (_shape,_ptr,_sp,_subj,cof) = rs.peek_expr_mut();
         cof.iter_mut().for_each(|c| *c *= self.lhs)
+    }
+}
+
+pub struct ExprDot<E:ExprTrait> {
+    data : Vec<f64>,
+    expr : E
+}
+
+impl<E:ExprTrait> ExprTrait for ExprDot<E> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.expr.eval(ws,rs,xs);
+
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+        let nd   = shape.len();
+        let nnz  = subj.len();
+
+        if nd == 1 || shape[0] != self.data.len() {
+            panic!("Mismatching operands");
+        }
+
+        if let Some(sp) = sp {
+            let rnnz = nnz;
+            let rnelm = 1;
+            let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[],rnnz,rnelm);
+
+            rsubj.clone_from_slice(subj);
+            rptr[0] = 0;
+            rptr[1] = rnnz;
+            for (&i,&p0,&p1) in izip!(sp.iter(),ptr[0..ptr.len()-1].iter(),ptr[1..].iter()) {
+                let v = self.data[i];
+                for (&c,rc) in cof[p0..p1].iter().zip(rcof.iter_mut()) {
+                    *rc = c*v;
+                }
+            }
+        }
+        else {
+            let rnnz = nnz;
+            let rnelm = 1;
+            let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[],rnnz,rnelm);
+
+            rsubj.clone_from_slice(subj);
+            rptr[0] = 0;
+            rptr[1] = rnnz;
+            for (&p0,&p1,v) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),self.data.iter()) {
+                for (&c,rc) in cof[p0..p1].iter().zip(rcof.iter_mut()) {
+                    *rc = c*v;
+                }
+            }
+        }
     }
 }
