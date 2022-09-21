@@ -153,7 +153,7 @@ impl ModelItem for Variable {
     }
 }
 
-trait ModelItemIndex<I> {
+pub trait ModelItemIndex<I> {
     type Output;
     fn index(&self, index : I) -> Self::Output;
 }
