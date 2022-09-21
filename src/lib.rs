@@ -5,7 +5,7 @@ mod utils;
 pub mod expr;
 use itertools::{iproduct};
 
-//use utils::*;
+use utils::FoldMapExt;
 
 /////////////////////////////////////////////////////////////////////
 // Model, constraint and variables
@@ -89,7 +89,7 @@ pub struct Model {
     xs : expr::WorkStack
 }
 
-trait ModelItem {
+pub trait ModelItem {
     fn len(&self) -> usize;
     fn primal(&self,m : &Model,solid : SolutionType) -> Result<Vec<f64>,String> {
         let mut res = vec![0.0; self.len()];
@@ -293,10 +293,13 @@ pub enum ParamConicDomainType {
     DualPowerCone
 }
 
-pub trait DomainTrait {
-    fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable;
-    fn create_constraint(self, m : & mut Model, name : Option<&str>) -> Constraint;
+pub trait ConDomainTrait {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint;
 }
+pub trait VarDomainTrait {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable;
+}
+
 
 pub struct LinearDomain {
     dt    : LinearDomainType,
@@ -312,27 +315,33 @@ pub struct ConicDomain {
     conedim : usize
 }
 
-impl DomainTrait for ConicDomain {
-    fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable {
+pub struct PSDDomain {
+    shape    : Vec<usize>,
+    conedims : (usize,usize)
+}
+
+impl VarDomainTrait for ConicDomain {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable {
         m.conic_variable(name,self)
     }
-
+}
+impl ConDomainTrait for ConicDomain {
     /// Add a constraint with expression expected to be on the top of the rs stack.
-    fn create_constraint(self, m : & mut Model, name : Option<&str>) -> Constraint {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint {
         m.conic_constraint(name,self)
     }
 }
 
 // impl DomainTrait for &[i32] {
 //     fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable {
-//         m.linear_variable(name,
+//         m.linear(name,
 //                           LinearDomain{
 //                               dt:LinearDomainType::Free,
 //                               ofs:vec![0.0; self.iter().product::<usize>()],
 //                               shape:self.map(|i| i as usize).collect(),
 //                               sp:None})
 //     }
-//     fn create_constraint(self, m : & mut Model, name : Option<&str>, rs : & mut expr::WorkStack) -> Constraint {
+//     fn create(self, m : & mut Model, name : Option<&str>, rs : & mut expr::WorkStack) -> Constraint {
 //         let c = m.linear_constraint(name,
 //                                     LinearDomain{
 //                                         dt:LinearDomainType::Free,
@@ -342,11 +351,13 @@ impl DomainTrait for ConicDomain {
 //     }
 // }
 
-impl DomainTrait for &[usize] {
-    fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable {
+impl VarDomainTrait for &[usize] {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable {
         m.free_variable(name,self)
     }
-    fn create_constraint(self, m : & mut Model, name : Option<&str>) -> Constraint {
+}
+impl ConDomainTrait for &[usize] {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint {
         m.linear_constraint(name,
                             LinearDomain{
                                 dt:LinearDomainType::Free,
@@ -356,11 +367,13 @@ impl DomainTrait for &[usize] {
     }
 }
 
-impl DomainTrait for Vec<usize> {
-    fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable {
+impl VarDomainTrait for Vec<usize> {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable {
         m.free_variable(name,self.as_slice())
     }
-    fn create_constraint(self, m : & mut Model, name : Option<&str>) -> Constraint {
+}
+impl ConDomainTrait for Vec<usize> {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint {
          m.linear_constraint(name,
                              LinearDomain{
                                  dt:LinearDomainType::Free,
@@ -369,11 +382,13 @@ impl DomainTrait for Vec<usize> {
                                  sp:None})
     }
 }
-impl DomainTrait for usize {
-    fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable {
+impl VarDomainTrait for usize {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable {
         m.free_variable(name,&[self])
     }
-    fn create_constraint(self, m : & mut Model, name : Option<&str>) -> Constraint {
+}
+impl ConDomainTrait for usize {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint {
         m.linear_constraint(name,
                             LinearDomain{
                                 dt:LinearDomainType::Free,
@@ -382,6 +397,12 @@ impl DomainTrait for usize {
                                 sp:None})
     }
 }
+impl VarDomainTrait for PSDDomain {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable {
+        m.psd_variable(name,self)
+    }
+}
+
 
 impl LinearDomain {
     pub fn with_shape(self,shape : Vec<usize>) -> LinearDomain {
@@ -436,11 +457,13 @@ impl LinearDomain {
     }
 }
 
-impl DomainTrait for LinearDomain {
-    fn create_variable(self, m : & mut Model, name : Option<&str>) -> Variable {
+impl VarDomainTrait for LinearDomain {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable {
         m.linear_variable(name,self)
     }
-    fn create_constraint(self, m : & mut Model, name : Option<&str>) -> Constraint {
+}
+impl ConDomainTrait for LinearDomain {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint {
         m.linear_constraint(name,self)
     }
 
@@ -530,10 +553,10 @@ impl Model {
     ///   type, shape and sparsity of the variable. For sparse
     ///   variables, elements outside of the sparsity pattern are
     ///   treated as variables fixed to 0.0.
-    pub fn variable<D : DomainTrait>(& mut self, name : Option<&str>, dom : D) -> Variable {
-        dom.create_variable(self,name)
+    pub fn variable<D : VarDomainTrait>(& mut self, name : Option<&str>, dom : D) -> Variable {
+        dom.create(self,name)
     }
-
+    
     fn linear_variable(&mut self, _name : Option<&str>,dom : LinearDomain) -> Variable {
         let n = dom.ofs.len();
         let vari = self.task.get_num_var().unwrap();
@@ -580,6 +603,62 @@ impl Model {
             idxs : (firstvar..firstvar+n).collect(),
             shape : shape.to_vec(),
             sparsity : None}
+    }
+
+    fn psd_variable(&mut self, _name : Option<&str>, dom : PSDDomain) -> Variable {
+        let nd = dom.shape.len();
+        let (conedim0,conedim1) = dom.conedims;
+        if conedim0 == conedim1 || conedim0 >= nd || conedim1 >= nd { panic!("Invalid cone dimensions") };
+        if dom.shape[conedim0] != dom.shape[conedim1] { panic!("Mismatching cone dimensions") };
+
+        let (cdim0,cdim1) = if conedim0 < conedim1 { (conedim0,conedim1) } else { (conedim1,conedim0) };
+
+        let d0 = dom.shape[0..cdim0].iter().product();
+        let d1 = dom.shape[cdim0];
+        let d2 = dom.shape[cdim0+1..cdim1].iter().product();
+        let d3 = dom.shape[cdim1];
+        let d4 = dom.shape[cdim1+1..].iter().product();
+
+        let numcone = d0*d2*d4;
+        let conesz  = d1*(d1+1)/2;
+
+        let barvar0 = self.task.get_num_barvar().unwrap();
+        self.task.append_barvars(vec![d1 as i32; numcone].as_slice()).unwrap();
+        self.vars.reserve(numcone*conesz);
+        for k in 0..numcone {
+            for j in 0..d1 {
+                for i in j..d1 {
+                    self.vars.push(VarAtom::BarElm(barvar0 + k as i32, i*(i+1)/2+j))
+                }
+            }
+        }
+
+        let idxs : Vec<usize> = if conedim0 < conedim1 {
+            iproduct!(0..d0,0..d1,0..d2,0..d3,0..d4).map(|(i0,i1,i2,i3,i4)| {
+                let (i1,i3) = if i3 < i1 { (i3,i1) } else { (i1,i3) };
+
+                let baridx = i0 * d2 * d4 + i2 * d4 + i4;
+                let ofs    = d1*i3-d3*(d3-1)/2-d3+i1;
+
+                baridx*conesz+ofs
+            }).collect()
+        }
+        else {
+            iproduct!(0..d0,0..d1,0..d2,0..d3,0..d4).map(|(i0,i3,i2,i1,i4)| {
+                let (i1,i3) = if i3 < i1 { (i3,i1) } else { (i1,i3) };
+
+                let baridx = i0 * d2 * d4 + i2 * d4 + i4;
+                let ofs    = d1*i3-d3*(d3-1)/2-d3+i1;
+
+                baridx*conesz+ofs
+            }).collect()
+        };
+
+        Variable{
+            idxs,
+            sparsity : None,
+            shape    : dom.shape
+        }
     }
 
     fn conic_variable(&mut self, _name : Option<&str>, dom : ConicDomain) -> Variable {
@@ -672,9 +751,9 @@ impl Model {
     /// - `name` Optional constraint name
     /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
     /// - `dom`  The domain of the constraint. This defines the bound type and shape.
-    pub fn constraint<E : expr::ExprTrait, D : DomainTrait>(& mut self, name : Option<&str>, expr : &E, dom : D) -> Constraint {
+    pub fn constraint<E : expr::ExprTrait, D : ConDomainTrait>(& mut self, name : Option<&str>, expr : &E, dom : D) -> Constraint {
         expr.eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs);
-        dom.create_constraint(self,name)
+        dom.create(self,name)
     }
 
 
@@ -744,8 +823,8 @@ impl Model {
         self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
 
         if abarsubi.len() > 0 {
-            for (i,j,subk,subl,cof) in utils::ijkl_slice_iterator(abarsubi.as_slice(),                                                 abarsubj.as_slice(),
-                                                                  abarsubj.as_slice(),                                                 abarsubj.as_slice(),
+            for (i,j,subk,subl,cof) in utils::ijkl_slice_iterator(abarsubi.as_slice(),
+                                                                  abarsubj.as_slice(),
                                                                   abarsubk.as_slice(),
                                                                   abarsubl.as_slice(),
                                                                   abarcof.as_slice()) {
@@ -825,8 +904,8 @@ impl Model {
         }
         self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
         if abarsubi.len() > 0 {
-            for (i,j,subk,subl,cof) in utils::ijkl_slice_iterator(abarsubi.as_slice(),                                                 abarsubj.as_slice(),
-                                                                  abarsubj.as_slice(),                                                 abarsubj.as_slice(),
+            for (i,j,subk,subl,cof) in utils::ijkl_slice_iterator(abarsubi.as_slice(),
+                                                                  abarsubj.as_slice(),
                                                                   abarsubk.as_slice(),
                                                                   abarsubl.as_slice(),
                                                                   abarcof.as_slice()) {
@@ -898,7 +977,7 @@ impl Model {
     // Optimize
 
     pub fn solve(& mut self) {
-        self.task.put_int_param(mosek::Iparam::REMOVE_UNUSED_SOLUTIONS, 1);
+        self.task.put_int_param(mosek::Iparam::REMOVE_UNUSED_SOLUTIONS, 1).unwrap();
         self.task.optimize().unwrap();
 
         let numvar = self.task.get_num_var().unwrap() as usize;
@@ -920,23 +999,29 @@ impl Model {
         let mut barx = vec![0.0; numbarvarelm];
         let mut bars = vec![0.0; numbarvarelm];
 
-        let mut dimbarvar : Vec<usize> = (0..numbarvar).map(|j| self.task.get_dim_barvar_j(j as i32).unwrap() as usize).collect();
-        let mut accptr    = (0usize..1usize).iter().join((0..numacc).iter()
-                                                         .map(|i| self.task.get_acc_n(i as i64).unwrap() as usize)
-                                                         .fold_map(0,|&p,&n| n+p)).collect();
-        let mut barvarptr = (0usize..1usize).iter().join((0..numbarvar).iter()
-                                                         .map(|j| self.task.get_len_barvar_j(j as i32).unwrap() as usize)
-                                                         .fold_map(0,|&p,&n| n+p)).collect();
+        let dimbarvar : Vec<usize> = (0..numbarvar).map(|j| self.task.get_dim_barvar_j(j as i32).unwrap() as usize).collect();
+        let accptr : Vec<usize>    = (0usize..1usize).chain((0..numacc)
+                                                            .map(|i| self.task.get_acc_n(i as i64).unwrap() as usize)
+                                                            .fold_map(0,|&p,n| n+p)).collect();
+        let barvarptr : Vec<usize> = (0usize..1usize).chain((0..numbarvar)
+                                                            .map(|j| self.task.get_len_barvar_j(j as i32).unwrap() as usize)
+                                                            .fold_map(0,|&p,n| n+p)).collect();
         // let mut accptr    = (0usize..1usize).iter().join((0..numacc).iter().map(|i| self.task.get_acc_n(i as i64).unwrap() as usize).
         // }
         //     vec![0usize; numacc+1]; accptr[1..].iter_mut().enumerate().for_each(|(i,p)| *p =  self.task.get_acc_n(i as i64).unwrap() as usize);
         // let mut barvarptr = vec![0usize; numbarvar+1]; barvarptr[1..].iter_mut().enumerate().for_each(|(j,p)| *p =  self.task.get_len_barvar_j(j as i32).unwrap() as usize);
 
         // extract solutions
-        [(mosek::Soltype::BAS,& mut self.sol_bas),
-         (mosek::Soltype::ITR,& mut self.sol_itr),
-         (mosek::Soltype::ITG,& mut self.sol_itg)].iter().for_each(|&(whichsol,sol)| {
-             if ! self.task.solution_def(whichsol).unwrap() {
+        for &whichsol in [mosek::Soltype::BAS,
+                          mosek::Soltype::ITR,
+                          mosek::Soltype::ITG].iter() {
+            let sol = match whichsol {
+                mosek::Soltype::BAS => & mut self.sol_bas,
+                mosek::Soltype::ITR => & mut self.sol_itr,
+                mosek::Soltype::ITG => & mut self.sol_itg,
+                _ => & mut self.sol_itr
+            };
+            if ! self.task.solution_def(whichsol).unwrap() {
                  sol.primal.status = SolutionStatus::Undefined;
                  sol.dual.status   = SolutionStatus::Undefined;
              }
@@ -996,7 +1081,7 @@ impl Model {
                      });
                  }
              }
-        })
+        }
     }
     ////////////////////////////////////////////////////////////
     // Solutions

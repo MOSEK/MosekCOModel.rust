@@ -1,102 +1,116 @@
 
 
-pub struct Mutation {
-    tgtsize : usize,
-    idxs : Vec<usize>
-}
 
-pub struct MutationIter<'a,'b,T> {
-    i : usize,
-    n : usize,
-    m : & 'a Mutation,
-    t : & 'b [T]
-}
-// struct MutationIterMut<'a,'b,T> {
-//     i : usize,
-//     m : & 'a Mutation,
-//     t : & 'b mut [T]
+
+
+
+
+
+
+
+
+
+
+
+// pub struct Mutation {
+//     tgtsize : usize,
+//     idxs : Vec<usize>
 // }
 
-impl Mutation {
-    pub fn new(idxs : Vec<usize>) -> Mutation {
-        let &n = idxs.iter().max().unwrap_or(&0);
+// pub struct MutationIter<'a,'b,T> {
+//     i : usize,
+//     n : usize,
+//     m : & 'a Mutation,
+//     t : & 'b [T]
+// }
+// // struct MutationIterMut<'a,'b,T> {
+// //     i : usize,
+// //     m : & 'a Mutation,
+// //     t : & 'b mut [T]
+// // }
 
-        Mutation{
-            tgtsize : n,
-            idxs : idxs
-        }
-    }
-    pub fn id(n : usize) -> Mutation {
-        Mutation{
-            tgtsize : n,
-            idxs : (0..n).collect()
-        }
-    }
-    pub fn range(first : usize, n : usize) -> Mutation {
-        Mutation{
-            tgtsize : n,
-            idxs : (first..first+n).collect()
-        }
-    }
+// impl Mutation {
+//     pub fn new(idxs : Vec<usize>) -> Mutation {
+//         let &n = idxs.iter().max().unwrap_or(&0);
 
-    pub fn sort_arg<T:Ord>(& mut self,target : &[T]) {
-        if self.tgtsize > target.len() {
-            panic!("Invalid sorting target");
-        }
-        self.idxs.sort_by(|&i0,&i1| unsafe{ &*target.get_unchecked(i0) }.cmp(unsafe{ &*target.get_unchecked(i1) }) );
-    }
+//         Mutation{
+//             tgtsize : n,
+//             idxs : idxs
+//         }
+//     }
+//     pub fn id(n : usize) -> Mutation {
+//         Mutation{
+//             tgtsize : n,
+//             idxs : (0..n).collect()
+//         }
+//     }
+//     pub fn range(first : usize, n : usize) -> Mutation {
+//         Mutation{
+//             tgtsize : n,
+//             idxs : (first..first+n).collect()
+//         }
+//     }
 
-    pub fn sort_arg_slice<T:Ord>(& mut self,first : usize, num : usize, target : &[T]) {
-        if self.tgtsize > target.len() {
-            panic!("Invalid sorting target");
-        }
-        if first+num > self.idxs.len() {
-            panic!("Slice out of bounds");
-        }
-        self.idxs[first..first+num].sort_by(|&i0,&i1| unsafe{ &*target.get_unchecked(i0) }.cmp(unsafe{ &*target.get_unchecked(i1) }) );
-    }
+//     pub fn sort_arg<T:Ord>(& mut self,target : &[T]) {
+//         if self.tgtsize > target.len() {
+//             panic!("Invalid sorting target");
+//         }
+//         self.idxs.sort_by(|&i0,&i1| unsafe{ &*target.get_unchecked(i0) }.cmp(unsafe{ &*target.get_unchecked(i1) }) );
+//     }
 
-    pub fn apply<'a,'b,T>(& 'a self, target : & 'b [T]) -> MutationIter<'a,'b,T> {
-        if self.tgtsize > target.len() {
-            panic!("Incompatible mutation");
-        }
-        MutationIter {
-            i : 0,
-            n : self.idxs.len(),
-            m : self,
-            t : target
-        }
-    }
+//     pub fn sort_arg_slice<T:Ord>(& mut self,first : usize, num : usize, target : &[T]) {
+//         if self.tgtsize > target.len() {
+//             panic!("Invalid sorting target");
+//         }
+//         if first+num > self.idxs.len() {
+//             panic!("Slice out of bounds");
+//         }
+//         self.idxs[first..first+num].sort_by(|&i0,&i1| unsafe{ &*target.get_unchecked(i0) }.cmp(unsafe{ &*target.get_unchecked(i1) }) );
+//     }
 
-    pub fn apply_slice<'a,'b,T>(& 'a self, first : usize, num : usize, target : & 'b [T]) -> MutationIter<'a,'b,T> {
-        if self.tgtsize > target.len() {
-            panic!("Incompatible mutation");
-        }
-        else if first+num > self.idxs.len() {
-            panic!("Invalid slice range");
-        }
-        MutationIter {
-            i : first,
-            n : num,
-            m : self,
-            t : target
-        }
-    }
-}
+//     pub fn apply<'a,'b,T>(& 'a self, target : & 'b [T]) -> MutationIter<'a,'b,T> {
+//         if self.tgtsize > target.len() {
+//             panic!("Incompatible mutation");
+//         }
+//         MutationIter {
+//             i : 0,
+//             n : self.idxs.len(),
+//             m : self,
+//             t : target
+//         }
+//     }
 
-impl<'a,'b,T> std::iter::Iterator for MutationIter<'a,'b,T> {
-    type Item = & 'b T;
-    fn next(& mut self) -> Option<& 'b T> {
-        if self.i < self.n {
-            let idx = unsafe { * self.m.idxs.get_unchecked(self.i) };
-            self.i += 1;
-            Some(unsafe { & * self.t.get_unchecked(idx) })
-        }
-        else {
-            None
-        }
-    }
-}
+//     pub fn apply_slice<'a,'b,T>(& 'a self, first : usize, num : usize, target : & 'b [T]) -> MutationIter<'a,'b,T> {
+//         if self.tgtsize > target.len() {
+//             panic!("Incompatible mutation");
+//         }
+//         else if first+num > self.idxs.len() {
+//             panic!("Invalid slice range");
+//         }
+//         MutationIter {
+//             i : first,
+//             n : num,
+//             m : self,
+//             t : target
+//         }
+//     }
+// }
+
+// impl<'a,'b,T> std::iter::Iterator for MutationIter<'a,'b,T> {
+//     type Item = & 'b T;
+//     fn next(& mut self) -> Option<& 'b T> {
+//         if self.i < self.n {
+//             let idx = unsafe { * self.m.idxs.get_unchecked(self.i) };
+//             self.i += 1;
+//             Some(unsafe { & * self.t.get_unchecked(idx) })
+//         }
+//         else {
+//             None
+//         }
+//     }
+// }
+
+
 
 // impl<'a,'b,T> std::iter::Iterator for MutationIterMut<'a,'b,T> {
 //     type Item = & 'b mut T;
@@ -124,18 +138,17 @@ impl<'a,'b,T> std::iter::Iterator for MutationIter<'a,'b,T> {
 /// Example:
 ///   [1,2,5,4,3].cummulate(0, |&v,&i| v+i)
 ///   -> [1,3,8,12,15]
-struct FoldMapIter<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> {
+pub struct FoldMapIter<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> {
     it : I,
     v : T,
     f : F
 }
 
-
 impl<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> Iterator for FoldMapIter<I,T,F> {
     type Item = T;
     fn next(& mut self) -> Option<Self::Item> {
         if let Some(v) = self.it.next() {
-            let v = self.f(&self.v,v);
+            let v = (self.f)(&self.v,v);
             self.v = v;
             Some(self.v)
         }
@@ -150,7 +163,7 @@ impl<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> Iterator for FoldMapIter<I,T,F>
     }
 }
 
-trait FoldMapExt<T:Copy,F:FnMut(&T,Self::Item) -> T> : Iterator {
+pub trait FoldMapExt<T:Copy,F:FnMut(&T,Self::Item) -> T> : Iterator {
     /// Create a cummulating iterator
     fn fold_map(self, v0 : T, f : F) -> FoldMapIter<Self,T,F> where Self:Sized{
         FoldMapIter{it : self, v : v0, f : f}
@@ -161,7 +174,7 @@ impl<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> FoldMapExt<T,F> for I {}
 
 ////////////////////////////////////////////////////////////
 pub struct IJKLSliceIterator<'a,'b,'c,'d,'e> {
-    subi : & 'a [i32],
+    subi : & 'a [i64],
     subj : & 'b [i32],
     subk : & 'c [i32],
     subl : & 'd [i32],
@@ -170,7 +183,7 @@ pub struct IJKLSliceIterator<'a,'b,'c,'d,'e> {
     pos  : usize
 }
 
-pub fn ijkl_slice_iterator<'a,'b,'c,'d,'e>(subi : & 'a [i32],
+pub fn ijkl_slice_iterator<'a,'b,'c,'d,'e>(subi : & 'a [i64],
                                            subj : & 'b [i32],
                                            subk : & 'c [i32],
                                            subl : & 'd [i32],
@@ -181,11 +194,11 @@ pub fn ijkl_slice_iterator<'a,'b,'c,'d,'e>(subi : & 'a [i32],
         || subi.len() != cof.len() {
         panic!("Mismatching array length");
     }
-    IJKLSliceIterator{subi,subj,subj,subj,cof,pos:0}
+    IJKLSliceIterator{subi,subj,subk,subl,cof,pos:0}
 }
 
 impl<'a,'b,'c,'d,'e> Iterator for IJKLSliceIterator<'a,'b,'c,'d,'e> {
-    type Item = (i32,i32,&'c[i32],&'d[i32],&'e[f64]);
+    type Item = (i64,i32,&'c[i32],&'d[i32],&'e[f64]);
     fn next(& mut self) -> Option<Self::Item> {
         if self.pos < self.subi.len() {
             let p0 = self.pos;
@@ -212,16 +225,19 @@ mod tests {
     use super::*;
     #[test]
     fn test() {
-        let a1 = &[1,4,6,3,2,5,7,9,8];
-        let m1 = Mutation::id(9);
-        let m2 = Mutation::range(3,7);
-        let m3 = Mutation::new(&[8,7,6,5,4,3,2,1,0]);
+        // let a1 = &[1,4,6,3,2,5,7,9,8];
+        // let m1 = Mutation::id(9);
+        // let m2 = Mutation::range(3,7);
+        // let m3 = Mutation::new(&[8,7,6,5,4,3,2,1,0]);
 
-        assert!(m1.apply(a1).zip(a1.iter()).all(|(&a,&b)| a == b));
-        assert!(m2.apply(a1).zip([3,2,5,7].iter()).all(|(&a,&b)| a == b));
-        assert!(m3.apply(a1).zip([8,9,7,5,2,3,6,4,1].iter()).all(|(&a,&b)| a == b));
+        // assert!(m1.apply(a1).zip(a1.iter()).all(|(&a,&b)| a == b));
+        // assert!(m2.apply(a1).zip([3,2,5,7].iter()).all(|(&a,&b)| a == b));
+        // assert!(m3.apply(a1).zip([8,9,7,5,2,3,6,4,1].iter()).all(|(&a,&b)| a == b));
 
-        let mut m4 = Mutation::id(9); m4.sort_arg(a1);
-        assert!(m4.apply(a1).zip([1,2,3,4,5,6,7,8,9].iter()).all(|(&a,&b)| a == b));
+        // let mut m4 = Mutation::id(9); m4.sort_arg(a1);
+        // assert!(m4.apply(a1).zip([1,2,3,4,5,6,7,8,9].iter()).all(|(&a,&b)| a == b));
+
+
+        assert!([1,5,4,7,3,2].iter().fold_map(0,|&a,b| a+b).zip([1,6,10,17,20,22].iter()).all(|(&a,&b)| a == b));
     }
 }
