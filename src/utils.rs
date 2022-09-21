@@ -1,16 +1,6 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
+//!
+//! Utility module.
+//!
 
 // pub struct Mutation {
 //     tgtsize : usize,
@@ -238,6 +228,6 @@ mod tests {
         // assert!(m4.apply(a1).zip([1,2,3,4,5,6,7,8,9].iter()).all(|(&a,&b)| a == b));
 
 
-        assert!([1,5,4,7,3,2].iter().fold_map(0,|&a,b| a+b).zip([1,6,10,17,20,22].iter()).all(|(&a,&b)| a == b));
+        assert!([1,5,4,7,3,2].iter().fold_map(0,|&a,b| a+b).zip([1,6,10,17,20,22].iter()).all(|(a,&b)| a == b));
     }
 }

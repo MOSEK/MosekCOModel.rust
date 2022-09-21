@@ -71,6 +71,7 @@ struct Solution {
 impl Solution {
     fn new() -> Solution { Solution{primal : SolutionPart::new(0,0) , dual : SolutionPart::new(0,0)  } }
 }
+
 /// The Model object encapsulates an optimization problem and a
 /// mapping from the structured API to the internal Task items.
 pub struct Model {
@@ -170,15 +171,6 @@ impl ModelItem for Constraint {
 
 /////////////////////////////////////////////////////////////////////
 impl Variable {
-    // fn new(idxs : Vec<usize>) -> Variable {
-    //     let n = idxs.len();
-    //     Variable {
-    //         idxs : idxs,
-    //         sparsity : None,
-    //         shape : vec![n]
-    //     }
-    // }
-
     pub fn with_shape(self, shape : Vec<usize>) -> Variable {
         match self.sparsity {
             None =>
@@ -1276,16 +1268,9 @@ fn row_major_offset_to_col_major(ofs : usize, dim : usize) -> usize {
     let (i,j) = row_major_offset_to_ij(ofs);
     ((2*dim-1)*j - j*j)/2 + i
 }
-    
 
-
-
-
-
-    
 /////////////////////////////////////////////////////////////////////
 // TEST
-
 
 #[cfg(test)]
 mod tests {
