@@ -85,11 +85,7 @@ impl WorkStack {
         let (_,upart) = self.susize.split_at_mut(ubase);
         let (_,fpart) = self.sf64.split_at_mut(fbase);
 
-        // println!("nd = {}, nnz = {}, nelm = {}",nd, nnz, nelm);
-        // println!("upart size = {}, unnz = {}",upart.len(),unnz);
-
         let (subj,upart) = upart.split_at_mut(nnz);
-        // println!("1 upart size = {}",upart.len());
         let (sp,upart)   =
             if nelm < fullsize {
                 let (sp,upart) = upart.split_at_mut(nelm);
@@ -101,7 +97,7 @@ impl WorkStack {
         let (shape_,head)  = upart.split_at_mut(nd);
         shape_.clone_from_slice(shape);
 
-        head[0]   = nelm;
+        head[0] = nelm;
         head[1] = nnz;
         head[2] = nd;
 
@@ -191,15 +187,18 @@ impl WorkStack {
         }
 
 
-        if ! ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a <= b) { println!("ptr = {:?}",ptr); panic!("Stack does not contain a valid expression: invalid ptr"); }
-        if let Some(&p) = ptr.last() { if p > nnz { println!("p = {}, nnz = {}",p,nnz); panic!("Stack does not contain a valid expression: invalid ptr"); } }
+        if ! ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a <= b) { // println!("ptr = {:?}",ptr);
+                                                                                    panic!("Stack does not contain a valid expression: invalid ptr"); }
+        if let Some(&p) = ptr.last() { if p > nnz { // println!("p = {}, nnz = {}",p,nnz);
+                                                    panic!("Stack does not contain a valid expression: invalid ptr"); } }
 
         let nnz : usize = if let Some(&p) = ptr.last() { p } else { 0 };
-        println!("shape = {:?}\n\tptr = {:?}\n\tsubj = {:?}\n\tcof = {:?}\n\tsp = {:?}",shape,ptr,&subj[..nnz],&cof[..nnz],sp);
+        //println!("shape = {:?}\n\tptr = {:?}\n\tsubj = {:?}\n\tcof = {:?}\n\tsp = {:?}",shape,ptr,&subj[..nnz],&cof[..nnz],sp);
 
         self.utop = utop - nnz;
         self.ftop -= nnz;
 
+        println!("pop_expr: nd = {}, nnz = {}, nelm = {}, ptr = {:?}, subj = {:?}",nd,nnz,nelm,ptr,subj);
         (shape,ptr,sp,&subj[..nnz],&cof[..nnz])
     }
     /// Returns without validation a mutable view of the top-most
@@ -261,8 +260,8 @@ pub trait ExprTrait {
     fn eval_finalize(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.eval(ws,rs,xs);
 
-        println!("ExprTrait::eval_finalize");
-        let (shape,ptr,_sp,subj,cof) = ws.pop_expr();
+        //println!("ExprTrait::eval_finalize");
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
         let nnz  = subj.len();
         let nelm = shape.iter().product();
         let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,nnz,nelm);
@@ -275,40 +274,92 @@ pub trait ExprTrait {
         let mut ii  = 0;
         let mut nzi = 0;
         rptr[0] = 0;
-        ptr[0..ptr.len()-1].iter().zip(ptr[1..].iter()).enumerate().for_each(|(i,(&p0,&p1))| {
-            rptr[ii+1..i+1].fill(nzi); ii = i;
 
-            let mut rownzi : usize = 0;
-            subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
-            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
-                if c == 0.0 {}
-                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
-                    unsafe{
-                        *jjind.get_unchecked_mut(j)   = 1;
-                        *jj.get_unchecked_mut(rownzi) = j;
-                        *ff.get_unchecked_mut(j)      = c;
+        if let Some(sp) = sp {
+            for (i,(&p0,&p1)) in ptr[0..ptr.len()-1].iter().zip(ptr[1..].iter()).enumerate() {
+                rptr[ii+1..i+1].fill(nzi); ii = i;
+
+                let mut rownzi : usize = 0;
+                subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
+                subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
+                    if c == 0.0 {}
+                    else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
+                        unsafe{
+                            *jjind.get_unchecked_mut(j)   = 1;
+                            *jj.get_unchecked_mut(rownzi) = j;
+                            *ff.get_unchecked_mut(j)      = c;
+                        }
+                        rownzi += 1;
                     }
-                    rownzi += 1;
-                }
-                else {
-                    unsafe{
-                        *ff.get_unchecked_mut(j) += c;
+                    else {
+                        unsafe{
+                            *ff.get_unchecked_mut(j) += c;
+                        }
                     }
-                }
-            });
+                });
 
-            izip!(jj[0..rownzi].iter(),
-                  rsubj[nzi..nzi+rownzi].iter_mut(),
-                  rcof[nzi..nzi+rownzi].iter_mut()).for_each(|(&j,rj,rc)| {
-                      *rc = unsafe{ *ff.get_unchecked(j) };
-                      unsafe{ *jjind.get_unchecked_mut(j) = 0; };
-                      *rj = j;
-                  });
+                izip!(jj[0..rownzi].iter(),
+                      rsubj[nzi..nzi+rownzi].iter_mut(),
+                      rcof[nzi..nzi+rownzi].iter_mut()).for_each(|(&j,rj,rc)| {
+                          *rc = unsafe{ *ff.get_unchecked(j) };
+                          unsafe{ *jjind.get_unchecked_mut(j) = 0; };
+                          *rj = j;
+                      });
 
-            nzi += rownzi;
-            rptr[i+1] = nzi;
-            ii += 1;
-        });
+                nzi += rownzi;
+                println!("ExprTrait::eval_finalize: nzi = {}",nzi);
+                rptr[i+1] = nzi;
+                ii += 1;
+            }
+            ....
+        }
+        else {
+            for (&p0,&p1,rp1) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),rptr[1..].iter()) {
+                //rptr[ii+1..i+1].fill(nzi); ii = i;
+                //let mut rownzi : usize = 0;
+
+                izip!(subj[p0..p1].iter().map(|&v| v)
+                      cof[p0..p1].iter().map(|&v| v))
+                    .partial_fold_map(|(j0,v0),(j,v)| if j0 == j { Some(v0+v) } else { None })
+                    .for_each(|(j0,v0)| {
+                        .....
+                    });
+
+
+                    
+
+                subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
+                subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
+                    if c == 0.0 {}
+                    else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
+                        unsafe{
+                            *jjind.get_unchecked_mut(j)   = 1;
+                            *jj.get_unchecked_mut(rownzi) = j;
+                            *ff.get_unchecked_mut(j)      = c;
+                        }
+                        rownzi += 1;
+                    }
+                    else {
+                        unsafe{
+                            *ff.get_unchecked_mut(j) += c;
+                        }
+                    }
+                });
+
+                izip!(jj[0..rownzi].iter(),
+                      rsubj[nzi..nzi+rownzi].iter_mut(),
+                      rcof[nzi..nzi+rownzi].iter_mut()).for_each(|(&j,rj,rc)| {
+                          *rc = unsafe{ *ff.get_unchecked(j) };
+                          unsafe{ *jjind.get_unchecked_mut(j) = 0; };
+                          *rj = j;
+                      });
+
+                nzi += rownzi;
+                println!("ExprTrait::eval_finalize: nzi = {}",nzi);
+                rptr[i+1] = nzi;
+                ii += 1;
+            }
+        }
     }
 
     //fn into_diag(self) -> ExprIntoDiag<Self> { ExprIntoDiag{ item : self } }
@@ -489,7 +540,7 @@ pub struct ExprMulScalar<E:ExprTrait> {
 impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
-        println!("ExprMulLeft eval");
+        // println!("ExprMulLeft eval");
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
         
         let nd   = shape.len();
@@ -569,11 +620,11 @@ impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
                     });
                     elmi += 1;
                     rptr[elmi] = nzi;
-                    println!("rptr[{}] = {}",elmi,nzi);
+                    // println!("rptr[{}] = {}",elmi,nzi);
                 });
             });
         }
-        println!("rptr = {:?}",rptr);
+        // println!("rptr = {:?}",rptr);
     }
 }
 
@@ -596,10 +647,12 @@ impl<E:ExprTrait> ExprTrait for ExprDot<E> {
         self.expr.eval(ws,rs,xs);
 
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+        println!("ExprDot::eval: subj = {:?}, cof = {:?}",subj,cof);
         let nd   = shape.len();
         let nnz  = subj.len();
 
-        if nd == 1 || shape[0] != self.data.len() {
+        if nd != 1 || shape[0] != self.data.len() {
+            // println!("nd = {}, shape = {:?}, data = {:?}",nd,shape,self.data);
             panic!("Mismatching operands");
         }
 
@@ -626,6 +679,7 @@ impl<E:ExprTrait> ExprTrait for ExprDot<E> {
             rsubj.clone_from_slice(subj);
             rptr[0] = 0;
             rptr[1] = rnnz;
+            println!("ExprDot::eval: result nnz = {}, nelm = {}, ptr = {:?}, subj = {:?}",rnnz,rnelm,rptr,rsubj);
             for (&p0,&p1,v) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),self.data.iter()) {
                 for (&c,rc) in cof[p0..p1].iter().zip(rcof.iter_mut()) {
                     *rc = c*v;

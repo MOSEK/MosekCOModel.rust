@@ -57,6 +57,7 @@ fn main() {
 
     // Solve the problem
 //TAG:begin-solve
+    m.write_problem("lo1-nosol.ptf");
     m.solve();
 //TAG:end-solve
 
@@ -64,6 +65,8 @@ fn main() {
 
     // Get the solution values
 //TAG:begin-get-solution
+    let (psta,dsta) = m.solution_status(SolutionType::Default);
+    println!("Status = {:?}/{:?}",psta,dsta);
     let xx = m.primal_solution(SolutionType::Default,&x);
     println!("x = {:?}", xx);
 //TAG:end-get-solution

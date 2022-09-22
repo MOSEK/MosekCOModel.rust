@@ -18,7 +18,7 @@ pub enum Sense {
     Minimize
 }
 
-#[derive(Clone,Copy)]
+#[derive(Clone,Copy,Debug)]
 enum VarAtom {
     // Task variable index
     Linear(i32),
@@ -41,7 +41,7 @@ pub enum SolutionType {
 }
 
 
-#[derive(Clone,Copy)]
+#[derive(Clone,Copy,Debug)]
 pub enum SolutionStatus {
     Optimal,
     Feasible,
@@ -1015,6 +1015,8 @@ impl Model {
         let (_shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
         if ptr.len()-1 > 1 { panic!("Objective expressions may only contain one element"); }
 
+        println!("Objective: ptr = {:?}, subj = {:?}, cof = {:?}",ptr,subj,cof);
+
         if let Some(name) = name { self.task.put_obj_name(name).unwrap(); }
         else { self.task.put_obj_name("").unwrap(); }
         let (csubj,
@@ -1058,6 +1060,7 @@ impl Model {
                                     name  : Option<&str>,
                                     sense : Sense,
                                     expr  : & E) {
+        println!("objective");
         expr.eval_finalize(& mut self.rs,& mut self.ws, & mut self.xs);
         self.set_objective(name,sense);
     }
@@ -1090,16 +1093,12 @@ impl Model {
         let mut bars = vec![0.0; numbarvarelm];
 
         let dimbarvar : Vec<usize> = (0..numbarvar).map(|j| self.task.get_dim_barvar_j(j as i32).unwrap() as usize).collect();
-        let accptr : Vec<usize>    = once(0usize).chain((0..numacc)
+        let accptr    : Vec<usize> = once(0usize).chain((0..numacc)
                                                         .map(|i| self.task.get_acc_n(i as i64).unwrap() as usize)
                                                         .fold_map(0,|&p,n| n+p)).collect();
         let barvarptr : Vec<usize> = once(0usize).chain((0..numbarvar)
                                                         .map(|j| self.task.get_len_barvar_j(j as i32).unwrap() as usize)
                                                         .fold_map(0,|&p,n| n+p)).collect();
-        // let mut accptr    = (0usize..1usize).iter().join((0..numacc).iter().map(|i| self.task.get_acc_n(i as i64).unwrap() as usize).
-        // }
-        //     vec![0usize; numacc+1]; accptr[1..].iter_mut().enumerate().for_each(|(i,p)| *p =  self.task.get_acc_n(i as i64).unwrap() as usize);
-        // let mut barvarptr = vec![0usize; numbarvar+1]; barvarptr[1..].iter_mut().enumerate().for_each(|(j,p)| *p =  self.task.get_len_barvar_j(j as i32).unwrap() as usize);
 
         // extract solutions
         for &whichsol in [mosek::Soltype::BAS,
@@ -1112,65 +1111,65 @@ impl Model {
                 _ => & mut self.sol_itr
             };
             if ! self.task.solution_def(whichsol).unwrap() {
-                 sol.primal.status = SolutionStatus::Undefined;
-                 sol.dual.status   = SolutionStatus::Undefined;
-             }
-             else {
-                 let (psta,dsta) = split_sol_sta(self.task.get_sol_sta(whichsol).unwrap());
-                 sol.primal.status = psta;
-                 sol.dual.status   = dsta;
+                sol.primal.status = SolutionStatus::Undefined;
+                sol.dual.status   = SolutionStatus::Undefined;
+            }
+            else {
+                let (psta,dsta) = split_sol_sta(self.task.get_sol_sta(whichsol).unwrap());
+                sol.primal.status = psta;
+                sol.dual.status   = dsta;
 
-                 if let SolutionStatus::Undefined = psta {}
-                 else {
-                     sol.primal.resize(self.vars.len(),self.cons.len());
-                     self.task.get_xx(whichsol,xx.as_mut_slice()).unwrap();
-                     self.task.get_xc(whichsol,xc.as_mut_slice()).unwrap();
-                     if numbarvar > 0 { self.task.get_barx_slice(whichsol,0,numbarvar as i32,barx.len() as i64,barx.as_mut_slice()).unwrap(); }
-                     if numacc > 0 { self.task.evaluate_accs(whichsol,accx.as_mut_slice()).unwrap(); }
+                if let SolutionStatus::Undefined = psta {}
+                else {
+                    sol.primal.resize(self.vars.len(),self.cons.len());
+                    self.task.get_xx(whichsol,xx.as_mut_slice()).unwrap();
+                    self.task.get_xc(whichsol,xc.as_mut_slice()).unwrap();
+                    if numbarvar > 0 { self.task.get_barx_slice(whichsol,0,numbarvar as i32,barx.len() as i64,barx.as_mut_slice()).unwrap(); }
+                    if numacc > 0 { self.task.evaluate_accs(whichsol,accx.as_mut_slice()).unwrap(); }
 
-                     self.vars.iter().zip(sol.primal.var.iter_mut()).for_each(|(&v,r)| {
-                         *r = match v {
-                             VarAtom::Linear(j) => xx[j as usize],
-                             VarAtom::BarElm(j,ofs) => barx[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
-                             VarAtom::ConicElm(j,_coni) => xx[j as usize]
-                         };
-                     });
-                     self.cons.iter().zip(sol.primal.con.iter_mut()).for_each(|(&v,r)| {
-                         *r = match v {
-                             ConAtom::ConicElm(acci,ofs) => accx[accptr[acci as usize]+ofs]
-                         };
-                     });
-                 }
+                    self.vars.iter().zip(sol.primal.var.iter_mut()).for_each(|(&v,r)| {
+                        *r = match v {
+                            VarAtom::Linear(j) => xx[j as usize],
+                            VarAtom::BarElm(j,ofs) => barx[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                            VarAtom::ConicElm(j,_coni) => xx[j as usize]
+                        };
+                    });
+                    self.cons.iter().zip(sol.primal.con.iter_mut()).for_each(|(&v,r)| {
+                        *r = match v {
+                            ConAtom::ConicElm(acci,ofs) => accx[accptr[acci as usize]+ofs]
+                        };
+                    });
+                }
 
-                 if let SolutionStatus::Undefined = dsta {}
-                 else {
-                     sol.dual.resize(self.vars.len(),self.cons.len());
-                     self.task.get_slx(whichsol,slx.as_mut_slice()).unwrap();
-                     self.task.get_sux(whichsol,sux.as_mut_slice()).unwrap();
-                     self.task.get_slc(whichsol,slc.as_mut_slice()).unwrap();
-                     self.task.get_suc(whichsol,suc.as_mut_slice()).unwrap();
-                     self.task.get_y(whichsol,y.as_mut_slice()).unwrap();
-                     if numbarvar > 0 { self.task.get_bars_slice(whichsol,0,numbarvar as i32,bars.len() as i64,bars.as_mut_slice()).unwrap(); }
-                     if numacc > 0 { self.task.get_acc_dot_y_s(whichsol,doty.as_mut_slice()).unwrap(); }
+                if let SolutionStatus::Undefined = dsta {}
+                else {
+                    sol.dual.resize(self.vars.len(),self.cons.len());
+                    self.task.get_slx(whichsol,slx.as_mut_slice()).unwrap();
+                    self.task.get_sux(whichsol,sux.as_mut_slice()).unwrap();
+                    self.task.get_slc(whichsol,slc.as_mut_slice()).unwrap();
+                    self.task.get_suc(whichsol,suc.as_mut_slice()).unwrap();
+                    self.task.get_y(whichsol,y.as_mut_slice()).unwrap();
+                    if numbarvar > 0 { self.task.get_bars_slice(whichsol,0,numbarvar as i32,bars.len() as i64,bars.as_mut_slice()).unwrap(); }
+                    if numacc > 0 { self.task.get_acc_dot_y_s(whichsol,doty.as_mut_slice()).unwrap(); }
 
-                     self.vars.iter().zip(sol.dual.var.iter_mut()).for_each(|(&v,r)| {
-                         *r = match v {
-                             VarAtom::Linear(j) => slc[j as usize] - suc[j as usize],
-                             VarAtom::BarElm(j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
-                             VarAtom::ConicElm(_j,coni) => {
-                                 match self.cons[coni] {
-                                     ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs]
-                                 }
-                             }
-                         };
-                     });
-                     self.cons.iter().zip(sol.dual.con.iter_mut()).for_each(|(&v,r)| {
-                         *r = match v {
-                             ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs]
-                         };
-                     });
-                 }
-             }
+                    self.vars[1..].iter().zip(sol.dual.var.iter_mut()).for_each(|(&v,r)| {
+                        *r = match v {
+                            VarAtom::Linear(j) => slx[j as usize] - sux[j as usize],
+                            VarAtom::BarElm(j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                            VarAtom::ConicElm(_j,coni) => {
+                                match self.cons[coni] {
+                                    ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs]
+                                }
+                            }
+                        };
+                    });
+                    self.cons.iter().zip(sol.dual.con.iter_mut()).for_each(|(&v,r)| {
+                        *r = match v {
+                            ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs]
+                        };
+                    });
+                }
+            }
         }
     }
     ////////////////////////////////////////////////////////////

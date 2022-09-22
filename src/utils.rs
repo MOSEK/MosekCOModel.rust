@@ -209,6 +209,64 @@ impl<'a,'b,'c,'d,'e> Iterator for IJKLSliceIterator<'a,'b,'c,'d,'e> {
 }
 
 ////////////////////////////////////////////////////////////
+pub enum Either<T0:Copy,T1:Copy> {
+    Left(T0),
+    Right(T1)
+}
+
+pub struct PartialFoldMapIter<T,I:Iterator,F:FnMut(&T,&T) -> Option<T>> {
+    cum : Option<T>,
+    it  : I,
+    f   : F
+}
+
+impl<T,I:Iterator,F:FnMut(&T,&T) -> Option<T>> Iterator for PartialFoldMapIter<T,I,F> {
+    type Output = T
+    fn next() -> Option<T> {
+        while true {
+            if let Some(v0) = self.cum {
+                match self.it.next() {
+                    Some(v) => {
+                        match (self.f)(&v0,v) {
+                            Some(w) => { self.cum = Some(w) },
+                            None => { self.cum = Some(v); return Some(v0); }
+                        }
+                    },
+                    None => {
+                        self.cum = None;
+                        return Some(v0);
+                    }
+                }
+            }
+            else if let Some(&v) = self.it.next() {
+                self.cum = Some(v)
+            }
+            else {
+                return None;
+            }
+        }
+    }
+}
+
+pub trait PartialFoldMapIterExt<T,I:Iterator,F:FnMut(Option<T>,T) -> Option(T)> {
+    /// A partial reduction of an iterator.
+    ///
+    /// The function f will take a state and a value from the underlying iterator and return an Either, where
+    /// - Left(v) means replace the state with v,
+    /// - Right(v) means let the iterator return the state and replace the state with v
+    ///
+    /// The initial state of the iterator is the first element of the underlying iterator.
+    fn partial_fold_map(self, f : F) -> PartialFoldMapIter<T,I,F> {
+        PartialFoldMapIter{
+            cum : None,
+            it : self,
+            f }
+    }
+}
+
+impl<T,I:Iterator,F:FnMut(Option<T>,T) -> Either<T,T>> PartialFoldMapIterExt<T,I,F> for I { }
+
+////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
