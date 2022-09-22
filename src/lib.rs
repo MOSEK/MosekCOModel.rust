@@ -30,6 +30,7 @@ enum VarAtom {
 #[derive(Clone,Copy)]
 enum ConAtom {
     ConicElm(i64,usize)
+    Linear(i32)
 }
 
 #[derive(Clone,Copy)]
@@ -854,34 +855,46 @@ impl Model {
             panic!("Invalid subj index in evaluated expression");
         }
 
-        let acci = self.task.get_num_acc().unwrap();
-        let afei = self.task.get_num_afe().unwrap();
+        let coni = self.task.get_num_con().nuwrap();
+        self.task.append_cons(nelm.try_into().unwrap()).unwrap();
 
-        // let nlinnz = subj.iter().filter(|&&j| if let VarAtom::BarElm(_,_) = unsafe { *self.vars.get_unchecked(j) } { false } else { true } ).count();
-        // let npsdnz = nnz - nlinnz;
+        self.cons.reserve(nelm);
+        let firstcon = self.cons.len();
+        (coni..coni+nelm as i32).for_each(|i| self.cons.push(ConAtom::Linear(i)));
 
-        self.task.append_afes(nelm as i64).unwrap();
-        let domidx = match dom.dt {
-            LinearDomainType::NonNegative => self.task.append_rplus_domain(nelm as i64).unwrap(),
-            LinearDomainType::NonPositive => self.task.append_rminus_domain(nelm as i64).unwrap(),
-            LinearDomainType::Zero        => self.task.append_rzero_domain(nelm as i64).unwrap(),
-            LinearDomainType::Free        => self.task.append_r_domain(nelm as i64).unwrap(),
+        let bk = match dom.dt {
+            LinearDomainType::NonNegative => mosek::Boundkey::LO,
+            LinearDomainType::NonPositive => mosek::Boundkey::UP,
+            LinearDomainType::Zero        => mosek::Boundkey::FX,
+            LinearDomainType::Free        => mosek::Boundkey::FR
         };
 
-        match dom.sp {
-            None => self.task.append_acc_seq(domidx, afei,dom.ofs.as_slice()).unwrap(),
-            Some(sp) => {
-                let mut ofs = vec![0.0; nelm];
-                if sp.len() != dom.ofs.len() { panic!("Broken sparsity pattern") };
-                if let Some(&v) = sp.iter().max() { if v >= nelm { panic!("Broken sparsity pattern"); } }
-                sp.iter().zip(dom.ofs.iter()).for_each(|(&ix,&c)| unsafe { *ofs.get_unchecked_mut(ix) = c; } );
-                self.task.append_acc_seq(domidx, afei,ofs.as_slice()).unwrap();
-            }
-        }
 
-        let firstcon = self.cons.len();
+        
+        // let acci = self.task.get_num_acc().unwrap();
+        // let afei = self.task.get_num_afe().unwrap();
+
+        // self.task.append_afes(nelm as i64).unwrap();
+        // let domidx = match dom.dt {
+        //     LinearDomainType::NonNegative => self.task.append_rplus_domain(nelm as i64).unwrap(),
+        //     LinearDomainType::NonPositive => self.task.append_rminus_domain(nelm as i64).unwrap(),
+        //     LinearDomainType::Zero        => self.task.append_rzero_domain(nelm as i64).unwrap(),
+        //     LinearDomainType::Free        => self.task.append_r_domain(nelm as i64).unwrap(),
+        // };
+
+        // match dom.sp {
+        //     None => self.task.append_acc_seq(domidx, afei,dom.ofs.as_slice()).unwrap(),
+        //     Some(sp) => {
+        //         let mut ofs = vec![0.0; nelm];
+        //         if sp.len() != dom.ofs.len() { panic!("Broken sparsity pattern") };
+        //         if let Some(&v) = sp.iter().max() { if v >= nelm { panic!("Broken sparsity pattern"); } }
+        //         sp.iter().zip(dom.ofs.iter()).for_each(|(&ix,&c)| unsafe { *ofs.get_unchecked_mut(ix) = c; } );
+        //         self.task.append_acc_seq(domidx, afei,ofs.as_slice()).unwrap();
+        //     }
+        // }
+
         self.cons.reserve(nelm);
-        (0..nelm).for_each(|i| self.cons.push(ConAtom::ConicElm(acci,i)));
+        // (0..nelm).for_each(|i| self.cons.push(ConAtom::ConicElm(acci,i)));
 
         let (asubj,
              acof,
@@ -894,16 +907,29 @@ impl Model {
              abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
         let abarsubi : Vec<i64> = abarsubi.iter().map(|&i| i + afei).collect();
 
-        let afeidxs : Vec<i64> = (afei..afei+nelm as i64).collect();
+        // let afeidxs : Vec<i64> = (afei..afei+nelm as i64).collect();
         if asubj.len() > 0 {
-            self.task.put_afe_f_row_list(
-                afeidxs.as_slice(),
-                aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0).try_into().unwrap()).collect::<Vec<i32>>().as_slice(),
-                &aptr[..nelm],
+            self.task.put_a_row_slice(
+                coni,coni+nelm as i32,
+                aptr[0..aptr.len()-1].as_slice(),
+                aptr[1..].as_slice(),
                 asubj.as_slice(),
                 acof.as_slice()).unwrap();
+
+            // self.task.put_afe_f_row_list(
+            //     afeidxs.as_slice(),
+            //     aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0).try_into().unwrap()).collect::<Vec<i32>>().as_slice(),
+            //     &aptr[..nelm],
+            //     asubj.as_slice(),
+            //     acof.as_slice()).unwrap();
         }
-        self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
+        // self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
+
+        let rhs = dom.ofs.iter().zip(afix.iter()).map(||)
+        self.task.put_con_bound_slice(coni,
+                                      coni+nelm as i32,
+                                      vec![bk; nelm].as_slice(),
+                                      dom.ofs.as_slice()).unwrap();
 
         if abarsubi.len() > 0 {
             for (i,j,subk,subl,cof) in utils::ijkl_slice_iterator(abarsubi.as_slice(),
