@@ -258,15 +258,17 @@ pub trait ExprTrait {
     /// - expression contains no zeros or duplicate elements.
     /// - the expression is dense
     fn eval_finalize(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        println!("ExprTrait::eval_finalize");
         self.eval(ws,rs,xs);
 
-        //println!("ExprTrait::eval_finalize");
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
         let nnz  = subj.len();
         let nelm = shape.iter().product();
         let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,nnz,nelm);
 
-        let maxj = rsubj.iter().max().unwrap_or(&0);
+        println!("ExprTrait::eval_finalize. cof = {:?}",cof);
+
+        let maxj = subj.iter().max().unwrap_or(&0);
         let (jj,ff) = xs.alloc(maxj*2+2,maxj+1);
         let (jj,jjind) = jj.split_at_mut(maxj+1);
 
@@ -275,9 +277,11 @@ pub trait ExprTrait {
         let mut nzi = 0;
         rptr[0] = 0;
 
+        subj.iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
+
         if let Some(sp) = sp {
-            for (i,(&p0,&p1)) in ptr[0..ptr.len()-1].iter().zip(ptr[1..].iter()).enumerate() {
-                rptr[ii+1..i+1].fill(nzi); ii = i;
+            for (&i,&p0,&p1) in izip!(sp, ptr[0..ptr.len()-1].iter(), ptr[1..].iter()) {
+                if ii < i { rptr[ii+1..i+1].fill(nzi); ii = i; }
 
                 let mut rownzi : usize = 0;
                 subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
@@ -300,36 +304,32 @@ pub trait ExprTrait {
 
                 izip!(jj[0..rownzi].iter(),
                       rsubj[nzi..nzi+rownzi].iter_mut(),
-                      rcof[nzi..nzi+rownzi].iter_mut()).for_each(|(&j,rj,rc)| {
-                          *rc = unsafe{ *ff.get_unchecked(j) };
-                          unsafe{ *jjind.get_unchecked_mut(j) = 0; };
-                          *rj = j;
-                      });
+                      rcof[nzi..nzi+rownzi].iter_mut())
+                    .for_each(|(&j,rj,rc)| {
+                        *rc = unsafe{ *ff.get_unchecked(j) };
+                        unsafe{ *jjind.get_unchecked_mut(j) = 0; };
+                        *rj = j;
+                    });
 
                 nzi += rownzi;
-                println!("ExprTrait::eval_finalize: nzi = {}",nzi);
+                println!("ExprTrait::eval_finalize sparse: nzi = {}",nzi);
                 rptr[i+1] = nzi;
                 ii += 1;
             }
-            ....
         }
         else {
-            for (&p0,&p1,rp1) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),rptr[1..].iter()) {
-                //rptr[ii+1..i+1].fill(nzi); ii = i;
-                //let mut rownzi : usize = 0;
+            for (&p0,&p1,rp) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),rptr[1..].iter_mut()) {
 
-                izip!(subj[p0..p1].iter().map(|&v| v)
-                      cof[p0..p1].iter().map(|&v| v))
-                    .partial_fold_map(|(j0,v0),(j,v)| if j0 == j { Some(v0+v) } else { None })
-                    .for_each(|(j0,v0)| {
-                        .....
-                    });
+                // izip!(subj[p0..p1].iter().map(|&v| v)
+                //       cof[p0..p1].iter().map(|&v| v))
+                //     .partial_fold_map(|(j0,v0),(j,v)| if j0 == j { Some(v0+v) } else { None })
+                //     .for_each(|(j0,v0)| {
+                //         .....
+                //     });
+                let mut rownzi : usize = 0;
 
-
-                    
-
-                subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
                 subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
+                    println!("-- j = {}, c = {}, ind = {}",j,c,jjind[j]);
                     if c == 0.0 {}
                     else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
                         unsafe{
@@ -340,9 +340,7 @@ pub trait ExprTrait {
                         rownzi += 1;
                     }
                     else {
-                        unsafe{
-                            *ff.get_unchecked_mut(j) += c;
-                        }
+                        unsafe{ *ff.get_unchecked_mut(j) += c; }
                     }
                 });
 
@@ -354,9 +352,11 @@ pub trait ExprTrait {
                           *rj = j;
                       });
 
+                jj[0..rownzi].fill(0);
+
                 nzi += rownzi;
-                println!("ExprTrait::eval_finalize: nzi = {}",nzi);
-                rptr[i+1] = nzi;
+                println!("ExprTrait::eval_finalize dense: nzi = {}",nzi);
+                *rp = nzi;
                 ii += 1;
             }
         }
@@ -679,9 +679,9 @@ impl<E:ExprTrait> ExprTrait for ExprDot<E> {
             rsubj.clone_from_slice(subj);
             rptr[0] = 0;
             rptr[1] = rnnz;
-            println!("ExprDot::eval: result nnz = {}, nelm = {}, ptr = {:?}, subj = {:?}",rnnz,rnelm,rptr,rsubj);
+            println!("ExprDot::eval: result nnz = {}, nelm = {}, ptr = {:?}, subj = {:?}, data = {:?}",rnnz,rnelm,rptr,rsubj,self.data);
             for (&p0,&p1,v) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),self.data.iter()) {
-                for (&c,rc) in cof[p0..p1].iter().zip(rcof.iter_mut()) {
+                for (&c,rc) in cof[p0..p1].iter().zip(rcof[p0..p1].iter_mut()) {
                     *rc = c*v;
                 }
             }

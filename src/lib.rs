@@ -1127,7 +1127,7 @@ impl Model {
                     if numbarvar > 0 { self.task.get_barx_slice(whichsol,0,numbarvar as i32,barx.len() as i64,barx.as_mut_slice()).unwrap(); }
                     if numacc > 0 { self.task.evaluate_accs(whichsol,accx.as_mut_slice()).unwrap(); }
 
-                    self.vars.iter().zip(sol.primal.var.iter_mut()).for_each(|(&v,r)| {
+                    self.vars[1..].iter().zip(sol.primal.var[1..].iter_mut()).for_each(|(&v,r)| {
                         *r = match v {
                             VarAtom::Linear(j) => xx[j as usize],
                             VarAtom::BarElm(j,ofs) => barx[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
