@@ -24,7 +24,6 @@ use mosekmodel::expr::Expr;
 
 fn main() {
 //TAG:begin-define-data
-
     let a0 = vec![ 3.0, 1.0, 2.0, 0.0 ];
     let a1 = vec![ 2.0, 1.0, 3.0, 1.0 ];
     let a2 = vec![ 0.0, 2.0, 0.0, 3.0 ];

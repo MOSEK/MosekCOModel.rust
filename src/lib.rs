@@ -6,7 +6,7 @@ pub mod expr;
 use itertools::{iproduct};
 use std::iter::once;
 
-use utils::FoldMapExt;
+use utils::*;
 
 /////////////////////////////////////////////////////////////////////
 // Model, constraint and variables
@@ -29,7 +29,7 @@ enum VarAtom {
 }
 #[derive(Clone,Copy)]
 enum ConAtom {
-    ConicElm(i64,usize)
+    ConicElm(i64,usize),
     Linear(i32)
 }
 
@@ -640,12 +640,65 @@ impl Model {
     pub fn variable<D : VarDomainTrait>(& mut self, name : Option<&str>, dom : D) -> Variable {
         dom.create(self,name)
     }
-    
-    fn linear_variable(&mut self, _name : Option<&str>,dom : LinearDomain) -> Variable {
+
+
+    fn var_names(& mut self, name : &str, first : i32, shape : &[usize], sp : Option<&[usize]>) {
+        let mut buf = name.to_string();
+        let baselen = buf.len();
+        utils::for_each_index(shape,
+                              sp,
+                              |j,idx:&[usize]| {
+                                  buf.truncate(baselen);
+                                  buf.push('[');
+                                  if let Some(&i) = idx.first() {
+                                      for c in i.digits_10() { buf.push(c); }
+                                      for &i in idx[1..].iter() {
+                                          buf.push(',');
+                                          for c in i.digits_10() {
+                                              buf.push(c);
+                                          }
+                                      }
+                                  }
+                                  buf.push(']');
+                                  self.task.put_var_name(first + j as i32,buf.as_str()).unwrap();
+                              });
+    }
+
+    fn con_names(task : & mut mosek::Task, name : &str, first : i32, shape : &[usize]) {
+        let mut buf = name.to_string();
+        let baselen = buf.len();
+        utils::for_each_index(shape,
+                              None,
+                              |j,idx:&[usize]| {
+                                  buf.truncate(baselen);
+                                  buf.push('[');
+                                  if let Some(&i) = idx.first() {
+                                      for c in i.digits_10() { buf.push(c); }
+                                      for &i in idx[1..].iter() {
+                                          buf.push(',');
+                                          for c in i.digits_10() {
+                                              buf.push(c);
+                                          }
+                                      }
+                                  }
+                                  buf.push(']');
+                                  task.put_con_name(first + j as i32,buf.as_str()).unwrap();
+                              });
+    }
+
+    fn linear_variable(&mut self, name : Option<&str>,dom : LinearDomain) -> Variable {
         let n = dom.ofs.len();
         let vari = self.task.get_num_var().unwrap();
-        let varend : i32= ((vari as usize)+n).try_into().unwrap();
+        let varend : i32 = ((vari as usize)+n).try_into().unwrap();
         self.task.append_vars(n.try_into().unwrap()).unwrap();
+        if let Some(name) = name {
+            if let Some(ref sp) = dom.sp {
+                self.var_names(name,vari,dom.shape.as_slice(),Some(sp.as_slice()))
+            }
+            else {
+                self.var_names(name,vari,dom.shape.as_slice(),None)
+            }
+        }
         self.vars.reserve(n);
 
         let firstvar = self.vars.len();
@@ -674,7 +727,7 @@ impl Model {
         }
     }
 
-    fn free_variable(&mut self, _name : Option<&str>, shape : &[usize]) -> Variable {
+    fn free_variable(&mut self, name : Option<&str>, shape : &[usize]) -> Variable {
         let vari = self.task.get_num_var().unwrap();
         let n : usize = shape.iter().product();
         let varend : i32 = ((vari as usize) + n).try_into().unwrap();
@@ -682,6 +735,9 @@ impl Model {
         self.vars.reserve(n);
         (vari..vari+n as i32).for_each(|j| self.vars.push(VarAtom::Linear(j)));
         self.task.append_vars(n as i32).unwrap();
+        if let Some(name) = name {
+            self.var_names(name,vari,shape,None)
+        }
         self.task.put_var_bound_slice_const(vari,varend,mosek::Boundkey::FR,0.0,0.0).unwrap();
         Variable{
             idxs : (firstvar..firstvar+n).collect(),
@@ -771,6 +827,15 @@ impl Model {
         self.task.append_accs_seq(vec![domidx; numcone].as_slice(),n as i64,afei,dom.ofs.as_slice()).unwrap();
         self.task.put_afe_f_entry_list(asubi.as_slice(),asubj.as_slice(),acof.as_slice()).unwrap();
 
+        // if let Some(name) = name {
+        //     if let Some(ref sp) = dom.sp {
+        //         self.var_names(name,vari,dom.shape,Some(sp.as_slice()))
+        //     }
+        //     else {
+        //         self.var_names(name,vari,dom.shape,None)
+        //     }
+        // }
+
         let firstvar = self.vars.len();
         self.vars.reserve(n);
         self.cons.reserve(n);
@@ -842,7 +907,7 @@ impl Model {
 
 
     fn linear_constraint(& mut self,
-                         _name : Option<&str>,
+                         name : Option<&str>,
                          dom  : LinearDomain) -> Constraint {
         let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
         if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
@@ -855,8 +920,12 @@ impl Model {
             panic!("Invalid subj index in evaluated expression");
         }
 
-        let coni = self.task.get_num_con().nuwrap();
+        let coni = self.task.get_num_con().unwrap();
         self.task.append_cons(nelm.try_into().unwrap()).unwrap();
+
+        if let Some(name) = name {
+            Self::con_names(& mut self.task,name,coni,dom.shape.as_slice())
+        }
 
         self.cons.reserve(nelm);
         let firstcon = self.cons.len();
@@ -905,14 +974,14 @@ impl Model {
              abarsubk,
              abarsubl,
              abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
-        let abarsubi : Vec<i64> = abarsubi.iter().map(|&i| i + afei).collect();
+        // let abarsubi : Vec<i64> = abarsubi.iter().map(|&i| i + afei).collect();
 
         // let afeidxs : Vec<i64> = (afei..afei+nelm as i64).collect();
         if asubj.len() > 0 {
             self.task.put_a_row_slice(
                 coni,coni+nelm as i32,
-                aptr[0..aptr.len()-1].as_slice(),
-                aptr[1..].as_slice(),
+                &aptr[0..aptr.len()-1],
+                &aptr[1..],
                 asubj.as_slice(),
                 acof.as_slice()).unwrap();
 
@@ -925,11 +994,12 @@ impl Model {
         }
         // self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
 
-        let rhs = dom.ofs.iter().zip(afix.iter()).map(||)
+        let rhs : Vec<f64> = dom.ofs.iter().zip(afix.iter()).map(|(&ofs,&b)| ofs-b).collect();
         self.task.put_con_bound_slice(coni,
                                       coni+nelm as i32,
                                       vec![bk; nelm].as_slice(),
-                                      dom.ofs.as_slice()).unwrap();
+                                      rhs.as_slice(),
+                                      rhs.as_slice()).unwrap();
 
         if abarsubi.len() > 0 {
             for (i,j,subk,subl,cof) in utils::ijkl_slice_iterator(abarsubi.as_slice(),
@@ -939,7 +1009,8 @@ impl Model {
                                                                   abarcof.as_slice()) {
                 let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
                 let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
-                self.task.put_afe_barf_entry(afei+i,j,&[matidx],&[1.0]).unwrap();
+                //self.task.put_afe_barf_entry(afei+i,j,&[matidx],&[1.0]).unwrap();
+                self.task.put_bara_ij(coni+i as i32, j,&[matidx],&[1.0]).unwrap();
             }
         }
 
@@ -1162,7 +1233,8 @@ impl Model {
                     });
                     self.cons.iter().zip(sol.primal.con.iter_mut()).for_each(|(&v,r)| {
                         *r = match v {
-                            ConAtom::ConicElm(acci,ofs) => accx[accptr[acci as usize]+ofs]
+                            ConAtom::ConicElm(acci,ofs) => accx[accptr[acci as usize]+ofs],
+                            ConAtom::Linear(i) => xc[i as usize]
                         };
                     });
                 }
@@ -1184,14 +1256,16 @@ impl Model {
                             VarAtom::BarElm(j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                             VarAtom::ConicElm(_j,coni) => {
                                 match self.cons[coni] {
-                                    ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs]
+                                    ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs],
+                                    ConAtom::Linear(i) => y[i as usize]
                                 }
                             }
                         };
                     });
                     self.cons.iter().zip(sol.dual.con.iter_mut()).for_each(|(&v,r)| {
                         *r = match v {
-                            ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs]
+                            ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs],
+                            ConAtom::Linear(i) => y[i as usize]
                         };
                     });
                 }

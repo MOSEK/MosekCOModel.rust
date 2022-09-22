@@ -198,7 +198,7 @@ impl WorkStack {
         self.utop = utop - nnz;
         self.ftop -= nnz;
 
-        println!("pop_expr: nd = {}, nnz = {}, nelm = {}, ptr = {:?}, subj = {:?}",nd,nnz,nelm,ptr,subj);
+        // println!("pop_expr: nd = {}, nnz = {}, nelm = {}, ptr = {:?}, subj = {:?}",nd,nnz,nelm,ptr,subj);
         (shape,ptr,sp,&subj[..nnz],&cof[..nnz])
     }
     /// Returns without validation a mutable view of the top-most
@@ -258,7 +258,7 @@ pub trait ExprTrait {
     /// - expression contains no zeros or duplicate elements.
     /// - the expression is dense
     fn eval_finalize(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        println!("ExprTrait::eval_finalize");
+        // println!("ExprTrait::eval_finalize");
         self.eval(ws,rs,xs);
 
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
@@ -266,7 +266,7 @@ pub trait ExprTrait {
         let nelm = shape.iter().product();
         let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,nnz,nelm);
 
-        println!("ExprTrait::eval_finalize. cof = {:?}",cof);
+        // println!("ExprTrait::eval_finalize. cof = {:?}",cof);
 
         let maxj = subj.iter().max().unwrap_or(&0);
         let (jj,ff) = xs.alloc(maxj*2+2,maxj+1);
@@ -312,7 +312,7 @@ pub trait ExprTrait {
                     });
 
                 nzi += rownzi;
-                println!("ExprTrait::eval_finalize sparse: nzi = {}",nzi);
+                // println!("ExprTrait::eval_finalize sparse: nzi = {}",nzi);
                 rptr[i+1] = nzi;
                 ii += 1;
             }
@@ -329,7 +329,7 @@ pub trait ExprTrait {
                 let mut rownzi : usize = 0;
 
                 subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
-                    println!("-- j = {}, c = {}, ind = {}",j,c,jjind[j]);
+                    // println!("-- j = {}, c = {}, ind = {}",j,c,jjind[j]);
                     if c == 0.0 {}
                     else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
                         unsafe{
@@ -355,7 +355,7 @@ pub trait ExprTrait {
                 jj[0..rownzi].fill(0);
 
                 nzi += rownzi;
-                println!("ExprTrait::eval_finalize dense: nzi = {}",nzi);
+                // println!("ExprTrait::eval_finalize dense: nzi = {}",nzi);
                 *rp = nzi;
                 ii += 1;
             }

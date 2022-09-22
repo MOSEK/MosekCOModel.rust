@@ -268,6 +268,69 @@ impl<'a,'b,'c,'d,'e> Iterator for IJKLSliceIterator<'a,'b,'c,'d,'e> {
 
 ////////////////////////////////////////////////////////////
 
+/// Given a shape, and optionally a sparsity pattern, call a function
+/// f with each index in the shape by lexicalic order.
+///
+/// Arguments:
+/// - shape The shape
+/// - sp Optional sparsity pattern
+/// - f Function called for each index in the shape
+pub fn for_each_index<F>(shape : &[usize], sp : Option<&[usize]>, mut f : F) where F : FnMut(usize,&[usize]) {
+    let mut idx = vec![0;shape.len()];
+
+    if let Some(sp) = sp {
+        let mut stride : Vec<usize> = vec![0; shape.len()];
+        let _ = shape.iter().rev().zip(stride.iter_mut().rev()).fold(1,|k,(&d,s)| { *s = k; k*d });
+        for &i in sp {
+            let _ = idx.iter_mut().zip(stride.iter()).fold(i,|k,(ix,&s)| { *ix = k / s; k % s } );
+            f(i,idx.as_slice());
+        }
+    }
+    else {
+        for i in 0..shape.iter().product() {
+            f(i,idx.as_slice());
+            let _ = shape.iter().zip(idx.iter_mut()).rev()
+                .fold(1,|carry,(&d,ix)| {
+                    if carry == 0 { 0 }
+                    else {
+                        *ix += carry;
+                        if *ix < d { 0 }
+                        else { *ix = 0; 1 }
+                    }
+                });
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////
+
+pub struct ToDigit10Iter { d : usize, v : usize }
+pub trait ToDigit10IterExt { fn digits_10(self) -> ToDigit10Iter; }
+impl ToDigit10IterExt for usize {
+    fn digits_10(self) -> ToDigit10Iter {
+        let d10 = (self as f64).log10().floor() as usize;
+        let d = (10.0f64).powi(d10 as i32) as usize;
+        // println!("d10 = {}, d = {}, v = {}",d10,d,self);
+        ToDigit10Iter{d:d.max(1),v:self}
+    }
+}
+
+impl Iterator for ToDigit10Iter {
+    type Item = char;
+    fn next(& mut self) -> Option<char> {
+        // println!("d = {}, v = {}",self.d,self.v);
+        if self.d == 0 { None }
+        else {
+            let r = self.v / self.d;
+            self.v %= self.d;
+            self.d /= 10;
+            Some((r as u8 + b'0') as char)
+        }
+    }
+}
+
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
