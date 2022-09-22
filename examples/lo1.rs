@@ -20,7 +20,7 @@ extern crate mosekmodel;
 //TAG:end-import
 
 use mosekmodel::{SolutionType,Model,Sense,greater_than,less_than,equal_to,ModelItemIndex};
-use mosekmodel::expr::Expr;
+use mosekmodel::expr::*;
 
 fn main() {
 //TAG:begin-define-data

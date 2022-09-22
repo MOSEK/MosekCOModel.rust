@@ -905,7 +905,6 @@ impl Model {
         dom.create(self,name)
     }
 
-
     fn linear_constraint(& mut self,
                          name : Option<&str>,
                          dom  : LinearDomain) -> Constraint {
@@ -1107,7 +1106,9 @@ impl Model {
     }
 
     ////////////////////////////////////////////////////////////
-    // Objective 
+    // Objective
+
+
     fn set_objective(& mut self, name : Option<&str>, sense : Sense) {
         let (_shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
         if ptr.len()-1 > 1 { panic!("Objective expressions may only contain one element"); }

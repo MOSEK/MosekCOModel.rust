@@ -688,3 +688,34 @@ impl<E:ExprTrait> ExprTrait for ExprDot<E> {
         }
     }
 }
+
+pub trait Stackable {
+    type Item;
+    fn stack(self) -> Self::Item;
+}
+
+pub struct ExprWeightedAdd<L:ExprTrait,R:ExprTrait> {
+    lhs : L,
+    rhs : R,
+    wl  : f64,
+    wr  : f64
+}
+
+impl<L:ExprTrait,R:ExprTrait> ExprTrait for ExprWeightedAdd<ExprWeightedAdd<L>,R> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+}
+
+impl<L:ExprTrait,R:ExprTrait> ExprTrait for ExprWeightedAdd<L,R> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+}
+
+
+// impl<L:ExprTrait,R:ExprTrait> std::ops::Add<R> for L {
+//     type Output = ExprWeightedAdd<L,R>;
+//     fn add(self,rhs:R) -> ExprWeightedAdd<L,R> { ExprWeightedAdd{lhs:self,rhs:rhs,wl:1.0,wr:1.0} }
+// }
+
+// impl<L:ExprTrait,R:ExprTrait> std::ops::Sub<R> for L {
+//     type Output = ExprWeightedAdd<L,R>;
+//     fn sub(self,rhs:R) -> ExprWeightedAdd<L,R> { ExprWeightedAdd{lhs:self,rhs:rhs,wl:1.0,wr:-1.0} }
+// }
