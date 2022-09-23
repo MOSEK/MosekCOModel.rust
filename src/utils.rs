@@ -329,7 +329,85 @@ impl Iterator for ToDigit10Iter {
     }
 }
 
+////////////////////////////////////////////////////////////
 
+//fn chain<U>(self, other: U) -> Chain<Self, <U as IntoIterator>::IntoIter>ⓘ where
+//    U: IntoIterator<Item = Self::Item>,
+
+pub struct ChunksByIter<'a,'b,T,I>
+where
+    I:Iterator<Item = (&'b usize,&'b usize)>
+{
+    data : &'a [T],
+    ptr  : I
+}
+
+// pub struct ChunksByIterMut<'a,'b,T,I>
+// where
+//     I:Iterator<Item = (&'b usize,&'b usize)>
+// {
+//     data : &'a mut [T],
+//     ptr  : I
+// }
+
+impl<'a,'b,T,I> Iterator for ChunksByIter<'a,'b,T,I>
+where
+    I:Iterator<Item = (&'b usize,&'b usize)>
+{
+    type Item = &'a[T];
+    fn next(& mut self) -> Option<Self::Item> {
+        if let Some((&p0,&p1)) = self.ptr.next() {
+            Some(&self.data[p0..p1])
+        }
+        else {
+            None
+        }
+    }
+}
+
+// impl<'a,'b,T,I> Iterator for ChunksByIterMut<'a,'b,T,I>
+// where
+//     I:Iterator<Item = (&'b usize,&'b usize)>
+// {
+//     type Item = & 'a mut[T];
+//     fn next(& mut self) -> Option<Self::Item> {
+//         if let Some((&p0,&p1)) = self.ptr.next() {
+//             Some(& mut self.data[p0..p1])
+//         }
+//         else {
+//             None
+//         }
+//     }
+// }
+
+pub trait ChunksByIterExt<T> {
+    fn chunks_by<'a,'b>(&'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>>;
+}
+// pub trait ChunksByIterMutExt<T> {
+//     fn chunks_by_mut<'a,'b>(&'a mut self, ptr : &'b[usize]) -> ChunksByIterMut<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>>;
+// }
+
+impl<T> ChunksByIterExt<T> for &[T] {
+    fn chunks_by<'a,'b>(& 'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>> {
+        if let Some(&p) = ptr.last() { if p > self.len() { panic!("Invalid ptr for chunks_by iterator") } }
+        if ptr.iter().zip(ptr[1..].iter()).any(|(p0,p1)| p1 < p0) { panic!("Invalid ptr for chunks_by iterator") }
+
+        ChunksByIter{ data : self, ptr:ptr.iter().zip(ptr[1..].iter()) }
+    }
+}
+// impl<T> ChunksByIterMutExt<T> for &[T] {
+//     fn chunks_by_mut<'a,'b>(& 'a mut self, ptr : &'b[usize]) -> ChunksByIterMut<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>> {
+//         if let Some(&p) = ptr.last() { if p > self.len() { panic!("Invalid ptr for chunks_by iterator") } }
+//         if ptr.iter().zip(ptr[1..].iter()).any(|(p0,p1)| p1 < p0) { panic!("Invalid ptr for chunks_by iterator") }
+
+//         ChunksByIterMut{ data : self, ptr:ptr.iter().zip(ptr[1..].iter()) }
+//     }
+// }
+
+
+
+
+////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

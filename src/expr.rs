@@ -1,6 +1,7 @@
 extern crate itertools;
 
 use itertools::{iproduct,izip};
+use super::utils::*;
 //use super::utils;
 use super::Variable;
 //use super::utils;
@@ -761,18 +762,61 @@ impl<L:ExprTrait,R:ExprTrait> ExprTrait for ExprAdd<L,R> {
         self.lhs.eval(ws,rs,xs);
         self.rhs.eval(ws,rs,xs);
 
-        let exprs = ws.pop_exprs(2);
-        let (rshape,rptr,rsp,rsubj,rcof) = exprs.pop().unwrap();
-        let (lshape,lptr,lsp,lsubj,lcof) = exprs.pop().unwrap();
+        let mut exprs = ws.pop_exprs(2);
+        let (shape0,ptr0,sp0,subj0,cof0) = exprs.pop().unwrap();
+        let (shape1,ptr1,sp1,subj1,cof1) = exprs.pop().unwrap();
 
-        if rshape.len() != lshape.len() { panic!("Mismatching operand shapes") }
-        if rshape.iter().zip(lshape.iter()).any(|(&a,&b)| a != b) { panic!("Mismatching operand shapes") }
+        if shape0.len() != shape1.len() { panic!("Mismatching operand shapes") }
+        if shape0.iter().zip(shape1.iter()).any(|(&a,&b)| a != b) { panic!("Mismatching operand shapes") }
 
-        let rnnz = rsubj.len() + lsubj.len();
+        let rnnz = subj0.len() + subj0.len();
         let rnelm =
-            match (
+            match (sp0,sp1) {
+                (None,_) | (_,None) => ptr0.len()+ptr1.len()-2,
+                (Some(sp0),Some(sp1)) => {
+                    let mut i0 = sp0.iter().peekable();
+                    let mut i1 = sp1.iter().peekable();
+                    let mut n = 0;
+                    while match (i0.peek(),i1.peek()) {
+                        (Some(_j0),None) => { let _ =  i0.next(); n += 1; true },
+                        (None,Some(_j1)) => { let _ =  i1.next(); n += 1; true },
+                        (Some(&j0),Some(&j1)) => {
+                            n += 1;
+                            if j0 < j1 { let _ = i0.next(); }
+                            else if j1 < j0 { let _ = i1.next(); }
+                            else { let _ = i0.next(); let _ = i1.next(); }
+                            true
+                        },
+                        _ => false
+                    }{ /*empty loop body*/}
+                    n
+                }
+            };
 
-            if let None = rsp { rptr.len()-1 } else if 
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape0,rnnz,rnelm);
+        match (sp0,sp1) {
+            (None,None) => {
+                rptr[0] = 0;
+                let mut nzi : usize = 0;
+                izip!(subj0.chunks_by(ptr0),
+                      cof0.chunks_by(ptr0),
+                      subj1.chunks_by(ptr1),
+                      cof1.chunks_by(ptr1),
+                      rptr[1..].iter_mut())
+                    .for_each(|(subj0,cof0,subj1,cof1,rp)| {
+                        rsubj[nzi..nzi+subj0.len()].clone_from_slice(subj0);
+                        rcof[nzi..nzi+cof0.len()].clone_from_slice(cof0);
+                        nzi += subj0.len();
+                        rsubj[nzi..nzi+subj1.len()].clone_from_slice(subj1);
+                        rcof[nzi..nzi+cof1.len()].clone_from_slice(cof1);
+                        nzi += subj1.len();
+                        *rp = nzi;
+                    });
+            },
+            _ => {
+                todo!("Yodelay")
+            }
+        }
     }
 }
 
@@ -801,8 +845,6 @@ impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         let n = self.eval_rec(ws,rs,xs);
         let exprs = ws.pop_exprs(n);
-
-
 
     }
 }
