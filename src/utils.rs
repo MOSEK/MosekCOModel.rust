@@ -416,21 +416,30 @@ pub struct SelectFromSliceIter<'a,'b,T> {
 }
 
 impl<'a,'b,T> Iterator for SelectFromSliceIter<'a,'b,T> {
-    type Item = &T;
+    type Item = & 'a T;
     fn next(& mut self) -> Option<Self::Item> {
         if self.i >= self.idx.len() {
             None
         }
         else {
-            self i += 1;
+            self.i += 1;
             Some(unsafe{ &*self.src.get_unchecked(*self.idx.get_unchecked(self.i-1))})
         }
     }
 }
-trait SelectFromSliceExt<T> {
-    fn select(&self)
+trait SelectFromSliceExt<T>{
+    fn select<'a,'b>(&'a self, idxs : &'b [usize]) -> SelectFromSliceIter<'a,'b,T>;
 }
 
+impl<T> SelectFromSliceExt<T> for &[T] {
+    fn select<'a,'b>(&'a self, idxs : &'b [usize]) -> SelectFromSliceIter<'a,'b,T> {
+        SelectFromSliceIter{
+            src : self,
+            idx : idxs,
+            i : 0
+        }
+    }
+}
 
 ////////////////////////////////////////////////////////////
 

@@ -879,16 +879,17 @@ impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
                 panic!("Mismatching operand shapes");
             }
 
-        let (shape,_,_,_,_) = exprs.first().unwrap()
+        let (shape,_,_,_,_) = exprs.first().unwrap();
 
         // count result nonzeros
-        let rnnz : usize = expr.iter().map(|(_,_,_,subj,_)| subj.len()).sum();
+        let rnnz : usize = exprs.iter().map(|(_,_,_,subj,_)| subj.len()).sum();
 
         // check sparsity
-        let has_dense = exprs.iter().any(|_,_,sp,_,_| sp.is_none() );
+        let has_dense = exprs.iter().any(|(_,_,sp,_,_)| sp.is_none() );
 
         if has_dense {
             let rnelm = shape.iter().product();
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
             // build rptr
             rptr.fill(0);
             for (_,sp,ptr,_,_) in exprs {
@@ -896,7 +897,7 @@ impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
             }
         }
         else {
-            let nelm_bound = if has_dense { shape.iter().product() } else { shape.iter().product().max(exprs.map(|(_,ptr,_,_,_)| ptr.len()-1).sum()) };
+            let nelm_bound = if has_dense { shape.iter().product() } else { shape.iter().product::<usize>().max(exprs.iter().map(|(_,ptr,_,_,_)| ptr.len()-1).sum()) };
             todo!("Merge sparsity patterns")
         }
 
@@ -923,6 +924,5 @@ impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
         //         }
         //     };
 
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape0,rnnz,rnelm);
     }
 }
