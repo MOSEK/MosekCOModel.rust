@@ -762,8 +762,17 @@ impl<L:ExprTrait,R:ExprTrait> ExprTrait for ExprAdd<L,R> {
         self.rhs.eval(ws,rs,xs);
 
         let exprs = ws.pop_exprs(2);
-        // let (rshape,rptr,rsp,rsubj,rcof) = exprs.pop().unwrap();
-        // let (lshape,lptr,lsp,lsubj,lcof) = exprs.pop().unwrap();
+        let (rshape,rptr,rsp,rsubj,rcof) = exprs.pop().unwrap();
+        let (lshape,lptr,lsp,lsubj,lcof) = exprs.pop().unwrap();
+
+        if rshape.len() != lshape.len() { panic!("Mismatching operand shapes") }
+        if rshape.iter().zip(lshape.iter()).any(|(&a,&b)| a != b) { panic!("Mismatching operand shapes") }
+
+        let rnnz = rsubj.len() + lsubj.len();
+        let rnelm =
+            match (
+
+            if let None = rsp { rptr.len()-1 } else if 
     }
 }
 
