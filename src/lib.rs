@@ -1,3 +1,4 @@
+//#![feature(specialization)]
 extern crate mosek;
 extern crate itertools;
 

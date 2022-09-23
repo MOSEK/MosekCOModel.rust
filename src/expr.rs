@@ -249,7 +249,7 @@ impl WorkStack {
     }
 }
 
-pub trait ExprTrait {
+pub trait ExprTrait : Sized {
     /// eval_chil`d() will evaluate the expression and put the result on the `rs` stack.
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack);
     /// eval() will evaluate the expression, then cleanit up and put
@@ -370,6 +370,10 @@ pub trait ExprTrait {
     //fn mul_matrix_right(self, matrix : Matrix) -> ExprMulMatrixRight<Self>
     //fn transpose(self) -> ExprPermuteAxes<Self>
     //fn axispermute(self) -> ExprPermuteAxes<Self>
+
+    fn add<R:ExprTrait>(self,rhs : R) -> ExprAdd<Self,R> {
+        ExprAdd{lhs:self,rhs}
+    }
 }
 
 
@@ -694,28 +698,102 @@ pub trait Stackable {
     fn stack(self) -> Self::Item;
 }
 
-pub struct ExprWeightedAdd<L:ExprTrait,R:ExprTrait> {
+
+
+
+
+
+
+
+
+
+
+
+////////////////////////////////////////////////////////////
+//
+// ExprAdd is constructed for `e,d : ExprTrait` by
+// ```
+//   e.add(d)
+// ```
+// The following construction is meant to turn a chain of adds like this
+// ```
+//   e.add(e1).add(e2).add(e3)
+// ```
+// which would end up as a structure
+// ```
+//   ExprAdd(ExprAdd(ExprAdd(e,e1),e2),e3)
+// ```
+//
+// which would by default be evaluated one expression at a time, into
+// a construction that is aware of the recursion:
+// ```
+//   ExprAddRec(ExprAddRec(ExprAdd(e,e1),e2),e3)
+// ```
+// ExprAddRec will have a specialized `eval` function that first
+// evaluates the whole chain of terms, then adds them
+//
+// For this purpose we use a private trait implemented only by ExprAdd
+// and ExprAddRec providing a recursive evaluation function.
+
+
+pub trait ExprAddRecTrait {
+    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize;
+}
+
+pub struct ExprAdd<L:ExprTrait+Sized,R:ExprTrait> {
     lhs : L,
-    rhs : R,
-    wl  : f64,
-    wr  : f64
+    rhs : R
+}
+pub struct ExprAddRec<L:ExprAddRecTrait,R:ExprTrait> {
+    lhs : L,
+    rhs : R
 }
 
-impl<L:ExprTrait,R:ExprTrait> ExprTrait for ExprWeightedAdd<ExprWeightedAdd<L>,R> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+// ExprAdd implementation
+impl<L:ExprTrait,R:ExprTrait> ExprAdd<L,R> {
+    fn add<T:ExprTrait>(self,rhs : T) -> ExprAddRec<ExprAdd<L,R>,T> {
+        ExprAddRec{lhs: self, rhs}
+    }
 }
 
-impl<L:ExprTrait,R:ExprTrait> ExprTrait for ExprWeightedAdd<L,R> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+impl<L:ExprTrait,R:ExprTrait> ExprTrait for ExprAdd<L,R> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.lhs.eval(ws,rs,xs);
+        self.rhs.eval(ws,rs,xs);
+
+        let exprs = ws.pop_exprs(2);
+        // let (rshape,rptr,rsp,rsubj,rcof) = exprs.pop().unwrap();
+        // let (lshape,lptr,lsp,lsubj,lcof) = exprs.pop().unwrap();
+    }
 }
 
+impl<L:ExprTrait,R:ExprTrait> ExprAddRecTrait for ExprAdd<L,R> {
+    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
+        self.rhs.eval(rs,ws,xs);
+        self.lhs.eval(rs,ws,xs);
+        2
+    }
+}
+// ExprAddRec implementation
+impl<L:ExprAddRecTrait,R:ExprTrait>  ExprAddRec<L,R> {
+    fn add<T:ExprTrait>(self,rhs : T) -> ExprAddRec<Self,T> {
+        ExprAddRec{lhs: self, rhs}
+    }
+}
 
-// impl<L:ExprTrait,R:ExprTrait> std::ops::Add<R> for L {
-//     type Output = ExprWeightedAdd<L,R>;
-//     fn add(self,rhs:R) -> ExprWeightedAdd<L,R> { ExprWeightedAdd{lhs:self,rhs:rhs,wl:1.0,wr:1.0} }
-// }
+impl<L:ExprAddRecTrait,R:ExprTrait> ExprAddRecTrait for ExprAddRec<L,R> {
+    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
+        self.rhs.eval(rs,ws,xs);
+        1+self.lhs.eval_rec(rs,ws,xs)
+    }
+}
 
-// impl<L:ExprTrait,R:ExprTrait> std::ops::Sub<R> for L {
-//     type Output = ExprWeightedAdd<L,R>;
-//     fn sub(self,rhs:R) -> ExprWeightedAdd<L,R> { ExprWeightedAdd{lhs:self,rhs:rhs,wl:1.0,wr:-1.0} }
-// }
+impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        let n = self.eval_rec(ws,rs,xs);
+        let exprs = ws.pop_exprs(n);
+
+
+
+    }
+}
