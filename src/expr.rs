@@ -892,9 +892,47 @@ impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
             let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
             // build rptr
             rptr.fill(0);
-            for (_,sp,ptr,_,_) in exprs {
-                
+            for (_,ptr,sp,_,_) in exprs.iter() {
+                if let Some(sp) = sp {
+                    izip!(ptr.iter(),ptr[1..].iter(),sp.iter())
+                        .for_each(|(&p0,&p1,&i)| unsafe{ *rptr.get_unchecked_mut(i+1) += p1-p0 });
+                }
+                else {
+                    izip!(ptr.iter(),ptr[1..].iter(),rptr[1..].iter_mut())
+                        .for_each(|(&p0,&p1,rp)| *rp += p1-p0);
+                }
             }
+            let _ = rptr.iter_mut().fold(0,|a,p| { *p += a; *p });
+
+            for (_,ptr,sp,subj,cof) in exprs.iter() {
+                if let Some(sp) = sp {
+                    izip!(subj.chunks_by(ptr),
+                          cof.chunks_by(ptr),
+                          sp.iter())
+                        .for_each(|(js,cs,&i)| {
+                            let nnz = js.len();
+                            let p0 = unsafe{ *rptr.get_unchecked(i) };
+                            rsubj[p0..p0+nnz].clone_from_slice(&js);
+                            rcof[p0..p0+nnz].clone_from_slice(&cs);
+
+                            unsafe{ *rptr.get_unchecked_mut(i) += nnz };
+                        });
+                }
+                else {
+                    izip!(subj.chunks_by(ptr),
+                          cof.chunks_by(ptr),
+                          rptr.iter())
+                        .for_each(|(js,cs,&p0)| {
+                            let nnz = js.len();
+                            rsubj[p0..p0+nnz].clone_from_slice(&js);
+                            rcof[p0..p0+nnz].clone_from_slice(&cs);
+                        });
+                    rptr.iter_mut().zip(ptr.iter().zip(ptr[1..].iter()).map(|(&p0,&p1)| p1-p0))
+                        .for_each(|(rp,n)| *rp += n);
+                }
+            }
+            // revert rptr
+            let _ = rptr.iter_mut().fold(0,|prevp,p| { let nextp = *p; *p = prevp; nextp } );
         }
         else {
             let nelm_bound = if has_dense { shape.iter().product() } else { shape.iter().product::<usize>().max(exprs.iter().map(|(_,ptr,_,_,_)| ptr.len()-1).sum()) };

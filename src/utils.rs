@@ -441,6 +441,40 @@ impl<T> SelectFromSliceExt<T> for &[T] {
     }
 }
 
+// pub struct SelectFromSliceIterMut<'a,'b,T> {
+//     src : & 'a mut [T],
+//     idx : & 'b[usize],
+//     i   : usize
+// }
+
+// impl<'a,'b,T> Iterator for SelectFromSliceIterMut<'a,'b,T> {
+//     type Item = & 'a mut T;
+//     fn next(& mut self) -> Option<Self::Item> {
+//         if self.i >= self.idx.len() {
+//             None
+//         }
+//         else {
+//             self.i += 1;
+//             let r : & 'a mut T = unsafe{ & mut *self.src.get_unchecked_mut(*self.idx.get_unchecked(self.i-1))};
+//             Some(r)
+//         }
+//     }
+// }
+// trait SelectFromSliceMutExt<T>{
+//     fn select<'a,'b>(&'a mut self, idxs : &'b [usize]) -> SelectFromSliceIterMut<'a,'b,T>;
+// }
+
+// impl<T> SelectFromSliceMutExt<T> for &[T] {
+//     fn select<'a,'b>(&'a mut self, idxs : &'b [usize]) -> SelectFromSliceIterMut<'a,'b,T> {
+//         SelectFromSliceIter{
+//             src : self,
+//             idx : idxs,
+//             i : 0
+//         }
+//     }
+// }
+
+
 ////////////////////////////////////////////////////////////
 
 #[cfg(test)]
