@@ -762,64 +762,89 @@ impl<L:ExprTrait,R:ExprTrait> ExprTrait for ExprAdd<L,R> {
         self.lhs.eval(ws,rs,xs);
         self.rhs.eval(ws,rs,xs);
 
-        let mut exprs = ws.pop_exprs(2);
-        let (shape0,ptr0,sp0,subj0,cof0) = exprs.pop().unwrap();
-        let (shape1,ptr1,sp1,subj1,cof1) = exprs.pop().unwrap();
+        // let mut exprs = ws.pop_exprs(2);
+        // let (shape0,ptr0,sp0,subj0,cof0) = exprs.pop().unwrap();
+        // let (shape1,ptr1,sp1,subj1,cof1) = exprs.pop().unwrap();
 
-        if shape0.len() != shape1.len() { panic!("Mismatching operand shapes") }
-        if shape0.iter().zip(shape1.iter()).any(|(&a,&b)| a != b) { panic!("Mismatching operand shapes") }
+        // if shape0.len() != shape1.len() { panic!("Mismatching operand shapes") }
+        // if shape0.iter().zip(shape1.iter()).any(|(&a,&b)| a != b) { panic!("Mismatching operand shapes") }
 
-        let rnnz = subj0.len() + subj0.len();
-        let rnelm =
-            match (sp0,sp1) {
-                (None,_) | (_,None) => ptr0.len()+ptr1.len()-2,
-                (Some(sp0),Some(sp1)) => {
-                    let mut i0 = sp0.iter().peekable();
-                    let mut i1 = sp1.iter().peekable();
-                    let mut n = 0;
-                    while match (i0.peek(),i1.peek()) {
-                        (Some(_j0),None) => { let _ =  i0.next(); n += 1; true },
-                        (None,Some(_j1)) => { let _ =  i1.next(); n += 1; true },
-                        (Some(&j0),Some(&j1)) => {
-                            n += 1;
-                            if j0 < j1 { let _ = i0.next(); }
-                            else if j1 < j0 { let _ = i1.next(); }
-                            else { let _ = i0.next(); let _ = i1.next(); }
-                            true
-                        },
-                        _ => false
-                    }{ /*empty loop body*/}
-                    n
-                }
-            };
+        // let rnnz = subj0.len() + subj0.len();
+        // let rnelm =
+        //     match (sp0,sp1) {
+        //         (None,_) | (_,None) => ptr0.len()+ptr1.len()-2,
+        //         (Some(sp0),Some(sp1)) => {
+        //             let mut i0 = sp0.iter().peekable();
+        //             let mut i1 = sp1.iter().peekable();
+        //             let mut n = 0;
+        //             while match (i0.peek(),i1.peek()) {
+        //                 (Some(_j0),None) => { let _ =  i0.next(); n += 1; true },
+        //                 (None,Some(_j1)) => { let _ =  i1.next(); n += 1; true },
+        //                 (Some(&j0),Some(&j1)) => {
+        //                     n += 1;
+        //                     if j0 < j1 { let _ = i0.next(); }
+        //                     else if j1 < j0 { let _ = i1.next(); }
+        //                     else { let _ = i0.next(); let _ = i1.next(); }
+        //                     true
+        //                 },
+        //                 _ => false
+        //             }{ /*empty loop body*/}
+        //             n
+        //         }
+        //     };
 
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape0,rnnz,rnelm);
-        match (sp0,sp1) {
-            (None,None) => {
-                rptr[0] = 0;
-                let mut nzi : usize = 0;
-                izip!(subj0.chunks_by(ptr0),
-                      cof0.chunks_by(ptr0),
-                      subj1.chunks_by(ptr1),
-                      cof1.chunks_by(ptr1),
-                      rptr[1..].iter_mut())
-                    .for_each(|(subj0,cof0,subj1,cof1,rp)| {
-                        rsubj[nzi..nzi+subj0.len()].clone_from_slice(subj0);
-                        rcof[nzi..nzi+cof0.len()].clone_from_slice(cof0);
-                        nzi += subj0.len();
-                        rsubj[nzi..nzi+subj1.len()].clone_from_slice(subj1);
-                        rcof[nzi..nzi+cof1.len()].clone_from_slice(cof1);
-                        nzi += subj1.len();
-                        *rp = nzi;
-                    });
-            },
-            _ => {
-                todo!("Yodelay")
-            }
-        }
+        // let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape0,rnnz,rnelm);
+
+        // // build ptr and sp
+        // if let None = rsp {
+        //     rptr.fill(0);
+        //     for (ptr,sp) in [(ptr0,&sp0),(ptr1,&sp1)] {
+        //         if let Some(sp) = *sp {
+        //             izip!(sp.iter(),
+        //                   ptr.iter(),
+        //                   ptr[1..].iter())
+        //                 .for_each(|(&i,&p0,&p1)| /*TODO!!*/rptr[1+i] += p1-p0 );
+        //         }
+        //         else {
+        //             izip!(rptr[1..].iter_mut(),
+        //                   ptr.iter(),
+        //                   ptr[1..].iter())
+        //                 .for_each(|(rp,&p0,&p1)| *rp += p1-p0 );
+        //         }
+        //     }
+
+        //     for (sp,ptr,subj,cof) in [(sp0,ptr0,subj0,cof0),
+        //     (]
+        //         let mut nzi : usize = 0;
+        //         izip!(subj0.chunks_by(ptr0),
+        //               cof0.chunks_by(ptr0),
+        //               subj1.chunks_by(ptr1),
+        //               cof1.chunks_by(ptr1),
+        //               rptr[1..].iter_mut())
+        //             .for_each(|(subj0,cof0,subj1,cof1,rp)| {
+        //                 rsubj[nzi..nzi+subj0.len()].clone_from_slice(subj0);
+        //                 rcof[nzi..nzi+cof0.len()].clone_from_slice(cof0);
+        //                 nzi += subj0.len();
+        //                 rsubj[nzi..nzi+subj1.len()].clone_from_slice(subj1);
+        //                 rcof[nzi..nzi+cof1.len()].clone_from_slice(cof1);
+        //                 nzi += subj1.len();
+        //                 *rp = nzi;
+        //             });
+           
+        // }
+        // else {
+        //     todo!("Sparse terms in add");
+        // }
+
+        // match rsp {
+        //     None => {
+        //     },
+        //     Some(rsp) => {
+        //         todo!("Yodelay")
+        //     }
+        // }
     }
 }
-
 impl<L:ExprTrait,R:ExprTrait> ExprAddRecTrait for ExprAdd<L,R> {
     fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
         self.rhs.eval(rs,ws,xs);
@@ -846,5 +871,58 @@ impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
         let n = self.eval_rec(ws,rs,xs);
         let exprs = ws.pop_exprs(n);
 
+        // check that shapes match
+
+        if exprs.iter().map(|(shape,_,_,_,_)| shape)
+            .zip(exprs[1..].iter().map(|(shape,_,_,_,_)| shape))
+            .any(|(shape1,shape2)| shape1.len() != shape2.len() || shape1.iter().zip(shape2.iter()).any(|(&d1,&d2)| d1 != d2)) {
+                panic!("Mismatching operand shapes");
+            }
+
+        let (shape,_,_,_,_) = exprs.first().unwrap()
+
+        // count result nonzeros
+        let rnnz : usize = expr.iter().map(|(_,_,_,subj,_)| subj.len()).sum();
+
+        // check sparsity
+        let has_dense = exprs.iter().any(|_,_,sp,_,_| sp.is_none() );
+
+        if has_dense {
+            let rnelm = shape.iter().product();
+            // build rptr
+            rptr.fill(0);
+            for (_,sp,ptr,_,_) in exprs {
+                
+            }
+        }
+        else {
+            let nelm_bound = if has_dense { shape.iter().product() } else { shape.iter().product().max(exprs.map(|(_,ptr,_,_,_)| ptr.len()-1).sum()) };
+            todo!("Merge sparsity patterns")
+        }
+
+        // let rnelm =
+        //     match (sp0,sp1) {
+        //         (None,_) | (_,None) => ptr0.len()+ptr1.len()-2,
+        //         (Some(sp0),Some(sp1)) => {
+        //             let mut i0 = sp0.iter().peekable();
+        //             let mut i1 = sp1.iter().peekable();
+        //             let mut n = 0;
+        //             while match (i0.peek(),i1.peek()) {
+        //                 (Some(_j0),None) => { let _ =  i0.next(); n += 1; true },
+        //                 (None,Some(_j1)) => { let _ =  i1.next(); n += 1; true },
+        //                 (Some(&j0),Some(&j1)) => {
+        //                     n += 1;
+        //                     if j0 < j1 { let _ = i0.next(); }
+        //                     else if j1 < j0 { let _ = i1.next(); }
+        //                     else { let _ = i0.next(); let _ = i1.next(); }
+        //                     true
+        //                 },
+        //                 _ => false
+        //             }{ /*empty loop body*/}
+        //             n
+        //         }
+        //     };
+
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape0,rnnz,rnelm);
     }
 }

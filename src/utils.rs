@@ -409,6 +409,31 @@ impl<T> ChunksByIterExt<T> for &[T] {
 
 ////////////////////////////////////////////////////////////
 
+pub struct SelectFromSliceIter<'a,'b,T> {
+    src : &'a[T],
+    idx : &'b[usize],
+    i   : usize
+}
+
+impl<'a,'b,T> Iterator for SelectFromSliceIter<'a,'b,T> {
+    type Item = &T;
+    fn next(& mut self) -> Option<Self::Item> {
+        if self.i >= self.idx.len() {
+            None
+        }
+        else {
+            self i += 1;
+            Some(unsafe{ &*self.src.get_unchecked(*self.idx.get_unchecked(self.i-1))})
+        }
+    }
+}
+trait SelectFromSliceExt<T> {
+    fn select(&self)
+}
+
+
+////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use super::*;
