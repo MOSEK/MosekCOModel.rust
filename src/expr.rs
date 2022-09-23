@@ -889,7 +889,7 @@ impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
 
         if has_dense {
             let rnelm = shape.iter().product();
-            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
+            let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
             // build rptr
             rptr.fill(0);
             for (_,ptr,sp,_,_) in exprs.iter() {
@@ -936,7 +936,17 @@ impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
         }
         else {
             let nelm_bound = if has_dense { shape.iter().product() } else { shape.iter().product::<usize>().max(exprs.iter().map(|(_,ptr,_,_,_)| ptr.len()-1).sum()) };
-            todo!("Merge sparsity patterns")
+            todo!("Merge sparsity patterns");
+
+            // Strategy:
+            // - Allocate arrays on xs to create a hashmap of sp indexes
+            //   nelm_bound is an upper bound on the number of elements
+            // - Build the sparsity pattern using hash map
+            // - Sort sparsity pattern
+            // - Create a new hash mapping sparsity index to row index
+            // - Allocate result
+            // - Count row nonzeros and build ptr
+            // - Build subj and cof
         }
 
         // let rnelm =

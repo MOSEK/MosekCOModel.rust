@@ -476,6 +476,21 @@ impl<T> SelectFromSliceExt<T> for &[T] {
 
 
 ////////////////////////////////////////////////////////////
+pub struct IndexHashMap<'a,'b,'b> {
+    data : & 'a mut[T],
+    next : & 'b mut[i64],
+    first : & 'c mut[i64],
+    i : usize
+}
+
+impl<'a,'b,'c> IndeHashMap<'a,'b,'c> {
+    fn at(&self,) -> Option<usize> {
+        ...
+    }
+}
+
+////////////////////////////////////////////////////////////
+
 
 #[cfg(test)]
 mod tests {
