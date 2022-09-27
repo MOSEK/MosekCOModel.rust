@@ -473,7 +473,9 @@ impl<T> SelectFromSliceExt<T> for &[T] {
 
 
 ////////////////////////////////////////////////////////////
-pub struct IndexHashMap<'a,'b,'c,'d,T> {
+
+
+pub struct IndexHashMap<'a,'b,'c,'d,'e,T : Copy> {
     data   : & 'a mut[T],
     index  : & 'b mut[usize],
     next   : & 'c mut[usize],
@@ -483,12 +485,56 @@ pub struct IndexHashMap<'a,'b,'c,'d,T> {
     n : usize
 }
 
-impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
+pub struct IndexHashMapIter<'a,'b,'c,T : Copy> {
+    data  : & 'a mut[T],
+    index : & 'b [usize],
+    perm  : & 'c [usize],
+    i : usize
+}
+
+impl<'a,'b,'c,T:Copy> Iterator for IndexHashMapIter<'a,'b,'c,T> {
+    type Item = (usize, & 'a T);
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i < self.data.len() {
+            let p = unsafe{ *self.perm.get_unchecked(self.i) };
+            self.i += 1;
+            Some((unsafe{ *self.index.get_unchecked(p) },
+                  unsafe{ &*self.data.get_unchecked(p) }))
+        }
+        else {
+            None
+        }
+    }
+}
+
+pub struct IndexHashMapIterMut<'a,'b,'c,T : Copy> {
+    data  : & 'a [T],
+    index : & 'b [usize],
+    perm  : & 'c [usize],
+    i : usize
+}
+
+impl<'a,'b,'c,T:Copy> Iterator for IndexHashMapIterMut<'a,'b,'c,T> {
+    type Item = (usize, & 'a mut T);
+    fn next(& mut self) -> Option<(usize,& 'a mut T)> {
+        if self.i < self.data.len() {
+            let p = unsafe {*self.perm.get_unchecked(self.i) };
+            self.i += 1;
+            Some((unsafe{*self.index.get_unchecked(p)},
+                  unsafe{&mut *self.data.get_unchecked_mut(p)}))
+        }
+        else {
+            None
+        }
+    }
+}
+
+impl<'a,'b,'c,'d,'e,T : Copy> IndexHashMap<'a,'b,'c,'d,'e,T> {
     pub fn new(data   : & 'a mut[T],
                index  : & 'b mut[usize],
                next   : & 'c mut[usize],
                bucket : & 'd mut[usize],
-               perm   : & 'd mut[usize],
+               perm   : & 'e mut[usize],
                dflt   : T) -> IndexHashMap<'a,'b,'c,'d,'e,T> {
         bucket.iter_mut().for_each(|h| *h = usize::MAX);
         if next.len() != data.len() || next.len() != index.len() {
@@ -563,8 +609,8 @@ impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
     //     }
     // }
 
-    pub fn iter_mut(&self) -> _ {
-        let mut perm = &perm[..self.n];
+    fn sorted(&mut self) {
+        let mut perm = &self.perm[..self.n];
 
         if let Some(&v) = perm.iter().max() {
             if v != self.perm.len()-1 || self.perm.iter().zip(self.perm[1..].iter()).any(|(&a,&b)| unsafe{ *self.index.get_unchecked(a) > *self.index.get_unchecked(b) }) {
@@ -572,20 +618,19 @@ impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
                 perm.sort_by_key(|i| unsafe{ *self.index.get_unchecked(*i)} );
             }
         }
-
-        perm.iter().map(|&i| (unsafe{ *self.index.get_unchecked(i)}, unsafe{ &mut *self.data.get_unchecked_mut(i)} ))
     }
-    pub fn iter(&self) -> _ {
-        let mut perm = &perm[..self.n];
-
-        if let Some(&v) = perm.iter().max() {
-            if v != self.perm.len()-1 || self.perm.iter().zip(self.perm[1..].iter()).any(|(&a,&b)| unsafe{ *self.index.get_unchecked(a) > *self.index.get_unchecked(b) }) {
-                perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
-                perm.sort_by_key(|i| unsafe{ *self.index.get_unchecked(*i)} );
-            }
-        }
-
-        perm.iter().map(|&i| (unsafe{ *self.index.get_unchecke(i)},unsafe{ &*self.data.get_unchecke(i)} ))
+    
+    pub fn iter_mut<'f>(&'f mut self) -> IndexHashMapIterMut<'a,'b,'c,T> {
+        IndexHashMapIterMut{data  : &self.data[..self.n],
+                            index : &self.index[..self.n],
+                            perm  : &self.perm[..self.n],
+                            i:0}
+    }
+    pub fn iter<'f>(&'f self) -> IndexHashMapIter<'a,'b,'c,T> {
+        IndexHashMapIter{data  : &self.data[..self.n],
+                         index : &self.index[..self.n],
+                         perm  : &self.perm[..self.n],
+                         i:0}
     }
     pub fn len(&self) -> usize { self.n }
 }

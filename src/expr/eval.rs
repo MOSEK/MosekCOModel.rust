@@ -99,8 +99,8 @@ pub fn add(n  : usize,
         rptr[0] = 0;
         // cummulate
         let _ = h.iter().zip(rptr[1..].iter_mut()).fold(0,|v,((_,&n),p)| { *p = v+n; v+n });
-        let _ = h.iter_mut().fold(0,|v,(_,n)| { let oldp = *p; *p = v; v+oldp});
-        if let Some(sp) = sp { h.iter().zip(sp.iter()).for_each(|((i,_),spi)| *spi = i) }
+        let _ = h.iter_mut().fold(0,|v,(_,n)| { let prevn = *n; *n = v; v+prevn});
+        if let Some(sp) = rsp { h.iter().zip(sp.iter()).for_each(|((i,_),spi)| *spi = i) }
         for (_,ptr,sp,subj,cof) in exprs.iter() {
             if let Some(sp) = sp {
                 izip!(sp.iter(),ptr.iter(),ptr[1..].iter())
