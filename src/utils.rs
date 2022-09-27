@@ -404,9 +404,6 @@ impl<T> ChunksByIterExt<T> for &[T] {
 //     }
 // }
 
-
-
-
 ////////////////////////////////////////////////////////////
 
 pub struct SelectFromSliceIter<'a,'b,T> {
@@ -476,18 +473,123 @@ impl<T> SelectFromSliceExt<T> for &[T] {
 
 
 ////////////////////////////////////////////////////////////
-pub struct IndexHashMap<'a,'b,'b> {
-    data : & 'a mut[T],
-    next : & 'b mut[i64],
-    first : & 'c mut[i64],
-    i : usize
+pub struct IndexHashMap<'a,'b,'c,'d,T> {
+    data   : & 'a mut[T],
+    index  : & 'b mut[usize],
+    next   : & 'c mut[usize],
+    bucket : & 'd mut[usize],
+    perm   : & 'e mut[usize],
+    dflt   : T,
+    n : usize
 }
 
-impl<'a,'b,'c> IndeHashMap<'a,'b,'c> {
-    fn at(&self,) -> Option<usize> {
-        ...
+impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
+    pub fn new(data   : & 'a mut[T],
+               index  : & 'b mut[usize],
+               next   : & 'c mut[usize],
+               bucket : & 'd mut[usize],
+               perm   : & 'd mut[usize],
+               dflt   : T) -> IndexHashMap<'a,'b,'c,'d,'e,T> {
+        bucket.iter_mut().for_each(|h| *h = usize::MAX);
+        if next.len() != data.len() || next.len() != index.len() {
+            panic!("Mismatching array sizes");
+        }
+
+        IndexHashMap{
+            data,
+            index,
+            next,
+            bucket,
+            perm,
+            dflt,
+            n : 0
+        }
     }
+
+    pub fn at(&self,i : usize) -> Option<&T> {
+        let mut index = unsafe { * self.bucket.get_unchecked(i % self.bucket.len()) };
+
+        while index < usize::MAX || i == unsafe { * self.index.get_unchecked(index) }  {
+            index = unsafe{ * self.next.get_unchecked(index) };
+        }
+
+        if index < usize::MAX {
+            Some(unsafe { &* self.data.get_unchecked(index) })
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn at_mut(&mut self, i : usize) -> &mut T {
+        let head = unsafe { * self.bucket.get_unchecked(i % self.bucket.len()) };
+        let mut index = head;
+
+        while index < usize::MAX || i == unsafe { * self.index.get_unchecked(index) }  {
+            index = unsafe{ * self.next.get_unchecked(index) };
+        }
+
+        if index < usize::MAX {
+            unsafe { &mut * self.data.get_unchecked_mut(index) }
+        }
+        else {
+            if self.n < self.next.len() {
+                index = self.n; self.n += 1;
+                unsafe { *self.next.get_unchecked_mut(index) = head; }
+                unsafe { *self.index.get_unchecked_mut(index) = i; }
+                unsafe { *self.bucket.get_unchecked_mut(head) = index; }
+
+                unsafe { *self.data.get_unchecked_mut(index) = self.dflt; }
+                unsafe { & mut *self.data.get_unchecked_mut(index) }
+            }
+            else {
+                panic!("Hashmap is full");
+            }
+        }
+    }
+
+    // fn index_of(&self, i : usize) -> Option<usize> {
+    //     let mut index = unsafe { * self.bucket.get_unchecked((i % bucket.len())) };
+
+    //     while index < usize::MAX || i == unsafe { * self.index.get_unchecked(index) }  {
+    //         index = unsafe{ * self.next.get_unchecked(index) };
+    //     }
+
+    //     if index < usize::MAX {
+    //         Some(index)
+    //     }
+    //     else {
+    //         None
+    //     }
+    // }
+
+    pub fn iter_mut(&self) -> _ {
+        let mut perm = &perm[..self.n];
+
+        if let Some(&v) = perm.iter().max() {
+            if v != self.perm.len()-1 || self.perm.iter().zip(self.perm[1..].iter()).any(|(&a,&b)| unsafe{ *self.index.get_unchecked(a) > *self.index.get_unchecked(b) }) {
+                perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+                perm.sort_by_key(|i| unsafe{ *self.index.get_unchecked(*i)} );
+            }
+        }
+
+        perm.iter().map(|&i| (unsafe{ *self.index.get_unchecked(i)}, unsafe{ &mut *self.data.get_unchecked_mut(i)} ))
+    }
+    pub fn iter(&self) -> _ {
+        let mut perm = &perm[..self.n];
+
+        if let Some(&v) = perm.iter().max() {
+            if v != self.perm.len()-1 || self.perm.iter().zip(self.perm[1..].iter()).any(|(&a,&b)| unsafe{ *self.index.get_unchecked(a) > *self.index.get_unchecked(b) }) {
+                perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+                perm.sort_by_key(|i| unsafe{ *self.index.get_unchecked(*i)} );
+            }
+        }
+
+        perm.iter().map(|&i| (unsafe{ *self.index.get_unchecke(i)},unsafe{ &*self.data.get_unchecke(i)} ))
+    }
+    pub fn len(&self) -> usize { self.n }
 }
+
 
 ////////////////////////////////////////////////////////////
 
