@@ -1,255 +1,12 @@
 extern crate itertools;
 
 mod eval;
+pub mod workstack;
+
 use itertools::{iproduct,izip};
 use super::utils::*;
-//use super::utils;
 use super::Variable;
-//use super::utils;
-
-
-// impl<E : ExprTrait> ExprTrait for ExprPrepare<E> {
-//     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-//         self.expr.eval(ws,rs,xs);
-//         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-//         let mut perm : Vec<usize> = Vec::with_capacity(subj.len());
-//         let mut rptr  = Vec::with_capacity(ptr.len());
-//         let mut rsubj = Vec::with_capacity(subj.len());
-//         let mut rcof  = Vec::with_capacity(cof.len());
-
-//         rptr.push(0);
-//         ptr[0..ptr.len()-1].iter().join(ptr[1..].iter()).for_each(|(&p0,&p1)| {
-//             if p0 + 1 == p1 {
-//                 rsubj.push(subj[p0]);
-//                 rcof.push(cof[p0]);
-//                 rptr.push(subj.len());
-//             }
-//             else if p0 + 1 < p1 && p1 < subj.len() {
-//                 perm.clear();
-//                 for i in 0..(p1-p0) { perm.push(i); }
-//                 perm.sort_by(|&i| *unsafe { subj.get_unchecked(i) } );
-
-//                 rsubj.push(*unsafe { subj.get_unchecked(perm[p0]) } );
-//                 perm[p0..p1-1].iter()
-//                     .zip(perm[p0+1..p1].iter())
-//                     .for_each(|(j0,j1)| if j0 == j1 { rcof.push(cof) } else { rsubj.push(subj.get_unchecked()); });
-//             }
-//             else {
-//                 panic!("invalid ptr construction");
-//             }
-//         });
-//     }
-// }
-
-/// Structure of a computed expression on the workstack:
-/// stack top <---> bottom
-/// susize: [ ndim, nnz, nelm, shape[ndim], ptr[nnz+1], { nzidx[nnz] if nnz < shape.product() else []}], asubj[nnz]
-/// sf64:   [ acof[nnz] ]
-pub struct WorkStack {
-    susize : Vec<usize>,
-    sf64   : Vec<f64>,
-
-    utop : usize,
-    ftop : usize
-}
-
-impl WorkStack {
-    pub fn new(cap : usize) -> WorkStack {
-        WorkStack{
-            susize : Vec::with_capacity(cap),
-            sf64   : Vec::with_capacity(cap),
-            utop : 0,
-            ftop : 0  }
-    }
-
-    /// Allocate a new expression on the stack.
-    ///
-    /// Arguments:
-    /// - shape Shape of the expression
-    /// - nsp None if the expression is dense, otherwise the number of nonzeros. This must ne
-    ///   strictly smaller than the product of the dimensions.
-    /// Returns (ptr,sp,subj,cof)
-    ///
-    pub fn alloc_expr(& mut self, shape : &[usize], nnz : usize, nelm : usize) -> (& mut [usize], Option<& mut [usize]>,& mut [usize], & mut [f64]) {
-        let nd = shape.len();
-        let ubase = self.utop;
-        let fbase = self.ftop;
-
-        let fullsize : usize = shape.iter().product();
-        if fullsize < nelm { panic!("Invalid number of elements"); }
-
-        let unnz  = 3+nd+(nelm+1)+nnz+(if nelm < fullsize { nelm } else { 0 } );
-
-        self.utop += unnz;
-        self.ftop += nnz;
-        self.susize.resize(self.utop,0);
-        self.sf64.resize(self.ftop,0.0);
-
-        let (_,upart) = self.susize.split_at_mut(ubase);
-        let (_,fpart) = self.sf64.split_at_mut(fbase);
-
-        let (subj,upart) = upart.split_at_mut(nnz);
-        let (sp,upart)   = if nelm < fullsize {
-                let (sp,upart) = upart.split_at_mut(nelm);
-                (Some(sp),upart)
-            } else {
-                (None,upart)
-            };
-        let (ptr,upart)    = upart.split_at_mut(nelm+1);
-        let (shape_,head)  = upart.split_at_mut(nd);
-        shape_.clone_from_slice(shape);
-
-        head[0] = nelm;
-        head[1] = nnz;
-        head[2] = nd;
-
-        let cof = fpart;
-
-        (ptr,sp,subj,cof)
-    }
-
-    pub fn alloc(&mut self, nint : usize, nfloat : usize) -> (& mut [usize], & mut [f64]) {
-        self.susize.resize(nint,0);
-        self.sf64.resize(nfloat,0.0);
-        (self.susize.as_mut_slice(),self.sf64.as_mut_slice())
-    }
-
-    /// Returns and validatas a list of views of the `n` top-most expressions on the stack, first in the result
-    /// list if the top-most.
-    pub fn pop_exprs(&mut self, n : usize) -> Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])> {
-        let mut res = Vec::with_capacity(n);
-
-        let mut sutop = self.utop;
-            let mut sftop = self.ftop;
-
-        for _ in 0..n {
-            let nd   = self.susize[self.utop-1];
-            let nnz  = self.susize[self.utop-2];
-            let nelm = self.susize[self.utop-3];
-            let shape = &self.susize[self.utop-3-nd..self.utop-3];
-            let fullsize : usize = shape.iter().product();
-
-            let utop = sutop-3-nd;
-            let (ptr,utop) = (&self.susize[utop-nelm-1..utop],utop - nelm - 1);
-            let (sp,utop) =
-                if fullsize > nnz {
-                    (Some(&self.susize[utop-nelm..utop]),utop-nelm)
-                }
-                else {
-                    (None,utop)
-                };
-
-            let subj = &self.susize[utop-nnz..utop];
-            let cof  = &self.sf64[sftop-nnz..sftop];
-
-            if let Some(sp) = sp {
-                if ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack does not contain a valid expression: invalid Sparsity"); }
-                if let Some(&n) = sp.last() { if n > fullsize { panic!("Stack does not contain a valid expression: invalid Sparsity"); } }
-            }
-
-            if ! ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a < b) {  panic!("Stack does not contain a valid expression: invalid ptr"); }
-            if let Some(&p) = ptr.last() { if p > nnz { panic!("Stack does not contain a valid expression: invalid ptr"); } }
-
-            sutop = utop - nnz;
-            sftop -= nnz;
-
-            res.push((shape,ptr,sp,subj,cof));
-        }
-
-        self.utop = sutop;
-        self.ftop = sftop;
-
-        res
-    }
-    /// Returns and validatas a view of the top-most expression on the stack.
-    pub fn pop_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
-        // |subj[nnz],sp[nelm],ptr[nelm+1],shape[nd],nelm,nnz,nd|
-        let nd   : usize = self.susize[self.utop-1];
-        let nnz  : usize = self.susize[self.utop-2];
-        let nelm : usize = self.susize[self.utop-3];
-        let shape = &self.susize[self.utop-3-nd..self.utop-3];
-        let fullsize : usize = shape.iter().product();
-
-        let utop = self.utop-3-nd;
-        let (ptr,utop) = (&self.susize[utop-nelm-1..utop],utop - nelm - 1);
-        let (sp,utop) =
-            if fullsize > nnz {
-                (Some(&self.susize[utop-nelm..utop]),utop-nelm)
-            }
-        else {
-            (None,utop)
-        };
-
-        let subj = &self.susize[utop-nnz..utop];
-        let cof  = &self.sf64[self.ftop-nnz..self.ftop];
-
-        if let Some(sp) = sp {
-            if ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack does not contain a valid expression: invalid Sparsity"); }
-            if let Some(&n) = sp.last() { if n > fullsize { panic!("Stack does not contain a valid expression: invalid Sparsity"); } }
-        }
-
-
-        if ! ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a <= b) { // println!("ptr = {:?}",ptr);
-                                                                                    panic!("Stack does not contain a valid expression: invalid ptr"); }
-        if let Some(&p) = ptr.last() { if p > nnz { // println!("p = {}, nnz = {}",p,nnz);
-                                                    panic!("Stack does not contain a valid expression: invalid ptr"); } }
-
-        let nnz : usize = if let Some(&p) = ptr.last() { p } else { 0 };
-        //println!("shape = {:?}\n\tptr = {:?}\n\tsubj = {:?}\n\tcof = {:?}\n\tsp = {:?}",shape,ptr,&subj[..nnz],&cof[..nnz],sp);
-
-        self.utop = utop - nnz;
-        self.ftop -= nnz;
-
-        // println!("pop_expr: nd = {}, nnz = {}, nelm = {}, ptr = {:?}, subj = {:?}",nd,nnz,nelm,ptr,subj);
-        (shape,ptr,sp,&subj[..nnz],&cof[..nnz])
-    }
-    /// Returns without validation a mutable view of the top-most
-    /// expression on the stack, but does not remove it from the
-    /// stack.  Note that this returns the full subj and cof, not just
-    /// the part indexes by ptr.
-    pub fn peek_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
-        let nd   = self.susize[self.utop-1];
-        let nnz  = self.susize[self.utop-2];
-        let nelm = self.susize[self.utop-3];
-        let totalsize : usize = self.susize[self.utop-3-nd..self.utop-3].iter().product();
-
-        let totalusize = nd+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
-        let totalfsize = nnz;
-
-        let utop = self.utop-3;
-        let ftop = self.utop-3;
-
-        let uslice : &[usize] = & self.susize[utop-totalusize..utop];
-        let cof    : &[f64]   = & self.sf64[ftop-totalfsize..ftop];
-        let (subj,uslice) = uslice.split_at(nnz);
-        let (sp,uslice) = if totalsize < nelm { let (a,b) = uslice.split_at(nelm); (Some(a),b) } else { (None,uslice) };
-        let (ptr,shape) = uslice.split_at(nelm+1);
-
-        (shape,ptr,sp,subj,cof)
-    }
-    /// Returns without validation a mutable view of the top-most
-    /// expression on the stack, but does not remove it from the stack
-    pub fn peek_expr_mut(&mut self) -> (&mut [usize],&mut [usize],Option<&mut [usize]>,&mut [usize],&mut [f64]) {
-        let nd   = self.susize[self.utop-1];
-        let nnz  = self.susize[self.utop-2];
-        let nelm = self.susize[self.utop-3];
-        let totalsize : usize = self.susize[self.utop-3-nd..self.utop-3].iter().product();
-
-        let totalusize = nd+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
-        let totalfsize = nnz;
-
-        let utop = self.utop-3;
-        let ftop = self.utop-3;
-
-        let uslice : &mut[usize] = & mut self.susize[utop-totalusize..utop];
-        let cof    : &mut[f64]   = & mut self.sf64[ftop-totalfsize..ftop];
-        let (subj,uslice) = uslice.split_at_mut(nnz);
-        let (sp,uslice) = if totalsize < nelm { let (a,b) = uslice.split_at_mut(nelm); (Some(a),b) } else { (None,uslice) };
-        let (ptr,shape) = uslice.split_at_mut(nelm+1);
-
-        (shape,ptr,sp,subj,cof)
-    }
-}
+use workstack::WorkStack;
 
 pub trait ExprTrait : Sized {
     /// eval_chil`d() will evaluate the expression and put the result on the `rs` stack.
@@ -754,88 +511,6 @@ impl<L:ExprTrait,R:ExprTrait> ExprTrait for ExprAdd<L,R> {
         self.rhs.eval(ws,rs,xs);
 
         eval::add(2,rs,ws,xs);
-
-        // let mut exprs = ws.pop_exprs(2);
-        // let (shape0,ptr0,sp0,subj0,cof0) = exprs.pop().unwrap();
-        // let (shape1,ptr1,sp1,subj1,cof1) = exprs.pop().unwrap();
-
-        // if shape0.len() != shape1.len() { panic!("Mismatching operand shapes") }
-        // if shape0.iter().zip(shape1.iter()).any(|(&a,&b)| a != b) { panic!("Mismatching operand shapes") }
-
-        // let rnnz = subj0.len() + subj0.len();
-        // let rnelm =
-        //     match (sp0,sp1) {
-        //         (None,_) | (_,None) => ptr0.len()+ptr1.len()-2,
-        //         (Some(sp0),Some(sp1)) => {
-        //             let mut i0 = sp0.iter().peekable();
-        //             let mut i1 = sp1.iter().peekable();
-        //             let mut n = 0;
-        //             while match (i0.peek(),i1.peek()) {
-        //                 (Some(_j0),None) => { let _ =  i0.next(); n += 1; true },
-        //                 (None,Some(_j1)) => { let _ =  i1.next(); n += 1; true },
-        //                 (Some(&j0),Some(&j1)) => {
-        //                     n += 1;
-        //                     if j0 < j1 { let _ = i0.next(); }
-        //                     else if j1 < j0 { let _ = i1.next(); }
-        //                     else { let _ = i0.next(); let _ = i1.next(); }
-        //                     true
-        //                 },
-        //                 _ => false
-        //             }{ /*empty loop body*/}
-        //             n
-        //         }
-        //     };
-
-        // let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape0,rnnz,rnelm);
-
-        // // build ptr and sp
-        // if let None = rsp {
-        //     rptr.fill(0);
-        //     for (ptr,sp) in [(ptr0,&sp0),(ptr1,&sp1)] {
-        //         if let Some(sp) = *sp {
-        //             izip!(sp.iter(),
-        //                   ptr.iter(),
-        //                   ptr[1..].iter())
-        //                 .for_each(|(&i,&p0,&p1)| /*TODO!!*/rptr[1+i] += p1-p0 );
-        //         }
-        //         else {
-        //             izip!(rptr[1..].iter_mut(),
-        //                   ptr.iter(),
-        //                   ptr[1..].iter())
-        //                 .for_each(|(rp,&p0,&p1)| *rp += p1-p0 );
-        //         }
-        //     }
-
-        //     for (sp,ptr,subj,cof) in [(sp0,ptr0,subj0,cof0),
-        //     (]
-        //         let mut nzi : usize = 0;
-        //         izip!(subj0.chunks_by(ptr0),
-        //               cof0.chunks_by(ptr0),
-        //               subj1.chunks_by(ptr1),
-        //               cof1.chunks_by(ptr1),
-        //               rptr[1..].iter_mut())
-        //             .for_each(|(subj0,cof0,subj1,cof1,rp)| {
-        //                 rsubj[nzi..nzi+subj0.len()].clone_from_slice(subj0);
-        //                 rcof[nzi..nzi+cof0.len()].clone_from_slice(cof0);
-        //                 nzi += subj0.len();
-        //                 rsubj[nzi..nzi+subj1.len()].clone_from_slice(subj1);
-        //                 rcof[nzi..nzi+cof1.len()].clone_from_slice(cof1);
-        //                 nzi += subj1.len();
-        //                 *rp = nzi;
-        //             });
-           
-        // }
-        // else {
-        //     todo!("Sparse terms in add");
-        // }
-
-        // match rsp {
-        //     None => {
-        //     },
-        //     Some(rsp) => {
-        //         todo!("Yodelay")
-        //     }
-        // }
     }
 }
 impl<L:ExprTrait,R:ExprTrait> ExprAddRecTrait for ExprAdd<L,R> {
@@ -864,5 +539,18 @@ impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
         let n = self.eval_rec(ws,rs,xs);
 
         eval::add(n,rs,ws,xs);
+    }
+}
+
+
+
+
+
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_exprs() {
+        
     }
 }

@@ -4,122 +4,6 @@
 
 use itertools::izip;
 
-// pub struct Mutation {
-//     tgtsize : usize,
-//     idxs : Vec<usize>
-// }
-
-// pub struct MutationIter<'a,'b,T> {
-//     i : usize,
-//     n : usize,
-//     m : & 'a Mutation,
-//     t : & 'b [T]
-// }
-// // struct MutationIterMut<'a,'b,T> {
-// //     i : usize,
-// //     m : & 'a Mutation,
-// //     t : & 'b mut [T]
-// // }
-
-// impl Mutation {
-//     pub fn new(idxs : Vec<usize>) -> Mutation {
-//         let &n = idxs.iter().max().unwrap_or(&0);
-
-//         Mutation{
-//             tgtsize : n,
-//             idxs : idxs
-//         }
-//     }
-//     pub fn id(n : usize) -> Mutation {
-//         Mutation{
-//             tgtsize : n,
-//             idxs : (0..n).collect()
-//         }
-//     }
-//     pub fn range(first : usize, n : usize) -> Mutation {
-//         Mutation{
-//             tgtsize : n,
-//             idxs : (first..first+n).collect()
-//         }
-//     }
-
-//     pub fn sort_arg<T:Ord>(& mut self,target : &[T]) {
-//         if self.tgtsize > target.len() {
-//             panic!("Invalid sorting target");
-//         }
-//         self.idxs.sort_by(|&i0,&i1| unsafe{ &*target.get_unchecked(i0) }.cmp(unsafe{ &*target.get_unchecked(i1) }) );
-//     }
-
-//     pub fn sort_arg_slice<T:Ord>(& mut self,first : usize, num : usize, target : &[T]) {
-//         if self.tgtsize > target.len() {
-//             panic!("Invalid sorting target");
-//         }
-//         if first+num > self.idxs.len() {
-//             panic!("Slice out of bounds");
-//         }
-//         self.idxs[first..first+num].sort_by(|&i0,&i1| unsafe{ &*target.get_unchecked(i0) }.cmp(unsafe{ &*target.get_unchecked(i1) }) );
-//     }
-
-//     pub fn apply<'a,'b,T>(& 'a self, target : & 'b [T]) -> MutationIter<'a,'b,T> {
-//         if self.tgtsize > target.len() {
-//             panic!("Incompatible mutation");
-//         }
-//         MutationIter {
-//             i : 0,
-//             n : self.idxs.len(),
-//             m : self,
-//             t : target
-//         }
-//     }
-
-//     pub fn apply_slice<'a,'b,T>(& 'a self, first : usize, num : usize, target : & 'b [T]) -> MutationIter<'a,'b,T> {
-//         if self.tgtsize > target.len() {
-//             panic!("Incompatible mutation");
-//         }
-//         else if first+num > self.idxs.len() {
-//             panic!("Invalid slice range");
-//         }
-//         MutationIter {
-//             i : first,
-//             n : num,
-//             m : self,
-//             t : target
-//         }
-//     }
-// }
-
-// impl<'a,'b,T> std::iter::Iterator for MutationIter<'a,'b,T> {
-//     type Item = & 'b T;
-//     fn next(& mut self) -> Option<& 'b T> {
-//         if self.i < self.n {
-//             let idx = unsafe { * self.m.idxs.get_unchecked(self.i) };
-//             self.i += 1;
-//             Some(unsafe { & * self.t.get_unchecked(idx) })
-//         }
-//         else {
-//             None
-//         }
-//     }
-// }
-
-
-
-// impl<'a,'b,T> std::iter::Iterator for MutationIterMut<'a,'b,T> {
-//     type Item = & 'b mut T;
-//     fn next(& mut self) -> Option<& 'b mut T> {
-//         if self.i < self.m.idxs.len() {
-//             let idx = unsafe { * self.m.idxs.get_unchecked(self.i) };
-//             self.i += 1;
-//             Some(unsafe { & mut (* self.t.get_unchecked_mut(idx)) })
-//         }
-//         else {
-//             None
-//         }
-//     }
-// }
-
-
-
 /// An interator that produces an accumulation map, a bit like fold+map.
 ///
 /// The iterator is initialized with a value, a mapping function and
@@ -211,64 +95,6 @@ impl<'a,'b,'c,'d,'e> Iterator for IJKLSliceIterator<'a,'b,'c,'d,'e> {
 }
 
 ////////////////////////////////////////////////////////////
-// pub enum Either<T0:Copy,T1:Copy> {
-//     Left(T0),
-//     Right(T1)
-// }
-
-// pub struct PartialFoldMapIter<T,I:Iterator,F:FnMut(&T,&T) -> Option<T>> {
-//     cum : Option<T>,
-//     it  : I,
-//     f   : F
-// }
-
-// impl<T,I:Iterator,F:FnMut(&T,&T) -> Option<T>> Iterator for PartialFoldMapIter<T,I,F> {
-//     type Output = T;
-//     fn next() -> Option<T> {
-//         while true {
-//             if let Some(v0) = self.cum {
-//                 match self.it.next() {
-//                     Some(v) => {
-//                         match (self.f)(&v0,v) {
-//                             Some(w) => { self.cum = Some(w) },
-//                             None => { self.cum = Some(v); return Some(v0); }
-//                         }
-//                     },
-//                     None => {
-//                         self.cum = None;
-//                         return Some(v0);
-//                     }
-//                 }
-//             }
-//             else if let Some(&v) = self.it.next() {
-//                 self.cum = Some(v)
-//             }
-//             else {
-//                 return None;
-//             }
-//         }
-//     }
-// }
-
-// pub trait PartialFoldMapIterExt<T,I:Iterator,F:FnMut(Option<T>,T) -> Option(T)> {
-//     /// A partial reduction of an iterator.
-//     ///
-//     /// The function f will take a state and a value from the underlying iterator and return an Either, where
-//     /// - Left(v) means replace the state with v,
-//     /// - Right(v) means let the iterator return the state and replace the state with v
-//     ///
-//     /// The initial state of the iterator is the first element of the underlying iterator.
-//     fn partial_fold_map(self, f : F) -> PartialFoldMapIter<T,I,F> {
-//         PartialFoldMapIter{
-//             cum : None,
-//             it : self,
-//             f }
-//     }
-// }
-
-// impl<T,I:Iterator,F:FnMut(Option<T>,T) -> Either<T,T>> PartialFoldMapIterExt<T,I,F> for I { }
-
-////////////////////////////////////////////////////////////
 
 /// Given a shape, and optionally a sparsity pattern, call a function
 /// f with each index in the shape by lexicalic order.
@@ -312,7 +138,6 @@ impl ToDigit10IterExt for usize {
     fn digits_10(self) -> ToDigit10Iter {
         let d10 = (self as f64).log10().floor() as usize;
         let d = (10.0f64).powi(d10 as i32) as usize;
-        // println!("d10 = {}, d = {}, v = {}",d10,d,self);
         ToDigit10Iter{d:d.max(1),v:self}
     }
 }
@@ -320,7 +145,6 @@ impl ToDigit10IterExt for usize {
 impl Iterator for ToDigit10Iter {
     type Item = char;
     fn next(& mut self) -> Option<char> {
-        // println!("d = {}, v = {}",self.d,self.v);
         if self.d == 0 { None }
         else {
             let r = self.v / self.d;
@@ -333,9 +157,6 @@ impl Iterator for ToDigit10Iter {
 
 ////////////////////////////////////////////////////////////
 
-//fn chain<U>(self, other: U) -> Chain<Self, <U as IntoIterator>::IntoIter>ⓘ where
-//    U: IntoIterator<Item = Self::Item>,
-
 pub struct ChunksByIter<'a,'b,T,I>
 where
     I:Iterator<Item = (&'b usize,&'b usize)>
@@ -343,14 +164,6 @@ where
     data : &'a [T],
     ptr  : I
 }
-
-// pub struct ChunksByIterMut<'a,'b,T,I>
-// where
-//     I:Iterator<Item = (&'b usize,&'b usize)>
-// {
-//     data : &'a mut [T],
-//     ptr  : I
-// }
 
 impl<'a,'b,T,I> Iterator for ChunksByIter<'a,'b,T,I>
 where
@@ -367,27 +180,9 @@ where
     }
 }
 
-// impl<'a,'b,T,I> Iterator for ChunksByIterMut<'a,'b,T,I>
-// where
-//     I:Iterator<Item = (&'b usize,&'b usize)>
-// {
-//     type Item = & 'a mut[T];
-//     fn next(& mut self) -> Option<Self::Item> {
-//         if let Some((&p0,&p1)) = self.ptr.next() {
-//             Some(& mut self.data[p0..p1])
-//         }
-//         else {
-//             None
-//         }
-//     }
-// }
-
 pub trait ChunksByIterExt<T> {
     fn chunks_by<'a,'b>(&'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>>;
 }
-// pub trait ChunksByIterMutExt<T> {
-//     fn chunks_by_mut<'a,'b>(&'a mut self, ptr : &'b[usize]) -> ChunksByIterMut<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>>;
-// }
 
 impl<T> ChunksByIterExt<T> for &[T] {
     fn chunks_by<'a,'b>(& 'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>> {
@@ -397,16 +192,6 @@ impl<T> ChunksByIterExt<T> for &[T] {
         ChunksByIter{ data : self, ptr:ptr.iter().zip(ptr[1..].iter()) }
     }
 }
-// impl<T> ChunksByIterMutExt<T> for &[T] {
-//     fn chunks_by_mut<'a,'b>(& 'a mut self, ptr : &'b[usize]) -> ChunksByIterMut<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>> {
-//         if let Some(&p) = ptr.last() { if p > self.len() { panic!("Invalid ptr for chunks_by iterator") } }
-//         if ptr.iter().zip(ptr[1..].iter()).any(|(p0,p1)| p1 < p0) { panic!("Invalid ptr for chunks_by iterator") }
-
-//         ChunksByIterMut{ data : self, ptr:ptr.iter().zip(ptr[1..].iter()) }
-//     }
-// }
-
-////////////////////////////////////////////////////////////
 
 pub struct SelectFromSliceIter<'a,'b,T> {
     src : &'a[T],
@@ -440,40 +225,6 @@ impl<T> SelectFromSliceExt<T> for &[T] {
     }
 }
 
-// pub struct SelectFromSliceIterMut<'a,'b,T> {
-//     src : & 'a mut [T],
-//     idx : & 'b[usize],
-//     i   : usize
-// }
-
-// impl<'a,'b,T> Iterator for SelectFromSliceIterMut<'a,'b,T> {
-//     type Item = & 'a mut T;
-//     fn next(& mut self) -> Option<Self::Item> {
-//         if self.i >= self.idx.len() {
-//             None
-//         }
-//         else {
-//             self.i += 1;
-//             let r : & 'a mut T = unsafe{ & mut *self.src.get_unchecked_mut(*self.idx.get_unchecked(self.i-1))};
-//             Some(r)
-//         }
-//     }
-// }
-// trait SelectFromSliceMutExt<T>{
-//     fn select<'a,'b>(&'a mut self, idxs : &'b [usize]) -> SelectFromSliceIterMut<'a,'b,T>;
-// }
-
-// impl<T> SelectFromSliceMutExt<T> for &[T] {
-//     fn select<'a,'b>(&'a mut self, idxs : &'b [usize]) -> SelectFromSliceIterMut<'a,'b,T> {
-//         SelectFromSliceIter{
-//             src : self,
-//             idx : idxs,
-//             i : 0
-//         }
-//     }
-// }
-
-
 ////////////////////////////////////////////////////////////
 
 
@@ -485,7 +236,6 @@ pub struct IndexHashMap<'a,'b,'c,'d,T : Copy> {
     dflt   : T,
     n      : usize
 }
-
 
 fn hash(i : usize) -> usize { i }
 
@@ -581,8 +331,6 @@ impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
         }
     }
 
-    
-    
     pub fn len(&self) -> usize { self.n }
 }
 

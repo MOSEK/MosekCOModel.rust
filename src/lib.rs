@@ -4,6 +4,7 @@ extern crate itertools;
 
 mod utils;
 pub mod expr;
+use expr::workstack::WorkStack;
 use itertools::{iproduct};
 use std::iter::once;
 
@@ -92,9 +93,9 @@ pub struct Model {
     sol_itg : Solution,
 
     /// Workstacks for evaluating expressions
-    rs : expr::WorkStack,
-    ws : expr::WorkStack,
-    xs : expr::WorkStack
+    rs : WorkStack,
+    ws : WorkStack,
+    xs : WorkStack
 }
 
 ////////////////////////////////////////////////////////////
@@ -334,7 +335,7 @@ impl Variable {
 }
 
 impl expr::ExprTrait for Variable {
-    fn eval(&self,rs : & mut expr::WorkStack, _ws : & mut expr::WorkStack, _xs : & mut expr::WorkStack) {
+    fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),
                                                   self.idxs.len(),
                                                   self.idxs.len());
@@ -610,15 +611,15 @@ impl Model {
             None => {}
         }
         Model{
-            task      : task,
-            vars      : vec![VarAtom::Linear(-1)],
-            cons      : Vec::new(),
-            sol_bas   : Solution::new(),
-            sol_itr   : Solution::new(),
-            sol_itg   : Solution::new(),
-            rs : expr::WorkStack::new(0),
-            ws : expr::WorkStack::new(0),
-            xs : expr::WorkStack::new(0)
+            task    : task,
+            vars    : vec![VarAtom::Linear(-1)],
+            cons    : Vec::new(),
+            sol_bas : Solution::new(),
+            sol_itr : Solution::new(),
+            sol_itg : Solution::new(),
+            rs      : WorkStack::new(0),
+            ws      : WorkStack::new(0),
+            xs      : WorkStack::new(0)
         }
     }
 

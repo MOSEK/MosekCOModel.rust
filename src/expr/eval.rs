@@ -4,6 +4,7 @@
 
 use super::*;
 use super::super::utils;
+use super::workstack::WorkStack;
 
 use itertools::{izip};
 
