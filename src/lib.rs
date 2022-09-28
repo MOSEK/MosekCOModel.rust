@@ -334,21 +334,6 @@ impl Variable {
     //pub vstack(xs : &[Variable]) -> Variable
 }
 
-impl expr::ExprTrait for Variable {
-    fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),
-                                                  self.idxs.len(),
-                                                  self.idxs.len());
-        rptr.iter_mut().enumerate().for_each(|(i,p)| *p = i);
-        rsubj.clone_from_slice(self.idxs.as_slice());
-        rcof.fill(1.0);
-        match (rsp,&self.sparsity) {
-            (Some(rsp),Some(sp)) => rsp.clone_from_slice(sp.as_slice()),
-            _ => {}
-        }
-    }
-}
-
 
 ////////////////////////////////////////////////////////////
 // Domain definitions

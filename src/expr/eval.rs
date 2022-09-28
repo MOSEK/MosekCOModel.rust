@@ -8,13 +8,14 @@ use super::workstack::WorkStack;
 
 use itertools::{izip};
 
+/// Add `n` expression residing on `ws`. Result pushed to `rs`.
 pub(super) fn add(n  : usize,
-       rs : & mut WorkStack,
-       ws : & mut WorkStack,
-       xs : & mut WorkStack) {
+                  rs : & mut WorkStack,
+                  ws : & mut WorkStack,
+                  xs : & mut WorkStack) {
     // check that shapes match
     let exprs = ws.pop_exprs(n);
-    
+
     if exprs.iter().map(|(shape,_,_,_,_)| shape)
         .zip(exprs[1..].iter().map(|(shape,_,_,_,_)| shape))
         .any(|(shape1,shape2)| shape1.len() != shape2.len() || shape1.iter().zip(shape2.iter()).any(|(&d1,&d2)| d1 != d2)) {
@@ -138,43 +139,20 @@ pub(super) fn add(n  : usize,
             }
         }
     }
+} // add
 
-    // let rnelm =
-    //     match (sp0,sp1) {
-    //         (None,_) | (_,None) => ptr0.len()+ptr1.len()-2,
-    //         (Some(sp0),Some(sp1)) => {
-    //             let mut i0 = sp0.iter().peekable();
-    //             let mut i1 = sp1.iter().peekable();
-    //             let mut n = 0;
-    //             while match (i0.peek(),i1.peek()) {
-    //                 (Some(_j0),None) => { let _ =  i0.next(); n += 1; true },
-    //                 (None,Some(_j1)) => { let _ =  i1.next(); n += 1; true },
-    //                 (Some(&j0),Some(&j1)) => {
-    //                     n += 1;
-    //                     if j0 < j1 { let _ = i0.next(); }
-    //                     else if j1 < j0 { let _ = i1.next(); }
-    //                     else { let _ = i0.next(); let _ = i1.next(); }
-    //                     true
-    //                 },
-    //                 _ => false
-    //             }{ /*empty loop body*/}
-    //             n
-    //         }
-    //     };
-}
-
-
-pub(super) fn mul_left(lhs   : &Matrix,
-            rs    : & mut WorkStack,
-            ws    : & mut WorkStack,
-            xs    : & mut WorkStack) {
+/// Evaluates `lhs` * expr.
+pub(super) fn mul_left_dense(mdata : &[f64],
+                             mdimi : usize,
+                             mdimj : usize,
+                             rs    : & mut WorkStack,
+                             ws    : & mut WorkStack,
+                             xs    : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-    
+
     let nd   = shape.len();
     let nnz  = subj.len();
     let nelm = ptr.len()-1;
-    let (mdimi,mdimj) = lhs.dim;
-
 
     if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
     if mdimj != shape[0] { panic!("Mismatching shapes for multiplication") }
@@ -182,15 +160,9 @@ pub(super) fn mul_left(lhs   : &Matrix,
     let rdimi = mdimi;
     let rdimj = if nd == 1 { 1 } else { shape[1] };
     let edimi = shape[0];
+    let edimj = shape.get(1).unwrap_or(1);
     let rnnz = nnz * mdimi;
     let rnelm = mdimi * rdimj;
-
-    let (perm_spptr,mrowdata) = xs.alloc(nelm+rdimj+1,lhs.data.len());
-    if lhs.rows { mrowdata.clone_from_slice(lhs.data.as_slice()); }
-    else {
-        iproduct!((0..mdimi),(0..mdimj)).zip(mrowdata.iter_mut())
-            .for_each(|((i,j),dst)| *dst = unsafe { * lhs.data.get_unchecked(j*mdimi+i) });
-    }
 
     let (rptr,_rsp,rsubj,rcof) = if nd == 2 {
         rs.alloc_expr(&[rdimi,rdimj],rnnz,rnelm)
@@ -199,59 +171,53 @@ pub(super) fn mul_left(lhs   : &Matrix,
         rs.alloc_expr(&[rdimi],rnnz,rnelm)
     };
 
-    rptr[0] = 0;
-    let mut elmi = 0;
-    let mut nzi  = 0;
-
-    rptr[0] = 0;
-
+    // sparse expr
     if let Some(sp) = sp {
-        let (perm,spptr) = perm_spptr.split_at_mut(sp.len());
-        spptr.iter_mut().for_each(|v| *v = 0);
-        perm.iter_mut().enumerate().for_each(|(i,pi)| *pi = i );
-        perm.sort_by_key(|&k| {
-            let spi = unsafe{ sp.get_unchecked(k) };
-            let ii = spi / rdimj; let jj = spi - ii*rdimj;
-            unsafe { *spptr.get_unchecked_mut(jj+1) += 1 };
-            jj * edimi + ii
-        });
+        rptr.fill(0);
+        for (i,p0,p1) in izip!(sp.iter(),ptr,ptr[1..]) {
+            let (ii,jj) = (i/edimj, i%edimj);
+            for n in rptr[jj..].iter_mut().step_by(edimj) { *n += p1-p0 }
+        }
 
-        { let mut cum = 0; spptr.iter_mut().for_each(|v| { let tv = *v; *v = cum; cum = tv; } ); }
+        // build ptr
+        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; v+prev });
 
-        // loop over matrix rows x expr columns
-        iproduct!(mrowdata.chunks(mdimj),
-                  spptr[..rdimj].iter().zip(spptr[1..].iter()))
-            .for_each(|(mrow,(&sp0,&sp1))| {
-                izip!(sp[sp0..sp1].iter(),ptr[sp0..sp1].iter(),ptr[sp0+1..sp1+1].iter()).for_each(|(&spi,&p0,&p1)| {
-                    let spi_i = spi / rdimj;
-                    //let spi_j = spi % rdimj;
-                    let v = unsafe { *mrow.get_unchecked(spi_i) };
-                    izip!(subj[p0..p1].iter(),
-                          cof[p0..p1].iter(),
-                          rsubj[nzi..nzi+p1-p0].iter_mut(),
-                          rcof[nzi..nzi+p1-p0].iter_mut())
-                        .for_each(|(&j,&c,rj,rc)| { *rj = j; *rc = v*c; });
-                    nzi += p1-p0;
-                    elmi += 1;
-                    rptr[nelm] = nzi;
-                });
-            });
+        for (i,p0,p1) in izip!(sp.iter(),ptr,ptr[1..]) {
+            let (ii,jj) = (i/edimj, i%edimj);
+
+            let rownnz = p1-p0;
+            let subjslice = &mut rsubj[p0..p1];
+            let cofslice  = &mut rcof[p0..p1];
+
+            for (p,&v) in izip!(xptr[jj..].iter_mut().step_by(edimj),
+                                mdata[ii..].iter().step_by(mdimj)) {
+                rsubj[*p..*p+rownnz].clone_from_slice(subjslice);
+                rcof[*p..*p+rownnz].iter_mut().zip(cofslice.iter()).for_each(|(rc,&c)| *rc = c * v);
+                *p += rownnz;
+            }
+        }
+
+        let _ = rptr.iter().fold(0,|v,p| { let prev = *p; *p = v; prev+v });
     }
+    // dense expr
     else {
-        mrowdata.chunks(mdimj).for_each(|mrowi| { // for each matrix row
-            (0..rdimj).for_each(|j| { // for each expression column
-                izip!(mrowi.iter(), ptr[j..].iter().step_by(rdimj), ptr[j+1..].iter().step_by(rdimj)).for_each(|(&c,&p0,&p1)| {
-                    rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
-                    rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rv,&v)| *rv = c*v );
+        rptr[0] = 0;
+        let mut nzi = 0;
+        for (mrow,rptrrow) in mdata.chunks(mdimj).zip(rptr[1..].chunks_mut(edimj)) {
+            for (j,rp) in rptrrow.enumerate() {
+                for (&v,p0,p1) in izip!(mrow.iter(),ptr[j..].iter().step_by(edimj),ptr[j+1..].iter().step_by(edimj)) {
+                    rsubj[nzi..nzi+p1-p0].clone_from_slice(subj[p0..p1]);
+                    rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|rc,&c| *rc = c * v);
                     nzi += p1-p0;
-                });
-                elmi += 1;
-                rptr[elmi] = nzi;
-                // println!("rptr[{}] = {}",elmi,nzi);
-            });
-        });
+                }
+                *rp = nzi;
+            }
+        }
     }
-}
+} // mul_left_dense
+
+
+
 
 
 pub(super) fn dot_slice(data : &[f64],
@@ -296,6 +262,110 @@ pub(super) fn dot_slice(data : &[f64],
             for (&c,rc) in cof[p0..p1].iter().zip(rcof[p0..p1].iter_mut()) {
                 *rc = c*v;
             }
+        }
+    }
+} // dot_slice
+
+
+pub(super) fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+    // println!("eval_finalize");
+    let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+    let nnz  = subj.len();
+    let nelm = shape.iter().product();
+    let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,nnz,nelm);
+
+    // println!("ExprTrait::eval_finalize. cof = {:?}",cof);
+
+    let maxj = subj.iter().max().unwrap_or(&0);
+    let (jj,ff) = xs.alloc(maxj*2+2,maxj+1);
+    let (jj,jjind) = jj.split_at_mut(maxj+1);
+
+
+    let mut ii  = 0;
+    let mut nzi = 0;
+    rptr[0] = 0;
+
+    subj.iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
+
+    if let Some(sp) = sp {
+        for (&i,&p0,&p1) in izip!(sp, ptr[0..ptr.len()-1].iter(), ptr[1..].iter()) {
+            if ii < i { rptr[ii+1..i+1].fill(nzi); ii = i; }
+
+            let mut rownzi : usize = 0;
+            subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
+            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
+                if c == 0.0 {}
+                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
+                    unsafe{
+                        *jjind.get_unchecked_mut(j)   = 1;
+                        *jj.get_unchecked_mut(rownzi) = j;
+                        *ff.get_unchecked_mut(j)      = c;
+                    }
+                    rownzi += 1;
+                }
+                else {
+                    unsafe{
+                        *ff.get_unchecked_mut(j) += c;
+                    }
+                }
+            });
+
+            izip!(jj[0..rownzi].iter(),
+                  rsubj[nzi..nzi+rownzi].iter_mut(),
+                  rcof[nzi..nzi+rownzi].iter_mut())
+                .for_each(|(&j,rj,rc)| {
+                    *rc = unsafe{ *ff.get_unchecked(j) };
+                    unsafe{ *jjind.get_unchecked_mut(j) = 0; };
+                    *rj = j;
+                });
+
+            nzi += rownzi;
+            // println!("ExprTrait::eval_finalize sparse: nzi = {}",nzi);
+            rptr[i+1] = nzi;
+            ii += 1;
+        }
+    }
+    else {
+        for (&p0,&p1,rp) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),rptr[1..].iter_mut()) {
+
+            // izip!(subj[p0..p1].iter().map(|&v| v)
+            //       cof[p0..p1].iter().map(|&v| v))
+            //     .partial_fold_map(|(j0,v0),(j,v)| if j0 == j { Some(v0+v) } else { None })
+            //     .for_each(|(j0,v0)| {
+            //         .....
+            //     });
+            let mut rownzi : usize = 0;
+
+            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
+                // println!("-- j = {}, c = {}, ind = {}",j,c,jjind[j]);
+                if c == 0.0 {}
+                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
+                    unsafe{
+                        *jjind.get_unchecked_mut(j)   = 1;
+                        *jj.get_unchecked_mut(rownzi) = j;
+                        *ff.get_unchecked_mut(j)      = c;
+                    }
+                    rownzi += 1;
+                }
+                else {
+                    unsafe{ *ff.get_unchecked_mut(j) += c; }
+                }
+            });
+
+            izip!(jj[0..rownzi].iter(),
+                  rsubj[nzi..nzi+rownzi].iter_mut(),
+                  rcof[nzi..nzi+rownzi].iter_mut()).for_each(|(&j,rj,rc)| {
+                      *rc = unsafe{ *ff.get_unchecked(j) };
+                      unsafe{ *jjind.get_unchecked_mut(j) = 0; };
+                      *rj = j;
+                  });
+
+            jj[0..rownzi].fill(0);
+
+            nzi += rownzi;
+            // println!("ExprTrait::eval_finalize dense: nzi = {}",nzi);
+            *rp = nzi;
+            ii += 1;
         }
     }
 }
