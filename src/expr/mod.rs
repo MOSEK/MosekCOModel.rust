@@ -546,7 +546,7 @@ pub struct ExprMulScalar<E:ExprTrait> {
 impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
-        eval::mul_left(self.lhs.as_slice(),rs,ws,xs);
+        eval::mul_left(&self.lhs,rs,ws,xs);
 
         // // println!("ExprMulLeft eval");
         // let (shape,ptr,sp,subj,cof) = ws.pop_expr();
@@ -743,7 +743,7 @@ pub struct ExprAddRec<L:ExprAddRecTrait,R:ExprTrait> {
 
 // ExprAdd implementation
 impl<L:ExprTrait,R:ExprTrait> ExprAdd<L,R> {
-    fn add<T:ExprTrait>(self,rhs : T) -> ExprAddRec<ExprAdd<L,R>,T> {
+    pub fn add<T:ExprTrait>(self,rhs : T) -> ExprAddRec<ExprAdd<L,R>,T> {
         ExprAddRec{lhs: self, rhs}
     }
 }
@@ -862,7 +862,6 @@ impl<L:ExprAddRecTrait,R:ExprTrait> ExprAddRecTrait for ExprAddRec<L,R> {
 impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         let n = self.eval_rec(ws,rs,xs);
-        let exprs = ws.pop_exprs(n);
 
         eval::add(n,rs,ws,xs);
     }

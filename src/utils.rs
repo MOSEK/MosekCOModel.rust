@@ -2,6 +2,8 @@
 //! Utility module.
 //!
 
+use itertools::izip;
+
 // pub struct Mutation {
 //     tgtsize : usize,
 //     idxs : Vec<usize>
@@ -484,6 +486,9 @@ pub struct IndexHashMap<'a,'b,'c,'d,T : Copy> {
     n      : usize
 }
 
+
+fn hash(i : usize) -> usize { i }
+
 impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
     pub fn new(data   : & 'a mut[T],
                index  : & 'b mut[usize],
@@ -505,35 +510,24 @@ impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
         }
     }
 
-    pub fn new(data   : & 'a mut[T],
-               index  : & 'b mut[usize],
-               next   : & 'c mut[usize],
-               bucket : & 'd mut[usize],
-               dflt   : T) -> IndexHashMap<'a,'b,'c,'d,T> {
-        bucket.iter_mut().for_each(|h| *h = usize::MAX);
-        if next.len() != data.len() || next.len() != index.len() {
-            panic!("Mismatching array sizes");
-        }
-
-        IndexHashMap{
-            data,
-            index,
-            next,
-            bucket,
-            dflt,
-            n : 0
-        }
-    }
     pub fn with_data(data   : & 'a mut[T],
                      index  : & 'b mut[usize],
                      next   : & 'c mut[usize],
-                     bucket : & 'd mut[usize]
-                     n      : usize) -> IndexHashMap<'a,'b,'c,'d,T> {
+                     bucket : & 'd mut[usize],
+                     dflt : T) -> IndexHashMap<'a,'b,'c,'d,T> {
         bucket.iter_mut().for_each(|h| *h = usize::MAX);
-        index[..n]
+        let n = data.len();
+        let m = bucket.len();
 
         if next.len() != data.len() || next.len() != index.len() {
             panic!("Mismatching array sizes");
+        }
+
+        // Assume that index and data contains data to be put in the map
+        for (i,&k,next) in izip!(0..n,index.iter(), next.iter_mut()) {
+            let b = unsafe { &mut *bucket.get_unchecked_mut(hash(k) % m) };
+            *next = *b;
+            *b = i;
         }
 
         IndexHashMap{
@@ -541,13 +535,12 @@ impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
             index,
             next,
             bucket,
-            dflt,
+            dflt : dflt,
             n}
     }
-    
-    
+
     pub fn at(&self,i : usize) -> Option<&T> {
-        let mut index = unsafe { * self.bucket.get_unchecked(i % self.bucket.len()) };
+        let mut index = unsafe { * self.bucket.get_unchecked(hash(i) % self.bucket.len()) };
 
         while index < usize::MAX || i == unsafe { * self.index.get_unchecked(index) }  {
             index = unsafe{ * self.next.get_unchecked(index) };
@@ -562,7 +555,7 @@ impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
     }
 
     pub fn at_mut(&mut self, i : usize) -> &mut T {
-        let head = unsafe { * self.bucket.get_unchecked(i % self.bucket.len()) };
+        let head = unsafe { * self.bucket.get_unchecked(hash(i) % self.bucket.len()) };
         let mut index = head;
 
         while index < usize::MAX || i == unsafe { * self.index.get_unchecked(index) }  {

@@ -7,12 +7,12 @@ use super::super::utils;
 
 use itertools::{izip};
 
-pub fn add(n  : usize,
-           rs : & mut WorkStack,
-           ws : & mut WorkStack,
-           xs : & mut WorkStack) {
+pub(super) fn add(n  : usize,
+       rs : & mut WorkStack,
+       ws : & mut WorkStack,
+       xs : & mut WorkStack) {
     // check that shapes match
-    let exprs = rs.pop_exprs(n);
+    let exprs = ws.pop_exprs(n);
     
     if exprs.iter().map(|(shape,_,_,_,_)| shape)
         .zip(exprs[1..].iter().map(|(shape,_,_,_,_)| shape))
@@ -80,27 +80,50 @@ pub fn add(n  : usize,
         let (uslice,_) = xs.alloc(nelm_bound*5,0);
         let (hdata,uslice)  = uslice.split_at_mut(nelm_bound);
         let (hindex,uslice) = uslice.split_at_mut(nelm_bound);
-        let (hnext,uslice) = uslice.split_at_mut(nelm_bound);
+        let (hnext,uslice)  = uslice.split_at_mut(nelm_bound);
         let (hbucket,hperm) = uslice.split_at_mut(nelm_bound);
         hdata.fill(0);
-        let mut h = utils::IndexHashMap::new(hdata,hindex,hnext,hbucket,hperm,0);
 
-        // count row nonzeros
-        for (_,ptr,sp,subj,cof) in exprs.iter() {
-            if let Some(sp) = sp {
-                izip!(sp.iter(),ptr.iter(),ptr[1..].iter()).for_each(|(&i,&p0,&p1)| *h.at_mut(i) += p1-p0);
+        let (rptr,rsp,rsubj,rcof) = {
+            let mut h = utils::IndexHashMap::new(hdata,hindex,hnext,hbucket,0);
+
+            // count row nonzeros
+            for (_,ptr,sp,_subj,_cof) in exprs.iter() {
+                if let Some(sp) = sp {
+                    izip!(sp.iter(),ptr.iter(),ptr[1..].iter()).for_each(|(&i,&p0,&p1)| *h.at_mut(i) += p1-p0);
+                }
             }
-        }
 
-        let rnelm = h.len();
+            rs.alloc_expr(shape,rnnz,h.len())
+        };
 
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
+        let rnelm = rptr.len()-1;
 
         rptr[0] = 0;
+        // Compute sorting permutation
+        let perm = & mut hperm[..rnelm];
+        perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+        perm.sort_by_key(|&i| unsafe{* hindex.get_unchecked(i) });
         // cummulate
-        let _ = h.iter().zip(rptr[1..].iter_mut()).fold(0,|v,((_,&n),p)| { *p = v+n; v+n });
-        let _ = h.iter_mut().fold(0,|v,(_,n)| { let prevn = *n; *n = v; v+prevn});
-        if let Some(sp) = rsp { h.iter().zip(sp.iter()).for_each(|((i,_),spi)| *spi = i) }
+        let _ = perm.iter().fold(0,|v,&p| {
+            let d = unsafe{ &mut*hdata.get_unchecked_mut(p) };
+            let prev = *d;
+            unsafe{ *rptr.get_unchecked_mut(p+1) = prev+v; }
+            *d = v;
+            prev + v
+        });
+        if let Some(sp) = rsp {
+            let _ = izip!(hperm.iter(),sp.iter_mut()).for_each(|(&p,sp)| {
+                *sp = unsafe{ *hindex.get_unchecked(p) };
+            });
+        }
+
+        let mut h = utils::IndexHashMap::with_data(&mut hdata[..rnelm],
+                                                   &mut hindex[..rnelm],
+                                                   &mut hnext[..rnelm],
+                                                   &mut hbucket[..rnelm],
+                                                   0);
+
         for (_,ptr,sp,subj,cof) in exprs.iter() {
             if let Some(sp) = sp {
                 izip!(sp.iter(),ptr.iter(),ptr[1..].iter())
@@ -109,7 +132,7 @@ pub fn add(n  : usize,
                         let n = p1-p0;
                         rsubj[*d..*d+n].clone_from_slice(&subj[p0..p1]);
                         rcof[*d..*d+n].clone_from_slice(&cof[p0..p1]);
-                        *h.at_mut(i) += n;
+                        *d += n;
                     });
             }
         }
@@ -140,7 +163,7 @@ pub fn add(n  : usize,
 }
 
 
-pub fn mul_left(lhs   : &Matrix,
+pub(super) fn mul_left(lhs   : &Matrix,
             rs    : & mut WorkStack,
             ws    : & mut WorkStack,
             xs    : & mut WorkStack) {
@@ -230,10 +253,10 @@ pub fn mul_left(lhs   : &Matrix,
 }
 
 
-pub fn dot_slice(data : &[f64],
+pub(super) fn dot_slice(data : &[f64],
              rs : & mut WorkStack,
              ws : & mut WorkStack,
-             xs : & mut WorkStack) {
+             _xs : & mut WorkStack) {
 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     println!("ExprDot::eval: subj = {:?}, cof = {:?}",subj,cof);
