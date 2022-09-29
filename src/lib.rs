@@ -3,6 +3,7 @@ extern crate mosek;
 extern crate itertools;
 
 mod utils;
+pub mod matrix;
 pub mod expr;
 use expr::workstack::WorkStack;
 use itertools::{iproduct};
