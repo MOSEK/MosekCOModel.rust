@@ -216,8 +216,97 @@ pub(super) fn mul_left_dense(mdata : &[f64],
     }
 } // mul_left_dense
 
+pub(super) fn mul_right_dense(mdata : &[f64],
+                              mdimi : usize,
+                              mdimj : usize,
+                              rs    : & mut WorkStack,
+                              ws    : & mut WorkStack,
+                              xs    : & mut WorkStack) {
+    let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+
+    let nd   = shape.len();
+    let nnz  = subj.len();
+    let nelm = ptr.len()-1;
+    if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
+    let (edimi,edimj) = if nd == 2 { (shape[0],shape[1]) } else { (1,shape[0])};
+
+    if mdimi != edimj { panic!("Mismatching shapes for multiplication") }
+
+    let rdimi = edimi;
+    let rdimj = mdimj;
+    let rnnz = nnz * mdimj;
+    let rnelm = rdimi * rdimj;
+
+    let (rptr,_rsp,rsubj,rcof) = if nd == 2 {
+        rs.alloc_expr(&[rdimi,rdimj],rnnz,rnelm)
+    }
+    else {
+        rs.alloc_expr(&[rdimi],rnnz,rnelm)
+    };
+
+    let Some(sp) = sp {
+        rptr.fill(0);
+
+        for (k,p0,p1) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter()) {
+            let (ii,jj) = (k/edimj,k%edimj);
+            rptr[ii*edimj..(ii+1)*edimj].iter_mut().for_each(|p| *p += p1-p0);
+        }
+        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; v+prev });
 
 
+
+        for (k,p0,p1) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter()) {
+            let (ii,jj) = (k/edimj,k%edimj);
+
+            for (rp,v) in izip!(rptr[ii*edimj..(ii+1)*edimj].iter_mut(),
+                                mdata[jj*mdimj..(jj+1)*mdimj].iter()) {
+                rsubj[*rp..*rp+p1-p0].clone_from_slice(subj[p0..p1]);
+                rcof[*rp..*rp+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * v);
+                *rp += p1-p0;
+            }
+        }
+        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; v+prev });
+    }
+    else {
+        rptr[0] = 0;
+        let mut nzi = 0;
+        
+    }
+} // mul_right_dense
+
+
+(pub(super) fn mul_left_dense(mdata : &[f64],
+                             mdimi : usize,
+                             mdimj : usize,
+                             rs    : & mut WorkStack,
+                             ws    : & mut WorkStack,
+                             xs    : & mut WorkStack) {
+    let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+
+    let nd   = shape.len();
+    let nnz  = subj.len();
+    let nelm = ptr.len()-1;
+
+    if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
+    if mdimj != shape[0] { panic!("Mismatching shapes for multiplication") }
+
+    let rdimi = mdimi;
+    let rdimj = if nd == 1 { 1 } else { shape[1] };
+    let edimi = shape[0];
+    let edimj = shape.get(1).unwrap_or(1);
+    let rnnz = nnz * mdimi;
+    let rnelm = mdimi * rdimj;
+
+    let (rptr,_rsp,rsubj,rcof) = if nd == 2 {
+        rs.alloc_expr(&[rdimi,rdimj],rnnz,rnelm)
+    }
+    else {
+        rs.alloc_expr(&[rdimi],rnnz,rnelm)
+    };
+
+
+
+} // mul_right_dense
 
 
 pub(super) fn dot_slice(data : &[f64],
