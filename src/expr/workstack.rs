@@ -171,6 +171,7 @@ impl WorkStack {
     }
     /// Returns and validatas a view of the top-most expression on the stack.
     pub fn pop_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
+        println!("ustack = {:?}",&self.susize[..self.utop]);
         let mut selfutop = self.utop;
         let mut selfftop = self.ftop;
 
@@ -179,9 +180,11 @@ impl WorkStack {
         let nelm = self.susize[selfutop-3];
 
         println!("nd = {}, nelm = {}, nnz = {}",nd,nelm,nnz);
+        println!("stack top = {:?}",&self.susize[selfutop-3-nd..selfutop]);
         let totalsize : usize = self.susize[selfutop-3-nd..selfutop-3].iter().product();
         
         let totalusize = nd+nelm+1+nnz + (if nelm < totalsize { nelm } else { 0 });
+        println!("totalusize = {}, ustack.len = {}",totalusize,self.susize.len());
 
         let utop = selfutop-3;
         let ftop = selfftop;
@@ -192,10 +195,11 @@ impl WorkStack {
         let uslice : &[usize] = & self.susize[ubase..utop];
         let cof    : &[f64]   = & self.sf64[fbase..ftop];
 
-        let subj  = &uslice[ubase..ubase+nnz];
-        let sp    = if totalsize > nelm { Some(&uslice[ubase+nnz..ubase+nnz+nelm]) } else { None };
-        let ptr   = &uslice[totalusize-nelm-1..totalusize-nd];
-        let shape = &uslice[totalusize-nelm-1..totalusize-nd];
+        let subj  = &uslice[..nnz];
+        let sp    = if totalsize > nelm { Some(&uslice[nnz..nnz+nelm]) } else { None };
+        let ptrbase = nnz+sp.map(|v| v.len()).unwrap_or(0);
+        let ptr   = &uslice[ptrbase..ptrbase+nelm+1];
+        let shape = &uslice[ptrbase+nelm+1..ptrbase+nelm+1+nd];
 
         let rnnz = ptr.last().copied().unwrap();
 
@@ -260,18 +264,19 @@ mod test {
         {
             let (ptr,_sp,subj,cof) = ws.alloc_expr(&[2,3],6,6);
             ptr.iter_mut().enumerate().for_each(|(i,p)| *p = i);
-            subj.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+            subj.iter_mut().enumerate().for_each(|(i,p)| *p = i+100);
             cof.iter_mut().enumerate().for_each(|(i,p)| *p = (i as f64)*1.1);
         }
 
         {
             let (shape,ptr,_sp,subj,cof) = ws.pop_expr();
 
+            println!("shape = {:?},nelm = {},nnz = {}",shape,ptr.len()-1,subj.len());
             assert!(shape.len() == 2);
             assert!(shape[0] == 2);
             assert!(shape[1] == 3);
             assert!(ptr.iter().enumerate().all(|(i,&p)| i == p));
-            assert!(subj.iter().enumerate().all(|(i,&j)| i == j));
+            assert!(subj.iter().enumerate().all(|(i,&j)| i == j-100));
             assert!(cof.iter().enumerate().all(|(i,&c)| (i as f64)*1.1 == c));
         }
 
