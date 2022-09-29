@@ -28,10 +28,13 @@ pub trait ExprTrait : Sized {
     // fn reshape(self, shape : &[usize]) -> ExprReshape<Self>  { ExprReshape{  item : self, shape : shape.to_vec() } }
     // fn mul_scalar(self, c : f64) -> ExprMulScalar<Self> { ExprMulScalar{ item:self, c : c } }
     // fn mul_vec_left(self, v : Vec<f64>) -> ExprMulVec<Self>
-    // fn mul_matrix_left(self, matrix : Matrix) -> ExprMulMatrixLeft<Self>
-    // fn mul_matrix_right(self, matrix : Matrix) -> ExprMulMatrixRight<Self>
+    fn mul_left_dense(self, v : DenseMatrix) -> ExprMulLeftDense<Self> { ExprMulLeftDense{item:self,lhs:v} }
+    fn mul_right_dense(self, v : DenseMatrix) -> ExprMulRightDense<Self> { ExprMulRightDense{item:self,rhs:v} }
     // fn transpose(self) -> ExprPermuteAxes<Self>
     // fn axispermute(self) -> ExprPermuteAxes<Self>
+
+
+    fn mul<V>(self,other : V) where { V : ExprRightMultipliable } -> V::Result { other.mul_right(self) }
 
     fn add<R:ExprTrait>(self,rhs : R) -> ExprAdd<Self,R> {
         ExprAdd{lhs:self,rhs}
@@ -247,19 +250,37 @@ impl DenseMatrix {
     }
 }
 
+pub trait ExprRightMultipliable {
+    type Result : ExprTrait;
+    fn mul_right<E:ExprTrait>(self,other : E) -> Self::R;
+}
+
+impl DenseMatrix for ExprRightMultipliable {
+    type Result = ExprMulRightDense;
+}
+
+
+
+
+
+
+
+
 pub struct ExprMulLeftDense<E:ExprTrait> {
     item : E,
     lhs  : DenseMatrix
 }
-
 struct ExprMulRightDense<E:ExprTrait> {
     item : E,
     rhs  : DenseMatrix
 }
-
 pub struct ExprMulScalar<E:ExprTrait> {
     item : E,
     lhs  : f64
+}
+pub struct ExprDotVec<E:ExprTrait> {
+    data : Vec<f64>,
+    expr : E
 }
 
 impl<E:ExprTrait> ExprTrait for ExprMulLeftDense<E> {
@@ -283,11 +304,6 @@ impl<E:ExprTrait> ExprTrait for ExprMulScalar<E> {
         let (_shape,_ptr,_sp,_subj,cof) = rs.peek_expr_mut();
         cof.iter_mut().for_each(|c| *c *= self.lhs)
     }
-}
-
-pub struct ExprDotVec<E:ExprTrait> {
-    data : Vec<f64>,
-    expr : E
 }
 
 impl<E:ExprTrait> ExprTrait for ExprDotVec<E> {
