@@ -10,9 +10,5 @@ fn main() -> Result<(),String> {
     let y1 = m.variable(Some("y1"), greater_than(vec![1.0,2.0,3.0,4.0]));
     let y2 = m.variable(Some("y2"), greater_than(vec![1.0,2.0,3.0,4.0]).with_shape(vec![2,2]));
     let z  = m.variable(Some("z"),  greater_than(vec![1.0,4.0]).with_shape_and_sparsity(vec![2,2],vec![0,3]));
-    //let y = m.symmetric_variable(Some("y"), 4);
-
-    // let c = m.constraint(Some("c"),
-    //                    Expr::from_variable(&z).into_diag());
     Ok(())
 }

@@ -216,3 +216,49 @@ impl WorkStack {
         (shape,ptr,sp,subj,cof)
     }
 }
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn workstack() {
+        let mut ws = WorkStack::new(512);
+
+        {
+            let (ptr,_sp,subj,cof) = ws.alloc_expr(&[3,3],9,9);
+            ptr.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+            subj.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+            cof.iter_mut().enumerate().for_each(|(i,p)| *p = (i as f64)*1.1);
+        }
+
+        {
+            let (ptr,_sp,subj,cof) = ws.alloc_expr(&[2,3],6,6);
+            ptr.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+            subj.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+            cof.iter_mut().enumerate().for_each(|(i,p)| *p = (i as f64)*1.1);
+        }
+
+        {
+            let (shape,ptr,_sp,subj,cof) = ws.pop_expr();
+
+            assert!(shape.len() == 2);
+            assert!(shape[0] == 2);
+            assert!(shape[1] == 3);
+            assert!(ptr.iter().enumerate().all(|(i,&p)| i == p));
+            assert!(subj.iter().enumerate().all(|(i,&j)| i == j));
+            assert!(cof.iter().enumerate().all(|(i,&c)| (i as f64)*1.1 == c));
+        }
+
+        {
+            let (shape,ptr,_sp,subj,cof) = ws.pop_expr();
+
+            assert!(shape.len() == 2);
+            assert!(shape[0] == 3);
+            assert!(shape[1] == 3);
+            assert!(ptr.iter().enumerate().all(|(i,&p)| i == p));
+            assert!(subj.iter().enumerate().all(|(i,&j)| i == j));
+            assert!(cof.iter().enumerate().all(|(i,&c)| (i as f64)*1.1 == c));
+        }
+    }
+}
