@@ -1505,6 +1505,5 @@ mod tests {
         let mut v4 = m.variable(None, in_quadratic_cone(5));
         let mut v5 = m.variable(None, greater_than(vec![1.0,2.0,3.0,4.0]).with_shape(vec![2,2]));
         let mut v6 = m.variable(None, greater_than(vec![1.0,3.0]).with_shape_and_sparsity(vec![2,2],vec![0,3]));
-
     }
 }

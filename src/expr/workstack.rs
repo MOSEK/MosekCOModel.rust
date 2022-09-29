@@ -1,3 +1,4 @@
+use itertools::{izip};
 
 
 /// Structure of a computed expression on the workstack:
@@ -80,93 +81,82 @@ impl WorkStack {
         (self.susize.as_mut_slice(),self.sf64.as_mut_slice())
     }
 
+    fn soft_pop(&self, utop : usize, ftop : usize) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64],usize,usize) {
+        let nd   = self.susize[self.utop-1];
+        let nnz  = self.susize[self.utop-2];
+        let nelm = self.susize[self.utop-3];
+        let totalsize : usize = self.susize[self.utop-3-nd..self.utop-3].iter().product();
+
+        let totalusize = nd+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
+        let totalfsize = nnz;
+
+        let utop = self.utop-3;
+        let ftop = self.utop-3;
+
+        let ubase = utop - totalusize;
+        let fbase = ftop - totalfsize;
+
+        let uslice : &[usize] = & self.susize[ubase..utop];
+        let cof    : &[f64]   = & self.sf64[fbase..ftop];
+
+        let subj  = &uslice[ubase..ubase+nnz];
+        let sp    = if totalsize > nelm { Some(&uslice[ubase+nnz..ubase+nnz+nelm]) } else { None };
+        let ptr   = &uslice[totalusize-nelm-1..totalusize-nd];
+        let shape = &uslice[totalusize-nelm-1..totalusize-nd];
+
+        (shape,ptr,sp,subj,cof,ubase,fbase)
+    }
+
+    fn soft_pop_validate(&self, utop : usize, ftop : usize) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64],usize,usize) {
+        let (shape,ptr,sp,subj,cof,ubase,fbase) = self.soft_pop(utop,ftop);
+        let nnz = subj.len();
+        let fullsize : usize = shape.iter().product();
+
+        if let Some(ref sp) = sp {
+            if izip!(sp[0..sp.len()-1].iter(),
+                     sp[1..].iter()).any(|(&a,&b)| a >= b) { panic!("Stack does not contain a valid expression: invalid Sparsity"); }
+            if let Some(&n) = sp.last() { if n > fullsize { panic!("Stack does not contain a valid expression: invalid Sparsity"); } }
+        }
+
+        if izip!(ptr[..ptr.len()-1].iter(),
+                 ptr[1..].iter()).any(|(&a,&b)| a > b) {  panic!("Stack does not contain a valid expression: invalid ptr"); }
+        if let Some(&p) = ptr.last() { if p > nnz { panic!("Stack does not contain a valid expression: invalid ptr"); } }
+
+        (shape,ptr,sp,subj,cof,ubase,fbase)
+    }
+
     /// Returns and validatas a list of views of the `n` top-most expressions on the stack, first in the result
     /// list if the top-most.
     pub fn pop_exprs(&mut self, n : usize) -> Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])> {
+        println!("WorkStack::pop_exprs({})",n);
         let mut res = Vec::with_capacity(n);
 
-        let mut sutop = self.utop;
-            let mut sftop = self.ftop;
+        let mut utop = self.utop;
+        let mut ftop = self.ftop;
+        for i in 0..n {
+            let (shape,ptr,sp,subj,cof,nextutop,nextftop) = self.soft_pop_validate(utop,ftop);
 
-        for _ in 0..n {
-            let nd   = self.susize[self.utop-1];
-            let nnz  = self.susize[self.utop-2];
-            let nelm = self.susize[self.utop-3];
-            let shape = &self.susize[self.utop-3-nd..self.utop-3];
-            let fullsize : usize = shape.iter().product();
+            let nnz = ptr.last().unwrap();
+            utop = nextutop;
+            ftop = nextftop;
 
-            let utop = sutop-3-nd;
-            let (ptr,utop) = (&self.susize[utop-nelm-1..utop],utop - nelm - 1);
-            let (sp,utop) =
-                if fullsize > nnz {
-                    (Some(&self.susize[utop-nelm..utop]),utop-nelm)
-                }
-                else {
-                    (None,utop)
-                };
-
-            let subj = &self.susize[utop-nnz..utop];
-            let cof  = &self.sf64[sftop-nnz..sftop];
-
-            if let Some(sp) = sp {
-                if ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack does not contain a valid expression: invalid Sparsity"); }
-                if let Some(&n) = sp.last() { if n > fullsize { panic!("Stack does not contain a valid expression: invalid Sparsity"); } }
-            }
-
-            if ! ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a < b) {  panic!("Stack does not contain a valid expression: invalid ptr"); }
-            if let Some(&p) = ptr.last() { if p > nnz { panic!("Stack does not contain a valid expression: invalid ptr"); } }
-
-            sutop = utop - nnz;
-            sftop -= nnz;
-
-            res.push((shape,ptr,sp,subj,cof));
+            res.push((shape,ptr,sp,&subj[..nnz],&cof[..nnz]));
         }
 
-        self.utop = sutop;
-        self.ftop = sftop;
+        self.utop = utop;
+        self.ftop = ftop;
 
         res
     }
     /// Returns and validatas a view of the top-most expression on the stack.
     pub fn pop_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
-        // |subj[nnz],sp[nelm],ptr[nelm+1],shape[nd],nelm,nnz,nd|
-        let nd   : usize = self.susize[self.utop-1];
-        let nnz  : usize = self.susize[self.utop-2];
-        let nelm : usize = self.susize[self.utop-3];
-        let shape = &self.susize[self.utop-3-nd..self.utop-3];
-        let fullsize : usize = shape.iter().product();
 
-        let utop = self.utop-3-nd;
-        let (ptr,utop) = (&self.susize[utop-nelm-1..utop],utop - nelm - 1);
-        let (sp,utop) =
-            if fullsize > nnz {
-                (Some(&self.susize[utop-nelm..utop]),utop-nelm)
-            }
-        else {
-            (None,utop)
-        };
+        let (shape,ptr,sp,subj,cof,nextutop,nextftop) = self.soft_pop_validate(self.utop,self.ftop);
 
-        let subj = &self.susize[utop-nnz..utop];
-        let cof  = &self.sf64[self.ftop-nnz..self.ftop];
+        let nnz = ptr.last().unwrap();
+        self.utop = nextutop;
+        self.ftop = nextftop;
 
-        if let Some(sp) = sp {
-            if ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(&a,&b)| a < b) { panic!("Stack does not contain a valid expression: invalid Sparsity"); }
-            if let Some(&n) = sp.last() { if n > fullsize { panic!("Stack does not contain a valid expression: invalid Sparsity"); } }
-        }
-
-
-        if ! ptr[..ptr.len()-1].iter().zip(ptr[1..].iter()).all(|(&a,&b)| a <= b) { // println!("ptr = {:?}",ptr);
-                                                                                    panic!("Stack does not contain a valid expression: invalid ptr"); }
-        if let Some(&p) = ptr.last() { if p > nnz { // println!("p = {}, nnz = {}",p,nnz);
-                                                    panic!("Stack does not contain a valid expression: invalid ptr"); } }
-
-        let nnz : usize = if let Some(&p) = ptr.last() { p } else { 0 };
-        //println!("shape = {:?}\n\tptr = {:?}\n\tsubj = {:?}\n\tcof = {:?}\n\tsp = {:?}",shape,ptr,&subj[..nnz],&cof[..nnz],sp);
-
-        self.utop = utop - nnz;
-        self.ftop -= nnz;
-
-        // println!("pop_expr: nd = {}, nnz = {}, nelm = {}, ptr = {:?}, subj = {:?}",nd,nnz,nelm,ptr,subj);
         (shape,ptr,sp,&subj[..nnz],&cof[..nnz])
     }
     /// Returns without validation a mutable view of the top-most
@@ -201,19 +191,24 @@ impl WorkStack {
         let nelm = self.susize[self.utop-3];
         let totalsize : usize = self.susize[self.utop-3-nd..self.utop-3].iter().product();
 
-        let totalusize = nd+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
-        let totalfsize = nnz;
+        let ubase = self.utop - if totalsize > nelm { 3+2*nelm+1+nnz+nd } else { 3+nelm+1+nnz+nd };
+        let fbase = self.ftop-nelm;
 
         let utop = self.utop-3;
         let ftop = self.utop-3;
 
-        let uslice : &mut[usize] = & mut self.susize[utop-totalusize..utop];
-        let cof    : &mut[f64]   = & mut self.sf64[ftop-totalfsize..ftop];
+        let uslice : &mut[usize] = & mut self.susize[ubase..utop];
+        let cof    : &mut[f64]   = & mut self.sf64[fbase..ftop];
         let (subj,uslice) = uslice.split_at_mut(nnz);
-        let (sp,uslice) = if totalsize < nelm { let (a,b) = uslice.split_at_mut(nelm); (Some(a),b) } else { (None,uslice) };
-        let (ptr,shape) = uslice.split_at_mut(nelm+1);
-
-        (shape,ptr,sp,subj,cof)
+        if nelm < totalsize {
+            let (sp,uslice) = uslice.split_at_mut(nelm);
+            let (ptr,shape) = uslice.split_at_mut(nelm+1);
+            (shape,ptr,Some(sp),subj,cof)
+        }
+        else {
+            let (ptr,shape) = uslice.split_at_mut(nelm+1);
+            (shape,ptr,None,subj,cof)
+        }
     }
 }
 
