@@ -34,7 +34,7 @@ pub trait ExprTrait : Sized {
     // fn axispermute(self) -> ExprPermuteAxes<Self>
 
 
-    fn mul<V>(self,other : V) where { V : ExprRightMultipliable } -> V::Result { other.mul_right(self) }
+    fn mul<V>(self,other : V) -> V::Result where V : ExprRightMultipliable<Self> { other.mul_right(self) }
 
     fn add<R:ExprTrait>(self,rhs : R) -> ExprAdd<Self,R> {
         ExprAdd{lhs:self,rhs}
@@ -250,15 +250,19 @@ impl DenseMatrix {
     }
 }
 
-pub trait ExprRightMultipliable {
+pub trait ExprRightMultipliable<E:ExprTrait> {
     type Result : ExprTrait;
-    fn mul_right<E:ExprTrait>(self,other : E) -> Self::R;
+    fn mul_right(self,other : E) -> Self::Result;
 }
 
-impl DenseMatrix for ExprRightMultipliable {
-    type Result = ExprMulRightDense;
+impl<E:ExprTrait> ExprRightMultipliable<E> for DenseMatrix {
+    type Result = ExprMulRightDense<E>;
+    fn mul_right(self,other : E) -> Self::Result { other.mul_right_dense(self) }
 }
 
+impl DenseMatrix {
+    fn mul<E:ExprTrait>(self,other : E) -> ExprMulLeftDense<E> { ExprMulLeftDense{item : other,lhs : self} }
+}
 
 
 
@@ -270,7 +274,7 @@ pub struct ExprMulLeftDense<E:ExprTrait> {
     item : E,
     lhs  : DenseMatrix
 }
-struct ExprMulRightDense<E:ExprTrait> {
+pub struct ExprMulRightDense<E:ExprTrait> {
     item : E,
     rhs  : DenseMatrix
 }
