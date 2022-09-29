@@ -82,16 +82,16 @@ impl WorkStack {
     }
 
     fn soft_pop(&self, utop : usize, ftop : usize) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64],usize,usize) {
-        let nd   = self.susize[self.utop-1];
-        let nnz  = self.susize[self.utop-2];
-        let nelm = self.susize[self.utop-3];
-        let totalsize : usize = self.susize[self.utop-3-nd..self.utop-3].iter().product();
+        let nd   = self.susize[utop-1];
+        let nnz  = self.susize[utop-2];
+        let nelm = self.susize[utop-3];
+        let totalsize : usize = self.susize[utop-3-nd..utop-3].iter().product();
 
         let totalusize = nd+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
         let totalfsize = nnz;
 
-        let utop = self.utop-3;
-        let ftop = self.utop-3;
+        let utop = utop-3;
+        let ftop = utop-3;
 
         let ubase = utop - totalusize;
         let fbase = ftop - totalfsize;
@@ -131,55 +131,84 @@ impl WorkStack {
         println!("WorkStack::pop_exprs({})",n);
         let mut res = Vec::with_capacity(n);
 
-        let mut utop = self.utop;
-        let mut ftop = self.ftop;
+        let mut selfutop = self.utop;
+        let mut selfftop = self.ftop;
         for i in 0..n {
-            let (shape,ptr,sp,subj,cof,nextutop,nextftop) = self.soft_pop_validate(utop,ftop);
+            let nd   = self.susize[selfutop-1];
+            let nnz  = self.susize[selfutop-2];
+            let nelm = self.susize[selfutop-3];
+            let totalsize : usize = self.susize[selfutop-3-nd..selfutop-3].iter().product();
 
-            let nnz = ptr.last().unwrap();
-            utop = nextutop;
-            ftop = nextftop;
+            let totalusize = nd+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
+            let totalfsize = nnz;
 
-            res.push((shape,ptr,sp,&subj[..nnz],&cof[..nnz]));
+            let utop = selfutop-3;
+            let ftop = selfftop;
+
+            let ubase = utop - totalusize;
+            let fbase = ftop - totalfsize;
+
+            let uslice : &[usize] = & self.susize[ubase..utop];
+            let cof    : &[f64]   = & self.sf64[fbase..ftop];
+
+            let subj  = &uslice[ubase..ubase+nnz];
+            let sp    = if totalsize > nelm { Some(&uslice[ubase+nnz..ubase+nnz+nelm]) } else { None };
+            let ptr   = &uslice[totalusize-nelm-1..totalusize-nd];
+            let shape = &uslice[totalusize-nelm-1..totalusize-nd];
+
+            let rnnz = ptr.last().copied().unwrap();
+
+            selfutop = utop;
+            selfftop = ftop;
+            res.push((shape,ptr,sp,&subj[..rnnz],&cof[..rnnz]))
         }
 
-        self.utop = utop;
-        self.ftop = ftop;
+        self.utop = selfutop;
+        self.ftop = selfftop;
 
         res
     }
     /// Returns and validatas a view of the top-most expression on the stack.
     pub fn pop_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
+        let mut selfutop = self.utop;
+        let mut selfftop = self.ftop;
 
-        let (shape,ptr,sp,subj,cof,nextutop,nextftop) = self.soft_pop_validate(self.utop,self.ftop);
+        let nd   = self.susize[selfutop-1];
+        let nnz  = self.susize[selfutop-2];
+        let nelm = self.susize[selfutop-3];
 
-        let nnz = ptr.last().unwrap();
-        self.utop = nextutop;
-        self.ftop = nextftop;
+        println!("nd = {}, nelm = {}, nnz = {}",nd,nelm,nnz);
+        let totalsize : usize = self.susize[selfutop-3-nd..selfutop-3].iter().product();
 
-        (shape,ptr,sp,&subj[..nnz],&cof[..nnz])
+        let totalusize = nd+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
+
+        let utop = selfutop-3;
+        let ftop = selfftop;
+
+        let ubase = utop - totalusize;
+        let fbase = ftop - nnz;
+
+        let uslice : &[usize] = & self.susize[ubase..utop];
+        let cof    : &[f64]   = & self.sf64[fbase..ftop];
+
+        let subj  = &uslice[ubase..ubase+nnz];
+        let sp    = if totalsize > nelm { Some(&uslice[ubase+nnz..ubase+nnz+nelm]) } else { None };
+        let ptr   = &uslice[totalusize-nelm-1..totalusize-nd];
+        let shape = &uslice[totalusize-nelm-1..totalusize-nd];
+
+        let rnnz = ptr.last().copied().unwrap();
+
+        self.utop = utop;
+        self.ftop = ftop;
+
+        (shape,ptr,sp,&subj[..rnnz],&cof[..rnnz])
     }
     /// Returns without validation a mutable view of the top-most
     /// expression on the stack, but does not remove it from the
     /// stack.  Note that this returns the full subj and cof, not just
     /// the part indexes by ptr.
     pub fn peek_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
-        let nd   = self.susize[self.utop-1];
-        let nnz  = self.susize[self.utop-2];
-        let nelm = self.susize[self.utop-3];
-        let totalsize : usize = self.susize[self.utop-3-nd..self.utop-3].iter().product();
-
-        let totalusize = nd+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
-        let totalfsize = nnz;
-
-        let utop = self.utop-3;
-        let ftop = self.utop-3;
-
-        let uslice : &[usize] = & self.susize[utop-totalusize..utop];
-        let cof    : &[f64]   = & self.sf64[ftop-totalfsize..ftop];
-        let (subj,uslice) = uslice.split_at(nnz);
-        let (sp,uslice) = if totalsize < nelm { let (a,b) = uslice.split_at(nelm); (Some(a),b) } else { (None,uslice) };
-        let (ptr,shape) = uslice.split_at(nelm+1);
+        let (shape,ptr,sp,subj,cof,_nextutop,_nextftop) = self.soft_pop_validate(self.utop,self.ftop);
 
         (shape,ptr,sp,subj,cof)
     }
