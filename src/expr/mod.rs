@@ -3,7 +3,7 @@ extern crate itertools;
 mod eval;
 pub mod workstack;
 
-use itertools::{iproduct,izip};
+use itertools::{iproduct};
 use super::utils::*;
 use super::Variable;
 use workstack::WorkStack;
@@ -150,7 +150,7 @@ impl ExprTrait for Expr {
 }
 
 
-impl expr::ExprTrait for super::Variable {
+impl ExprTrait for super::Variable {
     fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),
                                                   self.idxs.len(),
@@ -173,37 +173,37 @@ impl expr::ExprTrait for super::Variable {
 /// v.mul(expr)
 pub trait ExprMultiplyableLeft {
     type O : ExprTrait;
-    fn mul<T:ExprTrait>(self,rhs : E) -> O;
+    fn mul<E:ExprTrait>(self,rhs : E) -> Self::O;
 }
 
 /// Trait that indicates that the type implementing T it supports
 /// expr.mul(t.mul(expr)
 pub trait ExprMultiplyableRight {
     type O : ExprTrait;
-    fn mul<T:ExprTrait>(self,lhs : E) -> O;
+    fn mul<E:ExprTrait>(self,lhs : E) -> Self::O;
 }
 
 pub trait Matrix {
     fn size(&self) -> (usize,usize);
     fn numnz(&self) -> usize;
     fn issparse(&self) -> bool;
-    fn sparsity(&self,& mut [usize]);
+    fn sparsity(&self,sp : & mut [usize]);
     fn values<'a>(&self) -> &'a[f64];
 
-    pub fn new(height : usize, width : usize, data : Vec<f64>) -> DenseMatrix {
+    fn new(height : usize, width : usize, data : Vec<f64>) -> DenseMatrix {
         if height*width != data.len() { panic!("Invalid data size for matrix")  }
         DenseMatrix{
             dim  : (height,width),
             data : data
         }
     }
-    pub fn ones(height : usize, width : usize) -> DenseMatrix {
+    fn ones(height : usize, width : usize) -> DenseMatrix {
         DenseMatrix{
             dim : (height,width),
             data : vec![1.0; height*width]
         }
     }
-    pub fn diag(data : &[f64]) -> SparseMatrix {
+    fn diag(data : &[f64]) -> SparseMatrix {
         SparseMatrix{
             dim : (data.len(),data.len()),
             sp  : (0..data.len()*data.len()).step_by(data.len()+1).collect(),
@@ -212,13 +212,13 @@ pub trait Matrix {
     }
 }
 
-#[drive(Clone)]
+#[derive(Clone)]
 pub struct DenseMatrix {
     dim  : (usize,usize),
     data : Vec<f64>
 }
 
-#[drive(Clone)]
+#[derive(Clone)]
 pub struct SparseMatrix {
     dim  : (usize,usize),
     sp   : Vec<usize>,
@@ -228,36 +228,33 @@ pub struct SparseMatrix {
 impl DenseMatrix {
     pub fn new(height : usize, width : usize, data : Vec<f64>) -> DenseMatrix {
         if height*width != data.len() { panic!("Invalid data size for matrix")  }
-        Matrix{
+        DenseMatrix{
             dim : (height,width),
-            rows : true,
             data : data
         }
     }
     pub fn ones(height : usize, width : usize) -> DenseMatrix {
-        Matrix{
+        DenseMatrix{
             dim : (height,width),
-            rows : true,
             data : vec![1.0; height*width]
         }
     }
-    pub fn diag(data : &[f64]) -> Matrix {
-        Matrix{
+    pub fn diag(data : &[f64]) -> DenseMatrix {
+        DenseMatrix{
             dim : (data.len(),data.len()),
-            rows : true,
             data : iproduct!((0..data.len()).zip(data.iter()),0..data.len()).map(|((i,&c),j)| if i == j {c} else { 0.0 }).collect()
         }
     }
 }
 
-pub struct ExprMulLeft<E:ExprTrait,M:MatrixTrait> {
+pub struct ExprMulLeftDense<E:ExprTrait> {
     item : E,
-    lhs  : M
+    lhs  : DenseMatrix
 }
 
-struct ExprMulRight<E:ExprTrait,M:MatrixTrait> {
+struct ExprMulRightDense<E:ExprTrait> {
     item : E,
-    rhs  : M
+    rhs  : DenseMatrix
 }
 
 pub struct ExprMulScalar<E:ExprTrait> {
@@ -265,17 +262,17 @@ pub struct ExprMulScalar<E:ExprTrait> {
     lhs  : f64
 }
 
-impl<E:ExprTrait> ExprTrait for ExprMulLeft<E> {
+impl<E:ExprTrait> ExprTrait for ExprMulLeftDense<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
-        eval::mul_left(&self.lhs,rs,ws,xs);
+        eval::mul_left_dense(self.lhs.data.as_slice(),self.lhs.dim.0, self.lhs.dim.1,rs,ws,xs);
     }
 }
 
-impl<E:ExprTrait> ExprTrait for ExprMulRight<E> {
+impl<E:ExprTrait> ExprTrait for ExprMulRightDense<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
-        eval::mul_right(&self.lhs,rs,ws,xs);
+        eval::mul_right_dense(self.rhs.data.as_slice(), self.rhs.dim.0,self.rhs.dim.1,rs,ws,xs);
     }
 }
 
@@ -293,10 +290,10 @@ pub struct ExprDotVec<E:ExprTrait> {
     expr : E
 }
 
-impl<E:ExprTrait> ExprTrait for ExprDot<E> {
+impl<E:ExprTrait> ExprTrait for ExprDotVec<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.expr.eval(ws,rs,xs);
-        eval::dot_slice(self.data.as_slice(),rs,ws,xs);
+        eval::dot_vec(self.data.as_slice(),rs,ws,xs);
     }
 }
 

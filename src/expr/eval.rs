@@ -147,20 +147,19 @@ pub(super) fn mul_left_dense(mdata : &[f64],
                              mdimj : usize,
                              rs    : & mut WorkStack,
                              ws    : & mut WorkStack,
-                             xs    : & mut WorkStack) {
+                             _xs    : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nd   = shape.len();
     let nnz  = subj.len();
-    let nelm = ptr.len()-1;
 
     if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
     if mdimj != shape[0] { panic!("Mismatching shapes for multiplication") }
 
     let rdimi = mdimi;
     let rdimj = if nd == 1 { 1 } else { shape[1] };
-    let edimi = shape[0];
-    let edimj = shape.get(1).unwrap_or(1);
+    //let edimi = shape[0];
+    let edimj = shape.get(1).copied().unwrap_or(1);
     let rnnz = nnz * mdimi;
     let rnelm = mdimi * rdimj;
 
@@ -174,40 +173,38 @@ pub(super) fn mul_left_dense(mdata : &[f64],
     // sparse expr
     if let Some(sp) = sp {
         rptr.fill(0);
-        for (i,p0,p1) in izip!(sp.iter(),ptr,ptr[1..]) {
-            let (ii,jj) = (i/edimj, i%edimj);
+        for (i,p0,p1) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter()) {
+            let (_ii,jj) = (i/edimj, i%edimj);
             for n in rptr[jj..].iter_mut().step_by(edimj) { *n += p1-p0 }
         }
 
         // build ptr
         let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; v+prev });
 
-        for (i,p0,p1) in izip!(sp.iter(),ptr,ptr[1..]) {
+        for (i,&p0,&p1) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter()) {
             let (ii,jj) = (i/edimj, i%edimj);
 
             let rownnz = p1-p0;
-            let subjslice = &mut rsubj[p0..p1];
-            let cofslice  = &mut rcof[p0..p1];
 
-            for (p,&v) in izip!(xptr[jj..].iter_mut().step_by(edimj),
+            for (p,&v) in izip!(rptr[jj..].iter_mut().step_by(edimj),
                                 mdata[ii..].iter().step_by(mdimj)) {
-                rsubj[*p..*p+rownnz].clone_from_slice(subjslice);
-                rcof[*p..*p+rownnz].iter_mut().zip(cofslice.iter()).for_each(|(rc,&c)| *rc = c * v);
+                rsubj[*p..*p+rownnz].clone_from_slice(&subj[p0..p1]);
+                rcof[*p..*p+rownnz].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * v);
                 *p += rownnz;
             }
         }
 
-        let _ = rptr.iter().fold(0,|v,p| { let prev = *p; *p = v; prev+v });
+        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev+v });
     }
     // dense expr
     else {
         rptr[0] = 0;
         let mut nzi = 0;
         for (mrow,rptrrow) in mdata.chunks(mdimj).zip(rptr[1..].chunks_mut(edimj)) {
-            for (j,rp) in rptrrow.enumerate() {
-                for (&v,p0,p1) in izip!(mrow.iter(),ptr[j..].iter().step_by(edimj),ptr[j+1..].iter().step_by(edimj)) {
-                    rsubj[nzi..nzi+p1-p0].clone_from_slice(subj[p0..p1]);
-                    rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|rc,&c| *rc = c * v);
+            for (j,rp) in rptrrow.iter_mut().enumerate() {
+                for (&v,&p0,&p1) in izip!(mrow.iter(),ptr[j..].iter().step_by(edimj),ptr[j+1..].iter().step_by(edimj)) {
+                    rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                    rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * v);
                     nzi += p1-p0;
                 }
                 *rp = nzi;
@@ -221,12 +218,12 @@ pub(super) fn mul_right_dense(mdata : &[f64],
                               mdimj : usize,
                               rs    : & mut WorkStack,
                               ws    : & mut WorkStack,
-                              xs    : & mut WorkStack) {
+                              _xs    : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nd   = shape.len();
     let nnz  = subj.len();
-    let nelm = ptr.len()-1;
+    //let nelm = ptr.len()-1;
     if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
     let (edimi,edimj) = if nd == 2 { (shape[0],shape[1]) } else { (1,shape[0])};
 
@@ -244,75 +241,84 @@ pub(super) fn mul_right_dense(mdata : &[f64],
         rs.alloc_expr(&[rdimi],rnnz,rnelm)
     };
 
-    let Some(sp) = sp {
+    if let Some(sp) = sp {
         rptr.fill(0);
 
         for (k,p0,p1) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter()) {
-            let (ii,jj) = (k/edimj,k%edimj);
+            let (ii,_jj) = (k/edimj,k%edimj);
             rptr[ii*edimj..(ii+1)*edimj].iter_mut().for_each(|p| *p += p1-p0);
         }
         let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; v+prev });
 
 
 
-        for (k,p0,p1) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter()) {
+        for (k,&p0,&p1) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter()) {
             let (ii,jj) = (k/edimj,k%edimj);
 
             for (rp,v) in izip!(rptr[ii*edimj..(ii+1)*edimj].iter_mut(),
                                 mdata[jj*mdimj..(jj+1)*mdimj].iter()) {
-                rsubj[*rp..*rp+p1-p0].clone_from_slice(subj[p0..p1]);
+                rsubj[*rp..*rp+p1-p0].clone_from_slice(&subj[p0..p1]);
                 rcof[*rp..*rp+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * v);
                 *rp += p1-p0;
             }
         }
         let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; v+prev });
     }
+    // dense expr
     else {
         rptr[0] = 0;
         let mut nzi = 0;
-        
+        for (rp,((ptrb,ptre),i)) in rptr[1..].iter_mut().zip(iproduct!(ptr.chunks(edimj).zip(ptr[1..].chunks(edimj)), 0..mdimj)) {
+            for (&p0,&p1,&v) in izip!(ptrb.iter(),ptre.iter(),mdata[i..].iter().step_by(mdimj)) {
+                rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                izip!(rcof[nzi..nzi+p1-p0].iter_mut(),cof[p0..p1].iter())
+                    .for_each(|(rc,&c)| *rc = c * v);
+                nzi += p1-p0;
+            }
+            *rp = nzi;
+        }
     }
 } // mul_right_dense
 
 
-(pub(super) fn mul_left_dense(mdata : &[f64],
-                             mdimi : usize,
-                             mdimj : usize,
-                             rs    : & mut WorkStack,
-                             ws    : & mut WorkStack,
-                             xs    : & mut WorkStack) {
-    let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+// (pub(super) fn mul_left_dense(mdata : &[f64],
+//                              mdimi : usize,
+//                              mdimj : usize,
+//                              rs    : & mut WorkStack,
+//                              ws    : & mut WorkStack,
+//                              xs    : & mut WorkStack) {
+//     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
-    let nd   = shape.len();
-    let nnz  = subj.len();
-    let nelm = ptr.len()-1;
+//     let nd   = shape.len();
+//     let nnz  = subj.len();
+//     let nelm = ptr.len()-1;
 
-    if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
-    if mdimj != shape[0] { panic!("Mismatching shapes for multiplication") }
+//     if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
+//     if mdimj != shape[0] { panic!("Mismatching shapes for multiplication") }
 
-    let rdimi = mdimi;
-    let rdimj = if nd == 1 { 1 } else { shape[1] };
-    let edimi = shape[0];
-    let edimj = shape.get(1).unwrap_or(1);
-    let rnnz = nnz * mdimi;
-    let rnelm = mdimi * rdimj;
+//     let rdimi = mdimi;
+//     let rdimj = if nd == 1 { 1 } else { shape[1] };
+//     let edimi = shape[0];
+//     let edimj = shape.get(1).unwrap_or(1);
+//     let rnnz = nnz * mdimi;
+//     let rnelm = mdimi * rdimj;
 
-    let (rptr,_rsp,rsubj,rcof) = if nd == 2 {
-        rs.alloc_expr(&[rdimi,rdimj],rnnz,rnelm)
-    }
-    else {
-        rs.alloc_expr(&[rdimi],rnnz,rnelm)
-    };
-
-
-
-} // mul_right_dense
+//     let (rptr,_rsp,rsubj,rcof) = if nd == 2 {
+//         rs.alloc_expr(&[rdimi,rdimj],rnnz,rnelm)
+//     }
+//     else {
+//         rs.alloc_expr(&[rdimi],rnnz,rnelm)
+//     };
 
 
-pub(super) fn dot_slice(data : &[f64],
-             rs : & mut WorkStack,
-             ws : & mut WorkStack,
-             _xs : & mut WorkStack) {
+
+// } // mul_right_dense
+
+
+pub(super) fn dot_vec(data : &[f64],
+                      rs : & mut WorkStack,
+                      ws : & mut WorkStack,
+                      _xs : & mut WorkStack) {
 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     println!("ExprDot::eval: subj = {:?}, cof = {:?}",subj,cof);
