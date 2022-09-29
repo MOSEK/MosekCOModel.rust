@@ -36,13 +36,16 @@ pub trait ExprTrait : Sized {
 
     fn mul<V>(self,other : V) -> V::Result where V : ExprRightMultipliable<Self> { other.mul_right(self) }
     fn add<R:ExprTrait>(self,rhs : R) -> ExprAdd<Self,R> { ExprAdd{lhs:self,rhs} }
+
+    fn reshape(self,shape : Vec<usize>) -> ExprReshape<Self> { ExprReshape{item:self,shape} }
+    fn scatter(self,shape : Vec<usize>, sp : Vec<usize>) -> ExprScatter<Self> { ExprScatter::new(self, shape, sp) }
+    fn gather(self,shape : Vec<usize>) -> ExprGather<Self> { ExprGather{item:self, shape} }
 }
 
 
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
 // Expression objects
-
 
 /// Expr defines a literal expression with no sub-expressions
 #[derive(Clone)]
@@ -54,11 +57,31 @@ pub struct Expr {
     sparsity : Option<Vec<usize>>
 }
 
-/// The Expr implementation d
+/// The Expr implementation
 impl Expr {
-    pub fn new(aptr  : Vec<usize>,
+    /// Create a new literal expression from data
+    ///
+    /// Arguments:
+    /// * `shape` Shape of the expression. If `sparsity` is `None`,
+    ///   the product of the dimensions in the shape must be equal to
+    ///   the number of elements in the expression (`ptr.len()-1`)
+    /// * `sparsity` If not `None`, this defines the sparsity
+    ///   pattern. The pattern denotes the linear indexes if nonzeros in
+    ///   the shape. It must be sorted, must contain no duplicates and
+    ///   must fit within the `shape`.
+    /// * `aptr` The number if elements is `aptr.len()-1`. [aptr] must
+    ///   be ascending, so `aptr[i] <= aptr[i+1]`. `aptr` is a vector
+    ///   if indexes of the starting points of each element in [asubj]
+    ///   and [acof], so element `i` consists of nonzeros defined by
+    ///   `asubj[aptr[i]..aptr[i+1]], acof[aptr[i]..aptr[i+1]]`
+    /// * `asubj` Variable subscripts.
+    /// * `acof`  Coefficients.
+    pub fn new(shape : Vec<usize>,
+               sparsity : Option<Vec<usize>>,
+               aptr  : Vec<usize>,
                asubj : Vec<usize>,
                acof  : Vec<f64>) -> Expr {
+        let fullsize = shape.iter().product();
         if aptr.len() == 0 { panic!("Invalid aptr"); }
         if ! aptr[0..aptr.len()-1].iter().zip(aptr[1..].iter()).all(|(a,b)| a <= b) {
             panic!("Invalid aptr: Not sorted");
@@ -68,67 +91,59 @@ impl Expr {
             panic!("Mismatching aptr, asubj and acof");
         }
 
+        if let Some(ref sp) = sparsity {
+            if sp.iter().max().map(|&i| i >= fullsize).unwrap_or(false) {
+                panic!("Sparsity pattern out of bounds");
+            }
+
+            if ! sp.iter().zip(sp[1..].iter()).all(|(&i0,&i1)| i0 < i1) {
+                panic!("Sparsity is not sorted or contains duplicates");
+            }
+        }
+        else {
+            if fullsize != aptr.len()-1 {
+                panic!("Shape does not match number of elements");
+            }
+        }
+
         Expr{
             aptr,
             asubj,
             acof,
-            shape : (0..sz).collect(),
-            sparsity : None
+            shape,
+            sparsity
         }
     }
 
-    pub fn from_variable(variable : &Variable) -> Expr {
-        let sz = variable.shape.iter().product();
 
-        match variable.sparsity {
-            None =>
-                Expr{
-                    aptr  : (0..sz+1).collect(),
-                    asubj : variable.idxs.clone(),
-                    acof  : vec![1.0; sz],
-                    shape : variable.shape.clone(),
-                    sparsity : None
-                },
-            Some(ref sp) => {
-                Expr{
-                    aptr  : (0..sp.len()+1).collect(),
-                    asubj : variable.idxs.clone(),
-                    acof  : vec![1.0; sp.len()],
-                    shape : variable.shape.clone(),
-                    sparsity : Some(sp.clone())
-                }
-            }
-        }
-    }
+    // pub fn into_diag(self) -> Expr {
+    //     if self.shape.len() != 1 {
+    //         panic!("Diagonals can only be made from vector expressions");
+    //     }
 
-    pub fn into_diag(self) -> Expr {
-        if self.shape.len() != 1 {
-            panic!("Diagonals can only be made from vector expressions");
-        }
+    //     let d = self.shape[0];
+    //     Expr{
+    //         aptr : self.aptr,
+    //         asubj : self.asubj,
+    //         acof : self.acof,
+    //         shape : vec![d,d],
+    //         sparsity : Some((0..d*d).step_by(d+1).collect())
+    //     }
+    // }
 
-        let d = self.shape[0];
-        Expr{
-            aptr : self.aptr,
-            asubj : self.asubj,
-            acof : self.acof,
-            shape : vec![d,d],
-            sparsity : Some((0..d*d).step_by(d+1).collect())
-        }
-    }
+    // pub fn reshape(self,shape:&[usize]) -> Expr {
+    //     if self.shape.iter().product::<usize>() != shape.iter().product::<usize>() {
+    //         panic!("Invalid shape for this expression");
+    //     }
 
-    pub fn reshape(self,shape:&[usize]) -> Expr {
-        if self.shape.iter().product::<usize>() != shape.iter().product::<usize>() {
-            panic!("Invalid shape for this expression");
-        }
-
-        Expr{
-            aptr : self.aptr,
-            asubj : self.asubj,
-            acof : self.acof,
-            shape : shape.to_vec(),
-            sparsity : self.sparsity
-        }
-    }
+    //     Expr{
+    //         aptr : self.aptr,
+    //         asubj : self.asubj,
+    //         acof : self.acof,
+    //         shape : shape.to_vec(),
+    //         sparsity : self.sparsity
+    //     }
+    // }
 }
 
 impl ExprTrait for Expr {
@@ -150,7 +165,7 @@ impl ExprTrait for Expr {
 }
 
 
-impl ExprTrait for super::Variable {
+impl ExprTrait for Variable {
     fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),
                                                   self.idxs.len(),
@@ -448,14 +463,127 @@ impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
 }
 
 
+pub struct ExprReshape<E:ExprTrait> { item : E, shape : Vec<usize> }
+impl<E:ExprTrait> ExprTrait for ExprReshape<E> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.item.eval(ws,rs,xs);
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+
+        if self.shape.iter().product::<usize>() != shape.iter().product() {
+            panic!("Cannot reshape expression into given shape");
+        }
+
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),ptr.len()-1,subj.len());
+
+        rptr.clone_from_slice(ptr);
+        rsubj.clone_from_slice(subj);
+        rcof.clone_from_slice(cof);
+        if let Some(rsp) = rsp {
+            if let Some(sp) = sp {
+                rsp.clone_from_slice(sp)
+            }
+        }
+    }
+}
+
+pub struct ExprScatter<E:ExprTrait> { item : E, shape : Vec<usize>, sparsity : Vec<usize> }
+
+impl<E:ExprTrait> ExprScatter<E> {
+    pub fn new(item     : E,
+               shape    : Vec<usize>,
+               sparsity : Vec<usize>) -> ExprScatter<E> {
+
+        if sparsity.iter().max().map(|&v| v >= shape.iter().product()).unwrap_or(false) {
+            panic!("Sparsity pattern element out of bounds");
+        }
+
+        if sparsity.iter().zip(sparsity[1..].iter()).any(|(&i0,&i1)| i1 <= i0) {
+            let mut perm : Vec<usize> = (0..sparsity.len()).collect();
+            perm.sort_by_key(|&p| unsafe{ *sparsity.get_unchecked(p)});
+            if perm.iter().zip(perm[1..].iter()).any(|(&p0,&p1)| unsafe{ *sparsity.get_unchecked(p0) >= *sparsity.get_unchecked(p1) }) {
+                panic!("Sparsity pattern contains duplicates");
+            }
+            ExprScatter{ item,
+                         shape,
+                         sparsity : perm.iter().map(|&p| unsafe{ *sparsity.get_unchecked(p)}).collect() }
+        }
+        else {
+            ExprScatter{ item, shape, sparsity }
+        }
+    }
+}
+
+impl<E:ExprTrait> ExprTrait for ExprScatter<E> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.item.eval(ws,rs,xs);
+        let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
+
+        if ptr.len()-1 != self.sparsity.len() {
+            panic!("Sparsity pattern does not match number of elements in expression");
+        }
+
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),ptr.len()-1,subj.len());
+
+        rptr.clone_from_slice(ptr);
+        rsubj.clone_from_slice(subj);
+        rcof.clone_from_slice(cof);
+
+        if let Some(rsp) = rsp {
+            rsp.clone_from_slice(self.sparsity.as_slice())
+        }
+    }
+}
+
+pub struct ExprGather<E:ExprTrait> { item : E, shape : Vec<usize> }
+impl<E:ExprTrait> ExprTrait for ExprGather<E> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.item.eval(ws,rs,xs);
+        let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
+
+        if ptr.len()-1 != self.shape.iter().product() {
+            panic!("Shape does not match number of elements in expression");
+        }
+
+        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),ptr.len()-1,subj.len());
+
+        rptr.clone_from_slice(ptr);
+        rsubj.clone_from_slice(subj);
+        rcof.clone_from_slice(cof);
+    }
+}
 
 
 
 
 #[cfg(test)]
 mod test {
+    use super::*;
     #[test]
     fn test_exprs() {
+        let e0 = super::Expr::new(vec![3,3],
+                                  None,
+                                  vec![0,1,2,3,4,5,6,7,8,9],
+                                  vec![0,1,2,0,1,2,0,1,2],
+                                  vec![1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,3.3]);
+        let e1 = super::Expr::new(vec![3,3],
+                                  Some(vec![0,4,5,6,7]),
+                                  vec![0,1,2,3,4,5],
+                                  vec![0,1,2,3,4],
+                                  vec![1.1,2.2,3.3,4.4,5.5]);
+        let m1 = matrix::dense(3,2,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+        let m2 = matrix::dense(2,3,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+
+        let e0_1 = e0.mul(m1);
+        let e0_2 = m1.mul(e0);
+        let e0_3 = 2.0.mul(e0);
+        let e0_4 = e0.mul(2.0);
+
+        let e1_1 = e1.mul(m1);
+        let e1_2 = m1.mul(e1);
+        let e1_3 = 2.0.mul(e1);
+        let e1_4 = e0.mul(2.1);
+
+        let e01 = e0.add(e1).add(e2);
 
     }
 }
