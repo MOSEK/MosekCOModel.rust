@@ -528,14 +528,13 @@ mod test {
     }
 
     #[test]
-    fn test_mul_add() {
+    fn test_add() {
         let mut rs = WorkStack::new(512);
         let mut ws = WorkStack::new(512);
         let mut xs = WorkStack::new(512);
 
 
-        let m1 = matrix::dense(3,2,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
-        let m2 = matrix::dense(2,3,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+        let m1 = matrix::dense(3,3,vec![1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0]);
 
         let e0 = dense_expr().add(sparse_expr()).add(dense_expr().mul(m1));
         e0.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();

@@ -128,18 +128,21 @@ impl WorkStack {
     /// Returns and validatas a list of views of the `n` top-most expressions on the stack, first in the result
     /// list if the top-most.
     pub fn pop_exprs(&mut self, n : usize) -> Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])> {
-        println!("WorkStack::pop_exprs({})",n);
+        println!("-------------WorkStack::pop_exprs({})",n);
         let mut res = Vec::with_capacity(n);
 
         let mut selfutop = self.utop;
         let mut selfftop = self.ftop;
         for i in 0..n {
+            println!("---ustack @ {} = {:?}",i,&self.susize[..selfutop]);
             let nd   = self.susize[selfutop-1];
             let nnz  = self.susize[selfutop-2];
             let nelm = self.susize[selfutop-3];
             let totalsize : usize = self.susize[selfutop-3-nd..selfutop-3].iter().product();
+            println!("nd = {}, nelm = {}, nnz = {}",nd,nelm,nnz);
+            println!("shape = {:?}",&self.susize[selfutop-3-nd..selfutop-3]);
 
-            let totalusize = nd+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
+            let totalusize = nd+nelm+1+nnz + (if nelm < totalsize { nelm } else { 0 });
             let totalfsize = nnz;
 
             let utop = selfutop-3;
@@ -149,18 +152,20 @@ impl WorkStack {
             let fbase = ftop - totalfsize;
 
             let uslice : &[usize] = & self.susize[ubase..utop];
-
+            println!("  expr slice = {:?}",uslice);
+            
             let cof    : &[f64]   = & self.sf64[fbase..ftop];
 
-            let subj  = &uslice[ubase..ubase+nnz];
-            let sp    = if totalsize > nelm { Some(&uslice[ubase+nnz..ubase+nnz+nelm]) } else { None };
-            let ptr   = &uslice[totalusize-nelm-1..totalusize-nd];
-            let shape = &uslice[totalusize-nelm-1..totalusize-nd];
+            let subj  = &uslice[..nnz];
+            let sp    = if totalsize > nelm { Some(&uslice[nnz..nnz+nelm]) } else { None };
+            let ptrbase = nnz+sp.map(|v| v.len()).unwrap_or(0);
+            let ptr   = &uslice[ptrbase..ptrbase+nelm+1];
+            let shape = &uslice[ptrbase+nelm+1..];
 
             let rnnz = ptr.last().copied().unwrap();
 
-            selfutop = utop;
-            selfftop = ftop;
+            selfutop = ubase;
+            selfftop = fbase;
             res.push((shape,ptr,sp,&subj[..rnnz],&cof[..rnnz]))
         }
 
@@ -180,7 +185,6 @@ impl WorkStack {
         let nelm = self.susize[selfutop-3];
 
         println!("nd = {}, nelm = {}, nnz = {}",nd,nelm,nnz);
-        println!("stack top = {:?}",&self.susize[selfutop-3-nd..selfutop]);
         let totalsize : usize = self.susize[selfutop-3-nd..selfutop-3].iter().product();
         
         let totalusize = nd+nelm+1+nnz + (if nelm < totalsize { nelm } else { 0 });
@@ -203,8 +207,8 @@ impl WorkStack {
 
         let rnnz = ptr.last().copied().unwrap();
 
-        self.utop = utop;
-        self.ftop = ftop;
+        self.utop = ubase;
+        self.ftop = fbase;
 
         (shape,ptr,sp,&subj[..rnnz],&cof[..rnnz])
     }
@@ -229,7 +233,7 @@ impl WorkStack {
         let fbase = self.ftop-nelm;
 
         let utop = self.utop-3;
-        let ftop = self.utop-3;
+        let ftop = self.ftop;
 
         let uslice : &mut[usize] = & mut self.susize[ubase..utop];
         let cof    : &mut[f64]   = & mut self.sf64[fbase..ftop];
