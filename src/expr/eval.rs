@@ -246,7 +246,8 @@ pub(super) fn mul_right_dense(mdata : &[f64],
 
         for (k,p0,p1) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter()) {
             let (ii,_jj) = (k/edimj,k%edimj);
-            rptr[ii*edimj..(ii+1)*edimj].iter_mut().for_each(|p| *p += p1-p0);
+            println!("nelm = {}, k = {}, ii = {}, jj = {}",rnelm,k,ii,_jj);
+            rptr[ii*rdimj..(ii+1)*rdimj].iter_mut().for_each(|p| *p += p1-p0);
         }
         let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; v+prev });
 
@@ -255,7 +256,7 @@ pub(super) fn mul_right_dense(mdata : &[f64],
         for (k,&p0,&p1) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter()) {
             let (ii,jj) = (k/edimj,k%edimj);
 
-            for (rp,v) in izip!(rptr[ii*edimj..(ii+1)*edimj].iter_mut(),
+            for (rp,v) in izip!(rptr[ii*rdimj..(ii+1)*rdimj].iter_mut(),
                                 mdata[jj*mdimj..(jj+1)*mdimj].iter()) {
                 rsubj[*rp..*rp+p1-p0].clone_from_slice(&subj[p0..p1]);
                 rcof[*rp..*rp+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * v);
