@@ -8,6 +8,8 @@ use expr::workstack::WorkStack;
 use itertools::{iproduct};
 use std::iter::once;
 
+pub use expr::{ExprTrait,ExprLeftMultipliable,ExprRightMultipliable};
+
 use utils::*;
 
 /////////////////////////////////////////////////////////////////////
@@ -1493,7 +1495,6 @@ fn row_major_offset_to_col_major(ofs : usize, dim : usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::expr::Expr;
     #[test]
     fn it_works() {
         let mut m = Model::new(Some("SuperModel"));
@@ -1504,7 +1505,5 @@ mod tests {
         let mut v5 = m.variable(None, greater_than(vec![1.0,2.0,3.0,4.0]).with_shape(vec![2,2]));
         let mut v6 = m.variable(None, greater_than(vec![1.0,3.0]).with_shape_and_sparsity(vec![2,2],vec![0,3]));
 
-        let e1 = Expr::from_variable(&v1);
-        let e2 = Expr::from_variable(&v3);
     }
 }

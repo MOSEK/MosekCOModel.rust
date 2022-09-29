@@ -21,6 +21,13 @@ impl WorkStack {
             ftop : 0  }
     }
 
+    pub fn clear(& mut self) {
+        self.utop = 0;
+        self.ftop = 0;
+    }
+    pub fn is_empty(& mut self) -> bool {
+        self.utop == 0 && self.ftop == 0
+    }
     /// Allocate a new expression on the stack.
     ///
     /// Arguments:

@@ -317,7 +317,7 @@ mod matrix {
     }
 
     impl DenseMatrix {
-        fn mul<E:ExprTrait>(self,other : E) -> ExprMulLeftDense<E> { ExprMulLeftDense{item : other,lhs : self} }
+        pub fn mul<E:ExprTrait>(self,other : E) -> ExprMulLeftDense<E> { ExprMulLeftDense{item : other,lhs : self} }
     }
 }
 
@@ -558,32 +558,86 @@ impl<E:ExprTrait> ExprTrait for ExprGather<E> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    fn dense_expr() -> Expr {
+        super::Expr::new(vec![3,3],
+                         None,
+                         vec![0,1,2,3,4,5,6,7,8,9],
+                         vec![0,1,2,0,1,2,0,1,2],
+                         vec![1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,3.3])
+    }
+
+    fn sparse_expr() -> Expr {
+        super::Expr::new(vec![3,3],
+                         Some(vec![0,4,5,6,7]),
+                         vec![0,1,2,3,4,5],
+                         vec![0,1,2,3,4],
+                         vec![1.1,2.2,3.3,4.4,5.5])
+    }
+
     #[test]
-    fn test_exprs() {
-        let e0 = super::Expr::new(vec![3,3],
-                                  None,
-                                  vec![0,1,2,3,4,5,6,7,8,9],
-                                  vec![0,1,2,0,1,2,0,1,2],
-                                  vec![1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,3.3]);
-        let e1 = super::Expr::new(vec![3,3],
-                                  Some(vec![0,4,5,6,7]),
-                                  vec![0,1,2,3,4,5],
-                                  vec![0,1,2,3,4],
-                                  vec![1.1,2.2,3.3,4.4,5.5]);
+    fn test_mul_left() {
+        let mut rs = WorkStack::new(512);
+        let mut ws = WorkStack::new(512);
+        let mut xs = WorkStack::new(512);
+
+        let e0 = dense_expr();
+        let e1 = sparse_expr();
+
         let m1 = matrix::dense(3,2,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
         let m2 = matrix::dense(2,3,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
 
-        let e0_1 = e0.mul(m1);
-        let e0_2 = m1.mul(e0);
-        let e0_3 = 2.0.mul(e0);
-        let e0_4 = e0.mul(2.0);
+        let e0_1 = m2.clone().mul(e0.clone());
+        let e0_2 = 2.0.mul(e0.clone());
 
-        let e1_1 = e1.mul(m1);
-        let e1_2 = m1.mul(e1);
-        let e1_3 = 2.0.mul(e1);
-        let e1_4 = e0.mul(2.1);
+        let e1_1 = m2.clone().mul(e1.clone());
+        let e1_2 = 2.0.mul(e1.clone());
 
-        let e01 = e0.add(e1).add(e2);
+        e0.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
+        e1.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
+        e0_1.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
+        e0_2.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
+        e1_1.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
+        e1_2.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
+    }
 
+
+    #[test]
+    fn test_mul_right() {
+        let mut rs = WorkStack::new(512);
+        let mut ws = WorkStack::new(512);
+        let mut xs = WorkStack::new(512);
+
+        let m1 = matrix::dense(3,2,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+        let m2 = matrix::dense(2,3,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+
+        let e0 = dense_expr();
+        let e1 = sparse_expr();
+
+        let e0_1 = e0.clone().mul(m1.clone());
+        let e0_2 = e0.clone().mul(2.0);
+
+        let e1_1 = e1.clone().mul(m1.clone());
+        let e1_2 = e1.clone().mul(2.0);
+
+        e0_1.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
+        e0_2.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
+
+        e1_1.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
+        e1_2.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
+    }
+
+    #[test]
+    fn test_mul_add() {
+        let mut rs = WorkStack::new(512);
+        let mut ws = WorkStack::new(512);
+        let mut xs = WorkStack::new(512);
+
+
+        let m1 = matrix::dense(3,2,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+        let m2 = matrix::dense(2,3,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+
+        let e0 = dense_expr().add(sparse_expr()).add(dense_expr().mul(m1));
+        e0.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
     }
 }
