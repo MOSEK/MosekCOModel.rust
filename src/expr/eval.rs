@@ -363,9 +363,79 @@ pub(super) fn dot_vec(data : &[f64],
 } // dot_slice
 
 
+fn shape_eq(s0 : &[usize], s1 : &[usize]) -> bool { s0.iter().zip(s1.iter()).all(|(&a,&b)| a == b) }
+fn shape_eq_except(s0 : &[usize], s1 : &[usize], d : usize) -> bool{
+    s0.len() == s1.len()
+        && d < s0.len()
+        && ( d == 0 || shape_eq(s0[..d],s1[..d]) )
+        && ( d+1 == s0.len() || shape_eq(s0[d+1..],s1[d+1....d]) )
+}
+
 pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
     let exprs = ws.pop_exprs(n);
-    ...
+
+    // check shapes
+    if ! exprs.iter().zip(exprs[1..].iter()).any(|((s0,_,_,_,_),(s1,_,_,_,_))| shape_eq_except(s0,s1,dim)) {
+        panic!("Mismatching shapes or stacking dimension");
+    }
+
+    let (rnnz,rnelm,ddim) = exprs.fold((0,0,0),|(nnz,nelm,d),(shape,ptr,sp,_subj,_cof)| (nnz+ptr.last().unwrap(),rnelm+ptr.len()-1,ddim+shape[dim]));
+    let rshape = exprs[0].0.to_vec(); rshape[dim] = ddim;
+    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),nnz,nelm);
+
+
+    // Stacking in any number of dimensions can always be reduced to
+    // stacking in 3 dimensions, with the dimension sizes computed as:
+    let d0 = rshape[..dim].iter().product();
+    let d1 = rshape[dim];
+    let d2 = if dim+1 < nd { rshape[dim+1..].iter().product() } else { 1 };
+
+    // Special case: Stacking in dimension 0 means we can basically
+    // concatenate the expressions. We test d0==1 meaning that the
+    // product up to the stacking dimension are all 1, so effectively
+    // that means stacking in the first (non-one) dimension.
+    if d0 == 1 {
+        let mut elmi : usize = 0;
+        let mut nzi  : usize = 0;
+        let mut ofs  : usize = 0;
+        for (shape,ptr,sp,subj,cof) in exprs.iter() {
+            let nnz = ptr.last().unwrap();
+            let nelm = ptr.len()-1;
+            rsubj[nzi..nzi+nnz].clone_from_slice(subj);
+            rcof[nzi..nzi+nnz].clone_from_slice(cof);
+            izip!(rptr[elmi..elmi+nelm].iter_mut(),
+                  ptr.iter(),
+                  ptr[1..].iter()).for_each(|(rp,&p0,&p1)| *rp = p1-p0);
+
+            if let Some(rsp) = rsp {
+                if let Some(sp) = sp {
+                    rsp[elmi..elmi+nelm].iter_mut().zip(sp.iter()).for_each(|(rsp,&sp)| *rsp = sp+ofs);
+                }
+                else {
+                    rsp[elmi..elmi+nelm].iter_mut().zip(0..nelm).for_each(|(rsp,sp)| *rsp = sp+ofs);
+                }
+                ofs += shape.iter().product();
+            }
+            nzi += ptr.last().unwrap();
+            elmi += ptr.len()-1;
+        }
+        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev+v });
+    }
+    else {
+        let stride = ;
+        let blocksize = d1*d2
+        if let Some(rsp) = rsp {
+            ...
+        }
+        else {
+            
+            let mut dofs : usize = 0;
+            rptr.fill(0);
+            for (shape,ptr,sp,subj,cof) in exprs.iter() {
+                dofs += shape[dim];
+            }
+        }
+    }
 }
 
 
