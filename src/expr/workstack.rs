@@ -153,7 +153,7 @@ impl WorkStack {
 
             let uslice : &[usize] = & self.susize[ubase..utop];
             println!("  expr slice = {:?}",uslice);
-            
+
             let cof    : &[f64]   = & self.sf64[fbase..ftop];
 
             let subj  = &uslice[..nnz];
@@ -186,7 +186,7 @@ impl WorkStack {
 
         println!("nd = {}, nelm = {}, nnz = {}",nd,nelm,nnz);
         let totalsize : usize = self.susize[selfutop-3-nd..selfutop-3].iter().product();
-        
+
         let totalusize = nd+nelm+1+nnz + (if nelm < totalsize { nelm } else { 0 });
         println!("totalusize = {}, ustack.len = {}",totalusize,self.susize.len());
 

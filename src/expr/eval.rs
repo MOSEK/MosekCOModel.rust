@@ -363,6 +363,12 @@ pub(super) fn dot_vec(data : &[f64],
 } // dot_slice
 
 
+pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+    let exprs = ws.pop_exprs(n);
+    ...
+}
+
+
 pub(super) fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
     // println!("eval_finalize");
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
@@ -465,3 +471,5 @@ pub(super) fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & m
         }
     }
 }
+
+

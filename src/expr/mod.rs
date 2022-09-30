@@ -9,7 +9,6 @@ use super::Variable;
 use workstack::WorkStack;
 use super::matrix;
 
-
 pub trait ExprTrait : Sized {
     /// Evaluate the expression and put the result on the `rs` stack,
     /// using the `ws` to evaluate sub-expressions and `xs` for
@@ -38,11 +37,14 @@ pub trait ExprTrait : Sized {
     fn mul<V>(self,other : V) -> V::Result where V : ExprRightMultipliable<Self> { other.mul_right(self) }
     fn add<R:ExprTrait>(self,rhs : R) -> ExprAdd<Self,R> { ExprAdd{lhs:self,rhs} }
 
+    fn vstack<E:ExprTrait>(self,other : E) -> ExprStack<Self,E> { ExprStack::new(self,other,0) }
+    fn hstack<E:ExprTrait>(self,other : E) -> ExprStack<Self,E> { ExprStack::new(self,other,1) }
+    fn stack<E:ExprTrait>(self,dim : usize, other : E) -> ExprStack<Self,E> { ExprStack::new(self,other,dim) }
+
     fn reshape(self,shape : Vec<usize>) -> ExprReshape<Self> { ExprReshape{item:self,shape} }
     fn scatter(self,shape : Vec<usize>, sp : Vec<usize>) -> ExprScatter<Self> { ExprScatter::new(self, shape, sp) }
     fn gather(self,shape : Vec<usize>) -> ExprGather<Self> { ExprGather{item:self, shape} }
 }
-
 
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
@@ -180,7 +182,6 @@ impl ExprTrait for Variable {
         }
     }
 }
-
 
 ////////////////////////////////////////////////////////////
 // Multiply
@@ -452,8 +453,87 @@ impl<E:ExprTrait> ExprTrait for ExprGather<E> {
     }
 }
 
+////////////////////////////////////////////////////////////
+//
+// Stacking
+//
+// Recursive evaluation of recursive stacking
+//
+
+struct ExprStack<E1:ExprTrait,E2:ExprTrait> {
+    item1 : E1,
+    item2 : E2,
+    dim   : usize
+}
+
+struct ExprStackRec<E1:ExprStackRecTrait,E2:ExprTrait> {
+    item1 : E1,
+    item2 : E2,
+    dim   : usize
+}
+
+trait ExprStackRecTrait {
+    fn stack_dim(&self) -> usize;
+    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize;
+}
+
+impl ExprStack<E1:ExprTrait,E2:ExprTrait> {
+    pub fn new(item1 : E1, item2 : E2, dim : usize) -> Self { ExprStack{item1,item2,dim} }
+    pub fn stack<T:ExprTrait>(self, dim : usize, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim} }
+    pub fn vstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,0} }
+    pub fn hstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,1} }
+}
+
+impl ExprStackRec<E1:ExprStackRecTrait,E2:ExprTrait> {
+    pub fn stack<T:ExprTrait>(self, dim : usize, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim} }
+    pub fn vstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,0} }
+    pub fn hstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,1} }
+}
+
+impl<E1:ExprTrait,E2:ExprTrait> ExprTrait for ExprStack<E1,E2> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
+        let n = self.eval_rec(rs,ws,xs);
+        eval::stack(self.dim,n,rs,ws,xs);
+    }
+}
+impl<E1:ExprTrait,E2:ExprTrait> ExprTrait for ExprStackRec<E1,E2> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
+        let n = self.eval_rec(rs,ws,xs);
+        eval::stack(self.dim,n,rs,ws,xs);
+    }
+}
+
+impl<E1:ExprTrait,E2:ExprTrait> ExprStackRecTrait for ExprStack<E1,E2> {
+    fn stack_dim(&self) -> usize { self.dim }
+    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
+        item2.eval(ws,rs,xs);
+        item1.eval(ws,rs,xs);
+        2
+    }
+}
+
+impl<E1:ExprTrait,E2:ExprTrait> ExprStackRecTrait for ExprStackRec<E1,E2> {
+    fn stack_dim(&self) -> usize { self.dim }
+    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
+        // we can only do recursive stacking if everything is stacked
+        // in the same dimension. If we encounter subexpression that
+        // is stacked in a different dimensionm, we simply evaluate it
+        // as a normal expression and end the recursion
+        self.item2.eval(ws,rs,xs);
+        if self.dim == self.item1.stack_dim() {
+            1+self.item1.eval_rec(ws,rs,xs);
+        }
+        else {
+            self.item1.eval(ws,rs,xs);
+            2
+        }
+    }
+}
 
 
+////////////////////////////////////////////////////////////
+//
+// Tests
 
 #[cfg(test)]
 mod test {
@@ -532,7 +612,6 @@ mod test {
         let mut rs = WorkStack::new(512);
         let mut ws = WorkStack::new(512);
         let mut xs = WorkStack::new(512);
-
 
         let m1 = matrix::dense(3,3,vec![1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0]);
 
