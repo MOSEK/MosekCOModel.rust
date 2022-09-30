@@ -415,18 +415,50 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
         let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev+v });
     }
     else {
-        let stride = ;
-        let blocksize = d1*d2
         if let Some(rsp) = rsp {
-            ...
+            TODO!("implement sparse stacking");
         }
-        else {
-            
-            let mut dofs : usize = 0;
-            rptr.fill(0);
+        else { // this implies that all operands are sparse
+            let rstride = d1*d2;
+            let mut elmi : usize = 0;
+            let mut ofs  : 0;
+
+            // Build the result ptr
             for (shape,ptr,sp,subj,cof) in exprs.iter() {
-                dofs += shape[dim];
+                let blocksize = d2*shape[dim];
+                izip!(rptr.chunks_mut(rstride),
+                      ptr.chunks(blocksize),
+                      ptr[1..].chunks(blocksize))
+                    .for_each(|(rps,p0s,p1s)| {
+                        rps[ofs..].iter_mut()
+                            .zip(p0s.iter().zip(p1s.iter()).map(|(&p0,&p1)| p1-p0))
+                            .for_each(|(rp,n)| *rp = n);
+                    });
+
+                ofs += shape[dim]*d0;
             }
+            let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev*v });
+            // Then copy nonzeros
+            for (shape,ptr,sp,subj,cof) in exprs.iter() {
+                let blocksize = d2*shape[dim];
+                izip!(rptr.chunks(rstride),
+                      ptr.chunks(blocksize),
+                      ptr[1..].chunks(blocksize))
+                    .for_each(|(rps,p0s,p1s)| {
+                        let p0 = *p0s.first().unwrap();
+                        let p1 = *p1s.last().unwrap();
+
+                        let rp = *rps.first().nuwrap();
+                        
+                        rsubj[rp..rp+p1-p0].clone_from_slice(subj[p0..p1]);
+                        rcof[rp..rp+p1-p0].clone_from_slice(cof[p0..p1]);
+
+                    });
+
+                ofs += shape[dim]*d0;
+            }
+
+            
         }
     }
 }
