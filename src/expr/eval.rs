@@ -363,13 +363,6 @@ pub(super) fn dot_vec(data : &[f64],
 } // dot_slice
 
 
-fn shape_eq(s0 : &[usize], s1 : &[usize]) -> bool { s0.iter().zip(s1.iter()).all(|(&a,&b)| a == b) }
-fn shape_eq_except(s0 : &[usize], s1 : &[usize], d : usize) -> bool{
-    s0.len() == s1.len()
-        && d < s0.len()
-        && ( d == 0 || shape_eq(s0[..d],s1[..d]) )
-        && ( d+1 == s0.len() || shape_eq(s0[d+1..],s1[d+1....d]) )
-}
 
 pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
     let exprs = ws.pop_exprs(n);

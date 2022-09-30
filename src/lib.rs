@@ -374,11 +374,22 @@ impl Variable {
         if idx.len() != self.shape.len() { panic!("The range does not match the shape") }
         if idx.iter().zip(self.shape.iter()).any(|(&i,&d)| i >= d ) { panic!("The range does not match the shape") }
 
+        let (index,_) = idx.iter().self.shape.iter().fold((0,1),|(r,stride),(&i,&d)| (r+i*stride,stride*d));
         if let Some(sp) = self.sparsity {
-            ...
+            if let Ok(i) = sp.binary_search(index) {
+                Variable{
+                    idxs : vec![self.idxs[i]],
+                    sparsity : None,
+                    shape : vec![] }
+            }
+            else {
+                Variable{
+                    idxs : vec![],
+                    sparsity : Some(vec![]),
+                    shape : vec![] }
+            }
         }
         else {
-            let (index,_) = idx.iter().self.shape.iter().fold((0,1),|(r,stride),(&i,&d)| (r+i*stride,stride*d));
             Variable{
                 idxs : vec![self.idxs[index]],
                 sparsity : None,
@@ -387,16 +398,53 @@ impl Variable {
 
     }
     pub stack(dim : usize, xs : &[&Variable]) -> Variable {
-        let n = xs.len();
-        let (idxs,shapes,sps) = xs.iter().fold((Vec::with_capacity(n),
-                                                Vec::with_capacity(n),
-                                                Vec::with_capacity(n)),
-                                               |(idxs,shapes,sps),v| {
-                                                   idxs.push(v.idxs);
-                                                   shapes.push(v.shape);
-                                                   sps.push(v.sp);
-                                               });
-        let (ridxs,rsp,rshape) = utils::stack(dim,idxs,shapes,sps);
+        if ! xs.iter().zip(xs[1..].iter())
+            .all(|(v0,v1)| utils::shape_eq_except(v0.shape.as_slice(),v1.shape.as_slice(),dim)) {
+                panic!("Operands have mismatching shapes");
+            }
+
+        let ddim : usize = xs.iter().map(|v| v.shape[dim]).sum();
+        let n      = xs.len();
+        let rnelm  = xs.map(|v| n+v.idxs.len());
+        let rshape = xs[0].shape.clone(); rshape[dim] = ddim;
+
+        if dim == 0 {
+            let mut ridxs : Vec<usize> = Vec::with_capacity(rnelm);
+            for v in xs {
+                ridxs.extend(v.idxs.iter());
+            }
+            let sp = if rnelm < rshape.iter().product() {
+                let mut ofs : usize = 0;
+                let mut rsp : Vec<usize> = Vec::with_capacity(rnelm);
+                for v in xs {
+                    if let Some(sp) = v.sparsity {
+                        rsp.extend(sp.iter());
+                    }
+                    else {
+                        rsp.extend(0..v.idxs.len());
+                    }
+                }
+
+                Some(rsp)
+            }
+            else {
+                None
+            };
+
+            Variable{
+                idxs     : ridxs,
+                sparsity : rsp,
+                shape    : rshape }
+        }
+        // let (idxs,shapes,sps) = xs.iter().fold((Vec::with_capacity(n),
+        //                                         Vec::with_capacity(n),
+        //                                         Vec::with_capacity(n)),
+        //                                        |(idxs,shapes,sps),v| {
+        //                                            idxs.push(v.idxs);
+        //                                            shapes.push(v.shape);
+        //                                            sps.push(v.sp);
+        //                                        });
+        // let (ridxs,rsp,rshape) = utils::stack(dim,idxs,shapes,sps);
         Variable{
             idxs     : ridxs,
             sparsity : rsp,
