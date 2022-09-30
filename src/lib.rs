@@ -331,10 +331,79 @@ impl Variable {
     ///// Take the diagonal element of a square, cube,... variable
     //pub fn diag(&self) -> Variable
     //pub fn into_diag(&self) -> Variable
-    //pub slice(& self,from : &[usize], to : &[usize])
-    //pub stack(dim : usize, xs : &[&Variable]) -> Variable
-    //pub hstack(xs : &[Variable]) -> Variable
-    //pub vstack(xs : &[Variable]) -> Variable
+    pub slice(&self, ranges : &[Range<usize>]) -> Variable {
+        if ranges.len() != self.shape.len() { panic!("The range does not match the shape") }
+        if ranges.iter().zip(self.shape.iter()).any(|(&r,&d)| r.start > r.end || r.end <= d ) { panic!("The range does not match the shape") }
+
+        let rshape : Vec<usize> = ranges.map(|r| r.end-r.start).collect();
+        let mut rstrides = rshape.clone(); let _ = rstrides.iter().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev});
+
+        if let Some(ref sp) = self.sparsity {
+            let mut strides = shape.to_vec();
+            let _ = strides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev });
+
+            let mut rsp = Vec::with_capacity(sp.len());
+            let mut ridxs = Vec::with_capacity(idxs.len());
+
+            sp.iter().zip(self.idxs.iter())
+                .for_each(|(&s,&ix)|
+                          if izip!(shape.iter(),strides.iter(),ranges.iter()).all(|(&sh,&st,ra)| { let i = (s / st) % sh; i <= ra.start && i < ra.end }) {
+                              rsp.push(izip!(shape.iter(),
+                                             strides.iter(),
+                                             ranges.iter(),
+                                             rstrides.iter()).map(|(&sh,&st,ra,&rst)| ((s / st) % sh - ra.start) * rst).sum());
+                              idxs.push(ix);
+                          });
+            Variable{idxs     : ridxs,
+                     sparsity : Some(sp),
+                     shape    : rshape }
+        }
+        else {
+            let rnum = rshape.iter().product();
+            let ridxs : Vec<usize> = (0..rshape.iter().product())
+                .map(|i| izip!(rshape.iter(),rstrides.iter(),ranges.iter(),strides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st )sum() )
+                .map(|i| self.idxs[i] /*TODO: unsafe get*/)
+                .collect();
+
+            Variable{idxs : ridxs,
+                     sparsity : None,
+                     shape : rshape}
+        }
+    }
+    pub index(&self, idx : &[usize]) -> Variable {
+        if idx.len() != self.shape.len() { panic!("The range does not match the shape") }
+        if idx.iter().zip(self.shape.iter()).any(|(&i,&d)| i >= d ) { panic!("The range does not match the shape") }
+
+        if let Some(sp) = self.sparsity {
+            ...
+        }
+        else {
+            let (index,_) = idx.iter().self.shape.iter().fold((0,1),|(r,stride),(&i,&d)| (r+i*stride,stride*d));
+            Variable{
+                idxs : vec![self.idxs[index]],
+                sparsity : None,
+                shape : vec![] }
+        }
+
+    }
+    pub stack(dim : usize, xs : &[&Variable]) -> Variable {
+        let n = xs.len();
+        let (idxs,shapes,sps) = xs.iter().fold((Vec::with_capacity(n),
+                                                Vec::with_capacity(n),
+                                                Vec::with_capacity(n)),
+                                               |(idxs,shapes,sps),v| {
+                                                   idxs.push(v.idxs);
+                                                   shapes.push(v.shape);
+                                                   sps.push(v.sp);
+                                               });
+        let (ridxs,rsp,rshape) = utils::stack(dim,idxs,shapes,sps);
+        Variable{
+            idxs     : ridxs,
+            sparsity : rsp,
+            shape    : rshape }
+    }
+    pub vstack(xs : &[Variable]) -> Variable { Self::stack(0,xs) }
+    pub hstack(xs : &[Variable]) -> Variable { Self::stack(1,xs) }
 }
 
 
@@ -1145,10 +1214,9 @@ impl Model {
     /// - `expr` Objective expression, this must contain exactly one
     ///   element. The shape is otherwise ignored.
     pub fn objective<E : expr::ExprTrait>(& mut self,
-                                    name  : Option<&str>,
-                                    sense : Sense,
-                                    expr  : & E) {
-        println!("objective");
+                                          name  : Option<&str>,
+                                          sense : Sense,
+                                          expr  : & E) {
         expr.eval_finalize(& mut self.rs,& mut self.ws, & mut self.xs);
         self.set_objective(name,sense);
     }

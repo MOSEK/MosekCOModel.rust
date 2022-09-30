@@ -34,6 +34,8 @@ pub trait ExprTrait : Sized {
     // fn axispermute(self) -> ExprPermuteAxes<Self>
     // fn slice(self, range : &[(Range<usize>)])
 
+    fn sum(self) -> ExprSum<Self> { ExprSum{item:self} }
+
     fn mul<V>(self,other : V) -> V::Result where V : ExprRightMultipliable<Self> { other.mul_right(self) }
     fn add<R:ExprTrait>(self,rhs : R) -> ExprAdd<Self,R> { ExprAdd{lhs:self,rhs} }
 
@@ -530,6 +532,24 @@ impl<E1:ExprTrait,E2:ExprTrait> ExprStackRecTrait for ExprStackRec<E1,E2> {
     }
 }
 
+
+////////////////////////////////////////////////////////////
+//
+pub struct ExprSum<T:ExprTrait> {
+    item : T
+}
+
+impl<T:ExprTrait> ExprTrait for ExprSum<T> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.item.eval(ws,rs,xs);
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[],ptr.last().unwrap(),1);
+        rptr[0] = 0;
+        rptr[1] = ptr.last().unwrap();
+        rsubj.clone_from_slice(subj);
+        rcof.clone_from_slice(cof);
+    }
+}
 
 ////////////////////////////////////////////////////////////
 //

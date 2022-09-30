@@ -4,6 +4,7 @@
 
 use itertools::izip;
 
+
 /// An interator that produces an accumulation map, a bit like fold+map.
 ///
 /// The iterator is initialized with a value, a mapping function and
