@@ -40,6 +40,8 @@ pub trait ExprTrait : Sized {
     fn mul<V>(self,other : V) -> V::Result where V : ExprRightMultipliable<Self> { other.mul_right(self) }
     fn add<R:ExprTrait>(self,rhs : R) -> ExprAdd<Self,R> { ExprAdd{lhs:self,rhs} }
 
+    fn dot<V:ExprInnerProductFactorTrait<Self>>(self,v: V) -> V::Output  { v.dot(self) }
+
     fn vstack<E:ExprTrait>(self,other : E) -> ExprStack<Self,E> { ExprStack::new(self,other,0) }
     fn hstack<E:ExprTrait>(self,other : E) -> ExprStack<Self,E> { ExprStack::new(self,other,1) }
     fn stack<E:ExprTrait>(self,dim : usize, other : E) -> ExprStack<Self,E> { ExprStack::new(self,other,dim) }
@@ -218,8 +220,6 @@ pub trait ExprLeftMultipliable<E:ExprTrait> {
     fn mul(self,other : E) -> Self::Result;
 }
 
-
-
 impl<E:ExprTrait> ExprRightMultipliable<E> for f64 {
     type Result = ExprMulScalar<E>;
     fn mul_right(self,other : E) -> Self::Result { ExprMulScalar{item : other, lhs : self} }
@@ -242,6 +242,19 @@ pub struct ExprMulScalar<E:ExprTrait> {
     item : E,
     lhs  : f64
 }
+
+pub trait ExprInnerProductFactorTrait<E:ExprTrait> {
+    type Output;
+    fn dot(self, expr : E) -> Self::Output;
+}
+
+impl<E:ExprTrait> ExprInnerProductFactorTrait<E> for &[f64] {
+    type Output = ExprDotVec<E>;
+    fn dot(self, expr : E) -> Self::Output {
+        ExprDotVec{ expr, data:self.to_vec() }
+    }
+}
+
 pub struct ExprDotVec<E:ExprTrait> {
     data : Vec<f64>,
     expr : E
