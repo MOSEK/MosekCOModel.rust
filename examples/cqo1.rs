@@ -45,7 +45,7 @@ fn main() {
     // Create the constraint
     //      x[0] + x[1] + 2.0 x[2] = 1.0
     let aval = &[1.0, 1.0, 2.0];
-    let _ = m.constraint(Some("lc"), aval.dot(x.clone()), equal_to(1.0));
+    let _ = m.constraint(Some("lc"), &aval.dot(x.clone()), equal_to(1.0));
     //TAG:end-create-lincon
 
     //TAG:begin-create-concon
@@ -62,7 +62,7 @@ fn main() {
 
     //TAG:begin-set-objective
     // Set the objective function to (y[0] + y[1] + y[2])
-    m.objective(Some("obj"), Sense::Minimize, y.sum());
+    m.objective(Some("obj"), Sense::Minimize, &y.clone().sum());
     //TAG:end-set-objective
 
     // Solve the problem
