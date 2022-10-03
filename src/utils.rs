@@ -342,8 +342,8 @@ pub fn shape_eq(s0 : &[usize], s1 : &[usize]) -> bool { s0.iter().zip(s1.iter())
 pub fn shape_eq_except(s0 : &[usize], s1 : &[usize], d : usize) -> bool{
     s0.len() == s1.len()
         && d < s0.len()
-        && ( d == 0 || shape_eq(s0[..d],s1[..d]) )
-        && ( d+1 == s0.len() || shape_eq(s0[d+1..],s1[d+1....d]) )
+        && ( d == 0 || shape_eq(&s0[..d],&s1[..d]) )
+        && ( d+1 == s0.len() || shape_eq(&s0[d+1..],&s1[d+1..d]) )
 }
 
 ////////////////////////////////////////////////////////////

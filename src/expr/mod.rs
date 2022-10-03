@@ -1,5 +1,6 @@
 extern crate itertools;
 
+
 mod eval;
 pub mod workstack;
 
@@ -462,59 +463,58 @@ impl<E:ExprTrait> ExprTrait for ExprGather<E> {
 // Recursive evaluation of recursive stacking
 //
 
-struct ExprStack<E1:ExprTrait,E2:ExprTrait> {
+pub struct ExprStack<E1:ExprTrait,E2:ExprTrait> {
     item1 : E1,
     item2 : E2,
     dim   : usize
 }
 
-struct ExprStackRec<E1:ExprStackRecTrait,E2:ExprTrait> {
+pub struct ExprStackRec<E1:ExprStackRecTrait,E2:ExprTrait> {
     item1 : E1,
     item2 : E2,
     dim   : usize
 }
 
-trait ExprStackRecTrait {
+pub trait ExprStackRecTrait : ExprTrait {
     fn stack_dim(&self) -> usize;
     fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize;
 }
 
-impl ExprStack<E1:ExprTrait,E2:ExprTrait> {
+impl<E1:ExprTrait,E2:ExprTrait> ExprStack<E1,E2> {
     pub fn new(item1 : E1, item2 : E2, dim : usize) -> Self { ExprStack{item1,item2,dim} }
     pub fn stack<T:ExprTrait>(self, dim : usize, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim} }
-    pub fn vstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,0} }
-    pub fn hstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,1} }
+    pub fn vstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim:0} }
+    pub fn hstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim:1} }
 }
 
-impl ExprStackRec<E1:ExprStackRecTrait,E2:ExprTrait> {
+impl<E1:ExprStackRecTrait,E2:ExprTrait> ExprStackRec<E1,E2> {
     pub fn stack<T:ExprTrait>(self, dim : usize, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim} }
-    pub fn vstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,0} }
-    pub fn hstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,1} }
+    pub fn vstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim:0} }
+    pub fn hstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim:1} }
 }
 
 impl<E1:ExprTrait,E2:ExprTrait> ExprTrait for ExprStack<E1,E2> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         let n = self.eval_rec(rs,ws,xs);
         eval::stack(self.dim,n,rs,ws,xs);
     }
 }
-impl<E1:ExprTrait,E2:ExprTrait> ExprTrait for ExprStackRec<E1,E2> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
-        let n = self.eval_rec(rs,ws,xs);
-        eval::stack(self.dim,n,rs,ws,xs);
-    }
-}
-
 impl<E1:ExprTrait,E2:ExprTrait> ExprStackRecTrait for ExprStack<E1,E2> {
     fn stack_dim(&self) -> usize { self.dim }
     fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
-        item2.eval(ws,rs,xs);
-        item1.eval(ws,rs,xs);
+        self.item2.eval(ws,rs,xs);
+        self.item1.eval(ws,rs,xs);
         2
     }
 }
 
-impl<E1:ExprTrait,E2:ExprTrait> ExprStackRecTrait for ExprStackRec<E1,E2> {
+impl<E1:ExprStackRecTrait,E2:ExprTrait> ExprTrait for ExprStackRec<E1,E2> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        let n = self.eval_rec(rs,ws,xs);
+        eval::stack(self.dim,n,rs,ws,xs);
+    }
+}
+impl<E1:ExprStackRecTrait,E2:ExprTrait> ExprStackRecTrait for ExprStackRec<E1,E2> {
     fn stack_dim(&self) -> usize { self.dim }
     fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
         // we can only do recursive stacking if everything is stacked
@@ -523,7 +523,7 @@ impl<E1:ExprTrait,E2:ExprTrait> ExprStackRecTrait for ExprStackRec<E1,E2> {
         // as a normal expression and end the recursion
         self.item2.eval(ws,rs,xs);
         if self.dim == self.item1.stack_dim() {
-            1+self.item1.eval_rec(ws,rs,xs);
+            1+self.item1.eval_rec(ws,rs,xs)
         }
         else {
             self.item1.eval(ws,rs,xs);
@@ -542,10 +542,10 @@ pub struct ExprSum<T:ExprTrait> {
 impl<T:ExprTrait> ExprTrait for ExprSum<T> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
-        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[],ptr.last().unwrap(),1);
+        let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
+        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[],*ptr.last().unwrap(),1);
         rptr[0] = 0;
-        rptr[1] = ptr.last().unwrap();
+        rptr[1] = *ptr.last().unwrap();
         rsubj.clone_from_slice(subj);
         rcof.clone_from_slice(cof);
     }
@@ -637,5 +637,15 @@ mod test {
 
         let e0 = dense_expr().add(sparse_expr()).add(dense_expr().mul(m1));
         e0.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
+    }
+
+    #[test]
+    fn test_stack() {
+        todo!("test_stack");
+    }
+
+    #[test]
+    fn test_sum() {
+        todo!("test_sum");
     }
 }

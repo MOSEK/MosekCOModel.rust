@@ -372,16 +372,17 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
         panic!("Mismatching shapes or stacking dimension");
     }
 
-    let (rnnz,rnelm,ddim) = exprs.fold((0,0,0),|(nnz,nelm,d),(shape,ptr,sp,_subj,_cof)| (nnz+ptr.last().unwrap(),rnelm+ptr.len()-1,ddim+shape[dim]));
-    let rshape = exprs[0].0.to_vec(); rshape[dim] = ddim;
-    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),nnz,nelm);
+    let (rnnz,rnelm,ddim) = exprs.iter().fold((0,0,0),|(nnz,nelm,d),(shape,ptr,_sp,_subj,_cof)| (nnz+ptr.last().unwrap(),nelm+ptr.len()-1,d+shape[dim]));
+    let mut rshape = exprs[0].0.to_vec(); rshape[dim] = ddim;
+    let nd = rshape.len();
+    let (rptr,mut rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),rnnz,rnelm);
 
 
     // Stacking in any number of dimensions can always be reduced to
     // stacking in 3 dimensions, with the dimension sizes computed as:
-    let d0 = rshape[..dim].iter().product();
+    let d0 : usize  = rshape[..dim].iter().product();
     let d1 = rshape[dim];
-    let d2 = if dim+1 < nd { rshape[dim+1..].iter().product() } else { 1 };
+    let d2 : usize = if dim+1 < nd { rshape[dim+1..].iter().product() } else { 1 };
 
     // Special case: Stacking in dimension 0 means we can basically
     // concatenate the expressions. We test d0==1 meaning that the
@@ -400,65 +401,129 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
                   ptr.iter(),
                   ptr[1..].iter()).for_each(|(rp,&p0,&p1)| *rp = p1-p0);
 
-            if let Some(rsp) = rsp {
+            if let Some(ref mut rsp) = rsp {
                 if let Some(sp) = sp {
                     rsp[elmi..elmi+nelm].iter_mut().zip(sp.iter()).for_each(|(rsp,&sp)| *rsp = sp+ofs);
                 }
                 else {
                     rsp[elmi..elmi+nelm].iter_mut().zip(0..nelm).for_each(|(rsp,sp)| *rsp = sp+ofs);
                 }
-                ofs += shape.iter().product();
+                ofs += shape.iter().product::<usize>();
             }
             nzi += ptr.last().unwrap();
             elmi += ptr.len()-1;
         }
         let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev+v });
     }
-    else {
-        if let Some(rsp) = rsp {
-            TODO!("implement sparse stacking");
+    // Case 2: The result is sparse, implying that at least one
+    // operand is sparse. Strategy:
+    // 1. Create intermediate xsp and xptr
+    // 2. Loop through each expression and add all sparsity index and
+    //    number of nonzeros for each element to xsp and xptr
+    //    respectively.
+    // 3. Compute the permutation, xperm, that sort the result
+    //    sparsity, xsp, and cummulate xptr ordered by xperm. Now
+    //    xptr[i] points to the location in rsubj and rcof where the
+    //    i'th element starts.
+    // 4. Loop though each expression and copy nonzeros, then copy ptr and sp.
+    else if let Some(rsp) = rsp {
+        let (us,_fs) = xs.alloc(3*rnelm,0);
+        let (xptr,us) = us.split_at_mut(rnelm);
+        let (xsp,xperm) = us.split_at_mut(rnelm);
+        // build ptr
+        let mut elmi = 0;
+        let mut ofs = 0;
+        for (shape,ptr,sp,_,_) in exprs.iter() {
+            let vd1 = shape[dim];
+            if let Some(sp) = sp {
+                for (xi,xp,&i,&p0,&p1) in izip!(xsp[elmi..elmi+sp.len()].iter_mut(),
+                                                xptr[elmi..elmi+sp.len()].iter_mut(),
+                                                sp.iter(),
+                                                ptr.iter(),
+                                                ptr[1..].iter()) {
+                    let (i0,i1,i2) = (i/(vd1*d2),(i/d2)%vd1,i%d2);
+                    *xp = p1-p0;
+                    *xi = (i0*d1+i1+ofs)*d2+i2;
+                }
+            }
+            else {
+                for (xi,xp,i,&p0,&p1) in izip!(xsp[elmi..elmi+ptr.len()-1].iter_mut(),
+                                               xptr[elmi..elmi+ptr.len()-1].iter_mut(),
+                                               iproduct!(0..d0,ofs..ofs+vd1,0..d2).map(|(i0,i1,i2)| (i0*d1+i1)*d2+i2),
+                                               ptr.iter(),
+                                               ptr[1..].iter()) {
+                    *xp = p1-p0;
+                    *xi = i;
+                }
+                
+            }
+            elmi += *ptr.last().unwrap();
+            ofs += vd1;
         }
-        else { // this implies that all operands are sparse
-            let rstride = d1*d2;
-            let mut elmi : usize = 0;
-            let mut ofs  : 0;
+        xperm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+        xperm.sort_by_key(|&p| unsafe{xsp.get_unchecked(p)});
+        let _ = xperm.iter().fold(0,|v,p| { let prev = unsafe{*xptr.get_unchecked(*p)}; unsafe{*xptr.get_unchecked_mut(*p) = v}; prev+v});
 
-            // Build the result ptr
-            for (shape,ptr,sp,subj,cof) in exprs.iter() {
-                let blocksize = d2*shape[dim];
-                izip!(rptr.chunks_mut(rstride),
-                      ptr.chunks(blocksize),
-                      ptr[1..].chunks(blocksize))
-                    .for_each(|(rps,p0s,p1s)| {
-                        rps[ofs..].iter_mut()
-                            .zip(p0s.iter().zip(p1s.iter()).map(|(&p0,&p1)| p1-p0))
-                            .for_each(|(rp,n)| *rp = n);
-                    });
-
-                ofs += shape[dim]*d0;
+        // build subj/cof/ptr/sp
+        let mut elmi = 0;
+        for (_shape,ptr,_sp,subj,cof) in exprs.iter() {
+            let nelm = ptr.len()-1;
+            for (xp,&p0,&p1) in izip!(xptr[elmi..elmi+nelm].iter_mut(),
+                                      ptr.iter(),
+                                      ptr[1..].iter()) {
+                let n = p1-p0;
+                rsubj[*xp..*xp+n].clone_from_slice(&subj[p0..p1]);
+                rcof[*xp..*xp+n].clone_from_slice(&cof[p0..p1]);
+                *xp += n;
             }
-            let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev*v });
-            // Then copy nonzeros
-            for (shape,ptr,sp,subj,cof) in exprs.iter() {
-                let blocksize = d2*shape[dim];
-                izip!(rptr.chunks(rstride),
-                      ptr.chunks(blocksize),
-                      ptr[1..].chunks(blocksize))
-                    .for_each(|(rps,p0s,p1s)| {
-                        let p0 = *p0s.first().unwrap();
-                        let p1 = *p1s.last().unwrap();
+            elmi += *ptr.last().unwrap();
+        }
+        
+        rptr[0] = 0;
+        izip!(xperm.iter(),rptr[1..].iter_mut(),rsp.iter_mut())
+            .for_each(|(&p,rp,ri)| {
+                *ri = unsafe{*xsp.get_unchecked(p)};
+                *rp = unsafe{*xptr.get_unchecked(p)};
+            });
+    }
+    // Case 3: All operands and the result is dense.
+    else {
+        let rstride = d1*d2;
+        let mut ofs  : usize = 0;
 
-                        let rp = *rps.first().nuwrap();
-                        
-                        rsubj[rp..rp+p1-p0].clone_from_slice(subj[p0..p1]);
-                        rcof[rp..rp+p1-p0].clone_from_slice(cof[p0..p1]);
+        // Build the result ptr
+        for (shape,ptr,_,_,_) in exprs.iter() {
+            let blocksize = d2*shape[dim];
+            izip!(rptr.chunks_mut(rstride),
+                  ptr.chunks(blocksize),
+                  ptr[1..].chunks(blocksize))
+                .for_each(|(rps,p0s,p1s)| {
+                    rps[ofs..].iter_mut()
+                        .zip(p0s.iter().zip(p1s.iter()).map(|(&p0,&p1)| p1-p0))
+                        .for_each(|(rp,n)| *rp = n);
+                });
 
-                    });
+            ofs += shape[dim]*d0;
+        }
+        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev*v });
+        // Then copy nonzeros
+        for (shape,ptr,_,subj,cof) in exprs.iter() {
+            let blocksize = d2*shape[dim];
+            izip!(rptr.chunks(rstride),
+                  ptr.chunks(blocksize),
+                  ptr[1..].chunks(blocksize))
+                .for_each(|(rps,p0s,p1s)| {
+                    let p0 = *p0s.first().unwrap();
+                    let p1 = *p1s.last().unwrap();
 
-                ofs += shape[dim]*d0;
-            }
+                    let rp = *rps.first().unwrap();
+                    
+                    rsubj[rp..rp+p1-p0].clone_from_slice(&subj[p0..p1]);
+                    rcof[rp..rp+p1-p0].clone_from_slice(&cof[p0..p1]);
 
-            
+                });
+
+            ofs += shape[dim]*d0;
         }
     }
 }

@@ -91,7 +91,6 @@ impl WorkStack {
         let totalfsize = nnz;
 
         let utop = utop-3;
-        let ftop = utop-3;
 
         let ubase = utop - totalusize;
         let fbase = ftop - totalfsize;
@@ -177,8 +176,8 @@ impl WorkStack {
     /// Returns and validatas a view of the top-most expression on the stack.
     pub fn pop_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
         println!("ustack = {:?}",&self.susize[..self.utop]);
-        let mut selfutop = self.utop;
-        let mut selfftop = self.ftop;
+        let selfutop = self.utop;
+        let selfftop = self.ftop;
 
         let nd   = self.susize[selfutop-1];
         let nnz  = self.susize[selfutop-2];
