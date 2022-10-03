@@ -1662,7 +1662,29 @@ mod tests {
     }
 
     #[test]
-    fn variable_ops() {
-        todo!("Test variable operations");
+    fn variable_stack() {
+        let mut m = Model::new(Some("SuperModel"));
+        let mut v1 = m.variable(None, vec![3,2,1]);
+        let mut v2 = m.variable(None, vec![3,2,1]);
+        let mut v3 = m.variable(None, equal_to(vec![1.0,2.0,3.0,4.0]).with_shape_and_sparsity(vec![3,2],vec![0,1,4,5]));
+
+        let mut w_0 = Variable::stack(0,&[&v1,&v2]);
+        let mut w_1 = Variable::stack(1,&[&v1,&v2]);
+        let mut w_2 = Variable::stack(2,&[&v1,&v2]);
+
+        assert!(w.0.idxs().iter(v1).zip([0,1,2,3,4,5,6,7,8,9,10,11].iter()).all(|(&a,&b)| a==b));
+        assert!(w_1.idxs().iter(v1).zip([0,1,6,7,2,3,8,9,4,5,10,11].iter()).all(|(&a,&b)| a==b));
+        assert!(w_2.idxs().iter(v1).zip([0,6,1,7,2,8,3,9,4,10,5,11].iter()).all(|(&a,&b)| a==b));
+
+        let mut u_0 = Variable::stack(0,&[&v1,&v3]);
+        let mut u_1 = Variable::stack(1,&[&v1,&v3]);
+        let mut u_2 = Variable::stack(2,&[&v1,&v3]);
+
+        assert!(w.0.idxs().iter(v1).zip([0,1,2,3,4,5,12,13,14,15].iter()).all(|(&a,&b)| a==b));
+        assert!(w.0.sparsity.unwrap().iter(v1).zip([0,1,2,3,4,5,6,8,9,11].iter()).all(|(&a,&b)| a==b));
+        assert!(w_1.idxs().iter(v1).zip([0,1,12,2,3,13,14,4,5,15].iter()).all(|(&a,&b)| a==b));
+        assert!(w_1.sparsity.unwrap().iter(v1).zip([0,1,2,4,5,6,7,8,9,11].iter()).all(|(&a,&b)| a==b));
+        assert!(w_2.idxs().iter(v1).zip([0,12,1,2,13,3,14,4,5,15].iter()).all(|(&a,&b)| a==b));
+        assert!(w_2.sparsity.unwrap().iter(v1).zip([0,1,2,4,5,6,7,8,10,11].iter()).all(|(&a,&b)| a==b));
     }
 }

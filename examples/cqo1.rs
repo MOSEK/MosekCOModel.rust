@@ -62,7 +62,7 @@ fn main() {
 
     //TAG:begin-set-objective
     // Set the objective function to (y[0] + y[1] + y[2])
-    m.objective(Some("obj"), Sense::Minimize, t.sum());
+    m.objective(Some("obj"), Sense::Minimize, y.sum());
     //TAG:end-set-objective
 
     // Solve the problem
@@ -87,7 +87,7 @@ fn main() {
     let qc1sn  = m.dual_solution(SolutionType::Default,&qc1);
     //TAG:end-get-con-sol
 
-    printf("qc1 levels = {:?}", qc1lvl);
-    printf("qc1 dual conic var levels = {:?}", qc1sn);
+    println!("qc1 levels = {:?}", qc1lvl);
+    println!("qc1 dual conic var levels = {:?}", qc1sn);
 }
 //TAG:end-cqo1
