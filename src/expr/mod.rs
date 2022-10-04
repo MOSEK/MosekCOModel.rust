@@ -39,6 +39,7 @@ pub trait ExprTrait : Sized {
 
     fn mul<V>(self,other : V) -> V::Result where V : ExprRightMultipliable<Self> { other.mul_right(self) }
     fn add<R:ExprTrait>(self,rhs : R) -> ExprAdd<Self,R> { ExprAdd{lhs:self,rhs} }
+    fn sub<R:ExprTrait>(self,rhs : R) -> ExprAdd<Self,ExprMulScalar<R>> { ExprAdd{lhs:self, rhs:ExprMulScalar{item:rhs,lhs:-1.0}} }
 
     fn dot<V:ExprInnerProductFactorTrait<Self>>(self,v: V) -> V::Output  { v.dot(self) }
 
@@ -123,35 +124,20 @@ impl Expr {
         }
     }
 
+    pub fn reshape(self,shape:&[usize]) -> Expr {
+        if self.shape.iter().product::<usize>() != shape.iter().product::<usize>() {
+            panic!("Invalid shape for this expression");
+        }
 
-    // pub fn into_diag(self) -> Expr {
-    //     if self.shape.len() != 1 {
-    //         panic!("Diagonals can only be made from vector expressions");
-    //     }
+        Expr{
+            aptr : self.aptr,
+            asubj : self.asubj,
+            acof : self.acof,
+            shape : shape.to_vec(),
+            sparsity : self.sparsity
+        }
+    }
 
-    //     let d = self.shape[0];
-    //     Expr{
-    //         aptr : self.aptr,
-    //         asubj : self.asubj,
-    //         acof : self.acof,
-    //         shape : vec![d,d],
-    //         sparsity : Some((0..d*d).step_by(d+1).collect())
-    //     }
-    // }
-
-    // pub fn reshape(self,shape:&[usize]) -> Expr {
-    //     if self.shape.iter().product::<usize>() != shape.iter().product::<usize>() {
-    //         panic!("Invalid shape for this expression");
-    //     }
-
-    //     Expr{
-    //         aptr : self.aptr,
-    //         asubj : self.asubj,
-    //         acof : self.acof,
-    //         shape : shape.to_vec(),
-    //         sparsity : self.sparsity
-    //     }
-    // }
 }
 
 impl ExprTrait for Expr {
@@ -469,6 +455,26 @@ impl<E:ExprTrait> ExprTrait for ExprGather<E> {
     }
 }
 
+
+impl ExprTrait for f64 {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[],1,1);
+        rptr[0] = 0;
+        rptr[1] = 1;
+        rsubj[0] = 0;
+        rcof[0] = *self;
+    }
+}
+
+impl ExprTrait for Vec<f64> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[self.len()],self.len(),self.len());
+        rptr.iter_mut().enumerate().for_each(|(i,rp)| *rp = i);
+        rsubj.fill(0);
+        rcof.clone_from_slice(self.as_slice())
+    }
+}
+
 ////////////////////////////////////////////////////////////
 //
 // Stacking
@@ -605,10 +611,10 @@ mod test {
         let m2 = matrix::dense(2,3,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
 
         let e0_1 = m2.clone().mul(e0.clone());
-        let e0_2 = 2.0.mul(e0.clone());
+        let e0_2 = e0.clone().mul(2.0);
 
         let e1_1 = m2.clone().mul(e1.clone());
-        let e1_2 = 2.0.mul(e1.clone());
+        let e1_2 = e1.clone().mul(2.0);
 
         e0.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
         e1.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
