@@ -132,7 +132,7 @@ impl WorkStack {
 
         let mut selfutop = self.utop;
         let mut selfftop = self.ftop;
-        for i in 0..n {
+        for _i in 0..n {
             // println!("---ustack @ {} = {:?}",i,&self.susize[..selfutop]);
             let nd   = self.susize[selfutop-1];
             let nnz  = self.susize[selfutop-2];

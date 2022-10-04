@@ -194,6 +194,37 @@ impl ModelItemIndex<usize> for Variable {
     }
 }
 
+impl ModelItemIndex<&[usize]> for Variable {
+    type Output = Variable;
+    fn index(&self, index: &[usize]) -> Variable {
+        if self.shape.len() != index.len() { panic!("Index shape does not match the variable shape"); }
+        let index = self.shape.iter().zip(index.iter()).fold(0,|v,(&d,&i)| v*d+i);
+        if let Some(ref sp) = self.sparsity {
+            if let Ok(i) = sp.binary_search(&index) {
+                Variable{
+                    idxs     : vec![self.idxs[i]],
+                    sparsity : None,
+                    shape    : vec![]
+                }
+            }
+            else {
+                Variable{
+                    idxs     : vec![],
+                    sparsity : Some(vec![]),
+                    shape    : vec![]
+                }
+            }
+        }
+        else {
+            Variable{
+                idxs     : vec![self.idxs[index]],
+                sparsity : None,
+                shape    : vec![]
+            }
+        }
+    }
+}
+
 impl ModelItemIndex<std::ops::Range<usize>> for Variable {
     type Output = Variable;
     fn index(&self, index: std::ops::Range<usize>) -> Variable {
@@ -224,6 +255,50 @@ impl ModelItemIndex<std::ops::Range<usize>> for Variable {
         }
     }
 }
+
+impl ModelItemIndex<&[std::ops::Range<usize>]> for Variable {
+    type Output = Variable;
+    fn index(&self, ranges: &[std::ops::Range<usize>]) -> Variable {
+        if ranges.len() != self.shape.len() { panic!("The range does not match the shape") }
+        if ranges.iter().zip(self.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range does not match the shape") }
+
+        let rshape : Vec<usize> = ranges.iter().map(|r| r.end-r.start).collect();
+        let mut rstrides = rshape.clone(); let _ = rstrides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev});
+
+        if let Some(ref sp) = self.sparsity {
+            let mut strides = rshape.to_vec();
+            let _ = strides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev });
+
+            let mut rsp   = Vec::with_capacity(sp.len());
+            let mut ridxs = Vec::with_capacity(self.idxs.len());
+
+            sp.iter().zip(self.idxs.iter())
+                .for_each(|(&s,&ix)|
+                          if izip!(rshape.iter(),strides.iter(),ranges.iter()).all(|(&sh,&st,ra)| { let i = (s / st) % sh; i <= ra.start && i < ra.end }) {
+                              rsp.push(izip!(rshape.iter(),
+                                             strides.iter(),
+                                             ranges.iter(),
+                                             rstrides.iter()).map(|(&sh,&st,ra,&rst)| ((s / st) % sh - ra.start) * rst).sum());
+                              ridxs.push(ix);
+                          });
+            Variable{idxs     : ridxs,
+                     sparsity : Some(rsp),
+                     shape    : rshape }
+        }
+        else {
+            //let rnum :usize = rshape.iter().product();
+            let ridxs : Vec<usize> = (0..rshape.iter().product())
+                .map(|i| izip!(rshape.iter(),rstrides.iter(),ranges.iter(),rstrides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
+                .map(|i| self.idxs[i] /*TODO: unsafe get*/)
+                .collect();
+
+            Variable{idxs : ridxs,
+                     sparsity : None,
+                     shape : rshape}
+        }
+    }
+}
+
 
 // impl std::ops::Index<&[usize]> for Variable { ... }
 // impl std::ops::Index<&[std::ops::Range]> for Variable { ... }
@@ -328,76 +403,76 @@ impl Variable {
         }
     }
 
-    // Other functions to be implemented:
-    ///// Take the diagonal element of a square, cube,... variable
-    //pub fn diag(&self) -> Variable
-    //pub fn into_diag(&self) -> Variable
-    pub fn slice(&self, ranges : &[std::ops::Range<usize>]) -> Variable {
-        if ranges.len() != self.shape.len() { panic!("The range does not match the shape") }
-        if ranges.iter().zip(self.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range does not match the shape") }
+    // // Other functions to be implemented:
+    // ///// Take the diagonal element of a square, cube,... variable
+    // //pub fn diag(&self) -> Variable
+    // //pub fn into_diag(&self) -> Variable
+    // pub fn slice(&self, ranges : &[std::ops::Range<usize>]) -> Variable {
+    //     if ranges.len() != self.shape.len() { panic!("The range does not match the shape") }
+    //     if ranges.iter().zip(self.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range does not match the shape") }
 
-        let rshape : Vec<usize> = ranges.iter().map(|r| r.end-r.start).collect();
-        let mut rstrides = rshape.clone(); let _ = rstrides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev});
+    //     let rshape : Vec<usize> = ranges.iter().map(|r| r.end-r.start).collect();
+    //     let mut rstrides = rshape.clone(); let _ = rstrides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev});
 
-        if let Some(ref sp) = self.sparsity {
-            let mut strides = rshape.to_vec();
-            let _ = strides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev });
+    //     if let Some(ref sp) = self.sparsity {
+    //         let mut strides = rshape.to_vec();
+    //         let _ = strides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev });
 
-            let mut rsp   = Vec::with_capacity(sp.len());
-            let mut ridxs = Vec::with_capacity(self.idxs.len());
+    //         let mut rsp   = Vec::with_capacity(sp.len());
+    //         let mut ridxs = Vec::with_capacity(self.idxs.len());
 
-            sp.iter().zip(self.idxs.iter())
-                .for_each(|(&s,&ix)|
-                          if izip!(rshape.iter(),strides.iter(),ranges.iter()).all(|(&sh,&st,ra)| { let i = (s / st) % sh; i <= ra.start && i < ra.end }) {
-                              rsp.push(izip!(rshape.iter(),
-                                             strides.iter(),
-                                             ranges.iter(),
-                                             rstrides.iter()).map(|(&sh,&st,ra,&rst)| ((s / st) % sh - ra.start) * rst).sum());
-                              ridxs.push(ix);
-                          });
-            Variable{idxs     : ridxs,
-                     sparsity : Some(rsp),
-                     shape    : rshape }
-        }
-        else {
-            //let rnum :usize = rshape.iter().product();
-            let ridxs : Vec<usize> = (0..rshape.iter().product())
-                .map(|i| izip!(rshape.iter(),rstrides.iter(),ranges.iter(),rstrides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
-                .map(|i| self.idxs[i] /*TODO: unsafe get*/)
-                .collect();
+    //         sp.iter().zip(self.idxs.iter())
+    //             .for_each(|(&s,&ix)|
+    //                       if izip!(rshape.iter(),strides.iter(),ranges.iter()).all(|(&sh,&st,ra)| { let i = (s / st) % sh; i <= ra.start && i < ra.end }) {
+    //                           rsp.push(izip!(rshape.iter(),
+    //                                          strides.iter(),
+    //                                          ranges.iter(),
+    //                                          rstrides.iter()).map(|(&sh,&st,ra,&rst)| ((s / st) % sh - ra.start) * rst).sum());
+    //                           ridxs.push(ix);
+    //                       });
+    //         Variable{idxs     : ridxs,
+    //                  sparsity : Some(rsp),
+    //                  shape    : rshape }
+    //     }
+    //     else {
+    //         //let rnum :usize = rshape.iter().product();
+    //         let ridxs : Vec<usize> = (0..rshape.iter().product())
+    //             .map(|i| izip!(rshape.iter(),rstrides.iter(),ranges.iter(),rstrides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
+    //             .map(|i| self.idxs[i] /*TODO: unsafe get*/)
+    //             .collect();
 
-            Variable{idxs : ridxs,
-                     sparsity : None,
-                     shape : rshape}
-        }
-    }
-    pub fn index(&self, idx : &[usize]) -> Variable {
-        if idx.len() != self.shape.len() { panic!("The range does not match the shape") }
-        if idx.iter().zip(self.shape.iter()).any(|(&i,&d)| i >= d ) { panic!("The range does not match the shape") }
+    //         Variable{idxs : ridxs,
+    //                  sparsity : None,
+    //                  shape : rshape}
+    //     }
+    // }
+    // pub fn index(&self, idx : &[usize]) -> Variable {
+    //     if idx.len() != self.shape.len() { panic!("The range does not match the shape") }
+    //     if idx.iter().zip(self.shape.iter()).any(|(&i,&d)| i >= d ) { panic!("The range does not match the shape") }
 
-        let (index,_) = idx.iter().zip(self.shape.iter()).fold((0,1),|(r,stride),(&i,&d)| (r+i*stride,stride*d));
-        if let Some(ref sp) = self.sparsity {
-            if let Ok(i) = sp.binary_search(&index) {
-                Variable{
-                    idxs : vec![self.idxs[i]],
-                    sparsity : None,
-                    shape : vec![] }
-            }
-            else {
-                Variable{
-                    idxs : vec![],
-                    sparsity : Some(vec![]),
-                    shape : vec![] }
-            }
-        }
-        else {
-            Variable{
-                idxs : vec![self.idxs[index]],
-                sparsity : None,
-                shape : vec![] }
-        }
+    //     let (index,_) = idx.iter().zip(self.shape.iter()).fold((0,1),|(r,stride),(&i,&d)| (r+i*stride,stride*d));
+    //     if let Some(ref sp) = self.sparsity {
+    //         if let Ok(i) = sp.binary_search(&index) {
+    //             Variable{
+    //                 idxs : vec![self.idxs[i]],
+    //                 sparsity : None,
+    //                 shape : vec![] }
+    //         }
+    //         else {
+    //             Variable{
+    //                 idxs : vec![],
+    //                 sparsity : Some(vec![]),
+    //                 shape : vec![] }
+    //         }
+    //     }
+    //     else {
+    //         Variable{
+    //             idxs : vec![self.idxs[index]],
+    //             sparsity : None,
+    //             shape : vec![] }
+    //     }
 
-    }
+    // }
     pub fn stack(dim : usize, xs : &[&Variable]) -> Variable {
         if ! xs.iter().zip(xs[1..].iter())
             .all(|(v0,v1)| utils::shape_eq_except(v0.shape.as_slice(),v1.shape.as_slice(),dim)) {
@@ -405,7 +480,7 @@ impl Variable {
             }
 
         let ddim : usize = xs.iter().map(|v| v.shape[dim]).sum();
-        let n      = xs.len();
+        //let n      = xs.len();
         let rnelm  = xs.iter().map(|v| v.idxs.len()).sum();
         let mut rshape = xs[0].shape.clone(); rshape[dim] = ddim;
         let nd = rshape.len();

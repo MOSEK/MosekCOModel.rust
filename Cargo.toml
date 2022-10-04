@@ -1,4 +1,4 @@
-[package]
+        [package]
 name = "mosekmodel"
 version = "0.1.0"
 edition = "2021"
@@ -8,3 +8,10 @@ edition = "2021"
 [dependencies]
 mosek = "10.0"
 itertools = "0.10"
+
+#[dev-dependencies]
+#Criterion = "0.3"
+
+[[bench]]
+name="performance"
+harness = false
