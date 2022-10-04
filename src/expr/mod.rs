@@ -589,7 +589,7 @@ mod test {
     }
 
     #[test]
-    fn test_mul_left() {
+    fn mul_left() {
         let mut rs = WorkStack::new(512);
         let mut ws = WorkStack::new(512);
         let mut xs = WorkStack::new(512);
@@ -616,7 +616,7 @@ mod test {
 
 
     #[test]
-    fn test_mul_right() {
+    fn mul_right() {
         let mut rs = WorkStack::new(512);
         let mut ws = WorkStack::new(512);
         let mut xs = WorkStack::new(512);
@@ -641,7 +641,7 @@ mod test {
     }
 
     #[test]
-    fn test_add() {
+    fn add() {
         let mut rs = WorkStack::new(512);
         let mut ws = WorkStack::new(512);
         let mut xs = WorkStack::new(512);
@@ -653,12 +653,40 @@ mod test {
     }
 
     #[test]
-    fn test_stack() {
-        todo!("test_stack");
+    fn stack() {
+        let e0 = super::Expr::new(vec![3,2,1],
+                         None,
+                         (0..6).collect(),
+                         (0..6).collect(),
+                         (0..6).map(|v| v as f64 * 1.1).collect())
+        let e1 = super::Expr::new(vec![3,2,1],
+                                  Some(vec![0,2,3,5]),
+                                  (0..4).collect(),
+                                  vec![6,8,9,11],
+                                  (0..4).map(|v| v as f64 * 1.1).collect());
+        let s1_0 = e0.clone().stack(0,e0.clone());
+        let s1_1 = e0.clone().stack(1,e0.clone());
+        let s1_2 = e0.clone().stack(2,e0.clone());
+        let s2_0 = e0.clone().stack(0,e1.clone());
+        let s2_1 = e0.clone().stack(1,e1.clone());
+        let s2_2 = e0.clone().stack(2,e1.clone());
+        let s3_0 = e1.clone().stack(0,e1.clone());
+        let s3_1 = e1.clone().stack(1,e1.clone());
+        let s3_2 = e1.clone().stack(2,e1.clone())
+        let s4_0 = e0.clone().stack(0,e1.clone()).stack(0,e0.clone());
+        let s4_1 = e0.clone().stack(1,e1.clone()).stack(1,e0.clone());
+        let s4_2 = e0.clone().stack(2,e1.clone()).stack(2,e0.clone());
+
+        let mut rs = WorkStack::new(512);
+        let mut ws = WorkStack::new(512);
+        let mut xs = WorkStack::new(512);
+
+        s1_0.eval(rs,ws,xs);
+        let (shape,ptr,sp,subj,cof) = s1_0.pop_expr();
+        assert!(rs.is_empty());
+        assert!(ws.is_empty());
+
+        todo!("Test exor stack");
     }
 
-    #[test]
-    fn test_sum() {
-        todo!("test_sum");
-    }
 }
