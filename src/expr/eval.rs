@@ -377,7 +377,6 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
     let nd = rshape.len();
     let (rptr,mut rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),rnnz,rnelm);
 
-
     // Stacking in any number of dimensions can always be reduced to
     // stacking in 3 dimensions, with the dimension sizes computed as:
     let d0 : usize  = rshape[..dim].iter().product();
@@ -411,6 +410,7 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
                 ofs += shape.iter().product::<usize>();
             }
             nzi += ptr.last().unwrap();
+
             elmi += ptr.len()-1;
         }
         let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev+v });
@@ -488,42 +488,50 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
     }
     // Case 3: All operands and the result is dense.
     else {
-        let rstride = d1*d2;
+        let rblocksize = d1*d2;
         let mut ofs  : usize = 0;
-
         // Build the result ptr
+        // println!("{}:{}: Stack: Dense, rshape = {:?}, stack dim = {}",file!(),line!(),rshape,dim);
         for (shape,ptr,_,_,_) in exprs.iter() {
-            let blocksize = d2*shape[dim];
-            izip!(rptr.chunks_mut(rstride),
-                  ptr.chunks(blocksize),
-                  ptr[1..].chunks(blocksize))
-                .for_each(|(rps,p0s,p1s)| {
-                    rps[ofs..].iter_mut()
-                        .zip(p0s.iter().zip(p1s.iter()).map(|(&p0,&p1)| p1-p0))
-                        .for_each(|(rp,n)| *rp = n);
-                });
+            let vd1 = shape[dim];
+            let blocksize = vd1*d2;
+            // println!("{}:{}: blocksize = {}",file!(),line!(),blocksize);
+            for (rps,p0s,p1s) in izip!(rptr.chunks_mut(rblocksize),
+                                       ptr.chunks(blocksize),
+                                       ptr[1..].chunks(blocksize)) {
+                rps[ofs..].iter_mut()
+                    .zip(p0s.iter().zip(p1s.iter()).map(|(&p0,&p1)| p1-p0))
+                    .for_each(|(rp,n)| *rp = n);
+            }
 
-            ofs += shape[dim]*d0;
+            ofs += vd1;
         }
-        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev*v });
+
+        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev+v });
         // Then copy nonzeros
+        let mut ofs : usize = 0;
+        // println!("{}:{}: rptr = {:?}",file!(),line!(),rptr);
+        rsubj.fill(0);
         for (shape,ptr,_,subj,cof) in exprs.iter() {
-            let blocksize = d2*shape[dim];
-            izip!(rptr.chunks(rstride),
+            let vd1 = shape[dim];
+            let blocksize = vd1*d2;
+            izip!(rptr.chunks(rblocksize),
                   ptr.chunks(blocksize),
                   ptr[1..].chunks(blocksize))
                 .for_each(|(rps,p0s,p1s)| {
                     let p0 = *p0s.first().unwrap();
                     let p1 = *p1s.last().unwrap();
 
-                    let rp = *rps.first().unwrap();
-                    
+                    // println!("{}:{}:\n\trptr[...] = {:?}\n\tptr[...] = {:?}\n\tptr+1[...] = {:?}, ofs = {}",
+                    //          file!(),line!(),&rps,p0s,p1s,ofs);
+
+                    let rp = rps[ofs];
                     rsubj[rp..rp+p1-p0].clone_from_slice(&subj[p0..p1]);
                     rcof[rp..rp+p1-p0].clone_from_slice(&cof[p0..p1]);
 
                 });
 
-            ofs += shape[dim]*d0;
+            ofs += vd1;
         }
     }
 }

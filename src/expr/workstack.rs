@@ -127,19 +127,19 @@ impl WorkStack {
     /// Returns and validatas a list of views of the `n` top-most expressions on the stack, first in the result
     /// list if the top-most.
     pub fn pop_exprs(&mut self, n : usize) -> Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])> {
-        println!("-------------WorkStack::pop_exprs({})",n);
+        // println!("-------------WorkStack::pop_exprs({})",n);
         let mut res = Vec::with_capacity(n);
 
         let mut selfutop = self.utop;
         let mut selfftop = self.ftop;
         for i in 0..n {
-            println!("---ustack @ {} = {:?}",i,&self.susize[..selfutop]);
+            // println!("---ustack @ {} = {:?}",i,&self.susize[..selfutop]);
             let nd   = self.susize[selfutop-1];
             let nnz  = self.susize[selfutop-2];
             let nelm = self.susize[selfutop-3];
             let totalsize : usize = self.susize[selfutop-3-nd..selfutop-3].iter().product();
-            println!("nd = {}, nelm = {}, nnz = {}",nd,nelm,nnz);
-            println!("shape = {:?}",&self.susize[selfutop-3-nd..selfutop-3]);
+            // println!("nd = {}, nelm = {}, nnz = {}",nd,nelm,nnz);
+            // println!("shape = {:?}",&self.susize[selfutop-3-nd..selfutop-3]);
 
             let totalusize = nd+nelm+1+nnz + (if nelm < totalsize { nelm } else { 0 });
             let totalfsize = nnz;
@@ -151,7 +151,7 @@ impl WorkStack {
             let fbase = ftop - totalfsize;
 
             let uslice : &[usize] = & self.susize[ubase..utop];
-            println!("  expr slice = {:?}",uslice);
+            // println!("  expr slice = {:?}",uslice);
 
             let cof    : &[f64]   = & self.sf64[fbase..ftop];
 
@@ -248,7 +248,11 @@ impl WorkStack {
         }
     }
 }
-
+impl std::fmt::Display for WorkStack {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f,"WorkStack{{ us : {:?}, fs : {:?} }}",&self.susize[..self.utop],&self.sf64[..self.ftop])
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -274,7 +278,6 @@ mod test {
         {
             let (shape,ptr,_sp,subj,cof) = ws.pop_expr();
 
-            println!("shape = {:?},nelm = {},nnz = {}",shape,ptr.len()-1,subj.len());
             assert!(shape.len() == 2);
             assert!(shape[0] == 2);
             assert!(shape[1] == 3);

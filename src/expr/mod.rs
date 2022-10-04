@@ -95,7 +95,7 @@ impl Expr {
             panic!("Invalid aptr: Not sorted");
         }
         let & sz = aptr.last().unwrap();
-        if sz != asubj.len() || asubj.len() != acof.len() {
+        if sz != asubj.len() || sz != acof.len() {
             panic!("Mismatching aptr, asubj and acof");
         }
 
@@ -508,22 +508,22 @@ impl<E1:ExprStackRecTrait,E2:ExprTrait> ExprStackRec<E1,E2> {
 
 impl<E1:ExprTrait,E2:ExprTrait> ExprTrait for ExprStack<E1,E2> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        let n = self.eval_rec(rs,ws,xs);
+        let n = self.eval_rec(ws,rs,xs);
         eval::stack(self.dim,n,rs,ws,xs);
     }
 }
 impl<E1:ExprTrait,E2:ExprTrait> ExprStackRecTrait for ExprStack<E1,E2> {
     fn stack_dim(&self) -> usize { self.dim }
     fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
-        self.item2.eval(ws,rs,xs);
-        self.item1.eval(ws,rs,xs);
+        self.item2.eval(rs,ws,xs);
+        self.item1.eval(rs,ws,xs);
         2
     }
 }
 
 impl<E1:ExprStackRecTrait,E2:ExprTrait> ExprTrait for ExprStackRec<E1,E2> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        let n = self.eval_rec(rs,ws,xs);
+        let n = self.eval_rec(ws,rs,xs);
         eval::stack(self.dim,n,rs,ws,xs);
     }
 }
@@ -534,12 +534,12 @@ impl<E1:ExprStackRecTrait,E2:ExprTrait> ExprStackRecTrait for ExprStackRec<E1,E2
         // in the same dimension. If we encounter subexpression that
         // is stacked in a different dimensionm, we simply evaluate it
         // as a normal expression and end the recursion
-        self.item2.eval(ws,rs,xs);
+        self.item2.eval(rs,ws,xs);
         if self.dim == self.item1.stack_dim() {
-            1+self.item1.eval_rec(ws,rs,xs)
+            1+self.item1.eval_rec(rs,ws,xs)
         }
         else {
-            self.item1.eval(ws,rs,xs);
+            self.item1.eval(rs,ws,xs);
             2
         }
     }
@@ -571,6 +571,10 @@ impl<T:ExprTrait> ExprTrait for ExprSum<T> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    fn eq<T:std::cmp::Eq>(a : &[T], b : &[T]) -> bool {
+        a.len() == b.len() && a.iter().zip(b.iter()).all(|(a,b)| *a == *b )
+    }
 
     fn dense_expr() -> Expr {
         super::Expr::new(vec![3,3],
@@ -655,13 +659,13 @@ mod test {
     #[test]
     fn stack() {
         let e0 = super::Expr::new(vec![3,2,1],
-                         None,
-                         (0..6).collect(),
-                         (0..6).collect(),
-                         (0..6).map(|v| v as f64 * 1.1).collect())
+                                  None,
+                                  (0..7).collect(),
+                                  (0..6).collect(),
+                                  (0..6).map(|v| v as f64 * 1.1).collect());
         let e1 = super::Expr::new(vec![3,2,1],
                                   Some(vec![0,2,3,5]),
-                                  (0..4).collect(),
+                                  (0..5).collect(),
                                   vec![6,8,9,11],
                                   (0..4).map(|v| v as f64 * 1.1).collect());
         let s1_0 = e0.clone().stack(0,e0.clone());
@@ -670,23 +674,132 @@ mod test {
         let s2_0 = e0.clone().stack(0,e1.clone());
         let s2_1 = e0.clone().stack(1,e1.clone());
         let s2_2 = e0.clone().stack(2,e1.clone());
-        let s3_0 = e1.clone().stack(0,e1.clone());
-        let s3_1 = e1.clone().stack(1,e1.clone());
-        let s3_2 = e1.clone().stack(2,e1.clone())
-        let s4_0 = e0.clone().stack(0,e1.clone()).stack(0,e0.clone());
-        let s4_1 = e0.clone().stack(1,e1.clone()).stack(1,e0.clone());
-        let s4_2 = e0.clone().stack(2,e1.clone()).stack(2,e0.clone());
 
         let mut rs = WorkStack::new(512);
         let mut ws = WorkStack::new(512);
         let mut xs = WorkStack::new(512);
 
-        s1_0.eval(rs,ws,xs);
-        let (shape,ptr,sp,subj,cof) = s1_0.pop_expr();
+        s1_0.eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert!(eq(shape,&[6,2,1]));
+        assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12]));
+        assert!(eq(subj,&[0,1,2,3,4,5,0,1,2,3,4,5]));
         assert!(rs.is_empty());
         assert!(ws.is_empty());
 
-        todo!("Test exor stack");
+        s1_1.eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert!(eq(shape,&[3,4,1]));
+        assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12]));
+        assert!(eq(subj,&[0,1,0,1,2,3,2,3,4,5,4,5]));
+        assert!(rs.is_empty());
+        assert!(ws.is_empty());
+
+        s1_2.eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert!(eq(shape,&[3,2,2]));
+        assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12]));
+        assert!(eq(subj,&[0,0,1,1,2,2,3,3,4,4,5,5]));
+        assert!(rs.is_empty());
+        assert!(ws.is_empty());
+
+
+        s2_0.eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert!(eq(shape,&[6,2,1]));
+        assert!(eq(sp.unwrap(),&[0,1,2,3,4,5,6,8,9,11]));
+        assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8,9,10]));
+        assert!(eq(subj,&[0,1,2,3,4,5,6,8,9,11]));
+        assert!(rs.is_empty());
+        assert!(ws.is_empty());
+
+        s2_1.eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert!(eq(shape,&[3,4,1]));
+        assert!(eq(sp.unwrap(),&[0,1,2,4,5,6,7,8,9,11]));
+        assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8,9,10]));
+        assert!(eq(subj,&[0,1,6,2,3,8,9,4,5,11]));
+        assert!(rs.is_empty());
+        assert!(ws.is_empty());
+
+        s2_2.eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert!(eq(shape,&[3,2,2]));
+        assert!(eq(sp.unwrap(),&[0,1,2,4,5,6,7,8,10,11]));
+        assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8,9,10]));
+        assert!(eq(subj,&[0,6,1,2,8,3,9,4,5,11]));
+        assert!(rs.is_empty());
+        assert!(ws.is_empty());
+
+
+        let s3_0 = e1.clone().stack(0,e1.clone());
+        s3_0.eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert!(eq(shape,&[6,2,1]));
+        assert!(eq(sp.unwrap(),&[0,2,3,5,6,8,9,11]));
+        assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8]));
+        assert!(eq(subj,&[6,8,9,11,6,8,9,11]));
+        assert!(rs.is_empty());
+        assert!(ws.is_empty());
+
+        let s3_1 = e1.clone().stack(1,e1.clone());
+        s3_1.eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert!(eq(shape,&[3,4,1]));
+        assert!(eq(sp.unwrap(),&[0,2,4,5,6,7,9,11]));
+        assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8]));
+        assert!(eq(subj,&[6,6,8,9,8,9,11,11]));
+        assert!(rs.is_empty());
+        assert!(ws.is_empty());
+
+        let s3_2 = e1.clone().stack(2,e1.clone());
+        s3_2.eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert!(eq(shape,&[3,2,2]));
+        assert!(eq(sp.unwrap(),&[0,1,4,5,6,7,10,11]));
+        assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8]));
+        assert!(eq(subj,&[6,6,8,8,9,9,11,11]));
+        assert!(rs.is_empty());
+        assert!(ws.is_empty());
+
+        // TEST RECURSIVE EVALUATION
+        e0.clone().stack(0,e1.clone()).stack(0,e0.clone()).eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert!(eq(shape,&[9,2,1]));
+        assert!(eq(sp.unwrap(),&[0,1,2,3,4,5,
+                                 6,8,9,11,
+                                 12,13,14,15,16,17]));
+        assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]));
+        assert!(eq(subj,&[0,1,2,3,4,5,
+                          6,8,9,11,
+                          0,1,2,3,4,5]));
+        assert!(rs.is_empty());
+        assert!(ws.is_empty());
+
+        e0.clone().stack(1,e1.clone()).stack(1,e0.clone()).eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert!(eq(shape,&[3,6,1]));
+        assert!(eq(sp.unwrap(),&[0,1,2,4,5,
+                                 6,7,8,9,10,11,
+                                 12,13,15,16,17]));
+        assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]));
+        assert!(eq(subj,&[0,1,6,0,1,2,3,8,9,2,3,4,5,11,4,5]));
+        assert!(rs.is_empty());
+        assert!(ws.is_empty());
+
+        e0.clone().stack(2,e1.clone()).stack(2,e0.clone()).eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert!(eq(shape,&[3,2,3]));
+        assert!(eq(sp.unwrap(),&[0,1,2,3,5,6,7,8,9,10,11,12,14,15,16,17]));
+        assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]));
+        assert!(eq(subj,&[0,6,0,
+                          1,1,
+                          2,8,2,
+                          3,9,3,
+                          4,4,
+                          5,11,5]));
+        assert!(rs.is_empty());
+        assert!(ws.is_empty());
     }
 
 }

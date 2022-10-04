@@ -1654,7 +1654,7 @@ mod tests {
     use super::*;
 
     fn eq<T:std::cmp::Eq>(a : &[T], b : &[T]) -> bool {
-        a.iter().zip(b.iter()).all(|(a,b)| *a == *b )
+        a.len() == b.len() && a.iter().zip(b.iter()).all(|(a,b)| *a == *b )
     }
 
     #[test]
