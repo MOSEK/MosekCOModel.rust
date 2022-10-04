@@ -59,9 +59,10 @@ pub enum SolutionStatus {
 
 struct SolutionPart {
     status : SolutionStatus,
-    var : Vec<f64>,
-    con : Vec<f64>
+    var    : Vec<f64>,
+    con    : Vec<f64>
 }
+
 impl SolutionPart {
     fn new(numvar : usize, numcon : usize) -> SolutionPart { SolutionPart{status : SolutionStatus::Unknown, var : vec![0.0; numvar], con : vec![0.0; numcon] } }
     fn resize(& mut self,numvar : usize, numcon : usize) {
@@ -398,6 +399,9 @@ impl Variable {
 
     }
     pub fn stack(dim : usize, xs : &[&Variable]) -> Variable {
+        for v in xs.iter() {
+            println!("v, shape = {:?}, idxs = {:?}",v.shape,v.idxs);
+        }
         if ! xs.iter().zip(xs[1..].iter())
             .all(|(v0,v1)| utils::shape_eq_except(v0.shape.as_slice(),v1.shape.as_slice(),dim)) {
                 panic!("Operands have mismatching shapes");
@@ -405,10 +409,11 @@ impl Variable {
 
         let ddim : usize = xs.iter().map(|v| v.shape[dim]).sum();
         let n      = xs.len();
-        let rnelm  = xs.iter().map(|v| n+v.idxs.len()).sum();
+        let rnelm  = xs.iter().map(|v| v.idxs.len()).sum();
         let mut rshape = xs[0].shape.clone(); rshape[dim] = ddim;
         let nd = rshape.len();
 
+        println!("shape = {:?}, enelm = {}",rshape,rnelm);
         if dim == 0 {
             let mut ridxs : Vec<usize> = Vec::with_capacity(rnelm);
             for v in xs {
@@ -447,6 +452,7 @@ impl Variable {
 
             let stride = d1*d2;
             let mut ofs = 0;
+
             for v in xs {
                 let vd1 = v.shape[dim];
                 let chunksize = vd1*d2;
@@ -456,9 +462,9 @@ impl Variable {
 
                 ofs += v.shape[dim];
             }
-            Variable{idxs : ridxs,
+            Variable{idxs     : ridxs,
                      sparsity : None,
-                     shape : rshape}
+                     shape    : rshape}
         }
         else {
             let d0 : usize = rshape[0..dim].iter().product();
@@ -1666,25 +1672,35 @@ mod tests {
         let mut m = Model::new(Some("SuperModel"));
         let mut v1 = m.variable(None, vec![3,2,1]);
         let mut v2 = m.variable(None, vec![3,2,1]);
-        let mut v3 = m.variable(None, equal_to(vec![1.0,2.0,3.0,4.0]).with_shape_and_sparsity(vec![3,2],vec![0,1,4,5]));
+        let mut v3 = m.variable(None, equal_to(vec![1.0,2.0,3.0,4.0]).with_shape_and_sparsity(vec![3,2,1],vec![0,1,4,5]));
 
         let mut w_0 = Variable::stack(0,&[&v1,&v2]);
         let mut w_1 = Variable::stack(1,&[&v1,&v2]);
         let mut w_2 = Variable::stack(2,&[&v1,&v2]);
 
-        assert!(w.0.idxs().iter(v1).zip([0,1,2,3,4,5,6,7,8,9,10,11].iter()).all(|(&a,&b)| a==b));
-        assert!(w_1.idxs().iter(v1).zip([0,1,6,7,2,3,8,9,4,5,10,11].iter()).all(|(&a,&b)| a==b));
-        assert!(w_2.idxs().iter(v1).zip([0,6,1,7,2,8,3,9,4,10,5,11].iter()).all(|(&a,&b)| a==b));
+        assert!(w_0.idxs.iter().zip([0,1,2,3,4,5,6,7,8,9,10,11].iter()).all(|(&a,&b)| a==b+1));
+        assert!(w_1.idxs.iter().zip([0,1,6,7,2,3,8,9,4,5,10,11].iter()).all(|(&a,&b)| a==b+1));
+        assert!(w_2.idxs.iter().zip([0,6,1,7,2,8,3,9,4,10,5,11].iter()).all(|(&a,&b)| a==b+1));
 
         let mut u_0 = Variable::stack(0,&[&v1,&v3]);
         let mut u_1 = Variable::stack(1,&[&v1,&v3]);
         let mut u_2 = Variable::stack(2,&[&v1,&v3]);
 
-        assert!(w.0.idxs().iter(v1).zip([0,1,2,3,4,5,12,13,14,15].iter()).all(|(&a,&b)| a==b));
-        assert!(w.0.sparsity.unwrap().iter(v1).zip([0,1,2,3,4,5,6,8,9,11].iter()).all(|(&a,&b)| a==b));
-        assert!(w_1.idxs().iter(v1).zip([0,1,12,2,3,13,14,4,5,15].iter()).all(|(&a,&b)| a==b));
-        assert!(w_1.sparsity.unwrap().iter(v1).zip([0,1,2,4,5,6,7,8,9,11].iter()).all(|(&a,&b)| a==b));
-        assert!(w_2.idxs().iter(v1).zip([0,12,1,2,13,3,14,4,5,15].iter()).all(|(&a,&b)| a==b));
-        assert!(w_2.sparsity.unwrap().iter(v1).zip([0,1,2,4,5,6,7,8,10,11].iter()).all(|(&a,&b)| a==b));
+        assert!(u_0.idxs.iter().zip([0,1,2,3,4,5,12,13,14,15].iter()).all(|(&a,&b)| a==b+1));
+        assert!(u_0.sparsity.unwrap().iter().zip([0,1,2,3,4,5, 6,7,10,11].iter()).all(|(&a,&b)| a==b));
+        println!("u_1.idxs = {:?}, sp = {:?}",u_1.idxs,u_1.sparsity);
+        assert!(u_1.idxs.iter().zip([0,1,12,2,3,13,14,4,5,15].iter()).all(|(&a,&b)| a==b+1));
+        assert!(u_1.sparsity.unwrap().iter().zip([0,1,2,4,5,6,7,8,9,11].iter()).all(|(&a,&b)| a==b));
+        assert!(u_2.idxs.iter().zip([0,12,1,2,13,3,14,4,5,15].iter()).all(|(&a,&b)| a==b+1));
+        assert!(u_2.sparsity.unwrap().iter().zip([0,1,2,4,5,6,7,8,10,11].iter()).all(|(&a,&b)| a==b));
     }
 }
+
+//
+// 1  4   12
+// 2  5   13 14
+// 3  6      15
+//
+// 0 3 6
+// 1 4 7 10
+// 2 5   11
