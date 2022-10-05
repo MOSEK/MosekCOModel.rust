@@ -288,8 +288,8 @@ pub fn chainsing4(n : usize) -> Model {
                      &hstack![vec![0.5; m], q.clone(), u],
                      in_rotated_quadratic_cones(vec![m,3],1));
     // 0.1 <= x[j] <= 1.1
-    model.constraint(None,&x,greater_than(0.1));
-    model.constraint(None,&x,less_than(1.1));
+    model.constraint(None,&x,greater_than(vec![0.1;n]));
+    model.constraint(None,&x,less_than(vec![1.1;n]));
 
     model.objective(None, Sense::Minimize, &Variable::vstack(&[&s, &t, &p, &q]).sum());
     model

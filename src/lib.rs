@@ -722,7 +722,8 @@ impl Model {
                          name : Option<&str>,
                          dom  : LinearDomain) -> Constraint {
         let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
-        if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
+        println!("{}:{}: dom.shape = {:?}",file!(),line!(),dom.shape);
+        if dom.shape.len() != shape.len() || ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
             panic!("Mismatching shapes of expression and domain");
         }
         // let nnz = subj.len();
@@ -807,6 +808,7 @@ impl Model {
         // self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
 
         let rhs : Vec<f64> = dom.ofs.iter().zip(afix.iter()).map(|(&ofs,&b)| ofs-b).collect();
+        println!("{}:{}: coni = {}:{}, dom.ofs : {}, afix : {}",file!(),line!(),coni,coni+nelm as i32,dom.ofs.len(), afix.len());
         self.task.put_con_bound_slice(coni,
                                       coni+nelm as i32,
                                       vec![bk; nelm].as_slice(),
@@ -839,7 +841,6 @@ impl Model {
         if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
             panic!("Mismatching shapes of expression and domain: {:?} vs {:?}",shape,dom.shape);
         }
-        // let nnz  = subj.len();
         let nelm = ptr.len()-1;
 
         if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
