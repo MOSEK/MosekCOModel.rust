@@ -339,11 +339,35 @@ impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
 ////////////////////////////////////////////////////////////
 
 pub fn shape_eq(s0 : &[usize], s1 : &[usize]) -> bool { s0.iter().zip(s1.iter()).all(|(&a,&b)| a == b) }
+
+/// Compare two shapes, disregarding one given dimension. This will return true if
+/// 1. the lenths are the same and all entries are equal except entry [d], or
+/// 2. the lengths are not the same, but all entries except [d] are
+///    equal, where the remaining entries in the shorter shape are
+///    considered to be 1.
 pub fn shape_eq_except(s0 : &[usize], s1 : &[usize], d : usize) -> bool{
-    s0.len() == s1.len()
-        && d < s0.len()
-        && ( d   == 0        || shape_eq(&s0[..d],&s1[..d]) )
-        && ( d+1 == s0.len() || shape_eq(&s0[d+1..],&s1[d+1..]) )
+    if s1.len() < s0.len() {
+        shape_eq_except(s1,s0,d)
+    }
+    else if s0.len() < s1.len() {
+        if d >= s0.len() {
+            println!("{}:{}: shape_eq_except({:?},{:?},{})",file!(),line!(),s0,s1,d);
+            shape_eq(s0,&s1[..s0.len()])
+                && s1[s1.len()..].iter().all(|&d| d == 1)
+        }
+        else {
+            println!("{}:{}: shape_eq_except({:?},{:?},{})",file!(),line!(),s0,s1,d);
+            shape_eq(&s0[..d],&s1[..d])
+                && ( d >= s0.len()-1 || shape_eq(&s0[d+1..],&s1[d+1..s0.len()]))
+                && ( d >= s1.len()-1 || s1[d+1..].iter().all(|&d| d == 1))
+        }
+    }
+    else {
+        println!("{}:{}: shape_eq_except({:?},{:?},{})",file!(),line!(),s0,s1,d);
+        d >= s0.len() ||
+            ( ( d   == 0        || shape_eq(&s0[..d],&s1[..d]) )
+                && ( d+1 == s0.len() || shape_eq(&s0[d+1..],&s1[d+1..]) ) )
+    }
 }
 
 ////////////////////////////////////////////////////////////

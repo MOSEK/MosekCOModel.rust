@@ -12,6 +12,6 @@ itertools = "0.10"
 #[dev-dependencies]
 #Criterion = "0.3"
 
-[[bench]]
-name="performance"
-harness = false
+# [[bench]]
+# name="performance"
+# harness = false

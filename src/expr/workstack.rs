@@ -55,6 +55,12 @@ impl WorkStack {
         let (_,upart) = self.susize.split_at_mut(ubase);
         let (_,fpart) = self.sf64.split_at_mut(fbase);
 
+        #[cfg(debug_assertions)]
+        {
+            upart.fill(usize::MAX);
+            fpart.fill(f64::MAX);
+        }
+
         let (subj,upart) = upart.split_at_mut(nnz);
         let (sp,upart)   = if nelm < fullsize {
                 let (sp,upart) = upart.split_at_mut(nelm);

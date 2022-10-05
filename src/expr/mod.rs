@@ -47,8 +47,19 @@ pub trait ExprTrait {
     fn hstack<E:ExprTrait>(self,other : E) -> ExprStack<Self,E>  where Self:Sized { ExprStack::new(self,other,1) }
     fn stack<E:ExprTrait>(self,dim : usize, other : E) -> ExprStack<Self,E> where Self:Sized { ExprStack::new(self,other,dim) }
 
+    /// Reshape the experssion. The new shape must match the old
+    /// shape, meaning that the product of the dimensions are the
+    /// same.
     fn reshape(self,shape : Vec<usize>) -> ExprReshape<Self>  where Self:Sized { ExprReshape{item:self,shape} }
+
+    /// Creates a sparse expression with the given shape and sparsity
+    /// from the elements in the expression. The sparsity [sp] must
+    /// match the actual number of elements in the expression.
     fn scatter(self,shape : Vec<usize>, sp : Vec<usize>) -> ExprScatter<Self>  where Self:Sized { ExprScatter::new(self, shape, sp) }
+
+    /// Reshape a sparse expression into a dense expression with the
+    /// given shape. The shape must match the actual number of
+    /// elements in the expression.
     fn gather(self,shape : Vec<usize>) -> ExprGather<Self>  where Self:Sized { ExprGather{item:self, shape} }
 }
 

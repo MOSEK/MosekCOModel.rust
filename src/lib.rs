@@ -1254,8 +1254,8 @@ impl Model {
         if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
             panic!("Invalid subj index in evaluated expression");
         }
-        if shape.iter().zip(dom.shape.iter()).all(|(&d0,&d1)| d0==d1 ) {
-            panic!("Mismatching domain/expression shapes");
+        if ! shape.iter().zip(dom.shape.iter()).all(|(&d0,&d1)| d0==d1 ) {
+            panic!("Mismatching domain/expression shapes: {:?} vs {:?}",shape,dom.shape);
         }
 
         let acci = self.task.get_num_acc().unwrap();

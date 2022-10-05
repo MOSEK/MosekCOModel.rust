@@ -372,9 +372,14 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
         panic!("Mismatching shapes or stacking dimension");
     }
 
-    let (rnnz,rnelm,ddim) = exprs.iter().fold((0,0,0),|(nnz,nelm,d),(shape,ptr,_sp,_subj,_cof)| (nnz+ptr.last().unwrap(),nelm+ptr.len()-1,d+shape[dim]));
-    let mut rshape = exprs[0].0.to_vec(); rshape[dim] = ddim;
-    let nd = rshape.len();
+    let nd = (dim+1).max(exprs.iter().map(|(shape,_,_,_,_)| shape.len()).max().unwrap());
+    let (rnnz,rnelm,ddim) = exprs.iter().fold((0,0,0),|(nnz,nelm,d),(shape,ptr,_sp,_subj,_cof)| (nnz+ptr.last().unwrap(),nelm+ptr.len()-1,d+shape.get(dim).copied().unwrap_or(1)));
+    let rshape = {
+        let mut tmp = vec![1; nd];
+        tmp.iter_mut().zip(exprs.iter().max_by_key(|e| e.0.len()).unwrap().0.iter()).for_each(|(a,&b)| *a = b );
+        tmp[dim] = ddim;
+        tmp };
+
     let (rptr,mut rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),rnnz,rnelm);
 
     // Stacking in any number of dimensions can always be reduced to
@@ -391,12 +396,14 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
         let mut elmi : usize = 0;
         let mut nzi  : usize = 0;
         let mut ofs  : usize = 0;
+
+        rptr[0] = 0;
         for (shape,ptr,sp,subj,cof) in exprs.iter() {
             let nnz = ptr.last().unwrap();
             let nelm = ptr.len()-1;
             rsubj[nzi..nzi+nnz].clone_from_slice(subj);
             rcof[nzi..nzi+nnz].clone_from_slice(cof);
-            izip!(rptr[elmi..elmi+nelm].iter_mut(),
+            izip!(rptr[elmi+1..elmi+nelm+1].iter_mut(),
                   ptr.iter(),
                   ptr[1..].iter()).for_each(|(rp,&p0,&p1)| *rp = p1-p0);
 
@@ -413,7 +420,8 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
 
             elmi += ptr.len()-1;
         }
-        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev+v });
+        println!("{}:{}: rptr = {:?}",file!(),line!(),rptr);
+        let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
     }
     // Case 2: The result is sparse, implying that at least one
     // operand is sparse. Strategy:
@@ -434,7 +442,7 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
         let mut elmi = 0;
         let mut ofs = 0;
         for (shape,ptr,sp,_,_) in exprs.iter() {
-            let vd1 = shape[dim];
+            let vd1 = shape.get(dim).copied().unwrap_or(1);
             if let Some(sp) = sp {
                 for (xi,xp,&i,&p0,&p1) in izip!(xsp[elmi..elmi+sp.len()].iter_mut(),
                                                 xptr[elmi..elmi+sp.len()].iter_mut(),
@@ -455,7 +463,6 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
                     *xp = p1-p0;
                     *xi = i;
                 }
-                
             }
             elmi += *ptr.last().unwrap();
             ofs += vd1;
@@ -478,7 +485,7 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
             }
             elmi += *ptr.last().unwrap();
         }
-        
+
         rptr[0] = 0;
         izip!(xperm.iter(),rptr[1..].iter_mut(),rsp.iter_mut())
             .for_each(|(&p,rp,ri)| {
@@ -493,7 +500,7 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
         // Build the result ptr
         // println!("{}:{}: Stack: Dense, rshape = {:?}, stack dim = {}",file!(),line!(),rshape,dim);
         for (shape,ptr,_,_,_) in exprs.iter() {
-            let vd1 = shape[dim];
+            let vd1 = shape.get(dim).copied().unwrap_or(1);
             let blocksize = vd1*d2;
             // println!("{}:{}: blocksize = {}",file!(),line!(),blocksize);
             for (rps,p0s,p1s) in izip!(rptr.chunks_mut(rblocksize),
@@ -513,7 +520,7 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
         // println!("{}:{}: rptr = {:?}",file!(),line!(),rptr);
         rsubj.fill(0);
         for (shape,ptr,_,subj,cof) in exprs.iter() {
-            let vd1 = shape[dim];
+            let vd1 = shape.get(dim).copied().unwrap_or(1);
             let blocksize = vd1*d2;
             izip!(rptr.chunks(rblocksize),
                   ptr.chunks(blocksize),
