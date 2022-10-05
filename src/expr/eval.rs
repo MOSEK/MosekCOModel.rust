@@ -365,6 +365,7 @@ pub(super) fn dot_vec(data : &[f64],
 
 
 pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+    println!("{}:{}: eval::stack n={}, dim={}",file!(),line!(),n,dim);
     let exprs = ws.pop_exprs(n);
 
     // check shapes
@@ -393,12 +394,14 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
     // product up to the stacking dimension are all 1, so effectively
     // that means stacking in the first (non-one) dimension.
     if d0 == 1 {
+        println!("{}:{}: eval::stack CASE 1",file!(),line!());
         let mut elmi : usize = 0;
         let mut nzi  : usize = 0;
         let mut ofs  : usize = 0;
 
         rptr[0] = 0;
         for (shape,ptr,sp,subj,cof) in exprs.iter() {
+            println!("{}:{}: shape = {:?}",file!(),line!(),shape);
             let nnz = ptr.last().unwrap();
             let nelm = ptr.len()-1;
             rsubj[nzi..nzi+nnz].clone_from_slice(subj);
@@ -420,7 +423,7 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
 
             elmi += ptr.len()-1;
         }
-        println!("{}:{}: rptr = {:?}",file!(),line!(),rptr);
+        //println!("{}:{}: rptr = {:?}",file!(),line!(),rptr);
         let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
     }
     // Case 2: The result is sparse, implying that at least one
@@ -499,11 +502,12 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
         let mut ofs  : usize = 0;
         // Build the result ptr
         // println!("{}:{}: Stack: Dense, rshape = {:?}, stack dim = {}",file!(),line!(),rshape,dim);
+        rptr[0] = 0;
         for (shape,ptr,_,_,_) in exprs.iter() {
             let vd1 = shape.get(dim).copied().unwrap_or(1);
             let blocksize = vd1*d2;
             // println!("{}:{}: blocksize = {}",file!(),line!(),blocksize);
-            for (rps,p0s,p1s) in izip!(rptr.chunks_mut(rblocksize),
+            for (rps,p0s,p1s) in izip!(rptr[1..].chunks_mut(rblocksize),
                                        ptr.chunks(blocksize),
                                        ptr[1..].chunks(blocksize)) {
                 rps[ofs..].iter_mut()
@@ -514,7 +518,7 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
             ofs += vd1;
         }
 
-        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev+v });
+        let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
         // Then copy nonzeros
         let mut ofs : usize = 0;
         // println!("{}:{}: rptr = {:?}",file!(),line!(),rptr);

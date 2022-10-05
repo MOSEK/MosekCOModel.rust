@@ -258,35 +258,35 @@ pub fn chainsing4(n : usize) -> Model {
     let u = model.variable(None,m);
 
     let xr       = x.clone().with_shape(vec![n/2,2]);
-    let x_i      = xr.index(&[0..n/2-1,0..1] as &[std::ops::Range<usize>]);
-    let x_iplus1 = xr.index(&[0..n/2-1,1..2] as &[std::ops::Range<usize>]);
-    let x_iplus2 = xr.index(&[1..n/2,  0..1] as &[std::ops::Range<usize>]);
-    let x_iplus3 = xr.index(&[1..n/2,  1..2] as &[std::ops::Range<usize>]);
+    let x_i      = xr.index(&[0..n/2-1,0..1] as &[std::ops::Range<usize>]).flatten();
+    let x_iplus1 = xr.index(&[0..n/2-1,1..2] as &[std::ops::Range<usize>]).flatten();
+    let x_iplus2 = xr.index(&[1..n/2,  0..1] as &[std::ops::Range<usize>]).flatten();
+    let x_iplus3 = xr.index(&[1..n/2,  1..2] as &[std::ops::Range<usize>]).flatten();
 
-    // s[j] >= (x[i] + 10*x[i+1])^2
+    // s[j] >= (x[i] + 10*x[i+1])^2    
     model.constraint(None,
-                     &((0.5).hstack(s.clone()).hstack(x_i.clone().add(x_iplus1.clone()).mul(10.0))),
-                     in_rotated_quadratic_cone(1+n/2));
+                     &hstack![ vec![0.5; m], s.clone(), x_i.clone().add(x_iplus1.clone().mul(10.0))],
+                     in_rotated_quadratic_cones(vec![m,3],1));
     // t[j] >= 5*(x[i+2] - x[i+3])^2
     model.constraint(None,
-                     &((0.5).hstack(t.clone()).hstack(x_iplus2.clone().sub(x_iplus3.clone()).mul(0.5f64.sqrt()))),
-                     in_rotated_quadratic_cone(1+n/2));
+                     &hstack![vec![0.5; m], t.clone(), x_iplus2.clone().sub(x_iplus3.clone()).mul(0.5f64.sqrt())],
+                     in_rotated_quadratic_cones(vec![m,3],1));
     // r[j] >= (x[i+1] - 2*x[i+2])^2
     model.constraint(None,
-                     &((0.5).hstack(r.clone()).hstack(x_iplus1.clone().sub(x_iplus2.clone().mul(2.0)))),
-                     in_rotated_quadratic_cone(1+n/2));
+                     &hstack![vec![0.5; m], r.clone(), x_iplus1.clone().sub(x_iplus2.clone().mul(2.0))],
+                     in_rotated_quadratic_cones(vec![m,3],1));
     // u[j] >= sqrt(10)*(x[i] - 10*x[i+3])^2
     model.constraint(None,
-                     &((0.5/10.0f64.sqrt()).hstack(u.clone()).hstack(x_i.clone().sub(x_iplus3.clone().mul(10.0)))),
-                     in_rotated_quadratic_cone(1+n/2));
+                     &hstack![vec![0.5/10.0f64.sqrt(); m],u.clone(),x_i.clone().sub(x_iplus3.clone().mul(10.0))],
+                     in_rotated_quadratic_cones(vec![m,3],1));
     // p[j] >= r[j]^2
     model.constraint(None,
-                     &((0.6).hstack(p.clone()).hstack(r)),
-                     in_rotated_quadratic_cone(3));
+                     &hstack![vec![0.5; m],p.clone(),r],
+                     in_rotated_quadratic_cones(vec![m,3],1));
     // q[j] >= u[j]^2
     model.constraint(None,
-                     &(0.5.hstack(q.clone()).hstack(u)),
-                     in_rotated_quadratic_cone(3));
+                     &hstack![vec![0.5; m], q.clone(), u],
+                     in_rotated_quadratic_cones(vec![m,3],1));
     // 0.1 <= x[j] <= 1.1
     model.constraint(None,&x,greater_than(0.1));
     model.constraint(None,&x,less_than(1.1));

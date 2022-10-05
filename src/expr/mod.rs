@@ -6,7 +6,6 @@ pub mod workstack;
 
 use itertools::{iproduct};
 use super::utils::*;
-use super::Variable;
 use workstack::WorkStack;
 use super::matrix;
 
@@ -183,20 +182,6 @@ pub fn nil(shape : Vec<usize>) -> ExprNil {
     ExprNil{shape}
 }
 
-impl ExprTrait for Variable {
-    fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),
-                                                  self.idxs.len(),
-                                                  self.idxs.len());
-        rptr.iter_mut().enumerate().for_each(|(i,p)| *p = i);
-        rsubj.clone_from_slice(self.idxs.as_slice());
-        rcof.fill(1.0);
-        match (rsp,&self.sparsity) {
-            (Some(rsp),Some(sp)) => rsp.clone_from_slice(sp.as_slice()),
-            _ => {}
-        }
-    }
-}
 
 ////////////////////////////////////////////////////////////
 // Multiply
@@ -506,6 +491,41 @@ impl ExprTrait for Vec<f64> {
 // Recursive evaluation of recursive stacking
 //
 
+/// Stack a list of expressions in dimension 1
+#[macro_export]
+macro_rules! hstack {
+    [ $x0:expr ] => { $x0 };
+    [ $x0:expr , $( $x:expr ),* ] => {
+        {
+            $x0 $( .hstack( $x ) )*
+        }
+    }
+}
+
+/// Stack a list of expressions in dimension 0
+#[macro_export]
+ macro_rules! vstack {
+    [ $x0:expr ] => { $x0 };
+    [ $x0:expr , $( $x:expr ),* ] => {
+        {
+            $x0 $( .vstack( $x ))*
+        }
+    }
+}
+
+/// Stack a list of expressions in a given dimension
+#[macro_export]
+macro_rules! stack {
+    [ $n:expr ; $x0:expr ] => { $x0 };
+    [ $n:expr ; $x0:expr , $( $x:expr ),* ] => {
+        {
+            let n = $n;
+            $x0 $( .stack( n , $x ))*
+        }
+    }
+}
+
+
 pub struct ExprStack<E1:ExprTrait,E2:ExprTrait> {
     item1 : E1,
     item2 : E2,
@@ -574,6 +594,10 @@ impl<E1:ExprStackRecTrait,E2:ExprTrait> ExprStackRecTrait for ExprStackRec<E1,E2
         }
     }
 }
+
+
+/// Dynamic stacking. To stack a list of heterogenous expressions we
+/// need to create a list of dynamic ExprTraits
 
 pub struct ExprDynStack {
     exprs : Vec<Box<dyn ExprTrait>>,
@@ -785,7 +809,7 @@ mod test {
         assert!(ws.is_empty());
 
         s2_2.eval(& mut rs,& mut ws,& mut xs);
-        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
         assert!(eq(shape,&[3,2,2]));
         assert!(eq(sp.unwrap(),&[0,1,2,4,5,6,7,8,10,11]));
         assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8,9,10]));
@@ -796,7 +820,7 @@ mod test {
 
         let s3_0 = e1.clone().stack(0,e1.clone());
         s3_0.eval(& mut rs,& mut ws,& mut xs);
-        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
         assert!(eq(shape,&[6,2,1]));
         assert!(eq(sp.unwrap(),&[0,2,3,5,6,8,9,11]));
         assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8]));
@@ -806,7 +830,7 @@ mod test {
 
         let s3_1 = e1.clone().stack(1,e1.clone());
         s3_1.eval(& mut rs,& mut ws,& mut xs);
-        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
         assert!(eq(shape,&[3,4,1]));
         assert!(eq(sp.unwrap(),&[0,2,4,5,6,7,9,11]));
         assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8]));
@@ -816,7 +840,7 @@ mod test {
 
         let s3_2 = e1.clone().stack(2,e1.clone());
         s3_2.eval(& mut rs,& mut ws,& mut xs);
-        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
         assert!(eq(shape,&[3,2,2]));
         assert!(eq(sp.unwrap(),&[0,1,4,5,6,7,10,11]));
         assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8]));
@@ -826,7 +850,7 @@ mod test {
 
         // TEST RECURSIVE EVALUATION
         e0.clone().stack(0,e1.clone()).stack(0,e0.clone()).eval(& mut rs,& mut ws,& mut xs);
-        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
         assert!(eq(shape,&[9,2,1]));
         assert!(eq(sp.unwrap(),&[0,1,2,3,4,5,
                                  6,8,9,11,
@@ -839,7 +863,7 @@ mod test {
         assert!(ws.is_empty());
 
         e0.clone().stack(1,e1.clone()).stack(1,e0.clone()).eval(& mut rs,& mut ws,& mut xs);
-        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
         assert!(eq(shape,&[3,6,1]));
         assert!(eq(sp.unwrap(),&[0,1,2,4,5,
                                  6,7,8,9,10,11,
@@ -850,7 +874,7 @@ mod test {
         assert!(ws.is_empty());
 
         e0.clone().stack(2,e1.clone()).stack(2,e0.clone()).eval(& mut rs,& mut ws,& mut xs);
-        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
         assert!(eq(shape,&[3,2,3]));
         assert!(eq(sp.unwrap(),&[0,1,2,3,5,6,7,8,9,10,11,12,14,15,16,17]));
         assert!(eq(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]));

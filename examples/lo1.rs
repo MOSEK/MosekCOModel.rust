@@ -41,17 +41,17 @@ fn main() {
 
     // Create constraints
 //TAG:begin-create-bound
-    let _ = m.constraint(None, &x.index(&[1]), less_than(10.0));
+    let _ = m.constraint(None, &x.index(1), less_than(10.0));
 //TAG:end-create-bound
 //TAG:begin-create-constraints
-    let _ = m.constraint(Some("c1"), &a0.dot(x.clone()), equal_to(30.0));
-    let _ = m.constraint(Some("c2"), &a1.dot(x.clone()), greater_than(15.0));
-    let _ = m.constraint(Some("c3"), &a2.dot(x.clone()), less_than(25.0));
+    let _ = m.constraint(Some("c1"), &x.clone().dot(a0.as_slice()), equal_to(30.0));
+    let _ = m.constraint(Some("c2"), &x.clone().dot(a1.as_slice()), greater_than(15.0));
+    let _ = m.constraint(Some("c3"), &x.clone().dot(a2.as_slice()), less_than(25.0));
 //TAG:end-create-constraints
 
     // Set the objective function to (c^t * x)
 //TAG:begin-set-objective
-    m.objective(Some("obj"), Sense::Maximize, &c.dot(x.clone()));
+    m.objective(Some("obj"), Sense::Maximize, &x.clone().dot(c.as_slice()));
 //TAG:end-set-objective
 
     // Solve the problem
