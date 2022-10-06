@@ -80,6 +80,17 @@ pub struct SparseMatrix {
     data : Vec<f64>,
 }
 
+
+
+impl SparseMatrix {
+    pub fn dim(&self) -> (usize,usize) { self.dim }
+    pub fn height(&self) -> usize { self.dim.0 }
+    pub fn width(&self) -> usize { self.dim.1 }
+    pub fn data(&self) -> &[f64] { self.data.as_slice() }
+    pub fn sparsity(&self) -> &[usize] { self.sp.as_slice() }
+}
+
+
 impl DenseMatrix {
     pub fn new(height : usize, width : usize, data : Vec<f64>) -> DenseMatrix {
         if height*width != data.len() { panic!("Invalid data size for matrix")  }

@@ -49,6 +49,33 @@ pub trait FoldMapExt<T:Copy,F:FnMut(&T,Self::Item) -> T> : Iterator {
 impl<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> FoldMapExt<T,F> for I {}
 
 
+
+////////////////////////////////////////////////////////////
+
+pub struct PermIter<'a,'b,T> {
+    data : & 'b [T],
+    perm : & 'a [usize],
+    i : usize
+}
+
+pub fn perm_iter<'a,'b,T>(perm : &'a [usize], data : &'b[T]) -> PermIter<'a,'b,T> {
+    if let Some(&v) = perm.iter().max() { if v >= data.len() { panic!("Invalid permutation")} }
+    PermIter{ data,perm,i:0 }
+}
+
+impl<'a,'b,T> Iterator for PermIter<'a,'b,T> {
+    type Item = & 'b T;
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(&i) = self.perm.get(self.i) {
+            self.i += 1;
+            Some(unsafe{&*self.data.get_unchecked(i)})
+        }
+        else {
+            None
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////
 pub struct IJKLSliceIterator<'a,'b,'c,'d,'e> {
     subi : & 'a [i64],

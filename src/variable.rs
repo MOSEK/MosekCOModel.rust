@@ -184,8 +184,6 @@ impl Variable {
     pub fn idxs(&self) -> &[usize] { self.idxs.as_slice() }
     pub fn sparsity(&self) -> Option<&[usize]> { if let Some(ref sp) = self.sparsity { Some(sp.as_slice()) } else { None }}
     pub fn shape(&self) -> &[usize] { self.shape.as_slice() }
-    
-    
     pub fn with_shape(self, shape : Vec<usize>) -> Variable {
         match self.sparsity {
             None =>

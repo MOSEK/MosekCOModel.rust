@@ -34,6 +34,7 @@ pub trait ExprTrait {
     // fn axispermute(self) -> ExprPermuteAxes<Self>
     // fn slice(self, range : &[(Range<usize>)])
 
+    /// Sum all elements in an expression yielding a scalar expression.
     fn sum(self) -> ExprSum<Self> where Self:Sized { ExprSum{item:self} }
 
     fn mul<V>(self,other : V) -> V::Result where V : ExprRightMultipliable<Self>, Self:Sized { other.mul_right(self) }
@@ -288,6 +289,39 @@ impl<E:ExprTrait> ExprTrait for ExprDotVec<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.expr.eval(ws,rs,xs);
         eval::dot_vec(self.data.as_slice(),rs,ws,xs);
+    }
+}
+
+////////////////////////////////////////////////////////////
+//
+struct ExprMulLeftSparse<E:ExprTrait> {
+    data : matrix::SparseMatrix,
+    expr : E
+}
+struct ExprMulRightSparse<E:ExprTrait> {
+    data : matrix::SparseMatrix,
+    expr : E
+}
+
+impl<E:ExprTrait> ExprTrait for ExprMulLeftSparse<E> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.expr.eval(ws,rs,xs);
+        eval::mul_left_sparse(self.data.height(),
+                              self.data.width(),
+                              self.data.sparsity(),
+                              self.data.data(),
+                              rs,ws,xs);
+    }
+}
+
+impl<E:ExprTrait> ExprTrait for ExprMulRightSparse<E> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.expr.eval(ws,rs,xs);
+        eval::mul_right_sparse(self.data.height(),
+                               self.data.width(),
+                               self.data.sparsity(),
+                               self.data.data(),
+                               rs,ws,xs);
     }
 }
 
@@ -595,7 +629,6 @@ impl<E1:ExprStackRecTrait,E2:ExprTrait> ExprStackRecTrait for ExprStackRec<E1,E2
     }
 }
 
-
 /// Dynamic stacking. To stack a list of heterogenous expressions we
 /// need to create a list of dynamic ExprTraits
 
@@ -634,6 +667,9 @@ pub fn hstack(exprs : Vec<Box<dyn ExprTrait>>) -> ExprDynStack {
 
 ////////////////////////////////////////////////////////////
 //
+
+
+/// Expression that sums all elements in an expression
 pub struct ExprSum<T:ExprTrait> {
     item : T
 }

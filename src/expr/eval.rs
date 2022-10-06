@@ -282,38 +282,181 @@ pub(super) fn mul_right_dense(mdata : &[f64],
 } // mul_right_dense
 
 
-// (pub(super) fn mul_left_dense(mdata : &[f64],
-//                              mdimi : usize,
-//                              mdimj : usize,
-//                              rs    : & mut WorkStack,
-//                              ws    : & mut WorkStack,
-//                              xs    : & mut WorkStack) {
-//     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+pub(super) fn mul_left_sparse(mheight : usize,
+                              mwidth : usize,
+                              msparsity : &[usize],
+                              mdata : &[f64],
+                              rs : & mut WorkStack,
+                              ws : & mut WorkStack,
+                              xs : & mut WorkStack) {
 
-//     let nd   = shape.len();
-//     let nnz  = subj.len();
-//     let nelm = ptr.len()-1;
+    let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+    let nd = shape.len();
+    if nd != 1 && nd != 2 { panic!("Expression is incorrect shape for multiplication: {:?}",shape); }
+    if shape[0] != mwidth { panic!("Mismatching operand shapes for multiplication"); }
+    let eheight = shape[0];
+    let ewidth = shape.get(1).copied().unwrap_or(1);
 
-//     if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
-//     if mdimj != shape[0] { panic!("Mismatching shapes for multiplication") }
+    if let Some(sp) = sp {
+        let (us,_) = xs.alloc(mheight // msubi
+                              + mheight+1 // mrowptr
+                              + sp.len() // eperm
+                              + ewidth // esubj
+                              + ewidth+1, // wcolptr
+                              0);
 
-//     let rdimi = mdimi;
-//     let rdimj = if nd == 1 { 1 } else { shape[1] };
-//     let edimi = shape[0];
-//     let edimj = shape.get(1).unwrap_or(1);
-//     let rnnz = nnz * mdimi;
-//     let rnelm = mdimi * rdimj;
+        let (msubi,us)   = us.split_at_mut(mheight);
+        let (mrowptr,us) = us.split_at_mut(mheight+1);
+        let (perm,us)    = us.split_at_mut(sp.len());
+        let (esubj,ecolptr) = us.split_at_mut(ewidth);
 
-//     let (rptr,_rsp,rsubj,rcof) = if nd == 2 {
-//         rs.alloc_expr(&[rdimi,rdimj],rnnz,rnelm)
-//     }
-//     else {
-//         rs.alloc_expr(&[rdimi],rnnz,rnelm)
-//     };
+        // build ptr structure for matrix data
+        let nummrows = {
+            let mut rowidx = 0; let mut rowi = usize::MAX;
+            for (k,&ix) in msparsity.iter().enumerate() {
+                let i = ix / mwidth;
+                if i != rowi {
+                    mrowptr[rowidx] = k;
+                    msubi[rowidx] = i;
+                    rowidx += 1;
+                    rowi = i;
+                }
+            }
+            msubi[rowidx] = msparsity.len();
+            rowidx
+        };
+        let msubi   = & msubi[..nummrows];
+        let mrowptr = & mrowptr[..nummrows+1];
 
+        // build column-major ordering permutation and ptr for expression
+        perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+        perm.sort_by_key(|&i| unsafe{(*sp.get_unchecked(i) % ewidth,*sp.get_unchecked(i)/ewidth)});
 
+        let numecols = {
+            let mut colidx = 0; let mut coli = usize::MAX;
+            for (k,&ix) in perm_iter(perm,sp).enumerate() {
+                let j = ix % ewidth;
+                if j != coli {
+                    ecolptr[colidx] = k;
+                    esubj[colidx] = j;
+                    colidx += 1;
+                    coli = j;
+                }
+            }
+            esubj[colidx] = sp.len();
+            colidx
+        };
+        let esubj = & esubj[..numecols];
+        let ecolptr = & ecolptr[..numecols+1];
 
-// } // mul_right_dense
+        // count result elements and nonzeros
+        let mut rnelm = 0;
+        let mut rnnz  = 0;
+        for (&mp0,&mp1) in izip!(mrowptr.iter(),mrowptr[1..].iter()) {
+            for (&ep0,&ep1) in izip!(ecolptr.iter(),ecolptr[1..].iter()) {
+                let mut espi = izip!(perm_iter(&perm[ep0..ep1],sp),
+                                     perm_iter(&perm[ep0..ep1],ptr),
+                                     perm_iter(&perm[ep0..ep1],&ptr[1..])).peekable();
+                let mut mspi = msparsity[mp0..mp1].iter().peekable();
+
+                let mut ijnnz = 0;
+                while let (Some((&ei,&p0,&p1)),Some(&mi)) = (espi.peek(),mspi.peek()) {
+                    let km = mi % mwidth;
+                    let ke = ei / eheight;
+                    if      km < ke { let _ = espi.next(); }
+                    else if km > ke { let _ = mspi.next(); }
+                    else {
+                        ijnnz += p1-p0;
+                    }
+                }
+                rnnz += ijnnz;
+                if ijnnz > 0 { rnelm += 1; }
+            }
+        }
+
+        // build result
+        let (rptr,mut rsp,rsubj,rcof) = rs.alloc_expr(&[mheight,ewidth],rnnz,rnelm);
+        let mut nzi = 0;
+        let mut elmi = 0;
+        for (&i,&mp0,&mp1) in izip!(msubi.iter(),mrowptr.iter(),mrowptr[1..].iter()) {
+            for (&j,&ep0,&ep1) in izip!(esubj.iter(),ecolptr.iter(),ecolptr[1..].iter()) {
+                let mut espi = izip!(perm_iter(&perm[ep0..ep1],sp),
+                                     perm_iter(&perm[ep0..ep1],ptr),
+                                     perm_iter(&perm[ep0..ep1],&ptr[1..])).peekable();
+                let mut mspi = izip!(msparsity[mp0..mp1].iter(),
+                                     mdata[mp0..mp1].iter()).peekable();
+
+                let mut ijnnz = 0;
+                while let (Some((&ei,&p0,&p1)),Some((&mi,&mc))) = (espi.peek(),mspi.peek()) {
+                    let km = mi % mwidth;
+                    let ke = ei / eheight;
+                    if      km < ke { let _ = espi.next(); }
+                    else if km > ke { let _ = mspi.next(); }
+                    else {
+                        rsubj[nzi+ijnnz..nzi+ijnnz+p1-p0].clone_from_slice(&subj[p0..p1]);
+                        rcof[nzi+ijnnz..nzi+ijnnz+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c*mc );
+                        ijnnz += p1-p0;
+                    }
+                }
+                nzi += ijnnz;
+                if ijnnz > 0 {
+                    if let Some(ref mut rsp) = rsp { rsp[elmi] = i * ewidth + j; }
+                    rptr[elmi+1] = nzi;
+                    elmi += 1;
+                }
+            }
+        }
+    }
+    else {
+        let rnelm = mheight * ewidth;
+        let (xptr,_) = xs.alloc(rnelm+1,0);
+        xptr.fill(0);
+
+        for &mspi in msparsity.iter() {
+            let (mi,mj) = (mspi / mwidth,mspi % mwidth);
+
+            for (j,&p0,&p1) in izip!(0..ewidth,
+                                     ptr[mj*ewidth..(mj+1)*ewidth].iter(),
+                                     ptr[mj*ewidth+1..(mj+1)*ewidth+1].iter()) {
+                unsafe{ *xptr.get_unchecked_mut(mi*ewidth+j+1) += p1-p0 };
+            }
+        }
+        let _ = xptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+
+        let &rnnz = xptr.last().unwrap();
+        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[mheight,ewidth],rnelm,rnnz);
+        rptr.clone_from_slice(xptr);
+
+        for (&mspi,&mv) in msparsity.iter().zip(mdata.iter()) {
+            let (mi,mj) = (mspi / mwidth,mspi % mwidth);
+
+            for (j,&p0,&p1) in izip!(0..ewidth,
+                                     ptr[mj*ewidth..(mj+1)*ewidth].iter(),
+                                     ptr[mj*ewidth+1..(mj+1)*ewidth+1].iter()) {
+                let dst = unsafe{*xptr.get_unchecked(mi*ewidth+j)};
+                rsubj[dst..dst+p1-p0].clone_from_slice(&subj[p0..p1]);
+                rcof[dst..dst+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c*mv);
+
+                unsafe{*xptr.get_unchecked_mut(mi*ewidth+j) += p1-p0};
+            }
+        }
+    }
+}
+
+pub(super) fn mul_right_sparse(_height : usize,
+                               _width : usize,
+                               _sparsity : &[usize],
+                               _data : &[f64],
+                               _rs : & mut WorkStack,
+                               ws : & mut WorkStack,
+                               _xs : & mut WorkStack) {
+    let (_shape,_ptr,sp,_subj,_cof) = ws.pop_expr();
+    if let Some(_sp) = sp {
+    }
+    else {
+    }
+    todo!("mul_right_sparse");
+}
 
 
 pub(super) fn dot_vec(data : &[f64],
