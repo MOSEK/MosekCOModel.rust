@@ -5,6 +5,8 @@ mod eval;
 pub mod workstack;
 
 use itertools::{iproduct};
+use crate::matrix::SparseMatrix;
+
 use super::utils::*;
 use workstack::WorkStack;
 use super::matrix;
@@ -226,6 +228,8 @@ impl<E:ExprTrait> ExprLeftMultipliable<E> for f64 {
 }
 
 
+
+
 pub struct ExprMulLeftDense<E:ExprTrait> {
     item : E,
     lhs  : matrix::DenseMatrix
@@ -294,11 +298,11 @@ impl<E:ExprTrait> ExprTrait for ExprDotVec<E> {
 
 ////////////////////////////////////////////////////////////
 //
-struct ExprMulLeftSparse<E:ExprTrait> {
+pub struct ExprMulLeftSparse<E:ExprTrait> {
     data : matrix::SparseMatrix,
     expr : E
 }
-struct ExprMulRightSparse<E:ExprTrait> {
+pub struct ExprMulRightSparse<E:ExprTrait> {
     data : matrix::SparseMatrix,
     expr : E
 }
@@ -325,6 +329,15 @@ impl<E:ExprTrait> ExprTrait for ExprMulRightSparse<E> {
     }
 }
 
+impl<E:ExprTrait> ExprLeftMultipliable<E> for SparseMatrix {
+    type Result = ExprMulLeftSparse<E>;
+    fn mul(self,other : E) -> Self::Result { ExprMulLeftSparse{expr : other, data : self} }
+}
+
+impl<E:ExprTrait> ExprRightMultipliable<E> for SparseMatrix {
+    type Result = ExprMulRightSparse<E>;
+    fn mul_right(self,other : E) -> Self::Result { ExprMulRightSparse{expr : other, data : self} }
+}
 ////////////////////////////////////////////////////////////
 //
 // ExprAdd is constructed for `e,d : ExprTrait` by

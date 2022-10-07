@@ -1,4 +1,4 @@
-use itertools::{izip};
+use itertools::izip;
 
 /// Structure of a computed expression on the workstack:
 /// stack top <---> bottom
@@ -42,7 +42,7 @@ impl WorkStack {
         let fbase = self.ftop;
 
         let fullsize : usize = shape.iter().product();
-        if fullsize < nelm { panic!("Invalid number of elements"); }
+        if fullsize < nelm { panic!("Number of elements too large for shape: {} in {:?}",nelm,shape); }
 
         let unnz  = 3+nd+(nelm+1)+nnz+(if nelm < fullsize { nelm } else { 0 } );
 

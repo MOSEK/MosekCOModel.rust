@@ -126,48 +126,138 @@ fn dense_right_mul() {
     assert!(ws.is_empty());
 }
 
-//#[test]
-//fn dense_mul_right() {
-//    let mut rs = WorkStack::new(1024);
-//    let mut ws = WorkStack::new(1024);
-//    let mut xs = WorkStack::new(1024);
-//
-//    let v = Variable::new((0..n).collect(), None, vec![n]);
-//    let w = Variable::new((0..n).collect(), None, vec![n]);
-//
-//    let mx = matrix::dense(n,n,vec![1.0; n*n]);
-//
-//    v.mul(mx).eval_finalize(& mut rs, & mut ws, & mut xs);
-//}
-//
-//
-//#[test]
-//fn sparse_left_mul() {
-//    let mut rs = WorkStack::new(1024);
-//    let mut ws = WorkStack::new(1024);
-//    let mut xs = WorkStack::new(1024);
-//
-//    let v = Variable::new((0..n).collect(), None, vec![n]);
-//    let w = Variable::new((0..n).collect(), None, vec![n]);
-//
-//    let ms = matrix::sparse(n,n+1,
-//                            (0..n));
-//
-//    mx.mul(v).eval_finalize(& mut rs, & mut ws, & mut xs);
-//}
-//
-//#[test]
-//fn sparse_mul_right() {
-//    let mut rs = WorkStack::new(1024);
-//    let mut ws = WorkStack::new(1024);
-//    let mut xs = WorkStack::new(1024);
-//
-//    let v = Variable::new((0..n).collect(), None, vec![n]);
-//    let w = Variable::new((0..n).collect(), None, vec![n]);
-//
-//    let mx = matrix::dense(n,n,vec![1.0; n*n]);
-//    let ms = matrix::sparse(mx);
-//
-//    v.mul(mx).eval_finalize(& mut rs, & mut ws, & mut xs);
-//}
-//
+
+
+
+
+
+#[test]
+fn sparse_left_mul() {
+    let mut rs = WorkStack::new(1024);
+    let mut ws = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    // | 1 x0 + 2 x1   3 x2 + 4x3   |
+    // | 5 x4 + 6 x5   7 x6 + 8x7   |
+    // | 9 x8 +10 x9  11 x10+12 x11 |
+    let ed = Expr::new(vec![3,2],
+                       None,
+                       vec![0,2,4,6,8,10,12],
+                       vec![0,1,2,3,4,5,6,7,8,9,10,11],
+                       vec![1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0]);
+    // | x0+x1      0 |
+    // | x2+x3  x4+x5 |
+    // |        x6+x7 |
+    let es = Expr::new(vec![3,2],
+                       Some(vec![0,2,3,5]),
+                       vec![0,2,4,6,8],
+                       vec![0,1,2,3,4,5,6,7],
+                       vec![1.0,1.0,2.0,2.0,3.0,3.0,4.0,4.0]);
+
+    // | 1.1     1.3 |
+    // |         2.3 |
+    // | 3.1 3.2     |
+    let m = matrix::sparse(3,3,
+                           &[0,0,1,2,2],
+                           &[0,2,2,0,1],
+                           &[1.1,1.3,2.3,3.1,3.2]);
+    m.clone().mul(ed).eval(& mut rs, & mut ws, & mut xs);
+    // | 1.1(x0+x1)
+    {
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+
+        assert!(shape == [3,2]);
+        assert!(ptr   == [0,4,8, 10,12, 16,20]);
+        assert!(sp.is_none());
+        assert!(subj  == [0,1,8,9, 2,3,10,11,
+                          8,9,     10,11,
+                          0,1,4,5, 2,3,6,7]);
+    }
+    assert!(rs.is_empty());
+    assert!(ws.is_empty());
+
+    m.mul(es).eval(& mut rs, & mut ws, & mut xs);
+    {
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+
+        assert!(shape == [3,2]);
+        assert!(ptr   == [0,2,4,6,10,12]);
+        assert!(sp    == Some(&[0,1,3,4,5]));
+        assert!(subj  == [0,1,     6,7,
+                                   6,7,
+                          0,1,2,3, 4,5]);
+
+        println!("cof = {:?}",cof);
+        println!("   != {:?}",&[1.1*1.0,1.1*1.0, 3.1*4.0,3.1*4.0, 
+                                         2.3*4.0,2.3*4.0,   
+                        3.1*1.0,3.1*1.0,3.2*2.0,3.2*2.0, 3.2*3.0,3.2*3.0]);
+        assert!(cof == [1.1*1.0,1.1*1.0, 1.3*4.0,1.3*4.0, 
+                                         2.3*4.0,2.3*4.0,   
+                        3.1*1.0,3.1*1.0,3.2*2.0,3.2*2.0, 3.2*3.0,3.2*3.0]);
+    }
+    assert!(rs.is_empty());
+    assert!(ws.is_empty());
+}
+
+#[test]
+fn sparse_right_mul() {
+    let mut rs = WorkStack::new(1024);
+    let mut ws = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    // | x0+x1  x2+x3    x4+x5 |
+    // | x6+x7  x8+x9  x10+x11 |
+    let ed = Expr::new(vec![2,3],
+                       None,
+                       vec![0,2,4,6,8,10,12],
+                       vec![0,1,2,3,4,5,6,7,8,9,10,11],
+                       vec![1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0]);
+    // | x0+x1  x2+x3        |
+    // |        x4+x5  x6+x7 |
+    let es = Expr::new(vec![2,3],
+                       Some(vec![0,1,4,5]),
+                       vec![0,2,4,6,8],
+                       vec![0,1,2,3,4,5,6,7],
+                       vec![1.0,1.0,2.0,2.0,3.0,3.0,4.0,4.0]);
+
+    let m = matrix::sparse(3,3,
+                           &[0,0,1,2,2],
+                           &[0,2,2,0,1],
+                           &[1.1,1.3,2.3,3.1,3.2]);
+    todo!("sparse_right_mul");
+    ed.mul(m.clone()).eval(& mut rs, & mut ws, & mut xs);
+    {
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+
+        println!("shape = {:?}",shape);
+        println!("ptr   = {:?}",ptr);
+        println!("subj  = {:?}",subj);
+
+        assert!(shape == [2,3]);
+        assert!(ptr   == [0,6,12,18,24,30,36]);
+        assert!(sp.is_none());
+        assert!(subj  == [0,1,2,3,4,5,    0,1,2,3,4,5,    0,1,2,3,4,5,
+                          6,7,8,9,10,11,  6,7,8,9,10,11,  6,7,8,9,10,11]);
+    }
+    assert!(rs.is_empty());
+    assert!(ws.is_empty());
+
+
+    es.mul(m).eval(& mut rs, & mut ws, & mut xs);
+    {
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+
+        println!("shape = {:?}",shape);
+        println!("ptr   = {:?}",ptr);
+        println!("subj  = {:?}",subj);
+        assert!(shape == [2,3]);
+        assert!(ptr   == [0,4,8,12,16,20,24]);
+        assert!(sp.is_none());
+        assert!(subj  == [0,1,2,3, 0,1,2,3, 0,1,2,3,
+                          4,5,6,7, 4,5,6,7, 4,5,6,7]);
+        assert!(cof == [1.1*1.0,1.1*1.0,2.1*2.0,2.1*2.0, 1.2*1.0,1.2*1.0,2.2*2.0,2.2*2.0, 1.3*1.0,1.3*1.0,2.3*2.0,2.3*2.0, 
+                        2.1*3.0,2.1*3.0,3.1*4.0,3.1*4.0, 2.2*3.0,2.2*3.0,3.2*4.0,3.2*4.0, 2.3*3.0,2.3*3.0,3.3*4.0,3.3*4.0 ]);
+    }
+    assert!(rs.is_empty());
+    assert!(ws.is_empty());
+}

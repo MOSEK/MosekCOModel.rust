@@ -246,7 +246,6 @@ pub(super) fn mul_right_dense(mdata : &[f64],
 
         for (k,p0,p1) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter()) {
             let (ii,_jj) = (k/edimj,k%edimj);
-            println!("nelm = {}, k = {}, ii = {}, jj = {}",rnelm,k,ii,_jj);
             rptr[ii*rdimj..(ii+1)*rdimj].iter_mut().for_each(|p| *p += p1-p0);
         }
         let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; v+prev });
@@ -310,7 +309,7 @@ pub(super) fn mul_left_sparse(mheight : usize,
         let (perm,us)    = us.split_at_mut(sp.len());
         let (esubj,ecolptr) = us.split_at_mut(ewidth);
 
-        // build ptr structure for matrix data
+        // build row ptr structure for matrix data
         let nummrows = {
             let mut rowidx = 0; let mut rowi = usize::MAX;
             for (k,&ix) in msparsity.iter().enumerate() {
@@ -322,7 +321,7 @@ pub(super) fn mul_left_sparse(mheight : usize,
                     rowi = i;
                 }
             }
-            msubi[rowidx] = msparsity.len();
+            mrowptr[rowidx] = msparsity.len();
             rowidx
         };
         let msubi   = & msubi[..nummrows];
@@ -343,7 +342,7 @@ pub(super) fn mul_left_sparse(mheight : usize,
                     coli = j;
                 }
             }
-            esubj[colidx] = sp.len();
+            ecolptr[colidx] = sp.len();
             colidx
         };
         let esubj = & esubj[..numecols];
@@ -361,10 +360,14 @@ pub(super) fn mul_left_sparse(mheight : usize,
 
                 let mut ijnnz = 0;
                 while let (Some((&ei,&p0,&p1)),Some(&mi)) = (espi.peek(),mspi.peek()) {
-                    match (mi % mwidth).cmp(&(ei / eheight)) {
-                        std::cmp::Ordering::Less => { let _ = espi.next(); },
-                        std::cmp::Ordering::Greater => { let _ = mspi.next(); },
-                        std::cmp::Ordering::Equal => { ijnnz += p1-p0; }
+                    match (mi % mwidth).cmp(&(ei / ewidth)) {
+                        std::cmp::Ordering::Less    => { let _ = mspi.next(); },
+                        std::cmp::Ordering::Greater => { let _ = espi.next(); },
+                        std::cmp::Ordering::Equal => { 
+                            let _ = espi.next();
+                            let _ = mspi.next();
+                            ijnnz += p1-p0; 
+                        }
                     }
                 }
                 rnnz += ijnnz;
@@ -376,6 +379,7 @@ pub(super) fn mul_left_sparse(mheight : usize,
         let (rptr,mut rsp,rsubj,rcof) = rs.alloc_expr(&[mheight,ewidth],rnnz,rnelm);
         let mut nzi = 0;
         let mut elmi = 0;
+        rptr[0] = 0;
         for (&i,&mp0,&mp1) in izip!(msubi.iter(),mrowptr.iter(),mrowptr[1..].iter()) {
             for (&j,&ep0,&ep1) in izip!(esubj.iter(),ecolptr.iter(),ecolptr[1..].iter()) {
                 let mut espi = izip!(perm_iter(&perm[ep0..ep1],sp),
@@ -384,22 +388,25 @@ pub(super) fn mul_left_sparse(mheight : usize,
                 let mut mspi = izip!(msparsity[mp0..mp1].iter(),
                                      mdata[mp0..mp1].iter()).peekable();
 
-                let mut ijnnz = 0;
+                let mut ijnnz = nzi;
                 while let (Some((&ei,&p0,&p1)),Some((&mi,&mc))) = (espi.peek(),mspi.peek()) {
                     let km = mi % mwidth;
-                    let ke = ei / eheight;
+                    let ke = ei / ewidth;
+
                     match km.cmp(&ke) {
-                        Equal => { let _ = espi.next(); },
-                        Greater => { let _ = mspi.next(); },
-                        Equal => {
-                            rsubj[nzi+ijnnz..nzi+ijnnz+p1-p0].clone_from_slice(&subj[p0..p1]);
-                            rcof[nzi+ijnnz..nzi+ijnnz+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c*mc );
+                        std::cmp::Ordering::Less    => { let _ = mspi.next(); },
+                        std::cmp::Ordering::Greater => { let _ = espi.next(); },
+                        std::cmp::Ordering::Equal => {
+                            rsubj[ijnnz..ijnnz+p1-p0].clone_from_slice(&subj[p0..p1]);
+                            rcof[ijnnz..ijnnz+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c*mc );
+                            let _ = espi.next();
+                            let _ = mspi.next();
                             ijnnz += p1-p0;
-                        }
+                        },
                     }
                 }
-                nzi += ijnnz;
-                if ijnnz > 0 {
+                if ijnnz > nzi {
+                    nzi = ijnnz;
                     if let Some(ref mut rsp) = rsp { rsp[elmi] = i * ewidth + j; }
                     rptr[elmi+1] = nzi;
                     elmi += 1;
@@ -424,7 +431,7 @@ pub(super) fn mul_left_sparse(mheight : usize,
         let _ = xptr.iter_mut().fold(0,|v,p| { *p += v; *p });
 
         let &rnnz = xptr.last().unwrap();
-        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[mheight,ewidth],rnelm,rnnz);
+        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[mheight,ewidth],rnnz,rnelm);
         rptr.clone_from_slice(xptr);
 
         for (&mspi,&mv) in msparsity.iter().zip(mdata.iter()) {
