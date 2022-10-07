@@ -224,20 +224,21 @@ fn sparse_right_mul() {
                            &[0,0,1,2,2],
                            &[0,2,2,0,1],
                            &[1.1,1.3,2.3,3.1,3.2]);
-    todo!("sparse_right_mul");
+
     ed.mul(m.clone()).eval(& mut rs, & mut ws, & mut xs);
     {
         let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
 
         println!("shape = {:?}",shape);
+        println!("sp    = {:?}",sp);
         println!("ptr   = {:?}",ptr);
         println!("subj  = {:?}",subj);
 
         assert!(shape == [2,3]);
-        assert!(ptr   == [0,6,12,18,24,30,36]);
+        assert!(ptr   == [0,4,6,10, 14,16,20]);
         assert!(sp.is_none());
-        assert!(subj  == [0,1,2,3,4,5,    0,1,2,3,4,5,    0,1,2,3,4,5,
-                          6,7,8,9,10,11,  6,7,8,9,10,11,  6,7,8,9,10,11]);
+        assert!(subj  == [0,1,4,5,   4,5,   0,1,2,3,
+                          6,7,10,11, 10,11, 6,7,8,9]);
     }
     assert!(rs.is_empty());
     assert!(ws.is_empty());
@@ -245,18 +246,17 @@ fn sparse_right_mul() {
 
     es.mul(m).eval(& mut rs, & mut ws, & mut xs);
     {
-        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
 
         println!("shape = {:?}",shape);
+        println!("sp    = {:?}",sp);
         println!("ptr   = {:?}",ptr);
         println!("subj  = {:?}",subj);
         assert!(shape == [2,3]);
-        assert!(ptr   == [0,4,8,12,16,20,24]);
-        assert!(sp.is_none());
-        assert!(subj  == [0,1,2,3, 0,1,2,3, 0,1,2,3,
-                          4,5,6,7, 4,5,6,7, 4,5,6,7]);
-        assert!(cof == [1.1*1.0,1.1*1.0,2.1*2.0,2.1*2.0, 1.2*1.0,1.2*1.0,2.2*2.0,2.2*2.0, 1.3*1.0,1.3*1.0,2.3*2.0,2.3*2.0, 
-                        2.1*3.0,2.1*3.0,3.1*4.0,3.1*4.0, 2.2*3.0,2.2*3.0,3.2*4.0,3.2*4.0, 2.3*3.0,2.3*3.0,3.3*4.0,3.3*4.0 ]);
+        assert!(ptr   == [0,2,6,8,10,12]);
+        assert!(sp == Some(&[0,2,3,4,5]));
+        assert!(subj  == [0,1,      0,1,2,3,
+                          6,7, 6,7, 4,5]);
     }
     assert!(rs.is_empty());
     assert!(ws.is_empty());
