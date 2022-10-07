@@ -1,6 +1,5 @@
 use itertools::{izip};
 
-
 /// Structure of a computed expression on the workstack:
 /// stack top <---> bottom
 /// susize: [ ndim, nnz, nelm, shape[ndim], ptr[nnz+1], { nzidx[nnz] if nnz < shape.product() else []}], asubj[nnz]
@@ -112,6 +111,22 @@ impl WorkStack {
         (shape,ptr,sp,subj,cof,ubase,fbase)
     }
 
+
+    fn validate(shape : &[usize], ptr : &[usize], sp : Option<&[usize]>, subj : &[usize]) -> Result<(),String> {
+        let & nnz = ptr.last().unwrap();
+        let fullsize : usize = shape.iter().product();
+
+        if let Some(ref sp) = sp {
+            if izip!(sp.iter(),
+                     sp[1..].iter()).any(|(&a,&b)| a >= b) { return Err("Popped invalid expression: Sparsity not sorted or contains duplicates".to_string()); }
+            if let Some(&n) = sp.last() { if n > fullsize { return Err("Popped invalid expression: Sparsity entry out of bounds".to_string()); } }
+        }
+
+        if izip!(ptr.iter(),ptr[1..].iter()).any(|(&a,&b)| a > b) { return Err("Popped invalid expression: Ptr is not ascending".to_string()); }
+        if nnz > subj.len() { return Err("Popped invalid expression: Ptr does not match the number of actual nonzeros".to_string()) }
+        Ok(())
+    }
+
     fn soft_pop_validate(&self, utop : usize, ftop : usize) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64],usize,usize) {
         let (shape,ptr,sp,subj,cof,ubase,fbase) = self.soft_pop(utop,ftop);
         let nnz = subj.len();
@@ -125,7 +140,7 @@ impl WorkStack {
 
         if izip!(ptr[..ptr.len()-1].iter(),
                  ptr[1..].iter()).any(|(&a,&b)| a > b) {  panic!("Stack does not contain a valid expression: invalid ptr"); }
-        if let Some(&p) = ptr.last() { if p > nnz { panic!("Stack does not contain a valid expression: invalid ptr"); } }
+        if ptr.last().copied().unwrap() > nnz { panic!("Stack does not contain a valid expression: invalid ptr"); }
 
         (shape,ptr,sp,subj,cof,ubase,fbase)
     }
@@ -171,6 +186,8 @@ impl WorkStack {
 
             selfutop = ubase;
             selfftop = fbase;
+
+            Self::validate(shape,ptr,sp,subj).unwrap();
             res.push((shape,ptr,sp,&subj[..rnnz],&cof[..rnnz]))
         }
 
@@ -209,8 +226,11 @@ impl WorkStack {
         let ptrbase = nnz+sp.map(|v| v.len()).unwrap_or(0);
         let ptr   = &uslice[ptrbase..ptrbase+nelm+1];
         let shape = &uslice[ptrbase+nelm+1..ptrbase+nelm+1+nd];
-
-        let rnnz = ptr.last().copied().unwrap();
+        
+        println!("{}:{}: workstack::pop_expr:\n\tshape={:?}\n\tptr={:?}\n\tsubj={:?}",file!(),line!(),shape,ptr,subj);
+        
+        Self::validate(shape,ptr,sp,subj).unwrap();
+        let &rnnz = ptr.last().unwrap();
 
         self.utop = ubase;
         self.ftop = fbase;

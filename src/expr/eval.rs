@@ -194,7 +194,7 @@ pub(super) fn mul_left_dense(mdata : &[f64],
             }
         }
 
-        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev+v });
+        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev });
     }
     // dense expr
     else {
@@ -692,12 +692,14 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
 
 
 pub(super) fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-    // println!("eval_finalize");
+    println!("{}:{}: eval_finalize",file!(),line!());
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+    println!("{}:{}: eval_finalize:\n\tshape = {:?}\n\rsp = {:?}\n\tptr = {:?}\n\tsubj = {:?}",file!(),line!(),shape,sp,ptr,subj);
+
     let nnz  = subj.len();
     let nelm = shape.iter().product();
     let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,nnz,nelm);
-
+ 
     // println!("ExprTrait::eval_finalize. cof = {:?}",cof);
 
     let maxj = subj.iter().max().unwrap_or(&0);
