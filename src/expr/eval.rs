@@ -450,19 +450,57 @@ pub(super) fn mul_left_sparse(mheight : usize,
     }
 }
 
-pub(super) fn mul_right_sparse(_height : usize,
-                               _width : usize,
-                               _sparsity : &[usize],
-                               _data : &[f64],
-                               _rs : & mut WorkStack,
+// expr x matrix
+pub(super) fn mul_right_sparse(mheight : usize,
+                               mwidth : usize,
+                               msparsity : &[usize],
+                               mdata : &[f64],
+                               rs : & mut WorkStack,
                                ws : & mut WorkStack,
-                               _xs : & mut WorkStack) {
-    let (_shape,_ptr,sp,_subj,_cof) = ws.pop_expr();
+                               xs : & mut WorkStack) {
+    let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+    if shape.len() != 1 && e.len() != 2 {
+        panic!("Invalid operand shapes: Expr is not 1- or 2-dimensional");
+    }
+
+    let (eheight,ewidth) =
+        if let Some(d) = shape.get(1) { (shape[0],d) }
+        else { (1,d) };
+
+    if ewidth != mheight {
+        panic!("Incompatible operand shapes");
+    }
+    
     if let Some(_sp) = sp {
+        todo!("mul_right_sparse");
     }
     else {
+        let (us,_) = xs.alloc(msparsity.len() // mperm
+                              + mwidth // msubj
+                              + mwidth+1, // mcolptr
+                              0);
+        let (mperm,us) = us.split_at_mut(msparsity.len());
+        let (msubj,us) = us.split_at_mut(mwidth);
+        let mcolptr    = us;
+        // build col ptr for matrix
+        mperm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+        mperm.sort_by_key(|&i| unsafe{ *msparsity.get_unchecked(i) });
+        mcolptr.fill(0);
+        msparsity.iter().for_each(|&i| unsafe{ *mcolptr.get_unchecked_mut(i / mwidt+1) += 1});
+        let _ = mcolptr.fold(0,|v,p| { *p += v; *p });
+
+        // count nonzeros
+        for (i,p0s,p1s) in izip!(0..eheight,ptr.chunks(ewidth),ptr[1..].chunks(ewidth)) {
+            for (j,mp0,mp1) in mcolptr.zip(0..mwidth,mcolptr[1..].iter()) {
+                mperm[mp0..mp1].iter().for_each(|&p| {
+                    let k = unsafe{*msparsity.get_unchecked(p)} / mwidth;
+                    let p0 = p0s[k];
+                    let p1 = p1s[k];
+                    ...
+                });
+            }
+        }
     }
-    todo!("mul_right_sparse");
 }
 
 
