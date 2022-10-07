@@ -6,7 +6,7 @@ use super::*;
 use super::super::utils;
 use super::workstack::WorkStack;
 
-use itertools::{izip};
+use itertools::izip;
 
 /// Add `n` expression residing on `ws`. Result pushed to `rs`.
 pub(super) fn add(n  : usize,
@@ -55,8 +55,8 @@ pub(super) fn add(n  : usize,
                     .for_each(|(js,cs,&i)| {
                         let nnz = js.len();
                         let p0 = unsafe{ *rptr.get_unchecked(i) };
-                        rsubj[p0..p0+nnz].clone_from_slice(&js);
-                        rcof[p0..p0+nnz].clone_from_slice(&cs);
+                        rsubj[p0..p0+nnz].clone_from_slice(js);
+                        rcof[p0..p0+nnz].clone_from_slice(cs);
 
                         unsafe{ *rptr.get_unchecked_mut(i) += nnz };
                     });
@@ -67,8 +67,8 @@ pub(super) fn add(n  : usize,
                       rptr.iter())
                     .for_each(|(js,cs,&p0)| {
                         let nnz = js.len();
-                        rsubj[p0..p0+nnz].clone_from_slice(&js);
-                        rcof[p0..p0+nnz].clone_from_slice(&cs);
+                        rsubj[p0..p0+nnz].clone_from_slice(js);
+                        rcof[p0..p0+nnz].clone_from_slice(cs);
                     });
                 rptr.iter_mut().zip(ptr.iter().zip(ptr[1..].iter()).map(|(&p0,&p1)| p1-p0))
                     .for_each(|(rp,n)| *rp += n);
@@ -115,7 +115,7 @@ pub(super) fn add(n  : usize,
             prev + v
         });
         if let Some(sp) = rsp {
-            let _ = izip!(hperm.iter(),sp.iter_mut()).for_each(|(&p,sp)| {
+            izip!(hperm.iter(),sp.iter_mut()).for_each(|(&p,sp)| {
                 *sp = unsafe{ *hindex.get_unchecked(p) };
             });
         }
@@ -263,7 +263,7 @@ pub(super) fn mul_right_dense(mdata : &[f64],
                 *rp += p1-p0;
             }
         }
-        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; v+prev });
+        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev });
     }
     // dense expr
     else {
@@ -361,12 +361,10 @@ pub(super) fn mul_left_sparse(mheight : usize,
 
                 let mut ijnnz = 0;
                 while let (Some((&ei,&p0,&p1)),Some(&mi)) = (espi.peek(),mspi.peek()) {
-                    let km = mi % mwidth;
-                    let ke = ei / eheight;
-                    if      km < ke { let _ = espi.next(); }
-                    else if km > ke { let _ = mspi.next(); }
-                    else {
-                        ijnnz += p1-p0;
+                    match (mi % mwidth).cmp(&(ei / eheight)) {
+                        std::cmp::Ordering::Less => { let _ = espi.next(); },
+                        std::cmp::Ordering::Greater => { let _ = mspi.next(); },
+                        std::cmp::Ordering::Equal => { ijnnz += p1-p0; }
                     }
                 }
                 rnnz += ijnnz;
@@ -390,12 +388,14 @@ pub(super) fn mul_left_sparse(mheight : usize,
                 while let (Some((&ei,&p0,&p1)),Some((&mi,&mc))) = (espi.peek(),mspi.peek()) {
                     let km = mi % mwidth;
                     let ke = ei / eheight;
-                    if      km < ke { let _ = espi.next(); }
-                    else if km > ke { let _ = mspi.next(); }
-                    else {
-                        rsubj[nzi+ijnnz..nzi+ijnnz+p1-p0].clone_from_slice(&subj[p0..p1]);
-                        rcof[nzi+ijnnz..nzi+ijnnz+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c*mc );
-                        ijnnz += p1-p0;
+                    match km.cmp(&ke) {
+                        Equal => { let _ = espi.next(); },
+                        Greater => { let _ = mspi.next(); },
+                        Equal => {
+                            rsubj[nzi+ijnnz..nzi+ijnnz+p1-p0].clone_from_slice(&subj[p0..p1]);
+                            rcof[nzi+ijnnz..nzi+ijnnz+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c*mc );
+                            ijnnz += p1-p0;
+                        }
                     }
                 }
                 nzi += ijnnz;
