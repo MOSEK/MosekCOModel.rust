@@ -390,7 +390,7 @@ pub(super) fn mul_left_sparse(mheight : usize,
 
                 let mut ijnnz = nzi;
                 while let (Some((&ei,&p0,&p1)),Some((&mi,&mc))) = (espi.peek(),mspi.peek()) {
-                    let km = mi % mwidth;
+                    let km = mi % mwidtrsubjh;
                     let ke = ei / ewidth;
 
                     match km.cmp(&ke) {
@@ -470,35 +470,158 @@ pub(super) fn mul_right_sparse(mheight : usize,
     if ewidth != mheight {
         panic!("Incompatible operand shapes");
     }
-    
-    if let Some(_sp) = sp {
-        todo!("mul_right_sparse");
+
+    // tranpose matrix
+    let (us,mcof) = xs.alloc(eheight+1 // erowptr
+                             +(mwidth+1)*2 // mptr
+                             + mwidth // msubj
+                             + msparsity.len(), // msubi
+                             msparsity.len());
+    let (erowptr,us)  = us.split_at_mut(eheight+1);
+    let (mcolptr1,us) = us.split_at_mut(mwidth+1);
+    let (mcolptr,us)  = us.split_at_mut(mwidth+1);
+    let (msubj,msubi) = us.split_at_mut(mwidth);
+
+    mcolptr1.fill(0);
+    for &i in msparsity.iter() { unsafe{ *mcolptr1.get_unchecked_mut(i % mwidth + 1) += 1; } }
+    let _ = mcolptr1.iter_mut().fold(0,|v,p| { *p += v; *p });
+    for (&i,&c) in msparsity.iter() {
+        let j = i % width;
+        let p = unsafe{ *mcolptr1.get_unchecked(j); }
+        unsafe{ *msubi.get_unchecked_mut(p) = i / mwidth; }
+        unsafe{ *mcof.get_unchecked_mut(p) = c; }
+        unsafe{ *mcolptr1.get_unchecked_mut(j) += 1; }
+    }
+    let _ = mcolptr1.iter_mut().fold(0,|v,p| { let prev = *p; *p -= v; prev });
+    mcolptr[0] = 0;
+    let _ = izip!(mcolptr1.iter().enumerate().filter(|(_,&n)| n > 0),
+                  mcolsubj.iter_mut(),
+                  mcolptr[1..].iter_mut()).fold(0,|v,((j,&n),(rj,p))| { *p = v+n; *rj = j; v+n });
+    let mnumnzcol = mcolptr1[..mwidth].iter().count(|&n| n > 0);
+    let mcolptr = &mcolptr[..mnumnzcol+1];
+    let msubj   = &msubj[..mnumnzcol];
+
+    if let Some(sp) = sp {
+        let mut rnelm    = 0;
+        let mut rnnz     = 0;
+
+        erowptr.fill(0);
+        sp.iter().for_each(|&i| unsafe{*erowptr.get_unchecked_mut(i / ewidth+1) += 1});
+        let _ = erowptr.iter_mut().fold(0,|v,p| { *p += v; *p  });
+        // count nonzeros and elements
+        iproduct!(izip!(erowptr.iter(), erowptr[1..].iter())
+                      .filter_map(|(&rp0,&rp1)| if rp0 < rp1 { Some((&sp[rp0..rp1],&ptr[rp0..rp1],&ptr[rp0+1..rp1+1])) } else { None })
+                  izip!(mcolptr.iter(), mcolptr[1..].iter())
+                      .map(|(&mp0,&mp1)| &msubi[mp0..mp1]))
+            .for_each(|((espis,ep0s,ep1s),mis)|{
+                let mut ei = izip!(espis.iter(),ep0s.iter(),ep1s.iter()).peekable();
+                let mut mi = mis.iter().peekable();
+
+                let mut elmnnz = 0;
+                while let (Some((&ke,_,_)),Some(km)) = (ei.peek(),mi.peek()) {
+                    match ke.cmp(km) {
+                        std::cmp::Ordering::Less => { let _ = ke.next(); },
+                        std::cmp::Ordering::Greater => { let _ = km.next(); },
+                        std::cmp::Ordering::Equal => {
+                            let (_,&p0,&p1) = ke.next();
+                            elmnnz += p1-p0; 
+                            let _ = km.next();
+                        },
+                    }
+                }
+                if elmnnz > 0 {
+                    rnnz += elmnnz;
+                    rnelm += 1;
+                }
+
+            });
+        // alloc result
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[eheight,mwidth],rnnz,rnelm);
+        let mut nzi = 0;
+        let mut elmi = 0;
+
+        // build result
+        rptr[0] = 0;
+        let mut ii =
+        iproduct!(izip!(0..eheight,erowptr.iter(), erowptr[1..].iter())
+                      .filter_map(|(ri,&rp0,&rp1)| if rp0 < rp1 { Some((ri,&sp[rp0..rp1],&ptr[rp0..rp1],&ptr[rp0+1..rp1+1])) } else { None })
+                  izip!(msubj.iter(),mcolptr.iter(), mcolptr[1..].iter())
+                      .map(|(&rj,&mp0,&mp1)| (rj, &msubi[mp0..mp1],&mcof[mp0..mp1])))
+            .filter_map(|((espis,ep0s,ep1s),(rj,mcolsubi,mcolcof))|{
+                let mut ei = izip!(espis.iter(),ep0s.iter(),ep1s.iter()).peekable();
+                let mut mi = izip!(mcolsubi.iter(),mcolcof.iter()).peekable();
+
+                let rnnz0 = rnnz;
+                while let (Some((&ke,_,_)),Some((&km,_))) = (ei.peek(),mi.peek()) {
+                    match ke.cmp(km) {
+                        std::cmp::Ordering::Less => { let _ = ke.next(); },
+                        std::cmp::Ordering::Greater => { let _ = km.next(); },
+                        std::cmp::Ordering::Equal => {
+                            let (_,&p0,&p1) = ke.next();
+                            let (_,&mv) = km.next();
+
+                            rsubj[rnnz..rnnz+p1-p0].clone_from_slice(&subj[p0..p1]);
+                            rcof[rnnz..rnnz+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c*mv);
+
+                            rnnz += p1-p0;
+                        },
+                    }
+                }
+                if rnnz0 < rnnz {
+                    rnelm += 1;
+                    Some((rnnz,ri*mwidth+rj))
+                }
+                else {
+                    None
+                }
+
+            })
+            .zip(rptr[1..].iter_mut())
+            .map(|((nnz,rk),rp)| { *rp = nnz; rk} );
+
+        if let Some(rsp) = rsp {
+            rsp.iter_mut().zip(ii).for_each(|(spi,k)| *spi = k);
+        }
+        else {
+            ii.for_each(| _ |);
+        }
     }
     else {
-        let (us,_) = xs.alloc(msparsity.len() // mperm
-                              + mwidth // msubj
-                              + mwidth+1, // mcolptr
-                              0);
-        let (mperm,us) = us.split_at_mut(msparsity.len());
-        let (msubj,us) = us.split_at_mut(mwidth);
-        let mcolptr    = us;
-        // build col ptr for matrix
-        mperm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
-        mperm.sort_by_key(|&i| unsafe{ *msparsity.get_unchecked(i) });
-        mcolptr.fill(0);
-        msparsity.iter().for_each(|&i| unsafe{ *mcolptr.get_unchecked_mut(i / mwidt+1) += 1});
-        let _ = mcolptr.fold(0,|v,p| { *p += v; *p });
-
         // count nonzeros
-        for (i,p0s,p1s) in izip!(0..eheight,ptr.chunks(ewidth),ptr[1..].chunks(ewidth)) {
-            for (j,mp0,mp1) in mcolptr.zip(0..mwidth,mcolptr[1..].iter()) {
-                mperm[mp0..mp1].iter().for_each(|&p| {
-                    let k = unsafe{*msparsity.get_unchecked(p)} / mwidth;
-                    let p0 = p0s[k];
-                    let p1 = p1s[k];
-                    ...
-                });
+        let rnelm = mnumnzcol * eheight;
+        let mut rnnz = 0;
+        for (p0s,p1s) in izip!(ptr.chunks(ewidth),ptr[1..].chunks(ewidth)) {
+            for (&j,&mp0,&mp1) in izip!(msubj.iter(),mcolptr,mcolptr[1..]) {
+
+                let mcolsubj = &msubj[mp0..mp1];
+                rnnz += izip!(iter_perm(mcolsubj,p0s),
+                              iter_perm(mcolsubj,p1s)).map(|(p0,p1)| p1-p0).sum();
             }
+        }
+
+        // alloc result
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[eheight,mwidth],rnnz,rnelm);
+        let mut nzi = 0;
+        let mut elmi = 0;
+
+        rptr[0] = 0;
+        izip!(ptr.chunks(ewidth),ptr[1..].chunks(ewidth))
+            .map(|(p0s,p1s)| izip!(repeat(p0s),repeat(p1s),msubj.iter(),mcolptr,mcolptr[1..]))
+            .flatten()
+            .zip(rptr[1..].iter_mut())
+            .for_each(|(rp,(p0s,p1s,&j,&mp0,&mp1))| {
+                izip!(iter_perm(mcolsubj,p0s),
+                      iter_perm(mcolsubj,p1s),
+                      mcof[mp0..mp1].iter()).for_each(|(p0,p1,&mv)| {
+                          rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                          rcof[nzi..nzi+p1-p0].iter_mut().zip(&cof[p0..p1]).for_each(|(rc,&c)| *rc = c * mv);
+                          nzi += p1-p0;
+                      });
+                *rp = nzi;
+            });
+        if let Some(rsp) = rsp {
+            izip!(rsp.iter_mut(), iproduct!(0..eheight,msubj.iter()))
+                .for_each(|(k,(i,&j))| *k = i*mwidth+j; )
         }
     }
 }
@@ -510,7 +633,7 @@ pub(super) fn dot_vec(data : &[f64],
                       _xs : & mut WorkStack) {
 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-    println!("ExprDot::eval: subj = {:?}, cof = {:?}",subj,cof);
+    // println!("ExprDot::eval: subj = {:?}, cof = {:?}",subj,cof);
     let nd   = shape.len();
     let nnz  = subj.len();
 
@@ -541,7 +664,7 @@ pub(super) fn dot_vec(data : &[f64],
         rsubj.clone_from_slice(subj);
         rptr[0] = 0;
         rptr[1] = rnnz;
-        println!("ExprDot::eval: result nnz = {}, nelm = {}, ptr = {:?}, subj = {:?}, data = {:?}",rnnz,rnelm,rptr,rsubj,data);
+        // println!("ExprDot::eval: result nnz = {}, nelm = {}, ptr = {:?}, subj = {:?}, data = {:?}",rnnz,rnelm,rptr,rsubj,data);
         for (&p0,&p1,v) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),data.iter()) {
             for (&c,rc) in cof[p0..p1].iter().zip(rcof[p0..p1].iter_mut()) {
                 *rc = c*v;
@@ -553,7 +676,7 @@ pub(super) fn dot_vec(data : &[f64],
 
 
 pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-    println!("{}:{}: eval::stack n={}, dim={}",file!(),line!(),n,dim);
+    // println!("{}:{}: eval::stack n={}, dim={}",file!(),line!(),n,dim);
     let exprs = ws.pop_exprs(n);
 
     // check shapes
@@ -582,14 +705,14 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
     // product up to the stacking dimension are all 1, so effectively
     // that means stacking in the first (non-one) dimension.
     if d0 == 1 {
-        println!("{}:{}: eval::stack CASE 1",file!(),line!());
+        // println!("{}:{}: eval::stack CASE 1",file!(),line!());
         let mut elmi : usize = 0;
         let mut nzi  : usize = 0;
         let mut ofs  : usize = 0;
 
         rptr[0] = 0;
         for (shape,ptr,sp,subj,cof) in exprs.iter() {
-            println!("{}:{}: shape = {:?}",file!(),line!(),shape);
+            // println!("{}:{}: shape = {:?}",file!(),line!(),shape);
             let nnz = ptr.last().unwrap();
             let nelm = ptr.len()-1;
             rsubj[nzi..nzi+nnz].clone_from_slice(subj);
@@ -737,9 +860,9 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
 
 
 pub(super) fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-    println!("{}:{}: eval_finalize",file!(),line!());
+    // println!("{}:{}: eval_finalize",file!(),line!());
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-    println!("{}:{}: eval_finalize:\n\tshape = {:?}\n\rsp = {:?}\n\tptr = {:?}\n\tsubj = {:?}",file!(),line!(),shape,sp,ptr,subj);
+    // println!("{}:{}: eval_finalize:\n\tshape = {:?}\n\rsp = {:?}\n\tptr = {:?}\n\tsubj = {:?}",file!(),line!(),shape,sp,ptr,subj);
 
     let nnz  = subj.len();
     let nelm = shape.iter().product();

@@ -1,6 +1,5 @@
 extern crate itertools;
 
-
 mod eval;
 pub mod workstack;
 
@@ -12,12 +11,12 @@ use workstack::WorkStack;
 use super::matrix;
 
 pub trait ExprTrait {
-    /// Evaluate the expression and put the result on the `rs` stack,
-    /// using the `ws` to evaluate sub-expressions and `xs` for
+    /// Evaluate the expression and put the result on the [rs] stack,
+    /// using the [ws] to evaluate sub-expressions and [xs] for
     /// general storage.
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack);
     /// Evaluate the expression, then clean it up and put
-    /// it on the `rs` stack. The result will guarantee that
+    /// it on the [rs] stack. The result will guarantee that
     /// - non-zeros in each row are sorted by `subj`
     /// - expression contains no zeros or duplicate nonzeros.
     /// - the expression is dense
@@ -84,20 +83,20 @@ impl Expr {
     /// Create a new literal expression from data
     ///
     /// Arguments:
-    /// * `shape` Shape of the expression. If `sparsity` is `None`,
+    /// * [shape] Shape of the expression. If `sparsity` is `None`,
     ///   the product of the dimensions in the shape must be equal to
     ///   the number of elements in the expression (`ptr.len()-1`)
-    /// * `sparsity` If not `None`, this defines the sparsity
+    /// * [sparsity] If not `None`, this defines the sparsity
     ///   pattern. The pattern denotes the linear indexes if nonzeros in
     ///   the shape. It must be sorted, must contain no duplicates and
     ///   must fit within the `shape`.
-    /// * `aptr` The number if elements is `aptr.len()-1`. [aptr] must
+    /// * [aptr] The number if elements is `aptr.len()-1`. [aptr] must
     ///   be ascending, so `aptr[i] <= aptr[i+1]`. `aptr` is a vector
     ///   if indexes of the starting points of each element in [asubj]
     ///   and [acof], so element `i` consists of nonzeros defined by
-    ///   `asubj[aptr[i]..aptr[i+1]], acof[aptr[i]..aptr[i+1]]`
-    /// * `asubj` Variable subscripts.
-    /// * `acof`  Coefficients.
+    ///   [asubj[aptr[i]..aptr[i+1]]], acof[aptr[i]..aptr[i+1]]`
+    /// * [asubj] Variable subscripts.
+    /// * [acof]  Coefficients.
     pub fn new(shape : Vec<usize>,
                sparsity : Option<Vec<usize>>,
                aptr  : Vec<usize>,
@@ -114,6 +113,9 @@ impl Expr {
         }
 
         if let Some(ref sp) = sparsity {
+            if sp.len() != aptr.len()-1 {
+                panic!("Sparsity pattern length does not match lenght og aptr");
+            }
             if sp.iter().max().map(|&i| i >= fullsize).unwrap_or(false) {
                 panic!("Sparsity pattern out of bounds");
             }

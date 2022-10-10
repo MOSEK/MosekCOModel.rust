@@ -722,7 +722,7 @@ impl Model {
                          name : Option<&str>,
                          dom  : LinearDomain) -> Constraint {
         let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
-        println!("{}:{}: dom.shape = {:?}",file!(),line!(),dom.shape);
+        // println!("{}:{}: dom.shape = {:?}",file!(),line!(),dom.shape);
         if dom.shape.len() != shape.len() || ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
             panic!("Mismatching shapes of expression and domain");
         }
@@ -808,7 +808,7 @@ impl Model {
         // self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
 
         let rhs : Vec<f64> = dom.ofs.iter().zip(afix.iter()).map(|(&ofs,&b)| ofs-b).collect();
-        println!("{}:{}: coni = {}:{}, dom.ofs : {}, afix : {}",file!(),line!(),coni,coni+nelm as i32,dom.ofs.len(), afix.len());
+        // println!("{}:{}: coni = {}:{}, dom.ofs : {}, afix : {}",file!(),line!(),coni,coni+nelm as i32,dom.ofs.len(), afix.len());
         self.task.put_con_bound_slice(coni,
                                       coni+nelm as i32,
                                       vec![bk; nelm].as_slice(),
@@ -927,7 +927,7 @@ impl Model {
         let (_shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
         if ptr.len()-1 > 1 { panic!("Objective expressions may only contain one element"); }
 
-        println!("Objective: ptr = {:?}, subj = {:?}, cof = {:?}",ptr,subj,cof);
+        // println!("Objective: ptr = {:?}, subj = {:?}, cof = {:?}",ptr,subj,cof);
 
         if let Some(name) = name { self.task.put_obj_name(name).unwrap(); }
         else { self.task.put_obj_name("").unwrap(); }

@@ -9,9 +9,10 @@ edition = "2021"
 mosek = "10.0"
 itertools = "0.10"
 
-#[dev-dependencies]
+[dev-dependencies]
 #Criterion = "0.3"
+bencher = "0.1"
 
-# [[bench]]
-# name="performance"
-# harness = false
+[[bench]]
+name="performance"
+harness = false

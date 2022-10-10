@@ -227,7 +227,7 @@ impl WorkStack {
         let ptr   = &uslice[ptrbase..ptrbase+nelm+1];
         let shape = &uslice[ptrbase+nelm+1..ptrbase+nelm+1+nd];
         
-        println!("{}:{}: workstack::pop_expr:\n\tshape={:?}\n\tptr={:?}\n\tsubj={:?}",file!(),line!(),shape,ptr,subj);
+        // println!("{}:{}: workstack::pop_expr:\n\tshape={:?}\n\tptr={:?}\n\tsubj={:?}",file!(),line!(),shape,ptr,subj);
         
         Self::validate(shape,ptr,sp,subj).unwrap();
         let &rnnz = ptr.last().unwrap();

@@ -4,6 +4,74 @@ use mosekmodel::*;
 use mosekmodel::expr::workstack::WorkStack;
 use mosekmodel::expr::*;
 
+const N1 : usize = 100;
+const N2 : usize = 100;
+
+#[test]
+fn mul_dense_matrix_x_dense_expr() {
+    let mut rs = WorkStack::new(1024);
+    let mut ws = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    let e = Expr::new(vec![N1,N1], // dim
+                      None, // sparsity
+                      (0..(N1*N1*2+2)).step_by(2).collect(), // ptr
+                      (0..N1*N1*2).collect(), // subj
+                      vec![1.0; N1*N1*2]); // cof
+
+    let m = matrix::dense(N1,N1, vec![1.0; N1*N1]);
+    m.mul(e).eval(& mut rs, & mut ws, & mut xs);
+}
+
+#[test]
+fn mul_dense_matrix_x_sparse_expr() {
+    let mut rs = WorkStack::new(1024);
+    let mut ws = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    let e = Expr::new(vec![N2,N2], // dim
+                      Some((0..N2*N2).step_by(7).collect()), // sparsity
+                      (0..((N2*N2)/7+1)*2).step_by(2).collect(), // ptr
+                      (0..((N2*N2)/7)*2).collect(), // subj
+                      vec![1.0; (N2*N2/7)*2]); // cof
+
+    let m = matrix::dense(N2,N2, vec![1.0; N2*N2]);
+    m.mul(e).eval(& mut rs, & mut ws, & mut xs);
+}
+
+#[test]
+fn mul_dense_expr_x_dense_matrix() {
+    let mut rs = WorkStack::new(1024);
+    let mut ws = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    let e = Expr::new(vec![N1,N1], // dim
+                      None, // sparsity
+                      (0..(N1*N1*2+2)).step_by(2).collect(), // ptr
+                      (0..N1*N1*2).collect(), // subj
+                      vec![1.0; N1*N1*2]); // cof
+
+    let m = matrix::dense(N1,N1, vec![1.0; N1*N1]);
+    e.mul(m).eval(& mut rs, & mut ws, & mut xs);
+}
+
+#[test]
+fn mul_sparse_expr_x_dense_matrix() {
+    let mut rs = WorkStack::new(1024);
+    let mut ws = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    let e = Expr::new(vec![N2,N2], // dim
+                      Some((0..N2*N2).step_by(7).collect()), // sparsity
+                      (0..((N2*N2)/7+1)*2).step_by(2).collect(), // ptr
+                      (0..((N2*N2)/7)*2).collect(), // subj
+                      vec![1.0; (N2*N2/7)*2]); // cof
+
+    let m = matrix::dense(N2,N2, vec![1.0; N2*N2]);
+    e.mul(m).eval(& mut rs, & mut ws, & mut xs);
+}
+
+
 #[test]
 fn dense_left_mul() {
     let mut rs = WorkStack::new(1024);
