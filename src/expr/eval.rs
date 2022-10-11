@@ -502,7 +502,6 @@ pub(super) fn mul_right_sparse(mheight : usize,
     let msubj   = &msubj[..mnumnzcol];
 
     if let Some(sp) = sp {
-        println!("{}:{}: Multiply: sparse expr x sparse matrix",file!(),line!());
         let mut rnelm    = 0;
         let mut rnnz     = 0;
 
@@ -542,23 +541,15 @@ pub(super) fn mul_right_sparse(mheight : usize,
         // build result
         rptr[0] = 0;
         let mut nzi = 0;
-        println!("{}:{}: rnelm = {}, rnnz = {}",file!(),line!(),rnelm,rnnz);
-        println!("{}:{}: erowptr = {:?}",file!(),line!(),erowptr);
-        println!("{}:{}: mcolptr = {:?}, msubj = {:?}",file!(),line!(),mcolptr,msubj);
-        println!("-- {:?}",izip!(0..eheight,erowptr.iter(), erowptr[1..].iter()).collect::<Vec<(usize,&usize,&usize)>>());
         let ii =
             // 1. build iterator over the outer product of nonzero rows in expr and nonzero columns
             //    in matrix.
             iproduct!(izip!(0..eheight,erowptr.iter(), erowptr[1..].iter())
-                          .filter_map(|(ri,&rp0,&rp1)| { println!("-- row {}",ri); if rp0 < rp1 { Some((ri,&sp[rp0..rp1],&ptr[rp0..rp1],&ptr[rp0+1..rp1+1])) } else { None }}),
+                          .filter_map(|(ri,&rp0,&rp1)| if rp0 < rp1 { Some((ri,&sp[rp0..rp1],&ptr[rp0..rp1],&ptr[rp0+1..rp1+1])) } else { None }),
                       izip!(msubj.iter(),mcolptr.iter(), mcolptr[1..].iter())
                           .map(|(&rj,&mp0,&mp1)| (rj, &msubi[mp0..mp1],&mcof[mp0..mp1])))
             // 2. Compute the inner product of row and column, filtering out the empty results
                 .filter_map(|((ri,espis,ep0s,ep1s),(rj,mcolsubi,mcolcof))|{
-                    println!("{}:{}: merge row {} and col {}:\n\trow = {:?}\n\tcol = {:?}",file!(),line!(),
-                             ri,rj,
-                             espis.iter().map(|&v| v%ewidth).collect::<Vec<usize>>(),
-                             mcolsubi);
                     let mut ei = izip!(espis.iter().map(|&v| v % ewidth),ep0s.iter(),ep1s.iter()).peekable();
                     let mut mi = izip!(mcolsubi.iter(),mcolcof.iter()).peekable();
 
@@ -628,7 +619,6 @@ pub(super) fn mul_right_sparse(mheight : usize,
             .zip(rptr[1..].iter_mut())
             .for_each(|((p0s,p1s,&mp0,&mp1),rp)| {
                 let mcolsubi = &msubi[mp0..mp1];
-                println!("{}:{}: Merge expr row | matrix col ",file!(),line!());
                 izip!(perm_iter(mcolsubi,p0s),
                       perm_iter(mcolsubi,p1s),
                       mcof[mp0..mp1].iter()).for_each(|(&p0,&p1,&mv)| {
@@ -652,7 +642,6 @@ pub(super) fn dot_vec(data : &[f64],
                       _xs : & mut WorkStack) {
 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-    // println!("ExprDot::eval: subj = {:?}, cof = {:?}",subj,cof);
     let nd   = shape.len();
     let nnz  = subj.len();
 
@@ -683,7 +672,6 @@ pub(super) fn dot_vec(data : &[f64],
         rsubj.clone_from_slice(subj);
         rptr[0] = 0;
         rptr[1] = rnnz;
-        // println!("ExprDot::eval: result nnz = {}, nelm = {}, ptr = {:?}, subj = {:?}, data = {:?}",rnnz,rnelm,rptr,rsubj,data);
         for (&p0,&p1,v) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),data.iter()) {
             for (&c,rc) in cof[p0..p1].iter().zip(rcof[p0..p1].iter_mut()) {
                 *rc = c*v;
