@@ -496,7 +496,7 @@ pub(super) fn mul_right_sparse(mheight : usize,
     mcolptr[0] = 0;
     let _ = izip!(mcolptr1.iter().enumerate().filter(|(_,&n)| n > 0),
                   msubj.iter_mut(),
-                  mcolptr[1..].iter_mut()).fold(0,|v,((j,&n),(rj,p))| { *p = v+n; *rj = j; v+n });
+                  mcolptr[1..].iter_mut()).fold(0,|v,((j,&n),rj,p)| { *p = v+n; *rj = j; v+n });
     let mnumnzcol = mcolptr1[..mwidth].iter().filter(|&&n| n > 0).count();
     let mcolptr = &mcolptr[..mnumnzcol+1];
     let msubj   = &msubj[..mnumnzcol];
@@ -547,18 +547,18 @@ pub(super) fn mul_right_sparse(mheight : usize,
                       .filter_map(|(ri,&rp0,&rp1)| if rp0 < rp1 { Some((ri,&sp[rp0..rp1],&ptr[rp0..rp1],&ptr[rp0+1..rp1+1])) } else { None }),
                   izip!(msubj.iter(),mcolptr.iter(), mcolptr[1..].iter())
                       .map(|(&rj,&mp0,&mp1)| (rj, &msubi[mp0..mp1],&mcof[mp0..mp1])))
-            .filter_map(|((espis,ep0s,ep1s),(rj,mcolsubi,mcolcof))|{
+            .filter_map(|((ri,espis,ep0s,ep1s),(rj,mcolsubi,mcolcof))|{
                 let mut ei = izip!(espis.iter(),ep0s.iter(),ep1s.iter()).peekable();
                 let mut mi = izip!(mcolsubi.iter(),mcolcof.iter()).peekable();
 
                 let rnnz0 = rnnz;
-                while let (Some((&ke,_,_)),Some((&km,_))) = (ei.peek(),mi.peek()) {
-                    match ke.cmp(km) {
-                        std::cmp::Ordering::Less => { let _ = ke.next(); },
-                        std::cmp::Ordering::Greater => { let _ = km.next(); },
+                while let (Some((&ke,&p0,&p1)),Some((&km,&mv))) = (ei.peek(),mi.peek()) {
+                    match ke.cmp(&km) {
+                        std::cmp::Ordering::Less => { let _ = ei.next(); },
+                        std::cmp::Ordering::Greater => { let _ = mi.next(); },
                         std::cmp::Ordering::Equal => {
-                            let (_,&p0,&p1) = ke.next();
-                            let (_,&mv) = km.next();
+                            let _ = ei.next();
+                            let _ = mi.next();
 
                             rsubj[rnnz..rnnz+p1-p0].clone_from_slice(&subj[p0..p1]);
                             rcof[rnnz..rnnz+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c*mv);
@@ -591,18 +591,17 @@ pub(super) fn mul_right_sparse(mheight : usize,
         let rnelm = mnumnzcol * eheight;
         let mut rnnz = 0;
         for (p0s,p1s) in izip!(ptr.chunks(ewidth),ptr[1..].chunks(ewidth)) {
-            for (&j,&mp0,&mp1) in izip!(msubj.iter(),mcolptr.iter(),mcolptr[1..].iter()) {
+            for (&mp0,&mp1) in izip!(mcolptr.iter(),mcolptr[1..].iter()) {
 
                 let mcolsubj = &msubj[mp0..mp1];
                 rnnz += izip!(perm_iter(mcolsubj,p0s),
-                              perm_iter(mcolsubj,p1s)).map(|(p0,p1)| p1-p0).sum();
+                              perm_iter(mcolsubj,p1s)).map(|(&p0,&p1)| p1-p0).sum::<usize>();
             }
         }
 
         // alloc result
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[eheight,mwidth],rnnz,rnelm);
         let mut nzi = 0;
-        let mut elmi = 0;
 
         rptr[0] = 0;
         izip!(ptr.chunks(ewidth),ptr[1..].chunks(ewidth))
@@ -612,7 +611,7 @@ pub(super) fn mul_right_sparse(mheight : usize,
             .for_each(|((p0s,p1s,&j,&mp0,&mp1),rp)| {
                 izip!(perm_iter(msubj,p0s),
                       perm_iter(msubj,p1s),
-                      mcof[mp0..mp1].iter()).for_each(|(p0,p1,&mv)| {
+                      mcof[mp0..mp1].iter()).for_each(|(&p0,&p1,&mv)| {
                           rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
                           rcof[nzi..nzi+p1-p0].iter_mut().zip(&cof[p0..p1]).for_each(|(rc,&c)| *rc = c * mv);
                           nzi += p1-p0;
