@@ -515,11 +515,11 @@ pub(super) fn mul_right_sparse(mheight : usize,
                   izip!(mcolptr.iter(), mcolptr[1..].iter())
                       .map(|(&mp0,&mp1)| &msubi[mp0..mp1]))
             .for_each(|((espis,ep0s,ep1s),mis)|{
-                let mut ei = izip!(espis.iter(),ep0s.iter(),ep1s.iter()).peekable();
+                let mut ei = izip!(espis.iter().map(|&v| v % ewidth),ep0s.iter(),ep1s.iter()).peekable();
                 let mut mi = mis.iter().peekable();
 
                 let mut elmnnz = 0;
-                while let (Some((&ke,&p0,&p1)),Some(km)) = (ei.peek(),mi.peek()) {
+                while let (Some((ke,&p0,&p1)),Some(km)) = (ei.peek(),mi.peek()) {
                     match ke.cmp(km) {
                         std::cmp::Ordering::Less => { let _ = ei.next(); },
                         std::cmp::Ordering::Greater => { let _ = mi.next(); },
@@ -531,7 +531,7 @@ pub(super) fn mul_right_sparse(mheight : usize,
                     }
                 }
                 if elmnnz > 0 {
-                    rnnz += elmnnz;
+                    rnnz += elmnnz  ;
                     rnelm += 1;
                 }
 
@@ -542,24 +542,33 @@ pub(super) fn mul_right_sparse(mheight : usize,
         // build result
         rptr[0] = 0;
         let mut nzi = 0;
+        println!("{}:{}: rnelm = {}, rnnz = {}",file!(),line!(),rnelm,rnnz);
+        println!("{}:{}: erowptr = {:?}",file!(),line!(),erowptr);
+        println!("{}:{}: mcolptr = {:?}, msubj = {:?}",file!(),line!(),mcolptr,msubj);
+        println!("-- {:?}",izip!(0..eheight,erowptr.iter(), erowptr[1..].iter()).collect::<Vec<(usize,&usize,&usize)>>());
         let ii =
             // 1. build iterator over the outer product of nonzero rows in expr and nonzero columns
             //    in matrix.
             iproduct!(izip!(0..eheight,erowptr.iter(), erowptr[1..].iter())
-                          .filter_map(|(ri,&rp0,&rp1)| if rp0 < rp1 { Some((ri,&sp[rp0..rp1],&ptr[rp0..rp1],&ptr[rp0+1..rp1+1])) } else { None }),
+                          .filter_map(|(ri,&rp0,&rp1)| { println!("-- row {}",ri); if rp0 < rp1 { Some((ri,&sp[rp0..rp1],&ptr[rp0..rp1],&ptr[rp0+1..rp1+1])) } else { None }}),
                       izip!(msubj.iter(),mcolptr.iter(), mcolptr[1..].iter())
                           .map(|(&rj,&mp0,&mp1)| (rj, &msubi[mp0..mp1],&mcof[mp0..mp1])))
             // 2. Compute the inner product of row and column, filtering out the empty results
                 .filter_map(|((ri,espis,ep0s,ep1s),(rj,mcolsubi,mcolcof))|{
-                    let mut ei = izip!(espis.iter(),ep0s.iter(),ep1s.iter()).peekable();
+                    println!("{}:{}: merge row {} and col {}:\n\trow = {:?}\n\tcol = {:?}",file!(),line!(),
+                             ri,rj,
+                             espis.iter().map(|&v| v%ewidth).collect::<Vec<usize>>(),
+                             mcolsubi);
+                    let mut ei = izip!(espis.iter().map(|&v| v % ewidth),ep0s.iter(),ep1s.iter()).peekable();
                     let mut mi = izip!(mcolsubi.iter(),mcolcof.iter()).peekable();
 
+
                     let nzi0 = nzi;
-                    while let (Some((&ke,&p0,&p1)),Some((&km,&mv))) = (ei.peek(),mi.peek()) {
+                    while let (Some((ke,&p0,&p1)),Some((&km,&mv))) = (ei.peek(),mi.peek()) {
                         match ke.cmp(&km) {
-                            std::cmp::Ordering::Less => { let _ = ei.next(); },
+                            std::cmp::Ordering::Less    => { let _ = ei.next(); },
                             std::cmp::Ordering::Greater => { let _ = mi.next(); },
-                            std::cmp::Ordering::Equal => {
+                            std::cmp::Ordering::Equal   => {
                                 let _ = ei.next();
                                 let _ = mi.next();
 
