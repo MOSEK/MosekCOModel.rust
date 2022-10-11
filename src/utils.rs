@@ -185,6 +185,7 @@ impl Iterator for ToDigit10Iter {
 
 ////////////////////////////////////////////////////////////
 
+
 pub struct ChunksByIter<'a,'b,T,I>
 where
     I:Iterator<Item = (&'b usize,&'b usize)>
@@ -200,6 +201,7 @@ where
     type Item = &'a[T];
     fn next(& mut self) -> Option<Self::Item> {
         if let Some((&p0,&p1)) = self.ptr.next() {
+            //Some(unsafe{ self.data.get_unchecked(p0..p1)})
             Some(&self.data[p0..p1])
         }
         else {
@@ -220,6 +222,12 @@ impl<T> ChunksByIterExt<T> for &[T] {
         ChunksByIter{ data : self, ptr:ptr.iter().zip(ptr[1..].iter()) }
     }
 }
+
+
+
+
+
+
 
 pub struct SelectFromSliceIter<'a,'b,T> {
     src : &'a[T],
