@@ -109,12 +109,12 @@ impl Expr {
         }
         let & sz = aptr.last().unwrap();
         if sz != asubj.len() || sz != acof.len() {
-            panic!("Mismatching aptr, asubj and acof");
+            panic!("Mismatching aptr ({}) and lengths of asubj (= {}) and acof (= {})",sz,asubj.len(),acof.len());
         }
 
         if let Some(ref sp) = sparsity {
             if sp.len() != aptr.len()-1 {
-                panic!("Sparsity pattern length does not match lenght og aptr");
+                panic!("Sparsity pattern length (= {})does not match length of aptr (={})",sp.len(),aptr.len());
             }
             if sp.iter().max().map(|&i| i >= fullsize).unwrap_or(false) {
                 panic!("Sparsity pattern out of bounds");

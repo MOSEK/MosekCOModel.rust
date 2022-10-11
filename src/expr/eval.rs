@@ -608,7 +608,7 @@ pub(super) fn mul_right_sparse(mheight : usize,
             .map(|(p0s,p1s)| izip!(std::iter::repeat(p0s),std::iter::repeat(p1s),msubj.iter(),mcolptr.iter(),mcolptr[1..].iter()))
             .flatten()
             .zip(rptr[1..].iter_mut())
-            .for_each(|((p0s,p1s,&j,&mp0,&mp1),rp)| {
+            .for_each(|((p0s,p1s,&_j,&mp0,&mp1),rp)| {
                 izip!(perm_iter(msubj,p0s),
                       perm_iter(msubj,p1s),
                       mcof[mp0..mp1].iter()).for_each(|(&p0,&p1,&mv)| {

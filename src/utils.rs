@@ -201,8 +201,10 @@ where
     type Item = &'a[T];
     fn next(& mut self) -> Option<Self::Item> {
         if let Some((&p0,&p1)) = self.ptr.next() {
-            //Some(unsafe{ self.data.get_unchecked(p0..p1)})
-            Some(&self.data[p0..p1])
+            // Note: The constructor of the ChunksByIter object MUST ensure that all slices are
+            // valid!
+            Some(unsafe{ self.data.get_unchecked(p0..p1)})
+            //Some(&self.data[p0..p1])
         }
         else {
             None
@@ -223,6 +225,16 @@ impl<T> ChunksByIterExt<T> for &[T] {
     }
 }
 
+//pub fn chunks_by_iterator<'a,'b,T,I>(items : &'a [T], i : I) 
+//where 
+//    I:Clone+Iterator<Item=(&'b usize,&'b usize)>
+//{
+//    if i.clone().max_by_key(|(&p0,&p1)| p1).copied().unwrap_or(0) >= items.len()
+//        || i.clone().any(|(&p0,&p1)| p1 > p0) {
+//        panic!("Invalid index iterator");
+//    }
+//}
+//
 
 
 

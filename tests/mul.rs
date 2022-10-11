@@ -31,9 +31,9 @@ fn mul_dense_matrix_x_sparse_expr() {
 
     let e = Expr::new(vec![N2,N2], // dim
                       Some((0..N2*N2).step_by(7).collect()), // sparsity
-                      (0..((N2*N2)/7+1)*2).step_by(2).collect(), // ptr
-                      (0..((N2*N2)/7)*2).collect(), // subj
-                      vec![1.0; (N2*N2/7)*2]); // cof
+                      (0..((N2*N2)/7+2)*2).step_by(2).collect(), // ptr
+                      (0..((N2*N2)/7+1)*2).collect(), // subj
+                      vec![1.0; (N2*N2/7+1)*2]); // cof
 
     let m = matrix::dense(N2,N2, vec![1.0; N2*N2]);
     m.mul(e).eval(& mut rs, & mut ws, & mut xs);
@@ -63,9 +63,9 @@ fn mul_sparse_expr_x_dense_matrix() {
 
     let e = Expr::new(vec![N2,N2], // dim
                       Some((0..N2*N2).step_by(7).collect()), // sparsity
-                      (0..((N2*N2)/7+1)*2).step_by(2).collect(), // ptr
-                      (0..((N2*N2)/7)*2).collect(), // subj
-                      vec![1.0; (N2*N2/7)*2]); // cof
+                      (0..((N2*N2)/7+2)*2).step_by(2).collect(), // ptr
+                      (0..((N2*N2)/7+1)*2).collect(), // subj
+                      vec![1.0; (N2*N2/7+1)*2]); // cof
 
     let m = matrix::dense(N2,N2, vec![1.0; N2*N2]);
     e.mul(m).eval(& mut rs, & mut ws, & mut xs);
