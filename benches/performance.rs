@@ -163,8 +163,55 @@ fn mul_sparse_expr_x_sparse_matrix(bench: &mut Bencher) {
 
 
 
+fn bigmul(bench : &mut Bencher) {
+    bench.iter(|| {
+        const n : usize = 4096; 
+        
+        let mut model = Model::new(None);
+        let v = model.variable(None,n);
+        //let w = model.variable(None,in_psd_cone(n));
+        let mx = matrix::dense(n,n,vec![1.0; n*n]);
+
+        let _ = model.constraint(None, &mx.clone().mul(v.clone()).reshape(vec![n]),equal_to(vec![100.0;n]));
+        let _ = model.constraint(None, &v.mul(mx).reshape(vec![n]),equal_to(vec![100.0;n]));
+    })
+}
+
+
+
+
+fn mul_left(bench : &mut Bencher) {
+    const n : usize = 256;
+    bench.iter(|| {
+        let mut model = Model::new(None);
+        let mx = matrix::dense(n,n,vec![1.0;n*n]);
+
+        let x = model.variable(None,vec![n,n]);
+        let y = model.variable(None,vec![n,n]);
+      
+        let _ = model.constraint(None,&mx.mul(x.add(y)),equal_to(vec![100.0; n*n]).with_shape(vec![n,n]));
+    })
+}
+
+fn mul_right(bench : &mut Bencher) {
+    const n : usize = 256;
+    bench.iter(|| {
+        let mut model = Model::new(None);
+        let mx = matrix::dense(n,n,vec![1.0;n*n]);
+        
+        let x = model.variable(None,vec![n,n]);
+        let y = model.variable(None,vec![n,n]);
+
+        let _ = model.constraint(None, &x.add(y).mul(mx),equal_to(vec![100.0;n*n]).with_shape(vec![n,n]));
+    })
+}
+
+
 
 benchmark_group!(benches,
+                 bigmul,
+                 mul_left,
+                 mul_right,
                  mul_dense_matrix_x_dense_expr,
                  mul_dense_matrix_x_sparse_expr,
                  mul_dense_expr_x_dense_matrix,

@@ -170,6 +170,8 @@ pub(super) fn mul_left_dense(mdata : &[f64],
         rs.alloc_expr(&[rdimi],rnnz,rnelm)
     };
 
+    //println!("{}:{}: rnelm = {}, rnnz = {}",file!(),line!(),rnelm,rnnz);
+
     // sparse expr
     if let Some(sp) = sp {
         rptr.fill(0);
@@ -197,7 +199,7 @@ pub(super) fn mul_left_dense(mdata : &[f64],
         let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev });
     }
     // dense expr
-    else {
+    else {        
         rptr[0] = 0;
         let mut nzi = 0;
         for (mrow,rptrrow) in mdata.chunks(mdimj).zip(rptr[1..].chunks_mut(edimj)) {
@@ -225,7 +227,12 @@ pub(super) fn mul_right_dense(mdata : &[f64],
     let nnz  = subj.len();
     //let nelm = ptr.len()-1;
     if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
-    let (edimi,edimj) = if nd == 2 { (shape[0],shape[1]) } else { (1,shape[0])};
+    let (edimi,edimj) = if let Some(d2) = shape.get(1) {
+        (shape[0],*d2)
+    }
+    else {
+        (1,shape[0])
+    };
 
     if mdimi != edimj { panic!("Mismatching shapes for multiplication") }
 
@@ -234,11 +241,13 @@ pub(super) fn mul_right_dense(mdata : &[f64],
     let rnnz = nnz * mdimj;
     let rnelm = rdimi * rdimj;
 
+    //println!("{}:{}: dimi = {}, dimj = {}",file!(),line!(),edimi,edimj);
+
     let (rptr,_rsp,rsubj,rcof) = if nd == 2 {
         rs.alloc_expr(&[rdimi,rdimj],rnnz,rnelm)
     }
     else {
-        rs.alloc_expr(&[rdimi],rnnz,rnelm)
+        rs.alloc_expr(&[rdimj],rnnz,rnelm)
     };
 
     if let Some(sp) = sp {
@@ -867,7 +876,7 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
 
 
 pub(super) fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-    // println!("{}:{}: eval_finalize",file!(),line!());
+    //println!("{}:{}: eval_finalize",file!(),line!());
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     // println!("{}:{}: eval_finalize:\n\tshape = {:?}\n\rsp = {:?}\n\tptr = {:?}\n\tsubj = {:?}",file!(),line!(),shape,sp,ptr,subj);
 

@@ -434,7 +434,7 @@ impl<E:ExprTrait> ExprTrait for ExprReshape<E> {
             panic!("Cannot reshape expression into given shape");
         }
 
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),ptr.len()-1,subj.len());
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),subj.len(),ptr.len()-1);
 
         rptr.clone_from_slice(ptr);
         rsubj.clone_from_slice(subj);

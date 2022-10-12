@@ -334,3 +334,18 @@ fn sparse_right_mul() {
     assert!(rs.is_empty());
     assert!(ws.is_empty());
 }
+
+
+#[test]
+fn bigmul() {
+    const n : usize = 128; 
+    
+    let mut model = Model::new(None);
+    let v = model.variable(None,n);
+    //let w = model.variable(None,in_psd_cone(n));
+    let mx = matrix::dense(n,n,vec![1.0; n*n]);
+
+    let _ = model.constraint(None, &mx.clone().mul(v.clone()).reshape(vec![n]),equal_to(vec![100.0;n]));
+    let _ = model.constraint(None, &v.mul(mx).reshape(vec![n]),equal_to(vec![100.0;n]));
+}
+
