@@ -34,7 +34,7 @@ enum VarAtom {
     // Conic variable (j,offset)
     ConicElm(i32,usize)
 }
-#[derive(Clone,Copy)]
+#[derive(Clone,Copy,Debug)]
 enum ConAtom {
     ConicElm(i64,usize),
     Linear(i32)
@@ -911,7 +911,7 @@ impl Model {
         let coni = self.cons.len();
         self.cons.reserve(nelm);
         iproduct!(0..d0,0..d1,0..d2)
-            .for_each(|(i0,i1,i2)| self.cons.push(ConAtom::ConicElm(acci+i1 as i64,i0*d2+i2)));
+            .for_each(|(i0,i1,i2)| self.cons.push(ConAtom::ConicElm(acci+(i0*d2+i2) as i64,i1)));
 
         Constraint{
             idxs : (coni..coni+nelm).collect(),
@@ -1047,7 +1047,9 @@ impl Model {
                     });
                     self.cons.iter().zip(sol.primal.con.iter_mut()).for_each(|(&v,r)| {
                         *r = match v {
-                            ConAtom::ConicElm(acci,ofs) => accx[accptr[acci as usize]+ofs],
+                            ConAtom::ConicElm(acci,ofs) => { 
+                                accx[accptr[acci as usize]+ofs]
+                            },
                             ConAtom::Linear(i) => xc[i as usize]
                         };
                     });

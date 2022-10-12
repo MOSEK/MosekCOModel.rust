@@ -8,8 +8,8 @@ use mosekmodel::expr::workstack::WorkStack;
 use mosekmodel::expr::*;
 
 
-const N1 : usize = 100;
-const N2 : usize = 500;
+const N1 : usize = 500;
+const N2 : usize = 1000;
 
 fn mul_dense_matrix_x_dense_expr(c: &mut Criterion) {
     c.bench_function("mul_dense_matrix_x_dense_expr",|b|
