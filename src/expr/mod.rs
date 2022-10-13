@@ -191,20 +191,20 @@ pub fn nil(shape : Vec<usize>) -> ExprNil {
 ////////////////////////////////////////////////////////////
 // Multiply
 
-/// Trait that indicates that the `v:T` implementing it supports
-/// v.mul(expr)
-pub trait ExprMultiplyableLeft {
-    type O : ExprTrait;
-    fn mul<E:ExprTrait>(self,rhs : E) -> Self::O;
-}
-
-/// Trait that indicates that the type implementing T it supports
-/// expr.mul(t.mul(expr)
-pub trait ExprMultiplyableRight {
-    type O : ExprTrait;
-    fn mul<E:ExprTrait>(self,lhs : E) -> Self::O;
-}
-
+///// Trait that indicates that the `v:T` implementing it supports
+///// v.mul(expr)
+//pub trait ExprMultiplyableLeft {
+//    type O : ExprTrait;
+//    fn mul<E:ExprTrait>(self,rhs : E) -> Self::O;
+//}
+//
+///// Trait that indicates that the type implementing T it supports
+///// expr.mul(t.mul(expr)
+//pub trait ExprMultiplyableRight {
+//    type O : ExprTrait;
+//    fn mul<E:ExprTrait>(self,lhs : E) -> Self::O;
+//}
+//
 
 /// Trait defining something that can be right-multiplied on an
 /// expression

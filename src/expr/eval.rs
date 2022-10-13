@@ -16,11 +16,12 @@ pub(super) fn add(n  : usize,
     // check that shapes match
     let exprs = ws.pop_exprs(n);
 
-    if exprs.iter().map(|(shape,_,_,_,_)| shape)
+    exprs.iter().map(|(shape,_,_,_,_)| shape)
         .zip(exprs[1..].iter().map(|(shape,_,_,_,_)| shape))
-        .any(|(shape1,shape2)| shape1.len() != shape2.len() || shape1.iter().zip(shape2.iter()).any(|(&d1,&d2)| d1 != d2)) {
-            panic!("Mismatching operand shapes");
-        }
+        .find(|(shape1,shape2)| shape1 != shape2)
+        .iter().for_each(|(shape1,shape2)|
+            panic!("Mismatching operand shapes: {:?} and {:?}",shape1,shape2)
+        );
 
     let (shape,_,_,_,_) = exprs.first().unwrap();
 
