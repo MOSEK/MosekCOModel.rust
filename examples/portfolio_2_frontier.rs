@@ -30,7 +30,6 @@ fn efficient_frontier( n : usize,
                        w  : f64,
                        alphas : &[f64]) -> Vec<(f64,f64,f64)> {
     let mut model = Model::new(Some("Efficient frontier"));
-    model.set_log_handler(|msg| print!("{}",msg));
 
     // Defines the variables (holdings). Shortselling is not allowed.
     let x = model.variable(Some("x"), greater_than(vec![0.0; n])); // Portfolio variables

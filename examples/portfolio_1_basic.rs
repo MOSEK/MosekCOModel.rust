@@ -4,21 +4,15 @@ use mosekmodel::*;
 use mosekmodel::expr::*;
 use mosekmodel::matrix::DenseMatrix;
 
-/*
-Purpose:
-  Computes the optimal portfolio for a given risk
-
-Input:
-  n: Number of assets
-  mu: An n dimmensional vector of expected returns
-  GT: A matrix with n columns so (GT')*GT  = covariance matrix
-  x0: Initial holdings
-  w: Initial cash holding
-  gamma: Maximum risk (=std. dev) accepted
-
-Output:
-  Optimal expected return and the optimal portfolio
-*/
+/// Computes the optimal portfolio for a given risk
+///
+/// # Arguments
+/// * `n`  Number of assets
+/// * `mu` An n dimmensional vector of expected returns
+/// * `gt` A matrix with n columns so (GT')*GT  = covariance matrix
+/// * `x0` Initial holdings
+/// * `w`  Initial cash holding
+/// * `gamma` Maximum risk (=std. dev) accepted
 fn basic_markowitz( n : usize,
                     mu : &[f64],
                     gt : &DenseMatrix,
@@ -28,8 +22,7 @@ fn basic_markowitz( n : usize,
     let mut model = Model::new(Some("Basic Markowitz"));
     // Redirect log output from the solver to stdout for debugging.
     // if uncommented.
-    //model.setLogHandler(new java.io.PrintWriter(System.out));
-    //model.setLogHandler(|msg:&str| print!("{}",msg));
+    model.set_log_handler(|msg| print!("{}",msg));
 
     // Defines the variables (holdings). Shortselling is not allowed.
     let x = model.variable(Some("x"), greater_than(vec![0.0;n]));
@@ -70,11 +63,11 @@ fn main() {
         0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.22514, 0.03327,
         0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.2202 ]);
 
-    println!("\n-----------------------------------------------------------------------------------");
+    let expret : Vec<(f64,f64)> = gammas.iter().map(|&gamma| (gamma,basic_markowitz( n, &mu, &GT, &x0, w, gamma))).collect();
+    println!("-----------------------------------------------------------------------------------");
     println!("Basic Markowitz portfolio optimization");
-    println!("-----------------------------------------------------------------------------------\n");
-    for &gamma in gammas.iter() {
-      let expret = basic_markowitz( n, &mu, &GT, &x0, w, gamma);
+    println!("-----------------------------------------------------------------------------------");
+    for (gamma,expret) in expret.iter() {
       println!("Expected return: {:.4e} Std. deviation: {:.4e}", expret, gamma);
     }
 }
