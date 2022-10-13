@@ -8,7 +8,8 @@ Currently, we build Exprs by moving operands into the Expr structure. Consider u
   - Won't have to clone operands.
 - CONS:
   - Less clean syntax,
-  - More complicated lifetimes of expressions
+  - More complicated lifetimes of expressions, especially in the helper
+    functions for things like multiplication and addition
 
 ## Matrixes
 
