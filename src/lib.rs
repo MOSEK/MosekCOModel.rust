@@ -441,7 +441,7 @@ impl Model {
         }
     }
 
-    pub fn put_stream_callback<F>(& mut self, func : F) where F : 'static+Fn(&str) {
+    pub fn set_log_handler<F>(& mut self, func : F) where F : 'static+Fn(&str) {
         self.task.put_stream_callback(mosek::Streamtype::LOG,func).unwrap();
     }
 
