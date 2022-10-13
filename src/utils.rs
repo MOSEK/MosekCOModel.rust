@@ -43,7 +43,7 @@ impl<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> Iterator for FoldMapIter<I,T,F>
 pub trait FoldMapExt<T:Copy,F:FnMut(&T,Self::Item) -> T> : Iterator {
     /// Create a cummulating iterator
     fn fold_map(self, v0 : T, f : F) -> FoldMapIter<Self,T,F> where Self:Sized{
-        FoldMapIter{it : self, v : v0, f : f}
+        FoldMapIter{it : self, v : v0, f}
     }
 }
 impl<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> FoldMapExt<T,F> for I {}
@@ -337,6 +337,7 @@ impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
             n}
     }
 
+    #[allow(dead_code)]
     pub fn at(&self,i : usize) -> Option<&T> {
         let mut index = unsafe { * self.bucket.get_unchecked(hash(i) % self.bucket.len()) };
 

@@ -303,7 +303,7 @@ pub(super) fn mul_left_sparse(mheight : usize,
     let nd = shape.len();
     if nd != 1 && nd != 2 { panic!("Expression is incorrect shape for multiplication: {:?}",shape); }
     if shape[0] != mwidth { panic!("Mismatching operand shapes for multiplication"); }
-    let eheight = shape[0];
+    let _eheight = shape[0];
     let ewidth = shape.get(1).copied().unwrap_or(1);
 
     if let Some(sp) = sp {

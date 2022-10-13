@@ -90,9 +90,9 @@ impl Solution {
 /// mapping from the structured API to the internal Task items.
 pub struct Model {
     /// The MOSEK task
-    task : mosek::Task,
-    vars      : Vec<VarAtom>,
-    cons      : Vec<ConAtom>,
+    task : mosek::TaskCB,
+    vars : Vec<VarAtom>,
+    cons : Vec<ConAtom>,
 
     sol_bas : Solution,
     sol_itr : Solution,
@@ -423,7 +423,7 @@ impl Model {
     /// Arguments:
     /// - `name` An optional name
     pub fn new(name : Option<&str>) -> Model {
-        let mut task = mosek::Task::new().unwrap();
+        let mut task = mosek::Task::new().unwrap().with_callbacks();
         match name {
             Some(name) => task.put_task_name(name).unwrap(),
             None => {}
@@ -439,6 +439,10 @@ impl Model {
             ws      : WorkStack::new(0),
             xs      : WorkStack::new(0)
         }
+    }
+
+    pub fn put_stream_callback<F>(& mut self, func : F) where F : 'static+Fn(&str) {
+        self.task.put_stream_callback(mosek::Streamtype::LOG,func).unwrap();
     }
 
     /// Write problem to a file
@@ -484,7 +488,7 @@ impl Model {
                               });
     }
 
-    fn con_names(task : & mut mosek::Task, name : &str, first : i32, shape : &[usize]) {
+    fn con_names(task : & mut mosek::TaskCB, name : &str, first : i32, shape : &[usize]) {
         let mut buf = name.to_string();
         let baselen = buf.len();
         utils::for_each_index(shape,
