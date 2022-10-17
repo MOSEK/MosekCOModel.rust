@@ -179,7 +179,11 @@ pub enum LinearDomainType {
 
 pub enum ConicDomainType {
     QuadraticCone,
-    RotatedQuadraticCone
+    RotatedQuadraticCone,
+    GeometricMeanCone,
+    DualGeometricMeanCone,
+    ExponentialCone,
+    DualExponentialCone
 }
 pub enum ParamConicDomainType {
     PrimalPowerCone,
@@ -376,23 +380,33 @@ pub fn less_than<T : OffsetTrait>(v : T) -> LinearDomain { v.less_than() }
 pub fn equal_to<T : OffsetTrait>(v : T) -> LinearDomain { v.equal_to() }
 pub fn in_quadratic_cone(dim : usize) -> ConicDomain { ConicDomain{dt:ConicDomainType::QuadraticCone,ofs:vec![0.0; dim],shape:vec![dim],conedim:0} }
 pub fn in_rotated_quadratic_cone(dim : usize) -> ConicDomain { ConicDomain{dt:ConicDomainType::RotatedQuadraticCone,ofs:vec![0.0; dim],shape:vec![dim],conedim:0} }
-pub fn in_quadratic_cones(shape : Vec<usize>, conedim : usize) -> ConicDomain {
+pub fn in_geometric_mean_cone(dim : usize) -> ConicDomain { ConicDomain{dt:ConicDomainType::GeometricMeanCone,ofs:vec![0.0; dim],shape:vec![dim],conedim:0} }
+pub fn in_dual_geometric_mean_cone(dim : usize) -> ConicDomain { ConicDomain{dt:ConicDomainType::DualGeometricMeanCone,ofs:vec![0.0; dim],shape:vec![dim],conedim:0} }
+pub fn in_exponential_cone() -> ConicDomain { 
+    ConicDomain{dt:ConicDomainType::ExponentialCone,ofs:vec![0.0; 3],shape:vec![3],conedim:0} }
+pub fn in_dual_exponential_cone(dim : usize) -> ConicDomain { ConicDomain{dt:ConicDomainType::DualExponentialCone,ofs:vec![0.0; dim],shape:vec![dim],conedim:0} }
+
+fn in_cones(shape : Vec<usize>, conedim : usize,ct : ConicDomainType) -> ConicDomain {
     if conedim >= shape.len() {
         panic!("Invalid cone dimension");
     }
-    ConicDomain{dt:ConicDomainType::QuadraticCone,
+    ConicDomain{dt:ct,
                 ofs : vec![0.0; shape.iter().product()],
-                shape:shape,
-                conedim:conedim}
+                shape,
+                conedim}
 }
-pub fn in_rotated_quadratic_cones(shape : Vec<usize>, conedim : usize) -> ConicDomain {
-    if conedim >= shape.len() {
-        panic!("Invalid cone dimension");
-    }
-    ConicDomain{dt      : ConicDomainType::RotatedQuadraticCone,
-                ofs     : vec![0.0; shape.iter().product()],
-                shape   : shape,
-                conedim : conedim}
+
+pub fn in_quadratic_cones(shape : Vec<usize>, conedim : usize) -> ConicDomain { in_cones(shape,conedim,ConicDomainType::QuadraticCone) }
+pub fn in_rotated_quadratic_cones(shape : Vec<usize>, conedim : usize) -> ConicDomain { in_cones(shape,conedim,ConicDomainType::RotatedQuadraticCone) }
+pub fn in_geometric_mean_cones(shape : Vec<usize>, conedim : usize) -> ConicDomain { in_cones(shape,conedim,ConicDomainType::GeometricMeanCone) }
+pub fn in_dual_geometric_mean_cones(shape : Vec<usize>, conedim : usize) -> ConicDomain { in_cones(shape,conedim,ConicDomainType::DualGeometricMeanCone) }
+pub fn in_exponential_cones(shape : Vec<usize>, conedim : usize) -> ConicDomain { 
+    if let Some(&d) = shape.get(conedim) { if d != 3 { panic!("Invalid shape or exponential cone") } }
+    in_cones(shape,conedim,ConicDomainType::GeometricMeanCone) 
+}
+pub fn in_dual_exponential_cones(shape : Vec<usize>, conedim : usize) -> ConicDomain { 
+    if let Some(&d) = shape.get(conedim) { if d != 3 { panic!("Invalid shape or exponential cone") } }
+    in_cones(shape,conedim,ConicDomainType::DualGeometricMeanCone) 
 }
 pub fn in_psd_cone(dim : usize) -> PSDDomain {
     PSDDomain{
@@ -408,7 +422,7 @@ pub fn in_psd_cones(shape : Vec<usize>, conedim1 : usize, conedim2 : usize) -> P
         panic!("Mismatching cone dimensions");
     }
     PSDDomain{
-        shape    : shape,
+        shape,
         conedims : (conedim1,conedim2)
     }
 }
@@ -639,6 +653,10 @@ impl Model {
         let domidx = match dom.dt {
             ConicDomainType::QuadraticCone        => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::RotatedQuadraticCone => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::ExponentialCone       => self.task.append_primal_exp_cone_domain().unwrap(),
+            ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain().unwrap()
         };
 
         self.task.append_afes(n as i64).unwrap();
@@ -870,8 +888,12 @@ impl Model {
         let numcone  = shape.iter().product::<usize>() / conesize;
 
         let domidx = match dom.dt {
-            ConicDomainType::QuadraticCone        => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
-            ConicDomainType::RotatedQuadraticCone => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::ExponentialCone       => self.task.append_primal_exp_cone_domain().unwrap(),
+            ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain().unwrap()
         };
 
         self.task.append_afes(nelm as i64).unwrap();

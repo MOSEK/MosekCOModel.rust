@@ -3,7 +3,7 @@ extern crate itertools;
 mod eval;
 pub mod workstack;
 
-use itertools::{iproduct};
+use itertools::{iproduct,izip};
 use crate::matrix::SparseMatrix;
 
 use super::utils::*;
@@ -34,6 +34,11 @@ pub trait ExprTrait {
     // fn transpose(self) -> ExprPermuteAxes<Self>
     // fn axispermute(self) -> ExprPermuteAxes<Self>
     // fn slice(self, range : &[(Range<usize>)])
+    
+    fn tril(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized { ExprTriangularPart{item:self,upper:false,with_diag} }
+    fn triu(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized { ExprTriangularPart{item:self,upper:true,with_diag} }
+    fn trilvec(self,with_diag:bool) -> ExprGatherToVec<ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:false,with_diag} } }
+    fn triuvec(self,with_diag:bool) -> ExprGatherToVec<ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
 
     /// Sum all elements in an expression yielding a scalar expression.
     fn sum(self) -> ExprSum<Self> where Self:Sized { ExprSum{item:self} }
@@ -62,6 +67,7 @@ pub trait ExprTrait {
     /// given shape. The shape must match the actual number of
     /// elements in the expression.
     fn gather(self,shape : Vec<usize>) -> ExprGather<Self>  where Self:Sized { ExprGather{item:self, shape} }
+    fn gather_vec(self) -> ExprGatherToVec<Self>  where Self:Sized { ExprGatherToVec{item:self} }
 }
 
 ////////////////////////////////////////////////////////////
@@ -513,6 +519,20 @@ impl<E:ExprTrait> ExprTrait for ExprGather<E> {
     }
 }
 
+pub struct ExprGatherToVec<E:ExprTrait> { item : E }
+impl<E:ExprTrait> ExprTrait for ExprGatherToVec<E> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.item.eval(ws,rs,xs);
+        let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
+
+        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[ptr.last().copied().unwrap()],ptr.len()-1,subj.len());
+
+        rptr.clone_from_slice(ptr);
+        rsubj.clone_from_slice(subj);
+        rcof.clone_from_slice(cof);
+    }
+}
+
 
 impl ExprTrait for f64 {
     fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
@@ -700,7 +720,184 @@ impl<T:ExprTrait> ExprTrait for ExprSum<T> {
         rcof.clone_from_slice(cof);
     }
 }
+////////////////////////////////////////////////////////////
+//
 
+pub struct ExprTriangularPart<T:ExprTrait> {
+    item : T,
+    upper : bool,
+    with_diag : bool
+}
+
+
+fn eval_sparse_pick<F:Fn(usize) -> bool>(pick : F,
+                                         d:usize,ptr:&[usize],sp:&[usize],subj:&[usize],cof:&[f64],
+                                         rs : & mut WorkStack) {
+    let (rnelm,rnnz) : (usize,usize) = 
+        izip!(sp.iter(), ptr.iter(),ptr[1..].iter())
+            .filter(|(&i,_,_)| pick(i))
+            .map(|(_,&p0,&p1)| p1-p0)
+            .fold((0,0),|(elmi,nzi),n| (elmi+1,nzi+n));
+
+    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[d,d],rnnz,rnelm);
+    rptr[0] = 0;
+    let mut nzi = 0;
+    izip!(sp.iter(), ptr.iter(),ptr[1..].iter())
+        .filter(|(&i,_,_)| pick(i))
+        .zip(rptr[1..].iter_mut())
+        .for_each(|((_,&p0,&p1),rp)| {
+           rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+           rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
+           nzi += p1-p0;
+           *rp = p1-p0;
+        });
+    if let Some(rsp) = rsp {
+        izip!(sp.iter()).filter(|&&i| pick(i))
+            .zip(rsp.iter_mut())
+            .for_each(|(&i,ri)| *ri = i );
+    }
+    let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+}
+impl<T:ExprTrait> ExprTrait for ExprTriangularPart<T> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.item.eval(ws,rs,xs);
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+
+        let nd = shape.len();
+
+        if nd != 2 || shape[0] != shape[1] {
+            panic!("Triangular parts can only be taken from square matrixes");
+        }
+        let d = shape[0];
+
+        if let Some(sp) = sp {
+            match (self.upper,self.with_diag) {
+                (true,true)   => eval_sparse_pick(|i| i%d >= i/d,d,ptr,sp,subj,cof,rs),
+                (true,false)  => eval_sparse_pick(|i| i%d > i/d,d,ptr,sp,subj,cof,rs),
+                (false,true)  => eval_sparse_pick(|i| i%d <= i/d,d,ptr,sp,subj,cof,rs),
+                (false,false) => eval_sparse_pick(|i| i%d < i/d,d,ptr,sp,subj,cof,rs),
+            }
+        }
+        else {  
+            let rnelm = d * (d+1)/2;
+            let rnnz : usize= if self.upper {
+                ptr.iter().step_by(d+1).zip(ptr[d..].iter().step_by(d)).map(|(&p0,&p1)| p1-p0).sum::<usize>()
+            }
+            else {
+                ptr.iter().step_by(d).zip(ptr[1..].iter().step_by(d+1)).map(|(&p0,&p1)| p1-p0).sum::<usize>()
+            };
+
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
+            let mut nzi : usize = 0;
+            let mut elmi : usize = 0;
+            match (self.upper,self.with_diag) {
+                (true,true) => {
+                    izip!((0..d*d).step_by(d+1),
+                          (d+1..d*d+1).step_by(d))
+                        .map(|(i0,i1)| &ptr[i0..i1])
+                        .for_each(|ptr| {
+                            let n = ptr.last().unwrap() - ptr.first().unwrap();
+                            let &ptrb = ptr.first().unwrap();
+                            let &ptre = ptr.last().unwrap();
+                            rsubj[nzi..nzi+n].clone_from_slice(&subj[ptrb..ptre]);
+                            rcof[nzi..nzi+n].clone_from_slice(&cof[ptrb..ptre]);
+                            izip!(rptr[elmi+1..elmi+ptr.len()-1].iter_mut(),
+                                  ptr.iter(),
+                                  ptr[1..].iter()).for_each(|(rp,&p0,&p1)| *rp = p1-p0);
+                            nzi += n;
+                            elmi += ptr.len();
+                        });
+                    if let Some(rsp) = rsp {
+                        izip!((0..d*d).step_by(d+1),
+                              (d+1..d*d+1).step_by(d))
+                            .map(|(i0,i1)| i0..i1)
+                            .flatten()
+                            .zip(rsp.iter_mut())
+                            .for_each(|(i,ri)| *ri = i);
+                    }
+                },
+                (true,false) => {
+                    izip!((1..d*d).step_by(d+1),
+                          (d+1..d*d+1).step_by(d))
+                        .map(|(i0,i1)| &ptr[i0..i1])
+                        .for_each(|ptr| {
+                            let n = ptr.last().unwrap() - ptr.first().unwrap();
+                            let &ptrb = ptr.first().unwrap();
+                            let &ptre = ptr.last().unwrap();
+                            rsubj[nzi..nzi+n].clone_from_slice(&subj[ptrb..ptre]);
+                            rcof[nzi..nzi+n].clone_from_slice(&cof[ptrb..ptre]);
+                            izip!(rptr[elmi+1..elmi+ptr.len()-1].iter_mut(),
+                                  ptr.iter(),
+                                  ptr[1..].iter()).for_each(|(rp,&p0,&p1)| *rp = p1-p0);
+                            nzi += n;
+                            elmi += ptr.len();
+                        });
+                    if let Some(rsp) = rsp {
+                        izip!((1..d*d).step_by(d+1),
+                              (d+1..d*d+1).step_by(d))
+                            .map(|(i0,i1)| i0..i1)
+                            .flatten()
+                            .zip(rsp.iter_mut())
+                            .for_each(|(i,ri)| *ri = i);
+                    }
+                },
+                (false,true) => {
+                    izip!((0..d*d).step_by(d),
+                          (1..d*d+1).step_by(d+1))
+                        .map(|(i0,i1)| &ptr[i0..i1])
+                        .for_each(|ptr| {
+                            let n = ptr.last().unwrap() - ptr.first().unwrap();
+                            let &ptrb = ptr.first().unwrap();
+                            let &ptre = ptr.last().unwrap();
+                            rsubj[nzi..nzi+n].clone_from_slice(&subj[ptrb..ptre]);
+                            rcof[nzi..nzi+n].clone_from_slice(&cof[ptrb..ptre]);
+                            izip!(rptr[elmi+1..elmi+ptr.len()-1].iter_mut(),
+                                  ptr.iter(),
+                                  ptr[1..].iter()).for_each(|(rp,&p0,&p1)| *rp = p1-p0);
+                            nzi += n;
+                            elmi += ptr.len();
+                        });
+                    if let Some(rsp) = rsp {
+                        izip!((0..d*d).step_by(d),
+                              (1..d*d+1).step_by(d+1))
+                            .map(|(i0,i1)| i0..i1)
+                            .flatten()
+                            .zip(rsp.iter_mut())
+                            .for_each(|(i,ri)| *ri = i);
+                    }
+                },
+                (false,false) => {
+                    izip!((0..d*d).step_by(d),
+                          (0..d*d+1).step_by(d+1))
+                        .map(|(i0,i1)| &ptr[i0..i1])
+                        .for_each(|ptr| {
+                            let n = ptr.last().unwrap() - ptr.first().unwrap();
+                            let &ptrb = ptr.first().unwrap();
+                            let &ptre = ptr.last().unwrap();
+                            rsubj[nzi..nzi+n].clone_from_slice(&subj[ptrb..ptre]);
+                            rcof[nzi..nzi+n].clone_from_slice(&cof[ptrb..ptre]);
+                            izip!(rptr[elmi+1..elmi+ptr.len()-1].iter_mut(),
+                                  ptr.iter(),
+                                  ptr[1..].iter()).for_each(|(rp,&p0,&p1)| *rp = p1-p0);
+                            nzi += n;
+                            elmi += ptr.len();
+                        });
+                    if let Some(rsp) = rsp {
+                        izip!((0..d*d).step_by(d),
+                              (0..d*d+1).step_by(d+1))
+                            .map(|(i0,i1)| i0..i1)
+                            .flatten()
+                            .zip(rsp.iter_mut())
+                            .for_each(|(i,ri)| *ri = i);
+                    }
+                }
+            };
+            rptr[0] = 0;
+            let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+
+        }
+    }
+}
 ////////////////////////////////////////////////////////////
 //
 // Tests
