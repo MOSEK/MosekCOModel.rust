@@ -920,50 +920,81 @@ impl<E:ExprTrait> ExprTrait for ExprDiag<E> {
             panic!("Diagonal index out of bounds");
         }
 
+        let absidx = self.index.abs() as usize;
         if let Some(sp) = sp {
-            let (first,num,step) = match (self.anti,self.index >= 0) {
-                (false,true)  => (self.index as usize,       (d-self.index as usize) as usize,d+1),
-                (false,false) => (d*(-self.index) as usize,  d - (-self.index) as usize,d+1),
-                (true,true)   => (d-self.index as usize,     d - self.index as usize, d-1),
-                (true,false)  => (d*(-self.index) as usize-1,d - (-self.index) as usize, d-1)
+            let (first,num) = match (self.anti,self.index >= 0) {
+                (false,true)  => (self.index as usize,       d - absidx),
+                (false,false) => (d*(-self.index) as usize,  d - absidx),
+                (true,true)   => (d-self.index as usize,     d - absidx),
+                (true,false)  => (d*(-self.index) as usize-1,d - absidx)
             };
-//            let (first,last,step) = match (self.anti,self.index >= 0) {
-//                (false,true)  => (self.index as usize,       d*(d-self.index) as usize,d+1),
-//                (false,false) => (d*(-self.index) as usize,  d*d,d+1),
-//                (true,true)   => (d-self.index as usize,     d*(d - self.index as usize), d-1),
-//                (true,false)  => (d*(-self.index) as usize-1,d*d, d-1)
-//            };
-
-            let absidx = self.index.abs() as usize;
-            let (nnz,nelm) = izip!(sp.iter(),
+            let last = num*d;
+            // Count elements and nonzeros
+            let (rnnz,rnelm) = izip!(sp.iter(),
                                    ptr.iter(),
                                    ptr[1..].iter())
-                .filter(|(&i,_,_)| i < last && ((   !self.anti && self.index >= 0 && i%d == i/d + absidx)
-                                                || (!self.anti && self.index <  0 && i%d - self.index == i/d)
-                                                || (self.anti  && self.index >= 0 && d-i%d+index== i/d)
-                                                || (self.anti  && self.index <  0 && d-i%d - self.index == i/d)))
+                .filter(|(&i,_,_)| (i < last && 
+                                    (((!self.anti) && self.index >= 0 && i%d == i/d + absidx) ||
+                                     ((!self.anti) && self.index <  0 && i%d - absidx == i/d) || 
+                                     ( self.anti && self.index >= 0 && d-i%d - absidx == i/d) || 
+                                     ( self.anti && self.index <  0 && d-i%d + absidx == i/d))))
+                .fold((0,0),|(nzi,elmi),(_,&p0,&p1)| (nzi+p1-p0,elmi+1));
 
-                .fold(...)
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[d],rnnz,rnelm);
+
+            let mut nzi = 0;
+            rptr[0] = 0;
+            if let Some(rsp) = rsp {
+                izip!(sp.iter(),ptr.iter(),ptr[1..].iter())
+                    .filter(|(&i,_,_)| (i < last && 
+                                        ((!self.anti && self.index >= 0 && i%d == i/d + absidx) ||
+                                         (!self.anti && self.index <  0 && i%d - absidx == i/d) || 
+                                         ( self.anti && self.index >= 0 && d-i%d - absidx == i/d) || 
+                                         ( self.anti && self.index <  0 && d-i%d + absidx == i/d))))
+                    .zip(rptr[1..].iter_mut().zip(rsp.iter_mut()))
+                    .for_each(|((&i,&p0,&p1),(rp,ri))| {
+                        *rp = p1-p0;
+                        *ri = (i-first)/d;
+                        rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                        rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
+                        nzi += p1-p0;
+                    })
+            }
+            else {
+                izip!(sp.iter(),ptr.iter(),ptr[1..].iter())
+                    .filter(|(&i,_,_)| (i < last && 
+                                        ((!self.anti && self.index >= 0 && i%d == i/d + absidx) ||
+                                         (!self.anti && self.index <  0 && i%d - absidx == i/d) || 
+                                         ( self.anti && self.index >= 0 && d-i%d - absidx == i/d) || 
+                                         ( self.anti && self.index <  0 && d-i%d + absidx == i/d))))
+                    .zip(rptr[1..].iter_mut())
+                    .for_each(|((&i,&p0,&p1),rp)| {
+                        *rp = p1-p0;
+                        rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                        rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
+                        nzi += p1-p0;
+                    })
+            }   
         } 
         else {
             let (first,num,step) = match (self.anti,self.index >= 0) {
-                (false,true)  => (self.index as usize,       (d-self.index) as usize,d+1),
-                (false,false) => (d*(-self.index) as usize,  d - (-self.index) as usize,d+1),
-                (true,true)   => (d-self.index as usize,     d - self.index as usize, d-1),
-                (true,false)  => (d*(-self.index) as usize-1,d - (-self.index) as usize, d-1)
+                (false,true)  => (absidx,    d-absidx, d+1),
+                (false,false) => (d*absidx,  d-absidx, d+1),
+                (true,true)   => (d-absidx,  d-absidx, d-1),
+                (true,false)  => (d*absidx-1,d-absidx, d-1)
             };
             
             let rnnz = izip!(0..num,
-                             self.ptr[first..].iter().step_by(step),
-                             self.ptr[first+1..].iter().step_by(step))
-                               .map(|(_,&p0,&p1)| p1-p0).sum();
+                             ptr[first..].iter().step_by(step),
+                             ptr[first+1..].iter().step_by(step))
+                           .map(|(_,&p0,&p1)| p1-p0).sum();
             let rnelm = num;
-            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[num],rnnz,rnelm);
+            let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[num],rnnz,rnelm);
             rptr[0] = 0;
             let mut nzi = 0;
             izip!(rptr[1..].iter_mut(),
-                 self.ptr[first..].iter().step_by(step),
-                 self.ptr[first+1..].iter().step_by(step))
+                 ptr[first..].iter().step_by(step),
+                 ptr[first+1..].iter().step_by(step))
                 .for_each(|(rp,&p0,&p1)| {
                     rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
                     rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
