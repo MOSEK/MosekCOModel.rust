@@ -898,6 +898,84 @@ impl<T:ExprTrait> ExprTrait for ExprTriangularPart<T> {
         }
     }
 }
+
+struct ExprDiag<E:ExprTrait> {
+    item : E,
+    anti : bool,
+    index : i64
+}
+
+impl<E:ExprTrait> ExprTrait for ExprDiag<E> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.item.eval(ws,rs,xs);
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+
+        let nd = shape.len();
+
+        if nd != 2 || shape[0] != shape[1] {
+            panic!("Diagonals can only be taken from square matrixes");
+        }
+        let d = shape[0];
+        if self.index.abs() as usize >= d {
+            panic!("Diagonal index out of bounds");
+        }
+
+        if let Some(sp) = sp {
+            let (first,num,step) = match (self.anti,self.index >= 0) {
+                (false,true)  => (self.index as usize,       (d-self.index as usize) as usize,d+1),
+                (false,false) => (d*(-self.index) as usize,  d - (-self.index) as usize,d+1),
+                (true,true)   => (d-self.index as usize,     d - self.index as usize, d-1),
+                (true,false)  => (d*(-self.index) as usize-1,d - (-self.index) as usize, d-1)
+            };
+//            let (first,last,step) = match (self.anti,self.index >= 0) {
+//                (false,true)  => (self.index as usize,       d*(d-self.index) as usize,d+1),
+//                (false,false) => (d*(-self.index) as usize,  d*d,d+1),
+//                (true,true)   => (d-self.index as usize,     d*(d - self.index as usize), d-1),
+//                (true,false)  => (d*(-self.index) as usize-1,d*d, d-1)
+//            };
+
+            let absidx = self.index.abs() as usize;
+            let (nnz,nelm) = izip!(sp.iter(),
+                                   ptr.iter(),
+                                   ptr[1..].iter())
+                .filter(|(&i,_,_)| i < last && ((   !self.anti && self.index >= 0 && i%d == i/d + absidx)
+                                                || (!self.anti && self.index <  0 && i%d - self.index == i/d)
+                                                || (self.anti  && self.index >= 0 && d-i%d+index== i/d)
+                                                || (self.anti  && self.index <  0 && d-i%d - self.index == i/d)))
+
+                .fold(...)
+        } 
+        else {
+            let (first,num,step) = match (self.anti,self.index >= 0) {
+                (false,true)  => (self.index as usize,       (d-self.index) as usize,d+1),
+                (false,false) => (d*(-self.index) as usize,  d - (-self.index) as usize,d+1),
+                (true,true)   => (d-self.index as usize,     d - self.index as usize, d-1),
+                (true,false)  => (d*(-self.index) as usize-1,d - (-self.index) as usize, d-1)
+            };
+            
+            let rnnz = izip!(0..num,
+                             self.ptr[first..].iter().step_by(step),
+                             self.ptr[first+1..].iter().step_by(step))
+                               .map(|(_,&p0,&p1)| p1-p0).sum();
+            let rnelm = num;
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[num],rnnz,rnelm);
+            rptr[0] = 0;
+            let mut nzi = 0;
+            izip!(rptr[1..].iter_mut(),
+                 self.ptr[first..].iter().step_by(step),
+                 self.ptr[first+1..].iter().step_by(step))
+                .for_each(|(rp,&p0,&p1)| {
+                    rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                    rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
+                    *rp = p1-p0;
+                });
+            let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p } );
+                        
+
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////
 //
 // Tests
