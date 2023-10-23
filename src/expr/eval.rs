@@ -8,6 +8,18 @@ use super::workstack::WorkStack;
 
 use itertools::izip;
 
+pub(super) fn permute_axes(n : &[usize],
+                           rs : & mut WorkStack,
+                           ws : & mut WorkStack,
+                           xs : & mut WorkStack) {
+    let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+    
+     
+
+}
+
+
+
 /// Add `n` expression residing on `ws`. Result pushed to `rs`.
 pub(super) fn add(n  : usize,
                   rs : & mut WorkStack,
