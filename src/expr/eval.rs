@@ -8,14 +8,81 @@ use super::workstack::WorkStack;
 
 use itertools::izip;
 
-pub(super) fn permute_axes(n : &[usize],
+
+pub(super) fn permute_axes(perm : &[usize],
                            rs : & mut WorkStack,
                            ws : & mut WorkStack,
                            xs : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-    
-     
+    let nnz = ptr.last().unwrap();
+    let nelem = ptr.len()-1;
 
+    if perm.len() != shape.len() {
+        panic!("Mismatching permutation and shape");
+    }
+    let mut rshape = vec![0; shape.len()];
+    perm.iter().map(|&i| {
+        unsafe {
+            if *rshape.get_unchecked(i) >= 0 || i < 0 || i >= shape.len() {
+                panic!("Invalid permutation");
+            }
+            *rshape.get_unchecked_mut(i) = *shape.get_unchecked(i);
+        }
+    });
+
+    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),subj.len(),*ptr.last().unwrap());
+    
+    let (uslice,_) = xs.alloc(nelem*2+shape.len()*3,0);
+    let (spx,uslice) = uslice.split_at_mut(nelem);
+    let (perm,uslice) = uslice.split_at_mut(nelem);
+    let (strides,uslice) = uslice.split_at_mut(nelem);
+    let (rstrides,prstrides) = uslice.split_at_mut(nelem);
+
+    strides.iter_mut().rev().zip(shape.iter().rev().fold_map0(1usize,|cum,d| d*cum )).for_each(|(t,s)| *t = s);
+    rstrides.iter_mut().rev().zip(rshape.iter().rev().fold_map0(1,|cum,d| d*cum )).for_each(|(t,s)| *t = s);
+    prstrides.iter_mut().zip(perm.iter()).for_each(|(s,&p)| unsafe{ *s = *rstrides.get_unchecked(p); } );
+
+    if let Some(sp) = sp {
+        spx.iter_mut().zip(sp.iter()).for_each(|(ix,&i)| {
+            let (_,ri) = strides.iter().zip(prstrides.iter()).fold((i,0),|(v,r),(&s,&rs)| (v%s,(v/s)*rs));
+            *ix = ri;
+        });
+
+        perm.iter_mut().enumerate().for_each(|(i,t)| *t = i);
+        perm.sort_by_key(|&i| unsafe{* spx.get_unchecked(i) });
+       
+        // apply permutation
+        if let Some(rsp) = rsp { rsp.iter_mut().zip(perm_iter(perm,sp)).for_each(|(t,&s)| *t = s); };
+        //let _ = rptr.iter_mut().zip(perm_iter(ptr[0..nelem].iter()).zip(ptr[1..].iter())).fold(0,|c,(t,(&p0,&p1))| { *t = c+p1-p0; *t });
+        rptr.iter_mut().for_each(|p| *p = 0);
+
+        { 
+            let mut nzi = 0;
+    
+            for (&p0,&p1) in perm_iter(perm,&ptr[0..nelem]).zip(perm_iter(perm,&ptr[1..nelem+1])) {
+                rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
+                nzi += p1-p0;
+            }
+        }
+    }
+    else {
+        rptr[0] = 0;
+        for (si,n) in ptr.iter().zip(ptr[1..].iter()).map(|(&p0,&p1)| p1-p0).enumerate() {
+            let (_,ti) = strides.iter().zip(prstrides.iter()).fold((si,0),|(v,r),(&s,&rs)| (v%s,(v/s)*rs));
+            rptr[ti+1] = n
+        }
+        let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+        
+        for (si,(ssubj,scof)) in izip!(subj.chunks_by(ptr),cof.chunks_by(ptr)).enumerate() {
+            let (_,ti) = strides.iter().zip(prstrides.iter()).fold((si,0),|(v,r),(&s,&rs)| (v%s,(v/s)*rs));
+            let n = ssubj.len();
+            let nzi = rptr[ti];
+
+            rsubj[nzi..nzi+n].clone_from_slice(ssubj);
+            rcof[nzi..nzi+n].clone_from_slice(scof);
+        }
+    }
 }
 
 

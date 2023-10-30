@@ -51,6 +51,43 @@ impl<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> FoldMapExt<T,F> for I {}
 
 
 ////////////////////////////////////////////////////////////
+pub struct FoldMap0Iter<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> {
+    it : I,
+    v : T,
+    f : F
+}
+
+impl<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> Iterator for FoldMap0Iter<I,T,F> {
+    type Item = T;
+    fn next(& mut self) -> Option<Self::Item> {
+        if let Some(v) = self.it.next() {
+            let v = (self.f)(&self.v,v);
+            let res = self.v;
+            self.v = v;
+            Some(res)
+        }
+        else {
+            None
+        }
+    }
+    fn size_hint(&self) -> (usize,Option<usize>) {
+        let (lb,ub) = self.it.size_hint();
+        if let Some(ub) = ub { (lb,Some(ub+1)) }
+        else { (lb,None) }
+    }
+}
+
+pub trait FoldMap0Ext<T:Copy,F:FnMut(&T,Self::Item) -> T> : Iterator {
+    /// Create a cummulating iterator
+    fn fold_map0(self, v0 : T, f : F) -> FoldMap0Iter<Self,T,F> where Self:Sized{
+        FoldMap0Iter{it : self, v : v0, f}
+    }
+}
+impl<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> FoldMap0Ext<T,F> for I {}
+
+
+
+////////////////////////////////////////////////////////////
 
 pub struct PermIter<'a,'b,T> {
     data : & 'b [T],

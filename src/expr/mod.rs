@@ -32,7 +32,7 @@ pub trait ExprTrait {
     fn mul_left_dense(self, v : matrix::DenseMatrix) -> ExprMulLeftDense<Self> where Self:Sized { ExprMulLeftDense{item:self,lhs:v} }
     fn mul_right_dense(self, v : matrix::DenseMatrix) -> ExprMulRightDense<Self> where Self:Sized  { ExprMulRightDense{item:self,rhs:v} }
     // fn transpose(self) -> ExprPermuteAxes<Self>
-    fn axispermute(self,perm : Vec<usize>) -> ExprPermuteAxes<Self> { ExprPermuteAxes{item : self, perm : perm} }
+    fn axispermute(self,perm : Vec<usize>) -> ExprPermuteAxes<Self> where Self:Sized { ExprPermuteAxes{item : self, perm } }
     // fn slice(self, range : &[(Range<usize>)])
     
     fn tril(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized { ExprTriangularPart{item:self,upper:false,with_diag} }
