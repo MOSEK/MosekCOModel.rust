@@ -7,13 +7,13 @@ use super::utils;
 /// A Variable object is basically a wrapper around a variable index
 /// list with a shape and a sparsity pattern.
 #[derive(Clone)]
-pub struct Variable {
+pub struct Variable<const N : usize> {
     idxs     : Vec<usize>,
     sparsity : Option<Vec<usize>>,
-    shape    : Vec<usize>
+    shape    : [usize; N]
 }
 
-impl ModelItem for Variable {
+impl<const N : usize> ModelItem<N> for Variable<N> {
     fn len(&self) -> usize { return self.shape.iter().product(); }
     fn primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64]) -> Result<usize,String> {
         let sz = self.shape.iter().product();
@@ -39,9 +39,9 @@ impl ModelItem for Variable {
     }
 }
 
-impl ModelItemIndex<usize> for Variable {
-    type Output = Variable;
-    fn index(&self, index: usize) -> Variable {
+impl ModelItemIndex<usize> for Variable<1> {
+    type Output = Variable<0>;
+    fn index(&self, index: usize) -> Variable<0> {
         if self.shape.len() != 1 { panic!("Cannot index into multi-dimensional variable"); }
         if let Some(ref sp) = self.sparsity {
             if let Ok(i) = sp.binary_search(&index) {
@@ -69,10 +69,9 @@ impl ModelItemIndex<usize> for Variable {
     }
 }
 
-impl ModelItemIndex<&[usize]> for Variable {
-    type Output = Variable;
-    fn index(&self, index: &[usize]) -> Variable {
-        if self.shape.len() != index.len() { panic!("Index shape does not match the variable shape"); }
+impl<const N : usize> ModelItemIndex<&[usize; N]> for Variable<N> {
+    type Output = Variable<0>;
+    fn index(&self, index: &[usize; N]) -> Variable<N> {
         let index = self.shape.iter().zip(index.iter()).fold(0,|v,(&d,&i)| v*d+i);
         if let Some(ref sp) = self.sparsity {
             if let Ok(i) = sp.binary_search(&index) {
@@ -100,10 +99,9 @@ impl ModelItemIndex<&[usize]> for Variable {
     }
 }
 
-impl ModelItemIndex<std::ops::Range<usize>> for Variable {
-    type Output = Variable;
-    fn index(&self, index: std::ops::Range<usize>) -> Variable {
-        if self.shape.len() != 1 { panic!("Cannot index into multi-dimensional variable"); }
+impl ModelItemIndex<std::ops::Range<usize>> for Variable<1> {
+    type Output = Variable<1>;
+    fn index(&self, index: std::ops::Range<usize>) -> Variable<1> {
         let n = index.len();
         if let Some(ref sp) = self.sparsity {
             let first = match sp.binary_search(&index.start) {
@@ -131,10 +129,9 @@ impl ModelItemIndex<std::ops::Range<usize>> for Variable {
     }
 }
 
-impl ModelItemIndex<&[std::ops::Range<usize>]> for Variable {
-    type Output = Variable;
-    fn index(&self, ranges: &[std::ops::Range<usize>]) -> Variable {
-        if ranges.len() != self.shape.len() { panic!("The range does not match the shape: {:?} vs {:?}",ranges,self.shape) }
+impl<const N : usize> ModelItemIndex<&[std::ops::Range<usize>; N]> for Variable<N> {
+    type Output = Variable<N>;
+    fn index(&self, ranges: &[std::ops::Range<usize>]) -> Variable<N> {
         if !ranges.iter().zip(self.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range is out of bounds in the the shape: {:?} in {:?}",ranges,self.shape) }
 
         let rshape : Vec<usize> = ranges.iter().map(|r| r.end-r.start).collect();
@@ -174,8 +171,8 @@ impl ModelItemIndex<&[std::ops::Range<usize>]> for Variable {
     }
 }
 
-impl Variable {
-    pub fn new(idxs : Vec<usize>, sparsity : Option<Vec<usize>>, shape : Vec<usize>) -> Variable {
+impl<const N : usize> Variable<N> {
+    pub fn new(idxs : Vec<usize>, sparsity : Option<Vec<usize>>, shape : Vec<usize>) -> Variable<N> {
         Variable{
             idxs,
             sparsity,
@@ -184,7 +181,7 @@ impl Variable {
     pub fn idxs(&self) -> &[usize] { self.idxs.as_slice() }
     pub fn sparsity(&self) -> Option<&[usize]> { if let Some(ref sp) = self.sparsity { Some(sp.as_slice()) } else { None }}
     pub fn shape(&self) -> &[usize] { self.shape.as_slice() }
-    pub fn with_shape(self, shape : Vec<usize>) -> Variable {
+    pub fn with_shape<const M : usize>(self, shape : &[usize; M]) -> Variable<M> {
         match self.sparsity {
             None =>
                 if self.idxs.len() != shape.iter().product() {
@@ -199,11 +196,11 @@ impl Variable {
         Variable{
             idxs     : self.idxs,
             sparsity : self.sparsity,
-            shape    : shape
+            shape
         }
     }
 
-    pub fn with_sparsity(self, sp : Vec<usize>) -> Variable {
+    pub fn with_sparsity(self, sp : Vec<usize>) -> Variable<N> {
         if sp.len() != self.idxs.len() {
             panic!("Sparsity does not match the size");
         }
@@ -225,7 +222,7 @@ impl Variable {
         }
     }
 
-    pub fn with_shape_and_sparsity(self,shape : Vec<usize>, sp : Vec<usize>) -> Variable {
+    pub fn with_shape_and_sparsity<const M : usize>(self,shape : &[usize; M], sp : Vec<usize>) -> Variable<M> {
         if sp.len() != self.idxs.len() {
             panic!("Sparsity does not match the size");
         }
@@ -246,11 +243,11 @@ impl Variable {
         }
     }
 
-    pub fn flatten(self) -> Variable {
+    pub fn flatten(self) -> Variable<1> {
         Variable {
             idxs : self.idxs,
             sparsity : self.sparsity,
-            shape : vec![self.shape.iter().product()]
+            shape : [self.shape.iter().product()]
         }
     }
 
@@ -324,7 +321,7 @@ impl Variable {
     //     }
 
     // }
-    pub fn stack(dim : usize, xs : &[&Variable]) -> Variable {
+    pub fn stack(dim : usize, xs : &[&Variable<N>]) -> Variable<N> {
         if ! xs.iter().zip(xs[1..].iter())
             .all(|(v0,v1)| utils::shape_eq_except(v0.shape.as_slice(),v1.shape.as_slice(),dim)) {
                 panic!("Operands have mismatching shapes");
@@ -416,12 +413,11 @@ impl Variable {
                 shape    : rshape }
         }
     }
-    pub fn vstack(xs : &[&Variable]) -> Variable { Self::stack(0,xs) }
-    pub fn hstack(xs : &[&Variable]) -> Variable { Self::stack(1,xs) }
+    pub fn vstack(xs : &[&Variable<N>]) -> Variable<N> { Self::stack(0,xs) }
+    pub fn hstack(xs : &[&Variable<N>]) -> Variable<N> { Self::stack(1,xs) }
 }
 
-
-impl super::ExprTrait for Variable {
+impl<const N : usize> super::ExprTrait<N> for Variable<N> {
     fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),
                                                   self.idxs.len(),

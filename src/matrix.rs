@@ -105,11 +105,11 @@ impl DenseMatrix {
     pub fn data(&self) -> &[f64] { self.data.as_slice() }
 }
 
-impl<E:ExprTrait> ExprRightMultipliable<E> for DenseMatrix {
+impl<E:ExprTrait<2>> ExprRightMultipliable<2,E> for DenseMatrix {
     type Result = ExprMulRightDense<E>;
     fn mul_right(self,other : E) -> Self::Result { other.mul_right_dense(self) }
 }
 
 impl DenseMatrix {
-    pub fn mul<E:ExprTrait>(self,other : E) -> ExprMulLeftDense<E> { ExprMulLeftDense::new(other,self) }
+    pub fn mul<E:ExprTrait<2>>(self,other : E) -> ExprMulLeftDense<E> { ExprMulLeftDense::new(other,self) }
 }

@@ -8,7 +8,6 @@ use super::workstack::WorkStack;
 
 use itertools::izip;
 
-
 pub(super) fn permute_axes(perm : &[usize],
                            rs : & mut WorkStack,
                            ws : & mut WorkStack,

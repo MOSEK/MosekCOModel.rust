@@ -1,9 +1,14 @@
 use itertools::izip;
 
 /// Structure of a computed expression on the workstack:
-/// stack top <---> bottom
-/// susize: [ ndim, nnz, nelm, shape[ndim], ptr[nnz+1], { nzidx[nnz] if nnz < shape.product() else []}], asubj[nnz]
+/// stack bottom <---> top 
+/// susize: [ asubj[nnz], sp[0 if nelm < fullsize else nelm], ptr[nelm+1], padding[max(0,8-ndim)], shape[ndim], shape[ndim], nelm, nnz, nd ]
 /// sf64:   [ acof[nnz] ]
+/// 
+/// NOTE: We allocate some extra space for the shape to allow fast reshaping.
+
+
+
 pub struct WorkStack {
     susize : Vec<usize>,
     sf64   : Vec<f64>,
@@ -28,6 +33,32 @@ impl WorkStack {
     pub fn is_empty(& mut self) -> bool {
         self.utop == 0 && self.ftop == 0
     }
+
+
+    pub fn inline_reshape_expr(& mut self, shape: &[usize]) -> Result<(),String> {
+        let newnd = shape.len();
+        if shape.len() > 8 { 
+            return Err("Shape is too large".to_string());
+        } 
+        let newpadding = 8-shape.len();
+        let newtotalsize = shape.iter().product();
+
+        let selfutop = self.utop;
+        let selfftop = self.ftop;
+
+        let nd       = self.susize[selfutop-1];
+        let padding  = if nd < 8 { 8 - nd } else { 0 };
+        let shape_field : &mut[usize] = self.usize[(selfutop-3-nd-padding) .. (selfutop-3)];
+
+        if newtotalsize != shape_field[padding..].iter().product() {
+            return Err("New shape and original shape do not match".to_string());
+        }
+
+        shape_field[newpadding..].clone_from_slice(shape);
+        
+        Ok(())
+    }
+
     /// Allocate a new expression on the stack.
     ///
     /// Arguments:
@@ -37,14 +68,15 @@ impl WorkStack {
     /// Returns (ptr,sp,subj,cof)
     ///
     pub fn alloc_expr(& mut self, shape : &[usize], nnz : usize, nelm : usize) -> (& mut [usize], Option<& mut [usize]>,& mut [usize], & mut [f64]) {
-        let nd = shape.len();
-        let ubase = self.utop;
-        let fbase = self.ftop;
+        let nd      = shape.len();
+        let padding = if nd < 8 { 8 - nd } else { 0 };
+        let ubase   = self.utop;
+        let fbase   = self.ftop;
 
         let fullsize : usize = shape.iter().product();
         if fullsize < nelm { panic!("Number of elements too large for shape: {} in {:?}",nelm,shape); }
 
-        let unnz  = 3+nd+(nelm+1)+nnz+(if nelm < fullsize { nelm } else { 0 } );
+        let unnz  = 3+nd+padding+(nelm+1)+nnz+(if nelm < fullsize { nelm } else { 0 } );
 
         self.utop += unnz;
         self.ftop += nnz;
@@ -61,13 +93,15 @@ impl WorkStack {
         }
 
         let (subj,upart) = upart.split_at_mut(nnz);
-        let (sp,upart)   = if nelm < fullsize {
+        let (sp,upart)   = 
+            if nelm < fullsize {
                 let (sp,upart) = upart.split_at_mut(nelm);
                 (Some(sp),upart)
             } else {
                 (None,upart)
             };
         let (ptr,upart)    = upart.split_at_mut(nelm+1);
+        let (_,upart)      = upart.split_at_mut(padding);
         let (shape_,head)  = upart.split_at_mut(nd);
         shape_.clone_from_slice(shape);
 
@@ -88,11 +122,12 @@ impl WorkStack {
 
     fn soft_pop(&self, utop : usize, ftop : usize) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64],usize,usize) {
         let nd   = self.susize[utop-1];
+        let padding  = if nd < 8 { 8 - nd } else { 0 }; 
         let nnz  = self.susize[utop-2];
         let nelm = self.susize[utop-3];
         let totalsize : usize = self.susize[utop-3-nd..utop-3].iter().product();
 
-        let totalusize = nd+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
+        let totalusize = nd+padding+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
         let totalfsize = nnz;
 
         let utop = utop-3;
@@ -103,10 +138,15 @@ impl WorkStack {
         let uslice : &[usize] = & self.susize[ubase..utop];
         let cof    : &[f64]   = & self.sf64[fbase..ftop];
 
-        let subj  = &uslice[ubase..ubase+nnz];
-        let sp    = if totalsize > nelm { Some(&uslice[ubase+nnz..ubase+nnz+nelm]) } else { None };
-        let ptr   = &uslice[totalusize-nelm-1..totalusize-nd];
-        let shape = &uslice[totalusize-nelm-1..totalusize-nd];
+        let subj_base = ubase;
+        let sp_base = subj_base+nnz;
+        let ptr_base = if nelm < totalsize { sp_base + nelm } else { sp_base };
+        let shape_base = ptr_base + nelm+1+padding;
+
+        let subj  = &uslice[subj_base..subj_base+nnz];
+        let sp    = if totalsize > nelm { Some(&uslice[sp_base..sp_base+nelm]) } else { None };
+        let ptr   = &uslice[ptr_base..ptr_base+nelm+1];
+        let shape = &uslice[shape_base..shape_base+nd];
 
         (shape,ptr,sp,subj,cof,ubase,fbase)
     }
@@ -156,13 +196,14 @@ impl WorkStack {
         for _i in 0..n {
             // println!("---ustack @ {} = {:?}",i,&self.susize[..selfutop]);
             let nd   = self.susize[selfutop-1];
+            let padding = if nd < 8 { 8-nd} else { 0 };
             let nnz  = self.susize[selfutop-2];
             let nelm = self.susize[selfutop-3];
             let totalsize : usize = self.susize[selfutop-3-nd..selfutop-3].iter().product();
             // println!("nd = {}, nelm = {}, nnz = {}",nd,nelm,nnz);
             // println!("shape = {:?}",&self.susize[selfutop-3-nd..selfutop-3]);
 
-            let totalusize = nd+nelm+1+nnz + (if nelm < totalsize { nelm } else { 0 });
+            let totalusize = nd+padding+nelm+1+nnz + (if nelm < totalsize { nelm } else { 0 });
             let totalfsize = nnz;
 
             let utop = selfutop-3;
@@ -180,7 +221,7 @@ impl WorkStack {
             let sp    = if totalsize > nelm { Some(&uslice[nnz..nnz+nelm]) } else { None };
             let ptrbase = nnz+sp.map(|v| v.len()).unwrap_or(0);
             let ptr   = &uslice[ptrbase..ptrbase+nelm+1];
-            let shape = &uslice[ptrbase+nelm+1..];
+            let shape = &uslice[ptrbase+nelm+1+padding..];
 
             let rnnz = ptr.last().copied().unwrap();
 
@@ -203,13 +244,14 @@ impl WorkStack {
         let selfftop = self.ftop;
 
         let nd   = self.susize[selfutop-1];
+        let padding = if nd < 8 { 8 - nd } else { 0 };
         let nnz  = self.susize[selfutop-2];
         let nelm = self.susize[selfutop-3];
 
         // println!("nd = {}, nelm = {}, nnz = {}",nd,nelm,nnz);
         let totalsize : usize = self.susize[selfutop-3-nd..selfutop-3].iter().product();
 
-        let totalusize = nd+nelm+1+nnz + (if nelm < totalsize { nelm } else { 0 });
+        let totalusize = nd+padding+nelm+1+nnz + (if nelm < totalsize { nelm } else { 0 });
         // println!("totalusize = {}, ustack.len = {}",totalusize,self.susize.len());
 
         let utop = selfutop-3;
@@ -225,7 +267,7 @@ impl WorkStack {
         let sp    = if totalsize > nelm { Some(&uslice[nnz..nnz+nelm]) } else { None };
         let ptrbase = nnz+sp.map(|v| v.len()).unwrap_or(0);
         let ptr   = &uslice[ptrbase..ptrbase+nelm+1];
-        let shape = &uslice[ptrbase+nelm+1..ptrbase+nelm+1+nd];
+        let shape = &uslice[ptrbase+nelm+padding+1..ptrbase+nelm+1+nd];
         
         // println!("{}:{}: workstack::pop_expr:\n\tshape={:?}\n\tptr={:?}\n\tsubj={:?}",file!(),line!(),shape,ptr,subj);
         
@@ -250,6 +292,7 @@ impl WorkStack {
     /// expression on the stack, but does not remove it from the stack
     pub fn peek_expr_mut(&mut self) -> (&mut [usize],&mut [usize],Option<&mut [usize]>,&mut [usize],&mut [f64]) {
         let nd   = self.susize[self.utop-1];
+        let padding = if nd < 8 { 8 - nd } else { 0 };
         let nnz  = self.susize[self.utop-2];
         let nelm = self.susize[self.utop-3];
         let totalsize : usize = self.susize[self.utop-3-nd..self.utop-3].iter().product();
@@ -265,11 +308,13 @@ impl WorkStack {
         let (subj,uslice) = uslice.split_at_mut(nnz);
         if nelm < totalsize {
             let (sp,uslice) = uslice.split_at_mut(nelm);
-            let (ptr,shape) = uslice.split_at_mut(nelm+1);
+            let (ptr,uslice) = uslice.split_at_mut(nelm+1);
+            let (_,shape)    = uslice.split_at_mut(padding);
             (shape,ptr,Some(sp),subj,cof)
         }
         else {
-            let (ptr,shape) = uslice.split_at_mut(nelm+1);
+            let (ptr,uslice) = uslice.split_at_mut(nelm+1);
+            let (_,shape)    = uslice.split_at_mut(padding);
             (shape,ptr,None,subj,cof)
         }
     }

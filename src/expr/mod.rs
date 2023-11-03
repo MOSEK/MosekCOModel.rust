@@ -10,7 +10,7 @@ use super::utils::*;
 use workstack::WorkStack;
 use super::matrix;
 
-pub trait ExprTrait {
+pub trait ExprTrait<const N : usize> {
     /// Evaluate the expression and put the result on the [rs] stack,
     /// using the [ws] to evaluate sub-expressions and [xs] for
     /// general storage.
@@ -25,49 +25,57 @@ pub trait ExprTrait {
         eval::eval_finalize(rs,ws,xs);
     }
 
-    // fn into_diag(self) -> ExprIntoDiag<Self> { ExprIntoDiag{ item : self } }
     // fn reshape(self, shape : &[usize]) -> ExprReshape<Self>  { ExprReshape{  item : self, shape : shape.to_vec() } }
     // fn mul_scalar(self, c : f64) -> ExprMulScalar<Self> { ExprMulScalar{ item:self, c : c } }
     // fn mul_vec_left(self, v : Vec<f64>) -> ExprMulVec<Self>
-    fn mul_left_dense(self, v : matrix::DenseMatrix) -> ExprMulLeftDense<Self> where Self:Sized { ExprMulLeftDense{item:self,lhs:v} }
-    fn mul_right_dense(self, v : matrix::DenseMatrix) -> ExprMulRightDense<Self> where Self:Sized  { ExprMulRightDense{item:self,rhs:v} }
-    // fn transpose(self) -> ExprPermuteAxes<Self>
-    fn axispermute(self,perm : Vec<usize>) -> ExprPermuteAxes<Self> where Self:Sized { ExprPermuteAxes{item : self, perm } }
-    // fn slice(self, range : &[(Range<usize>)])
-    
-    fn tril(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized { ExprTriangularPart{item:self,upper:false,with_diag} }
-    fn triu(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized { ExprTriangularPart{item:self,upper:true,with_diag} }
-    fn trilvec(self,with_diag:bool) -> ExprGatherToVec<ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:false,with_diag} } }
-    fn triuvec(self,with_diag:bool) -> ExprGatherToVec<ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
+    fn axispermute(self,perm : &[usize; N]) -> ExprPermuteAxes<N,Self> where Self:Sized { ExprPermuteAxes{item : self, perm } }
 
     /// Sum all elements in an expression yielding a scalar expression.
-    fn sum(self) -> ExprSum<Self> where Self:Sized { ExprSum{item:self} }
+    fn sum(self) -> ExprSum<N,Self> where Self:Sized { ExprSum{item:self} }
 
-    fn mul<V>(self,other : V) -> V::Result where V : ExprRightMultipliable<Self>, Self:Sized { other.mul_right(self) }
-    fn add<R:ExprTrait>(self,rhs : R) -> ExprAdd<Self,R>  where Self:Sized { ExprAdd{lhs:self,rhs} }
-    fn sub<R:ExprTrait>(self,rhs : R) -> ExprAdd<Self,ExprMulScalar<R>>  where Self:Sized { ExprAdd{lhs:self, rhs:ExprMulScalar{item:rhs,lhs:-1.0}} }
+    fn add<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,R>  where Self:Sized { ExprAdd{lhs:self,rhs} }
+    fn sub<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,ExprMulScalar<N,R>>  where Self:Sized { ExprAdd{lhs:self, rhs:ExprMulScalar{item:rhs,lhs:-1.0}} }
 
     fn dot<V:ExprInnerProductFactorTrait<Self>>(self,v: V) -> V::Output where Self:Sized   { v.dot(self) }
 
-    fn vstack<E:ExprTrait>(self,other : E) -> ExprStack<Self,E>  where Self:Sized { ExprStack::new(self,other,0) }
-    fn hstack<E:ExprTrait>(self,other : E) -> ExprStack<Self,E>  where Self:Sized { ExprStack::new(self,other,1) }
-    fn stack<E:ExprTrait>(self,dim : usize, other : E) -> ExprStack<Self,E> where Self:Sized { ExprStack::new(self,other,dim) }
+    fn mul_scalar(self, s : f64) -> ExprMulScalar<N,Self>{ ExprMulScalar { item : self, lhs : s } }
+
+    fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }
+    fn hstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,1) }
+    fn stack<E:ExprTrait<N>>(self,dim : usize, other : E) -> ExprStack<N,Self,E> where Self:Sized { ExprStack::new(self,other,dim) }
 
     /// Reshape the experssion. The new shape must match the old
     /// shape, meaning that the product of the dimensions are the
     /// same.
-    fn reshape(self,shape : Vec<usize>) -> ExprReshape<Self>  where Self:Sized { ExprReshape{item:self,shape} }
+    fn reshape<const M : usize>(self,shape : &[usize; M]) -> ExprReshape<N,M,Self>  where Self:Sized { ExprReshape{item:self,shape} }
 
     /// Creates a sparse expression with the given shape and sparsity
     /// from the elements in the expression. The sparsity [sp] must
     /// match the actual number of elements in the expression.
-    fn scatter(self,shape : Vec<usize>, sp : Vec<usize>) -> ExprScatter<Self>  where Self:Sized { ExprScatter::new(self, shape, sp) }
+    fn scatter<const M : usize>(self,shape : &[usize], sp : Vec<usize>) -> ExprScatter<N,Self>  where Self:Sized { ExprScatter::new(self, shape, sp) }
 
     /// Reshape a sparse expression into a dense expression with the
     /// given shape. The shape must match the actual number of
     /// elements in the expression.
-    fn gather(self,shape : Vec<usize>) -> ExprGather<Self>  where Self:Sized { ExprGather{item:self, shape} }
-    fn gather_vec(self) -> ExprGatherToVec<Self>  where Self:Sized { ExprGatherToVec{item:self} }
+    fn gather(self) -> ExprGatherToVec<N,Self>  where Self:Sized { ExprGatherToVec{item:self} }
+}
+
+pub trait ExprTrait1 : ExprTrait<1> {
+    fn mul_left_dense(self, v : matrix::DenseMatrix) -> ExprMulLeftDense<Self> where Self:Sized { ExprMulLeftDense{item:self,lhs:v} }
+    fn mul_right_dense(self, v : matrix::DenseMatrix) -> ExprMulRightDense<Self> where Self:Sized  { ExprMulRightDense{item:self,rhs:v} }
+    fn mul<const N : usize,V>(self,other : V) -> V::Result where V : ExprRightMultipliable<Self>, Self:Sized { other.mul_right(self) }
+}
+
+pub trait ExprTrait2 : ExprTrait<2> {
+    //fn into_diag(self) -> ExprIntoDiag<Self> { ExprIntoDiag{ item : self } }
+    fn mul_left_dense(self, v : matrix::DenseMatrix) -> ExprMulLeftDense<Self> where Self:Sized { ExprMulLeftDense{item:self,lhs:v} }
+    fn mul_right_dense(self, v : matrix::DenseMatrix) -> ExprMulRightDense<Self> where Self:Sized  { ExprMulRightDense{item:self,rhs:v} }
+    fn transpose(self) -> ExprPermuteAxes<2,Self> { }
+    fn tril(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized { ExprTriangularPart{item:self,upper:false,with_diag} }
+    fn triu(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized { ExprTriangularPart{item:self,upper:true,with_diag} }
+    fn trilvec<const N : usize>(self,with_diag:bool) -> ExprGatherToVec<N,ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:false,with_diag} } }
+    fn triuvec<const N : usize>(self,with_diag:bool) -> ExprGatherToVec<N,ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
+    fn mul<V>(self,other : V) -> V::Result where V : ExprRightMultipliable<2,Self>, Self:Sized { other.mul_right(self) }
 }
 
 ////////////////////////////////////////////////////////////
@@ -76,16 +84,16 @@ pub trait ExprTrait {
 
 /// Expr defines a literal expression with no sub-expressions
 #[derive(Clone)]
-pub struct Expr {
+pub struct Expr<const N : usize> {
+    shape : [usize; N],
     aptr  : Vec<usize>,
     asubj : Vec<usize>,
     acof  : Vec<f64>,
-    shape : Vec<usize>,
     sparsity : Option<Vec<usize>>
 }
 
 /// The Expr implementation
-impl Expr {
+impl<const N : usize> Expr<N> {
     /// Create a new literal expression from data
     ///
     /// Arguments:
@@ -103,11 +111,11 @@ impl Expr {
     ///   [asubj[aptr[i]..aptr[i+1]]], acof[aptr[i]..aptr[i+1]]`
     /// * [asubj] Variable subscripts.
     /// * [acof]  Coefficients.
-    pub fn new(shape : Vec<usize>,
+    pub fn new(shape : &[usize;N],
                sparsity : Option<Vec<usize>>,
                aptr  : Vec<usize>,
                asubj : Vec<usize>,
-               acof  : Vec<f64>) -> Expr {
+               acof  : Vec<f64>) -> Expr<N> {
         let fullsize = shape.iter().product();
         if aptr.len() == 0 { panic!("Invalid aptr"); }
         if ! aptr[0..aptr.len()-1].iter().zip(aptr[1..].iter()).all(|(a,b)| a <= b) {
@@ -130,10 +138,8 @@ impl Expr {
                 panic!("Sparsity is not sorted or contains duplicates");
             }
         }
-        else {
-            if fullsize != aptr.len()-1 {
-                panic!("Shape does not match number of elements");
-            }
+        else if fullsize != aptr.len()-1 {
+            panic!("Shape does not match number of elements");
         }
 
         Expr{
@@ -145,7 +151,7 @@ impl Expr {
         }
     }
 
-    pub fn reshape(self,shape:&[usize]) -> Expr {
+    pub fn reshape<const M : usize>(self,shape:&[usize;M]) -> Expr<M> {
         if self.shape.iter().product::<usize>() != shape.iter().product::<usize>() {
             panic!("Invalid shape for this expression");
         }
@@ -161,7 +167,10 @@ impl Expr {
 
 }
 
-impl ExprTrait for Expr {
+
+
+
+impl<const N : usize> ExprTrait<N> for Expr<N> {
     fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
         let nnz  = self.asubj.len();
         let nelm = self.aptr.len()-1;
@@ -179,14 +188,16 @@ impl ExprTrait for Expr {
     }
 }
 
-pub struct ExprNil { shape : Vec<usize> }
-impl ExprTrait for ExprNil {
+// An expression of any shape or size containing no non-zeros.
+pub struct ExprNil<const N : usize> { shape : [usize; N] }
+impl<const N : usize> ExprTrait<N> for ExprNil<N> {
     fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
         let (rptr,_,_,_) = rs.alloc_expr(self.shape.as_slice(),0,0);
         rptr[0] = 0;
     }
 }
-pub fn nil(shape : Vec<usize>) -> ExprNil {
+
+pub fn nil<const N : usize>(shape : &[usize; N]) -> ExprNil<N> {
     if shape.iter().product::<usize>() != 0 {
         panic!("Shape must have at least one zero-dimension");
     }
@@ -214,74 +225,71 @@ pub fn nil(shape : Vec<usize>) -> ExprNil {
 
 /// Trait defining something that can be right-multiplied on an
 /// expression
-pub trait ExprRightMultipliable<E:ExprTrait> {
-    type Result : ExprTrait;
+pub trait ExprRightMultipliable<const N : usize, E:ExprTrait<N>> {
+    type Result : ExprTrait<N>;
     fn mul_right(self,other : E) -> Self::Result;
 }
 
 /// Trait defining something that can be left-multiplied on an
 /// expression
-pub trait ExprLeftMultipliable<E:ExprTrait> {
-    type Result : ExprTrait;
+pub trait ExprLeftMultipliable<const N : usize, E:ExprTrait<N>> {
+    type Result : ExprTrait<N>;
     fn mul(self,other : E) -> Self::Result;
 }
 
-impl<E:ExprTrait> ExprRightMultipliable<E> for f64 {
-    type Result = ExprMulScalar<E>;
+impl<const N : usize, E:ExprTrait<N>> ExprRightMultipliable<N,E> for f64 {
+    type Result = ExprMulScalar<N,E>;
     fn mul_right(self,other : E) -> Self::Result { ExprMulScalar{item : other, lhs : self} }
 }
-impl<E:ExprTrait> ExprLeftMultipliable<E> for f64 {
-    type Result = ExprMulScalar<E>;
+impl<const N : usize, E:ExprTrait<N>> ExprLeftMultipliable<N,E> for f64 {
+    type Result = ExprMulScalar<N,E>;
     fn mul(self,other : E) -> Self::Result { ExprMulScalar{item : other, lhs : self} }
 }
 
-
-
-
-pub struct ExprMulLeftDense<E:ExprTrait> {
+pub struct ExprMulLeftDense<E:ExprTrait<2>> {
     item : E,
     lhs  : matrix::DenseMatrix
 }
-pub struct ExprMulRightDense<E:ExprTrait> {
+pub struct ExprMulRightDense<E:ExprTrait<2>> {
     item : E,
     rhs  : matrix::DenseMatrix
 }
-pub struct ExprMulScalar<E:ExprTrait> {
+pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
     item : E,
     lhs  : f64
 }
 
-pub trait ExprInnerProductFactorTrait<E:ExprTrait> {
+pub trait ExprInnerProductFactorTrait<E:ExprTrait<1>> {
     type Output;
     fn dot(self, expr : E) -> Self::Output;
 }
 
-impl<E:ExprTrait> ExprInnerProductFactorTrait<E> for &[f64] {
+impl<E:ExprTrait<1>> ExprInnerProductFactorTrait<E> for &[f64] {
     type Output = ExprDotVec<E>;
     fn dot(self, expr : E) -> Self::Output {
         ExprDotVec{ expr, data:self.to_vec() }
     }
 }
 
-pub struct ExprDotVec<E:ExprTrait> {
+pub struct ExprDotVec<E:ExprTrait<1>> {
     data : Vec<f64>,
     expr : E
 }
 
-impl<E:ExprTrait> ExprMulLeftDense<E> {
+impl<E:ExprTrait<2>> ExprMulLeftDense<E> {
     pub fn new(item : E, lhs : matrix::DenseMatrix ) -> ExprMulLeftDense<E> {
         ExprMulLeftDense{item,lhs}
     }
 }
 
-impl<E:ExprTrait> ExprTrait for ExprMulLeftDense<E> {
+impl<E:ExprTrait<2>> ExprTrait<2> for ExprMulLeftDense<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
         eval::mul_left_dense(self.lhs.data(),self.lhs.height(), self.lhs.width(),rs,ws,xs);
     }
 }
 
-impl<E:ExprTrait> ExprTrait for ExprMulRightDense<E> {
+impl<E:ExprTrait<2>> ExprTrait<2> for ExprMulRightDense<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
         eval::mul_right_dense(self.rhs.data(), self.rhs.height(),self.rhs.width(),rs,ws,xs);
@@ -289,7 +297,7 @@ impl<E:ExprTrait> ExprTrait for ExprMulRightDense<E> {
 }
 
 // inplace evaluation
-impl<E:ExprTrait> ExprTrait for ExprMulScalar<E> {
+impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprMulScalar<N,E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(rs,ws,xs);
         let (_shape,_ptr,_sp,_subj,cof) = rs.peek_expr_mut();
@@ -297,7 +305,7 @@ impl<E:ExprTrait> ExprTrait for ExprMulScalar<E> {
     }
 }
 
-impl<E:ExprTrait> ExprTrait for ExprDotVec<E> {
+impl<E:ExprTrait<1>> ExprTrait<0> for ExprDotVec<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.expr.eval(ws,rs,xs);
         eval::dot_vec(self.data.as_slice(),rs,ws,xs);
@@ -306,16 +314,16 @@ impl<E:ExprTrait> ExprTrait for ExprDotVec<E> {
 
 ////////////////////////////////////////////////////////////
 //
-pub struct ExprMulLeftSparse<E:ExprTrait> {
+pub struct ExprMulLeftSparse<E:ExprTrait<2>> {
     data : matrix::SparseMatrix,
     expr : E
 }
-pub struct ExprMulRightSparse<E:ExprTrait> {
+pub struct ExprMulRightSparse<E:ExprTrait<2>> {
     data : matrix::SparseMatrix,
     expr : E
 }
 
-impl<E:ExprTrait> ExprTrait for ExprMulLeftSparse<E> {
+impl<E:ExprTrait<2>> ExprTrait<2> for ExprMulLeftSparse<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.expr.eval(ws,rs,xs);
         eval::mul_left_sparse(self.data.height(),
@@ -326,7 +334,7 @@ impl<E:ExprTrait> ExprTrait for ExprMulLeftSparse<E> {
     }
 }
 
-impl<E:ExprTrait> ExprTrait for ExprMulRightSparse<E> {
+impl<E:ExprTrait<2>> ExprTrait<2> for ExprMulRightSparse<E> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.expr.eval(ws,rs,xs);
         eval::mul_right_sparse(self.data.height(),
@@ -337,12 +345,12 @@ impl<E:ExprTrait> ExprTrait for ExprMulRightSparse<E> {
     }
 }
 
-impl<E:ExprTrait> ExprLeftMultipliable<E> for SparseMatrix {
+impl<E:ExprTrait<2>> ExprLeftMultipliable<2,E> for SparseMatrix {
     type Result = ExprMulLeftSparse<E>;
     fn mul(self,other : E) -> Self::Result { ExprMulLeftSparse{expr : other, data : self} }
 }
 
-impl<E:ExprTrait> ExprRightMultipliable<E> for SparseMatrix {
+impl<E:ExprTrait<2>> ExprRightMultipliable<2,E> for SparseMatrix {
     type Result = ExprMulRightSparse<E>;
     fn mul_right(self,other : E) -> Self::Result { ExprMulRightSparse{expr : other, data : self} }
 }
@@ -376,23 +384,23 @@ pub trait ExprAddRecTrait {
     fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize;
 }
 
-pub struct ExprAdd<L:ExprTrait+Sized,R:ExprTrait> {
+pub struct ExprAdd<const N : usize, L:ExprTrait<N>+Sized,R:ExprTrait<N>> {
     lhs : L,
     rhs : R
 }
-pub struct ExprAddRec<L:ExprAddRecTrait,R:ExprTrait> {
+pub struct ExprAddRec<const N : usize, L:ExprAddRecTrait,R:ExprTrait<N>> {
     lhs : L,
     rhs : R
 }
 
 // ExprAdd implementation
-impl<L:ExprTrait,R:ExprTrait> ExprAdd<L,R> {
-    pub fn add<T:ExprTrait>(self,rhs : T) -> ExprAddRec<ExprAdd<L,R>,T> {
+impl<const N : usize, L:ExprTrait<N>,R:ExprTrait<N>> ExprAdd<N,L,R> {
+    pub fn add<T:ExprTrait<N>>(self,rhs : T) -> ExprAddRec<N,ExprAdd<N,L,R>,T> {
         ExprAddRec{lhs: self, rhs}
     }
 }
 
-impl<L:ExprTrait,R:ExprTrait> ExprTrait for ExprAdd<L,R> {
+impl<const N : usize,L:ExprTrait<N>,R:ExprTrait<N>> ExprTrait<N> for ExprAdd<N,L,R> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.lhs.eval(ws,rs,xs);
         self.rhs.eval(ws,rs,xs);
@@ -400,7 +408,7 @@ impl<L:ExprTrait,R:ExprTrait> ExprTrait for ExprAdd<L,R> {
         eval::add(2,rs,ws,xs);
     }
 }
-impl<L:ExprTrait,R:ExprTrait> ExprAddRecTrait for ExprAdd<L,R> {
+impl<const N : usize,L:ExprTrait<N>,R:ExprTrait<N>> ExprAddRecTrait for ExprAdd<N,L,R> {
     fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
         self.rhs.eval(rs,ws,xs);
         self.lhs.eval(rs,ws,xs);
@@ -408,20 +416,20 @@ impl<L:ExprTrait,R:ExprTrait> ExprAddRecTrait for ExprAdd<L,R> {
     }
 }
 // ExprAddRec implementation
-impl<L:ExprAddRecTrait,R:ExprTrait>  ExprAddRec<L,R> {
-    pub fn add<T:ExprTrait>(self,rhs : T) -> ExprAddRec<Self,T> {
+impl<const N : usize, L:ExprAddRecTrait,R:ExprTrait<N>>  ExprAddRec<N,L,R> {
+    pub fn add<T:ExprTrait<N>>(self,rhs : T) -> ExprAddRec<N,Self,T> {
         ExprAddRec{lhs: self, rhs}
     }
 }
 
-impl<L:ExprAddRecTrait,R:ExprTrait> ExprAddRecTrait for ExprAddRec<L,R> {
+impl<const N : usize, L:ExprAddRecTrait,R:ExprTrait<N>> ExprAddRecTrait for ExprAddRec<N,L,R> {
     fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
         self.rhs.eval(rs,ws,xs);
         1+self.lhs.eval_rec(rs,ws,xs)
     }
 }
 
-impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
+impl<const N : usize, L:ExprAddRecTrait,R:ExprTrait<N>> ExprTrait<N> for ExprAddRec<N,L,R> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         let n = self.eval_rec(ws,rs,xs);
 
@@ -430,8 +438,8 @@ impl<L:ExprAddRecTrait,R:ExprTrait> ExprTrait for ExprAddRec<L,R> {
 }
 
 
-pub struct ExprReshape<E:ExprTrait> { item : E, shape : Vec<usize> }
-impl<E:ExprTrait> ExprTrait for ExprReshape<E> {
+pub struct ExprReshape<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, shape : [usize; M] }
+impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprReshape<N,M,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
@@ -453,12 +461,12 @@ impl<E:ExprTrait> ExprTrait for ExprReshape<E> {
     }
 }
 
-pub struct ExprScatter<E:ExprTrait> { item : E, shape : Vec<usize>, sparsity : Vec<usize> }
+pub struct ExprScatter<const M : usize, E:ExprTrait<1>> { item : E, shape : [usize; M], sparsity : Vec<usize> }
 
-impl<E:ExprTrait> ExprScatter<E> {
+impl<const M : usize, E:ExprTrait<1>> ExprScatter<M,E> {
     pub fn new(item     : E,
                shape    : Vec<usize>,
-               sparsity : Vec<usize>) -> ExprScatter<E> {
+               sparsity : Vec<usize>) -> ExprScatter<M,E> {
 
         if sparsity.iter().max().map(|&v| v >= shape.iter().product()).unwrap_or(false) {
             panic!("Sparsity pattern element out of bounds");
@@ -480,7 +488,7 @@ impl<E:ExprTrait> ExprScatter<E> {
     }
 }
 
-impl<E:ExprTrait> ExprTrait for ExprScatter<E> {
+impl<const M : usize, E:ExprTrait<1>> ExprTrait<M> for ExprScatter<M,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
         let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
@@ -501,8 +509,8 @@ impl<E:ExprTrait> ExprTrait for ExprScatter<E> {
     }
 }
 
-pub struct ExprGather<E:ExprTrait> { item : E, shape : Vec<usize> }
-impl<E:ExprTrait> ExprTrait for ExprGather<E> {
+pub struct ExprGather<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, shape : [usize; N] }
+impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprGather<N,M,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
         let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
@@ -519,8 +527,8 @@ impl<E:ExprTrait> ExprTrait for ExprGather<E> {
     }
 }
 
-pub struct ExprGatherToVec<E:ExprTrait> { item : E }
-impl<E:ExprTrait> ExprTrait for ExprGatherToVec<E> {
+pub struct ExprGatherToVec<const N : usize, E:ExprTrait<N>> { item : E }
+impl<const N : usize, E:ExprTrait<N>> ExprTrait<1> for ExprGatherToVec<N,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
         let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
@@ -534,7 +542,7 @@ impl<E:ExprTrait> ExprTrait for ExprGatherToVec<E> {
 }
 
 
-impl ExprTrait for f64 {
+impl ExprTrait<0> for f64 {
     fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
         let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[],1,1);
         rptr[0] = 0;
@@ -544,7 +552,7 @@ impl ExprTrait for f64 {
     }
 }
 
-impl ExprTrait for Vec<f64> {
+impl ExprTrait<1> for Vec<f64> {
     fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
         let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[self.len()],self.len(),self.len());
         rptr.iter_mut().enumerate().for_each(|(i,rp)| *rp = i);
@@ -595,43 +603,43 @@ macro_rules! stack {
 }
 
 
-pub struct ExprStack<E1:ExprTrait,E2:ExprTrait> {
+pub struct ExprStack<const N : usize,E1:ExprTrait<N>,E2:ExprTrait<N>> {
     item1 : E1,
     item2 : E2,
     dim   : usize
 }
 
-pub struct ExprStackRec<E1:ExprStackRecTrait,E2:ExprTrait> {
+pub struct ExprStackRec<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>> {
     item1 : E1,
     item2 : E2,
     dim   : usize
 }
 
-pub trait ExprStackRecTrait : ExprTrait {
+pub trait ExprStackRecTrait<const N : usize> : ExprTrait<N> {
     fn stack_dim(&self) -> usize;
     fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize;
 }
 
-impl<E1:ExprTrait,E2:ExprTrait> ExprStack<E1,E2> {
+impl<const N : usize, E1:ExprTrait<N>,E2:ExprTrait<N>> ExprStack<N,E1,E2> {
     pub fn new(item1 : E1, item2 : E2, dim : usize) -> Self { ExprStack{item1,item2,dim} }
-    pub fn stack<T:ExprTrait>(self, dim : usize, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim} }
-    pub fn vstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim:0} }
-    pub fn hstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim:1} }
+    pub fn stack<T:ExprTrait<N>>(self, dim : usize, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim} }
+    pub fn vstack<T:ExprTrait<N>>(self, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim:0} }
+    pub fn hstack<T:ExprTrait<N>>(self, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim:1} }
 }
 
-impl<E1:ExprStackRecTrait,E2:ExprTrait> ExprStackRec<E1,E2> {
-    pub fn stack<T:ExprTrait>(self, dim : usize, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim} }
-    pub fn vstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim:0} }
-    pub fn hstack<T:ExprTrait>(self, other : T) -> ExprStackRec<Self,T> { ExprStackRec{item1:self,item2:other,dim:1} }
+impl<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>> ExprStackRec<N,E1,E2> {
+    pub fn stack<T:ExprTrait<N>>(self, dim : usize, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim} }
+    pub fn vstack<T:ExprTrait<N>>(self, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim:0} }
+    pub fn hstack<T:ExprTrait<N>>(self, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim:1} }
 }
 
-impl<E1:ExprTrait,E2:ExprTrait> ExprTrait for ExprStack<E1,E2> {
+impl<const N : usize,E1:ExprTrait<N>,E2:ExprTrait<N>> ExprTrait<N> for ExprStack<N,E1,E2> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         let n = self.eval_rec(ws,rs,xs);
         eval::stack(self.dim,n,rs,ws,xs);
     }
 }
-impl<E1:ExprTrait,E2:ExprTrait> ExprStackRecTrait for ExprStack<E1,E2> {
+impl<const N : usize, E1:ExprTrait<N>,E2:ExprTrait<N>> ExprStackRecTrait<N> for ExprStack<N,E1,E2> {
     fn stack_dim(&self) -> usize { self.dim }
     fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
         self.item2.eval(rs,ws,xs);
@@ -640,13 +648,13 @@ impl<E1:ExprTrait,E2:ExprTrait> ExprStackRecTrait for ExprStack<E1,E2> {
     }
 }
 
-impl<E1:ExprStackRecTrait,E2:ExprTrait> ExprTrait for ExprStackRec<E1,E2> {
+impl<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>> ExprTrait<N> for ExprStackRec<N,E1,E2> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         let n = self.eval_rec(ws,rs,xs);
         eval::stack(self.dim,n,rs,ws,xs);
     }
 }
-impl<E1:ExprStackRecTrait,E2:ExprTrait> ExprStackRecTrait for ExprStackRec<E1,E2> {
+impl<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>> ExprStackRecTrait<N> for ExprStackRec<N,E1,E2> {
     fn stack_dim(&self) -> usize { self.dim }
     fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
         // we can only do recursive stacking if everything is stacked
@@ -667,12 +675,12 @@ impl<E1:ExprStackRecTrait,E2:ExprTrait> ExprStackRecTrait for ExprStackRec<E1,E2
 /// Dynamic stacking. To stack a list of heterogenous expressions we
 /// need to create a list of dynamic ExprTraits
 
-pub struct ExprDynStack {
-    exprs : Vec<Box<dyn ExprTrait>>,
-    dim : usize
+pub struct ExprDynStack<const N : usize> {
+    exprs : Vec<Box<dyn ExprTrait<N>>>,
+    dim   : usize
 }
 
-impl ExprTrait for ExprDynStack {
+impl<const N : usize> ExprTrait<N> for ExprDynStack<N> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         let n = self.exprs.len();
         for e in self.exprs.iter() {
@@ -689,13 +697,13 @@ impl ExprTrait for ExprDynStack {
 ///
 /// - dim : Dimension to stack in
 /// - exprs : List of expressions
-pub fn stack(dim : usize, exprs : Vec<Box<dyn ExprTrait>>) -> ExprDynStack {
+pub fn stack<const N : usize>(dim : usize, exprs : Vec<Box<dyn ExprTrait<N>>>) -> ExprDynStack<N> {
     ExprDynStack{exprs,dim}
 }
-pub fn vstack(exprs : Vec<Box<dyn ExprTrait>>) -> ExprDynStack {
+pub fn vstack<const N : usize>(exprs : Vec<Box<dyn ExprTrait<N>>>) -> ExprDynStack<N> {
     ExprDynStack{exprs,dim:0}
 }
-pub fn hstack(exprs : Vec<Box<dyn ExprTrait>>) -> ExprDynStack {
+pub fn hstack<const N : usize>(exprs : Vec<Box<dyn ExprTrait<N>>>) -> ExprDynStack<N> {
     ExprDynStack{exprs,dim:1}
 }
 
@@ -703,13 +711,12 @@ pub fn hstack(exprs : Vec<Box<dyn ExprTrait>>) -> ExprDynStack {
 ////////////////////////////////////////////////////////////
 //
 
-
 /// Expression that sums all elements in an expression
-pub struct ExprSum<T:ExprTrait> {
+pub struct ExprSum<const N : usize, T:ExprTrait<N>> {
     item : T
 }
 
-impl<T:ExprTrait> ExprTrait for ExprSum<T> {
+impl<const N : usize, T:ExprTrait<N>> ExprTrait<0> for ExprSum<N,T> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
         let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
@@ -723,7 +730,7 @@ impl<T:ExprTrait> ExprTrait for ExprSum<T> {
 ////////////////////////////////////////////////////////////
 //
 
-pub struct ExprTriangularPart<T:ExprTrait> {
+pub struct ExprTriangularPart<T:ExprTrait<2>> {
     item : T,
     upper : bool,
     with_diag : bool
@@ -758,7 +765,7 @@ fn eval_sparse_pick<F:Fn(usize) -> bool>(pick : F,
     }
     let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
 }
-impl<T:ExprTrait> ExprTrait for ExprTriangularPart<T> {
+impl<T:ExprTrait<2>> ExprTrait<2> for ExprTriangularPart<T> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
@@ -899,13 +906,13 @@ impl<T:ExprTrait> ExprTrait for ExprTriangularPart<T> {
     }
 }
 
-struct ExprDiag<E:ExprTrait> {
+struct ExprDiag<E:ExprTrait<2>> {
     item : E,
     anti : bool,
     index : i64
 }
 
-impl<E:ExprTrait> ExprTrait for ExprDiag<E> {
+impl<E:ExprTrait<2>> ExprTrait<1> for ExprDiag<E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
@@ -1008,15 +1015,15 @@ impl<E:ExprTrait> ExprTrait for ExprDiag<E> {
 }
 
 
-pub struct ExprPermuteAxes<E:ExprTrait> {
+pub struct ExprPermuteAxes<const N : usize, E:ExprTrait<N>> {
     item : E,
-    perm : Vec<usize>
+    perm : [usize; N]
 }
 
-impl<E:ExprTrait> ExprTrait for ExprPermuteAxes<E> {
+impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprPermuteAxes<N,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
-        eval::permute_axes(self.perm.as_slice(),rs,ws,xs)
+        eval::permute_axes(&self.perm,rs,ws,xs)
     }
     
 }
