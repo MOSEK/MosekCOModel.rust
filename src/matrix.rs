@@ -1,3 +1,5 @@
+use crate::expr::ExprReshapeOneRow;
+
 //use itertools::{izip};
 use super::expr::{ExprRightMultipliable,ExprTrait,ExprMulLeftDense,ExprMulRightDense};
 
@@ -108,6 +110,13 @@ impl DenseMatrix {
 impl<E:ExprTrait<2>> ExprRightMultipliable<2,E> for DenseMatrix {
     type Result = ExprMulRightDense<E>;
     fn mul_right(self,other : E) -> Self::Result { other.mul_right_dense(self) }
+}
+
+impl<E:ExprTrait<1>> ExprRightMultipliable<1,E> for DenseMatrix {
+    type Result = ExprReshapeOneRow<2,1,ExprMulRightDense<ExprReshapeOneRow<1,2,E>>>;
+    fn mul_right(self,other : E) -> Self::Result { 
+        other.mul_right_dense(self) 
+    }
 }
 
 impl DenseMatrix {

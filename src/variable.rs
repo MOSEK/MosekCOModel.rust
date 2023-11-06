@@ -48,14 +48,14 @@ impl ModelItemIndex<usize> for Variable<1> {
                 Variable{
                     idxs     : vec![self.idxs[i]],
                     sparsity : None,
-                    shape    : vec![]
+                    shape    : []
                 }
             }
             else {
                 Variable{
                     idxs     : vec![],
                     sparsity : Some(vec![]),
-                    shape    : vec![]
+                    shape    : []
                 }
             }
         }
@@ -63,7 +63,7 @@ impl ModelItemIndex<usize> for Variable<1> {
             Variable{
                 idxs     : vec![self.idxs[index]],
                 sparsity : None,
-                shape    : vec![]
+                shape    : []
             }
         }
     }
@@ -71,21 +71,21 @@ impl ModelItemIndex<usize> for Variable<1> {
 
 impl<const N : usize> ModelItemIndex<&[usize; N]> for Variable<N> {
     type Output = Variable<0>;
-    fn index(&self, index: &[usize; N]) -> Variable<N> {
+    fn index(&self, index: &[usize; N]) -> Variable<0> {
         let index = self.shape.iter().zip(index.iter()).fold(0,|v,(&d,&i)| v*d+i);
         if let Some(ref sp) = self.sparsity {
             if let Ok(i) = sp.binary_search(&index) {
                 Variable{
                     idxs     : vec![self.idxs[i]],
                     sparsity : None,
-                    shape    : vec![]
+                    shape    : []
                 }
             }
             else {
                 Variable{
                     idxs     : vec![],
                     sparsity : Some(vec![]),
-                    shape    : vec![]
+                    shape    : []
                 }
             }
         }
@@ -93,7 +93,7 @@ impl<const N : usize> ModelItemIndex<&[usize; N]> for Variable<N> {
             Variable{
                 idxs     : vec![self.idxs[index]],
                 sparsity : None,
-                shape    : vec![]
+                shape    : []
             }
         }
     }
@@ -116,14 +116,14 @@ impl ModelItemIndex<std::ops::Range<usize>> for Variable<1> {
             Variable{
                 idxs     : self.idxs[first..last].to_vec(),
                 sparsity : Some(sp[first..last].iter().map(|&i| i - index.start).collect()),
-                shape    : vec![n]
+                shape    : [n]
             }
         }
         else {
             Variable{
                 idxs     : self.idxs[index].to_vec(),
                 sparsity : None,
-                shape    : vec![n]
+                shape    : [n]
             }
         }
     }
@@ -131,10 +131,10 @@ impl ModelItemIndex<std::ops::Range<usize>> for Variable<1> {
 
 impl<const N : usize> ModelItemIndex<&[std::ops::Range<usize>; N]> for Variable<N> {
     type Output = Variable<N>;
-    fn index(&self, ranges: &[std::ops::Range<usize>]) -> Variable<N> {
+    fn index(&self, ranges: &[std::ops::Range<usize>;N]) -> Variable<N> {
         if !ranges.iter().zip(self.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range is out of bounds in the the shape: {:?} in {:?}",ranges,self.shape) }
 
-        let rshape : Vec<usize> = ranges.iter().map(|r| r.end-r.start).collect();
+        let rshape : [usize;N]; rshape.iter_mut().zip(ranges.iter()).for_each(|(rs,ra)| *rs = ra.end-ra.start);
         let mut rstrides = rshape.clone(); let _ = rstrides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev});
 
         if let Some(ref sp) = self.sparsity {
@@ -172,11 +172,11 @@ impl<const N : usize> ModelItemIndex<&[std::ops::Range<usize>; N]> for Variable<
 }
 
 impl<const N : usize> Variable<N> {
-    pub fn new(idxs : Vec<usize>, sparsity : Option<Vec<usize>>, shape : Vec<usize>) -> Variable<N> {
+    pub fn new(idxs : Vec<usize>, sparsity : Option<Vec<usize>>, shape : &[usize; N]) -> Variable<N> {
         Variable{
             idxs,
             sparsity,
-            shape }
+            shape:*shape }
     }
     pub fn idxs(&self) -> &[usize] { self.idxs.as_slice() }
     pub fn sparsity(&self) -> Option<&[usize]> { if let Some(ref sp) = self.sparsity { Some(sp.as_slice()) } else { None }}
@@ -196,7 +196,7 @@ impl<const N : usize> Variable<N> {
         Variable{
             idxs     : self.idxs,
             sparsity : self.sparsity,
-            shape
+            shape:*shape
         }
     }
 
@@ -204,12 +204,8 @@ impl<const N : usize> Variable<N> {
         if sp.len() != self.idxs.len() {
             panic!("Sparsity does not match the size");
         }
-        if sp.len() > 0 {
-            if sp.len() > 1 {
-                if ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(a,b)| a < b) {
-                    panic!("Sparsity pattern is not sorted or contains duplicates");
-                }
-            }
+        if sp.len() > 1 && ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(a,b)| a < b) {
+            panic!("Sparsity pattern is not sorted or contains duplicates");
         }
         if ! sp.last().map_or_else(|| true, |&v| v < self.shape.iter().product()) {
             panic!("Sparsity pattern does not match the shape");
@@ -226,12 +222,8 @@ impl<const N : usize> Variable<N> {
         if sp.len() != self.idxs.len() {
             panic!("Sparsity does not match the size");
         }
-        if sp.len() > 0 {
-            if sp.len() > 1 {
-                if ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(a,b)| a < b) {
-                    panic!("Sparsity pattern is not sorted or contains duplicates");
-                }
-            }
+        if sp.len() > 1  && ! sp[0..sp.len()-1].iter().zip(sp[1..].iter()).all(|(a,b)| a < b) {
+            panic!("Sparsity pattern is not sorted or contains duplicates");
         }
         if sp.last().map_or_else(|| true, |&v| v < shape.iter().product()) {
             panic!("Sparsity pattern does not match the shape");
@@ -239,7 +231,7 @@ impl<const N : usize> Variable<N> {
         Variable {
             idxs : self.idxs,
             sparsity : Some(sp),
-            shape : shape.to_vec()
+            shape : *shape
         }
     }
 

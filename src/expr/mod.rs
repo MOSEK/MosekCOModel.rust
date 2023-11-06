@@ -28,7 +28,7 @@ pub trait ExprTrait<const N : usize> {
     // fn reshape(self, shape : &[usize]) -> ExprReshape<Self>  { ExprReshape{  item : self, shape : shape.to_vec() } }
     // fn mul_scalar(self, c : f64) -> ExprMulScalar<Self> { ExprMulScalar{ item:self, c : c } }
     // fn mul_vec_left(self, v : Vec<f64>) -> ExprMulVec<Self>
-    fn axispermute(self,perm : &[usize; N]) -> ExprPermuteAxes<N,Self> where Self:Sized { ExprPermuteAxes{item : self, perm } }
+    fn axispermute(self,perm : &[usize; N]) -> ExprPermuteAxes<N,Self> where Self:Sized { ExprPermuteAxes{item : self, perm: *perm } }
 
     /// Sum all elements in an expression yielding a scalar expression.
     fn sum(self) -> ExprSum<N,Self> where Self:Sized { ExprSum{item:self} }
@@ -36,9 +36,7 @@ pub trait ExprTrait<const N : usize> {
     fn add<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,R>  where Self:Sized { ExprAdd{lhs:self,rhs} }
     fn sub<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,ExprMulScalar<N,R>>  where Self:Sized { ExprAdd{lhs:self, rhs:ExprMulScalar{item:rhs,lhs:-1.0}} }
 
-    fn dot<V:ExprInnerProductFactorTrait<Self>>(self,v: V) -> V::Output where Self:Sized   { v.dot(self) }
-
-    fn mul_scalar(self, s : f64) -> ExprMulScalar<N,Self>{ ExprMulScalar { item : self, lhs : s } }
+    fn mul_scalar(self, s : f64) -> ExprMulScalar<N,Self> where Self:Sized { ExprMulScalar { item : self, lhs : s } }
 
     fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }
     fn hstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,1) }
@@ -47,12 +45,8 @@ pub trait ExprTrait<const N : usize> {
     /// Reshape the experssion. The new shape must match the old
     /// shape, meaning that the product of the dimensions are the
     /// same.
-    fn reshape<const M : usize>(self,shape : &[usize; M]) -> ExprReshape<N,M,Self>  where Self:Sized { ExprReshape{item:self,shape} }
+    fn reshape<const M : usize>(self,shape : &[usize; M]) -> ExprReshape<N,M,Self>  where Self:Sized { ExprReshape{item:self,shape:*shape} }
 
-    /// Creates a sparse expression with the given shape and sparsity
-    /// from the elements in the expression. The sparsity [sp] must
-    /// match the actual number of elements in the expression.
-    fn scatter<const M : usize>(self,shape : &[usize], sp : Vec<usize>) -> ExprScatter<N,Self>  where Self:Sized { ExprScatter::new(self, shape, sp) }
 
     /// Reshape a sparse expression into a dense expression with the
     /// given shape. The shape must match the actual number of
@@ -61,21 +55,48 @@ pub trait ExprTrait<const N : usize> {
 }
 
 pub trait ExprTrait1 : ExprTrait<1> {
-    fn mul_left_dense(self, v : matrix::DenseMatrix) -> ExprMulLeftDense<Self> where Self:Sized { ExprMulLeftDense{item:self,lhs:v} }
-    fn mul_right_dense(self, v : matrix::DenseMatrix) -> ExprMulRightDense<Self> where Self:Sized  { ExprMulRightDense{item:self,rhs:v} }
-    fn mul<const N : usize,V>(self,other : V) -> V::Result where V : ExprRightMultipliable<Self>, Self:Sized { other.mul_right(self) }
+    fn mul_left_dense(self, v : matrix::DenseMatrix) -> ExprReshapeOneRow<2,1,ExprMulLeftDense<ExprReshapeOneRow<1,2,Self>>> where Self:Sized { 
+        ExprReshapeOneRow{
+            item:ExprMulLeftDense{
+                item:ExprReshapeOneRow{
+                    item: self, 
+                    dim : 0 
+                },
+                lhs:v
+            } ,
+            dim : 0
+        }
+    }
+    fn mul_right_dense(self, v : matrix::DenseMatrix) -> ExprReshapeOneRow<2,1,ExprMulRightDense<ExprReshapeOneRow<1,2,Self>>> where Self:Sized  { 
+        ExprReshapeOneRow{
+            dim : 0,
+            item : ExprMulRightDense{
+                item:ExprReshapeOneRow {
+                    item : self,
+                    dim : 1 
+                },
+                rhs:v}
+        }
+    }
+    fn dot<V:ExprInnerProductFactorTrait<Self>>(self,v: V) -> V::Output where Self:Sized   { v.dot(self) }
+    fn mul<const N : usize,V>(self,other : V) -> V::Result where V : ExprRightMultipliable<1,Self>, Self:Sized { other.mul_right(self) }
+
+    /// Creates a sparse expression with the given shape and sparsity
+    /// from the elements in the expression. The sparsity [sp] must
+    /// match the actual number of elements in the expression.
+    fn scatter<const M : usize>(self,shape : &[usize; M], sp : Vec<usize>) -> ExprScatter<M,Self>  where Self:Sized { ExprScatter::new(self,shape,sp) }
 }
 
 pub trait ExprTrait2 : ExprTrait<2> {
     //fn into_diag(self) -> ExprIntoDiag<Self> { ExprIntoDiag{ item : self } }
     fn mul_left_dense(self, v : matrix::DenseMatrix) -> ExprMulLeftDense<Self> where Self:Sized { ExprMulLeftDense{item:self,lhs:v} }
     fn mul_right_dense(self, v : matrix::DenseMatrix) -> ExprMulRightDense<Self> where Self:Sized  { ExprMulRightDense{item:self,rhs:v} }
-    fn transpose(self) -> ExprPermuteAxes<2,Self> { }
+    fn transpose(self) -> ExprPermuteAxes<2,Self> where Self:Sized { ExprPermuteAxes{ item : self, perm : [1,0]} }
     fn tril(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized { ExprTriangularPart{item:self,upper:false,with_diag} }
     fn triu(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized { ExprTriangularPart{item:self,upper:true,with_diag} }
-    fn trilvec<const N : usize>(self,with_diag:bool) -> ExprGatherToVec<N,ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:false,with_diag} } }
-    fn triuvec<const N : usize>(self,with_diag:bool) -> ExprGatherToVec<N,ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
-    fn mul<V>(self,other : V) -> V::Result where V : ExprRightMultipliable<2,Self>, Self:Sized { other.mul_right(self) }
+    fn trilvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:false,with_diag} } } 
+    fn triuvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
+    fn mul<V>(self, other : V) -> V::Result where V : ExprRightMultipliable<2,Self>, Self:Sized { other.mul_right(self) }
 }
 
 ////////////////////////////////////////////////////////////
@@ -146,7 +167,7 @@ impl<const N : usize> Expr<N> {
             aptr,
             asubj,
             acof,
-            shape,
+            shape:*shape,
             sparsity
         }
     }
@@ -160,7 +181,7 @@ impl<const N : usize> Expr<N> {
             aptr : self.aptr,
             asubj : self.asubj,
             acof : self.acof,
-            shape : shape.to_vec(),
+            shape : *shape,
             sparsity : self.sparsity
         }
     }
@@ -201,7 +222,7 @@ pub fn nil<const N : usize>(shape : &[usize; N]) -> ExprNil<N> {
     if shape.iter().product::<usize>() != 0 {
         panic!("Shape must have at least one zero-dimension");
     }
-    ExprNil{shape}
+    ExprNil{shape:*shape}
 }
 
 
@@ -438,6 +459,28 @@ impl<const N : usize, L:ExprAddRecTrait,R:ExprTrait<N>> ExprTrait<N> for ExprAdd
 }
 
 
+
+
+// For internal use. Reshape an expression into an M-dimensional expression where all but one
+// dimensions are 1. Unlike Reshape we don't need to to know the actual dimensions of either the
+// original or the resulting expression.
+pub struct ExprReshapeOneRow<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, dim : usize } 
+impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprReshapeOneRow<N,M,E> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        if self.dim >= M { panic!("Invalid dimension given"); }
+        self.item.eval(rs,ws,xs);
+            
+        let newshape : [usize; M]; newshape.iter().for_each(|s| *s = 1 );
+        newshape[self.dim] = {
+            let (shp,_,_,_,_) = ws.peek_expr();
+            shp.iter().product()
+        };
+
+        rs.inline_reshape_expr(&newshape);
+    }
+}
+
+
 pub struct ExprReshape<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, shape : [usize; M] }
 impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprReshape<N,M,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
@@ -465,7 +508,7 @@ pub struct ExprScatter<const M : usize, E:ExprTrait<1>> { item : E, shape : [usi
 
 impl<const M : usize, E:ExprTrait<1>> ExprScatter<M,E> {
     pub fn new(item     : E,
-               shape    : Vec<usize>,
+               shape    : &[usize; M],
                sparsity : Vec<usize>) -> ExprScatter<M,E> {
 
         if sparsity.iter().max().map(|&v| v >= shape.iter().product()).unwrap_or(false) {
@@ -479,11 +522,11 @@ impl<const M : usize, E:ExprTrait<1>> ExprScatter<M,E> {
                 panic!("Sparsity pattern contains duplicates");
             }
             ExprScatter{ item,
-                         shape,
+                         shape:*shape,
                          sparsity : perm.iter().map(|&p| unsafe{ *sparsity.get_unchecked(p)}).collect() }
         }
         else {
-            ExprScatter{ item, shape, sparsity }
+            ExprScatter{ item, shape: *shape, sparsity }
         }
     }
 }

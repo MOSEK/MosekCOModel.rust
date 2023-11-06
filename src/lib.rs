@@ -280,16 +280,14 @@ impl<const N : usize> LinearDomain<N> {
         LinearDomain{
             dt    : self.dt,
             ofs   : self.ofs,
-            shape,
+            shape : *shape,
             sp    : self.sp
         }
     }
 
     pub fn with_sparsity(self,sp : Vec<usize>) -> LinearDomain<N> {
-        if sp.len() > 1 {
-            if ! sp[..sp.len()-1].iter().zip(sp[1..].iter()).all(|(a,b)| a < b) {
-                panic!("Sparsity pattern is not sorted");
-            }
+        if sp.len() > 1 && ! sp[..sp.len()-1].iter().zip(sp[1..].iter()).all(|(a,b)| a < b) {
+            panic!("Sparsity pattern is not sorted");
         }
         if ! sp.last().map_or_else(|| true, |&v| v < self.shape.iter().product()) {
                 panic!("Sparsity pattern does not fit in shape");
@@ -303,10 +301,8 @@ impl<const N : usize> LinearDomain<N> {
     }
 
     pub fn with_shape_and_sparsity<const M : usize>(self,shape : &[usize; M], sp : Vec<usize>) -> LinearDomain<M> {
-        if sp.len() > 1 {
-            if ! sp[..sp.len()-1].iter().zip(sp[1..].iter()).all(|(a,b)| a < b) {
-                panic!("Sparsity pattern is not sorted");
-            }
+        if sp.len() > 1 && ! sp[..sp.len()-1].iter().zip(sp[1..].iter()).all(|(a,b)| a < b) {
+            panic!("Sparsity pattern is not sorted");
         }
         if ! sp.last().map_or_else(|| true, |&v| v < shape.iter().product()) {
                 panic!("Sparsity pattern does not fit in shape");
@@ -314,7 +310,7 @@ impl<const N : usize> LinearDomain<N> {
         LinearDomain{
             dt    : self.dt,
             ofs   : self.ofs,
-            shape,
+            shape : *shape,
             sp    : Some(sp)
         }
     }
@@ -369,7 +365,7 @@ pub fn in_geometric_mean_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:Co
 pub fn in_dual_geometric_mean_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::DualGeometricMeanCone,ofs:vec![0.0; dim],shape:[dim],conedim:0} }
 pub fn in_exponential_cone() -> ConicDomain<1> { 
     ConicDomain{dt:ConicDomainType::ExponentialCone,ofs:vec![0.0; 3],shape:[3],conedim:0} }
-pub fn in_dual_exponential_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::DualExponentialCone,ofs:vec![0.0; dim],shape:vec![dim],conedim:0} }
+pub fn in_dual_exponential_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::DualExponentialCone,ofs:vec![0.0; dim],shape:[dim],conedim:0} }
 
 fn in_cones<const N : usize>(shape : &[usize; N], conedim : usize,ct : ConicDomainType) -> ConicDomain<N> {
     if conedim >= shape.len() {
@@ -377,7 +373,7 @@ fn in_cones<const N : usize>(shape : &[usize; N], conedim : usize,ct : ConicDoma
     }
     ConicDomain{dt:ct,
                 ofs : vec![0.0; shape.iter().product()],
-                shape,
+                shape:*shape,
                 conedim}
 }
 
@@ -393,7 +389,8 @@ pub fn in_dual_exponential_cones<const N : usize>(shape : &[usize; N], conedim :
     if let Some(&d) = shape.get(conedim) { if d != 3 { panic!("Invalid shape or exponential cone") } }
     in_cones(shape,conedim,ConicDomainType::DualGeometricMeanCone) 
 }
-pub fn in_psd_cone<const N : usize>(dim : usize) -> PSDDomain<N> {
+
+pub fn in_psd_cone<const N : usize>(dim : usize) -> PSDDomain<2> {
     PSDDomain{
         shape : [dim,dim],
         conedims : (0,1)
@@ -407,7 +404,7 @@ pub fn in_psd_cones<const N : usize>(shape : &[usize; N], conedim1 : usize, cone
         panic!("Mismatching cone dimensions");
     }
     PSDDomain{
-        shape,
+        shape : *shape,
         conedims : (conedim1,conedim2)
     }
 }
@@ -544,7 +541,7 @@ impl Model {
 
         Variable::new((firstvar..firstvar+n).collect(),
                       dom.sp,
-                      dom.shape)
+                      &dom.shape)
     }
 
     fn free_variable<const N : usize>(&mut self, name : Option<&str>, shape : &[usize;N]) -> Variable<N> {
@@ -561,7 +558,7 @@ impl Model {
         self.task.put_var_bound_slice_const(vari,varend,mosek::Boundkey::FR,0.0,0.0).unwrap();
         Variable::new((firstvar..firstvar+n).collect(),
                       None,
-                      shape.to_vec())
+                      shape)
     }
 
     fn psd_variable<const N : usize>(&mut self, _name : Option<&str>, dom : PSDDomain<N>) -> Variable<N> {
@@ -614,8 +611,8 @@ impl Model {
         };
 
         Variable::new(idxs,
-                       None,
-                      dom.shape)
+                      None,
+                      &dom.shape)
     }
 
     fn conic_variable<const N : usize>(&mut self, _name : Option<&str>, dom : ConicDomain<N>) -> Variable<N> {
@@ -669,7 +666,7 @@ impl Model {
 
         Variable::new((firstvar..firstvar+n).collect(),
                       None,
-                      dom.shape)
+                      &dom.shape)
     }
 
 
