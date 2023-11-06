@@ -13,16 +13,15 @@ pub(super) fn permute_axes(perm : &[usize],
                            ws : & mut WorkStack,
                            xs : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-    let nnz = ptr.last().unwrap();
     let nelem = ptr.len()-1;
 
     if perm.len() != shape.len() {
         panic!("Mismatching permutation and shape");
     }
-    let mut rshape = vec![0; shape.len()];
-    perm.iter().map(|&i| {
+    let mut rshape = vec![usize::MAX; shape.len()];
+    perm.iter().for_each(|&i| {
         unsafe {
-            if *rshape.get_unchecked(i) >= 0 || i < 0 || i >= shape.len() {
+            if i >= shape.len() || *rshape.get_unchecked(i) < usize::MAX  {
                 panic!("Invalid permutation");
             }
             *rshape.get_unchecked_mut(i) = *shape.get_unchecked(i);
@@ -43,7 +42,7 @@ pub(super) fn permute_axes(perm : &[usize],
 
     if let Some(sp) = sp {
         spx.iter_mut().zip(sp.iter()).for_each(|(ix,&i)| {
-            let (_,ri) = strides.iter().zip(prstrides.iter()).fold((i,0),|(v,r),(&s,&rs)| (v%s,(v/s)*rs));
+            let (_,ri) = strides.iter().zip(prstrides.iter()).fold((i,0),|(v,r),(&s,&rs)| (v%s,r+(v/s)*rs));
             *ix = ri;
         });
 
@@ -68,13 +67,13 @@ pub(super) fn permute_axes(perm : &[usize],
     else {
         rptr[0] = 0;
         for (si,n) in ptr.iter().zip(ptr[1..].iter()).map(|(&p0,&p1)| p1-p0).enumerate() {
-            let (_,ti) = strides.iter().zip(prstrides.iter()).fold((si,0),|(v,r),(&s,&rs)| (v%s,(v/s)*rs));
+            let (_,ti) = strides.iter().zip(prstrides.iter()).fold((si,0),|(v,r),(&s,&rs)| (v%s,r+(v/s)*rs));
             rptr[ti+1] = n
         }
         let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
         
         for (si,(ssubj,scof)) in izip!(subj.chunks_by(ptr),cof.chunks_by(ptr)).enumerate() {
-            let (_,ti) = strides.iter().zip(prstrides.iter()).fold((si,0),|(v,r),(&s,&rs)| (v%s,(v/s)*rs));
+            let (_,ti) = strides.iter().zip(prstrides.iter()).fold((si,0),|(v,r),(&s,&rs)| (v%s,r+(v/s)*rs));
             let n = ssubj.len();
             let nzi = rptr[ti];
 

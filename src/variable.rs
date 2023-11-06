@@ -134,8 +134,8 @@ impl<const N : usize> ModelItemIndex<&[std::ops::Range<usize>; N]> for Variable<
     fn index(&self, ranges: &[std::ops::Range<usize>;N]) -> Variable<N> {
         if !ranges.iter().zip(self.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range is out of bounds in the the shape: {:?} in {:?}",ranges,self.shape) }
 
-        let rshape : [usize;N]; rshape.iter_mut().zip(ranges.iter()).for_each(|(rs,ra)| *rs = ra.end-ra.start);
-        let mut rstrides = rshape.clone(); let _ = rstrides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev});
+        let mut rshape = [0usize;N]; rshape.iter_mut().zip(ranges.iter()).for_each(|(rs,ra)| *rs = ra.end-ra.start);
+        let mut rstrides = rshape; let _ = rstrides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev});
 
         if let Some(ref sp) = self.sparsity {
             let mut strides = rshape.to_vec();

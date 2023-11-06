@@ -470,13 +470,13 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprResh
         if self.dim >= M { panic!("Invalid dimension given"); }
         self.item.eval(rs,ws,xs);
             
-        let newshape : [usize; M]; newshape.iter().for_each(|s| *s = 1 );
+        let mut newshape = [ 0usize; M ]; newshape.iter_mut().for_each(|s| *s = 1 );
         newshape[self.dim] = {
             let (shp,_,_,_,_) = ws.peek_expr();
             shp.iter().product()
         };
 
-        rs.inline_reshape_expr(&newshape);
+        _ = rs.inline_reshape_expr(&newshape).unwrap();
     }
 }
 
@@ -1018,7 +1018,7 @@ impl<E:ExprTrait<2>> ExprTrait<1> for ExprDiag<E> {
                                          ( self.anti && self.index >= 0 && d-i%d - absidx == i/d) || 
                                          ( self.anti && self.index <  0 && d-i%d + absidx == i/d))))
                     .zip(rptr[1..].iter_mut())
-                    .for_each(|((&i,&p0,&p1),rp)| {
+                    .for_each(|((_,&p0,&p1),rp)| {
                         *rp = p1-p0;
                         rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
                         rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
@@ -1049,6 +1049,7 @@ impl<E:ExprTrait<2>> ExprTrait<1> for ExprDiag<E> {
                     rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
                     rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
                     *rp = p1-p0;
+                    nzi += p1-p0;
                 });
             let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p } );
                         

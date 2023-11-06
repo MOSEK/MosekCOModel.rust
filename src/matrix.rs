@@ -1,7 +1,7 @@
 use crate::expr::ExprReshapeOneRow;
 
 //use itertools::{izip};
-use super::expr::{ExprRightMultipliable,ExprTrait,ExprMulLeftDense,ExprMulRightDense};
+use super::expr::{ExprRightMultipliable,ExprTrait,ExprTrait1,ExprTrait2,ExprMulLeftDense,ExprMulRightDense};
 
 pub fn dense(height : usize, width : usize, data : Vec<f64>) -> DenseMatrix { DenseMatrix::new(height,width,data) }
 pub fn sparse(height : usize, width : usize,
@@ -98,7 +98,7 @@ impl DenseMatrix {
         if height*width != data.len() { panic!("Invalid data size for matrix")  }
         DenseMatrix{
             dim : (height,width),
-            data : data
+            data
         }
     }
     pub fn dim(&self) -> (usize,usize) { self.dim }
@@ -107,12 +107,12 @@ impl DenseMatrix {
     pub fn data(&self) -> &[f64] { self.data.as_slice() }
 }
 
-impl<E:ExprTrait<2>> ExprRightMultipliable<2,E> for DenseMatrix {
+impl<E:ExprTrait2> ExprRightMultipliable<2,E> for DenseMatrix {
     type Result = ExprMulRightDense<E>;
     fn mul_right(self,other : E) -> Self::Result { other.mul_right_dense(self) }
 }
 
-impl<E:ExprTrait<1>> ExprRightMultipliable<1,E> for DenseMatrix {
+impl<E:ExprTrait1> ExprRightMultipliable<1,E> for DenseMatrix {
     type Result = ExprReshapeOneRow<2,1,ExprMulRightDense<ExprReshapeOneRow<1,2,E>>>;
     fn mul_right(self,other : E) -> Self::Result { 
         other.mul_right_dense(self) 

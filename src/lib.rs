@@ -240,7 +240,7 @@ impl<const N : usize> ConDomainTrait<N> for &[usize;N] {
                             LinearDomain{
                                 dt:LinearDomainType::Free,
                                 ofs:vec![0.0; self.iter().product::<usize>()],
-                                shape:self,
+                                shape:*self,
                                 sp:None})
     }
 }
