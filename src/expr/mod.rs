@@ -10,6 +10,8 @@ use super::utils::*;
 use workstack::WorkStack;
 use super::matrix;
 
+
+
 pub trait ExprTrait<const N : usize> {
     /// Evaluate the expression and put the result on the [rs] stack,
     /// using the [ws] to evaluate sub-expressions and [xs] for
@@ -52,6 +54,22 @@ pub trait ExprTrait<const N : usize> {
     /// given shape. The shape must match the actual number of
     /// elements in the expression.
     fn gather(self) -> ExprGatherToVec<N,Self>  where Self:Sized { ExprGatherToVec{item:self} }
+
+    fn dot<V:ExprInnerProductFactorTrait<Self>>(self,v: V) -> V::Output where Self:Sized { v.dot(self) }
+    fn mul<V>(self,other : V) -> V::Result where V : ExprRightMultipliable<1,Self>, Self:Sized { other.mul_right(self) }
+
+    /// Creates a sparse expression with the given shape and sparsity
+    /// from the elements in the expression. The sparsity [sp] must
+    /// match the actual number of elements in the expression.
+    fn scatter<const M : usize>(self,shape : &[usize; M], sp : Vec<usize>) -> ExprScatter<M,Self>  where Self:Sized { ExprScatter::new(self,shape,sp) }
+}
+
+pub trait ExprTrait0 : ExprTrait<0> {
+    //fn mul_left_dense(self,v:DenseMatrix) -> ExprScalarMulLeftDense where Self:Sized {}
+    //fn mul_left_sparse(self,v:SparseMatrix) -> ExprScalarMulLeftDense where Self:Sized {}
+    //fn mul_right_dense(self,v:DenseMatrix) -> ExprScalarMulLeftDense where Self:Sized {}
+    //fn mul_right_sparse(self,v:SparseMatrix) -> ExprScalarMulLeftDense where Self:Sized {}
+    //fn mul(self, other : ExprRightMultipliable) -> 
 }
 
 pub trait ExprTrait1 : ExprTrait<1> {
@@ -99,6 +117,9 @@ pub trait ExprTrait2 : ExprTrait<2> {
     fn mul<V>(self, other : V) -> V::Result where V : ExprRightMultipliable<2,Self>, Self:Sized { other.mul_right(self) }
 }
 
+impl<E : ExprTrait<0>> ExprTrait0 for E {}
+impl<E : ExprTrait<1>> ExprTrait1 for E {}
+impl<E : ExprTrait<2>> ExprTrait2 for E {}
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
 // Expression objects
@@ -465,6 +486,15 @@ impl<const N : usize, L:ExprAddRecTrait,R:ExprTrait<N>> ExprTrait<N> for ExprAdd
 // dimensions are 1. Unlike Reshape we don't need to to know the actual dimensions of either the
 // original or the resulting expression.
 pub struct ExprReshapeOneRow<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, dim : usize } 
+impl<const N : usize,const M : usize,E> ExprReshapeOneRow<N,M,E> 
+    where 
+        E:ExprTrait<N> 
+{
+    pub fn new(dim : usize, item : E) -> ExprReshapeOneRow<N,M,E> {
+        ExprReshapeOneRow{item,dim}
+    }
+}
+
 impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprReshapeOneRow<N,M,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         if self.dim >= M { panic!("Invalid dimension given"); }
@@ -476,7 +506,7 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprResh
             shp.iter().product()
         };
 
-        _ = rs.inline_reshape_expr(&newshape).unwrap();
+        rs.inline_reshape_expr(&newshape).unwrap();
     }
 }
 

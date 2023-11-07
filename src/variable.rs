@@ -409,9 +409,9 @@ impl<const N : usize> Variable<N> {
     pub fn hstack(xs : &[&Variable<N>]) -> Variable<N> { Self::stack(1,xs) }
 }
 
-impl<const N : usize> super::ExprTrait<N> for Variable<N> {
-    fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),
+impl<const N : usize> Variable<N> {
+    fn eval_common(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.shape,
                                                   self.idxs.len(),
                                                   self.idxs.len());
         rptr.iter_mut().enumerate().for_each(|(i,p)| *p = i);
@@ -423,3 +423,10 @@ impl<const N : usize> super::ExprTrait<N> for Variable<N> {
         }
     }
 }
+
+impl<const N : usize> super::ExprTrait<N> for Variable<N> where {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.eval_common(rs,ws,xs);
+    }
+}
+

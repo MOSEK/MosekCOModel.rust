@@ -10,7 +10,7 @@ use expr::workstack::WorkStack;
 use itertools::{iproduct};
 use std::iter::once;
 
-pub use expr::{ExprTrait,ExprLeftMultipliable,ExprRightMultipliable};
+pub use expr::{ExprTrait,ExprTrait0,ExprTrait1,ExprTrait2,ExprRightMultipliable};
 pub use variable::{Variable};
 
 use utils::*;

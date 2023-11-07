@@ -37,8 +37,8 @@ fn main() {
     //  and z2 = [ y[1],y[2],x[2] ]
 
     // TODO: Variable.vstack(y[0], x[0..2]);
-    let z1 = Variable::vstack(&[&y.index(0),    &x.index(0..2)]);
-    let z2 = Variable::vstack(&[&y.index(1..3), &x.index(2)]);
+    let z1 = Variable::vstack(&[&y.index(0..1), &x.index(0..2)]);
+    let z2 = Variable::vstack(&[&y.index(1..3), &x.index(2..3)]);
     //TAG:end-create-variable
 
     //TAG:begin-create-lincon

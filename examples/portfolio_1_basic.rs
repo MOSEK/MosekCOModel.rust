@@ -2,7 +2,7 @@ extern crate mosekmodel;
 
 use mosekmodel::*;
 use mosekmodel::expr::*;
-use mosekmodel::matrix::DenseMatrix;
+use mosekmodel::matrix::*;
 
 /// Computes the optimal portfolio for a given risk
 ///
@@ -34,7 +34,9 @@ fn basic_markowitz( n : usize,
     model.constraint(Some("budget"), &x.clone().sum(), equal_to(w+x0.iter().sum::<f64>()));
 
     // Imposes a bound on the risk
-    model.constraint(Some("risk"), &vstack![gamma, gt.clone().mul(x.clone())], in_quadratic_cone(n+1));
+    model.constraint(Some("risk"), 
+                     &vstack![gamma.reshape(&[1]), 
+                              gt.clone().mul(x.clone())], in_quadratic_cone(n+1));
 
     model.write_problem("portfolio-1.ptf");
     // Solves the model.
