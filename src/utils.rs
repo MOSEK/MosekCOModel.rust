@@ -2,7 +2,11 @@
 //! Utility module.
 //!
 
+use std::slice::SliceIndex;
+
 use itertools::izip;
+
+
 
 
 /// An interator that produces an accumulation map, a bit like fold+map.
@@ -457,6 +461,113 @@ pub fn shape_eq_except(s0 : &[usize], s1 : &[usize], d : usize) -> bool{
 
 ////////////////////////////////////////////////////////////
 
+// Convert between linear index and coordinate index
+
+/// Convert linear index to coordinate index for a given shape.
+///
+pub struct ToCoord<const N : usize> {    
+    strides : [usize; N],
+}
+/// Convert koordinate index to linear index for a given shape.
+pub struct FromCoord<const N : usize> {
+    strides : [usize; N],
+}
+impl<const N : usize> ToCoord<N> {
+    pub fn new(shape : &[usize; N]) -> ToCoord<N> {
+        let mut strides = [0usize; N];
+        let _ = strides.iter_mut().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v * d});
+        ToCoord{ strides }
+    }
+}
+/// Create a function that converts from linear index to coordinate index.
+///
+/// # Examples
+/// 
+/// ```
+/// use mosekmodel::utils::*;
+/// let shape = [2,4,3];
+/// let lindexes = &[1,5,10,0,22,18,6];
+/// let cindexes : Vec<[usize; 3]> = lindexes.iter().map(to_coord(&shape)).collect();
+/// ```
+pub fn to_coord<const N : usize,F>(shape:&[usize; N]) -> F where F : Fn(usize) -> [usize; N] { 
+    let mut strides = [0usize; N];
+    let _ = strides.iter_mut().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v * d});
+
+    | i | {
+        let mut r = [0; N];
+        let _ = r.iter_mut().zip(strides.iter()).fold(i,|i,(r,&s)| unsafe{ *r = i/s; i % s } );
+        r
+    }
+}
+
+
+/// Create a function that converts from coordinate index to linear index.
+///
+/// # Examples
+/// 
+/// ```
+/// use mosekmodel::utils::*;
+/// let shape = [2,4,3];
+/// let cindexes = &[ [0,0,0],
+///                   [1,3,2],
+///                   [1,2,1],
+///                   [0,2,0] ];
+/// let lindexes : Vec<usize> = cindexes.iter().map(from_coord(shape)).collect();
+/// ```
+pub fn from_coord<const N : usize,F>(shape:&[usize; N]) -> F where F : Fn(&[usize; N]) -> usize {
+    let mut strides = [0usize; N];
+    let _ = strides.iter_mut().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v * d});
+
+    | i | strides.iter().zip(shape.iter()).fold(0,|v,(&st,&sh)| v + st*sh)
+}
+
+
+/// Create a function that perform a permutation on a fixed size array.
+/// 
+/// # Examples
+///
+/// ```
+/// use mosekmodel::utils::perm_coord;
+/// let perm : [usize;4] = [3,1,0,2];
+/// let index : &[[usize; 4]] = &[ [ 0,0,0,0 ],
+///                                [ 0,0,0,1 ],
+///                                [ 0,0,2,0 ],
+///                                [ 0,3,0,0 ],
+///                                [ 4,0,0,0 ] ];
+/// let pindex : Vec<[usize; 4]> = index.iter().map(perm_coord(&perm)).collect();
+/// ```
+pub fn perm_coord<const N : usize,T,F>(perm : &[usize; N]) -> Result<F,String> 
+    where 
+        F : Fn(&[T; N]) -> [T; N],
+        T : Default
+{
+    // check that it is a permutation
+    let mut check = [false; N];
+    for (i,&p) in perm.iter().enumerate() {
+        if p > N { return Err("Invalid permuration".to_string()); }
+        if unsafe { *check.get_unchecked(p) } {
+            return Err("Invalid permuration".to_string());
+        }
+        else {
+            unsafe{ *check.get_unchecked_mut(p) = true };
+        }
+    }
+
+    Ok(| i | { 
+        let mut r = [T::default(); N]; 
+        for (r,&p) in izip!(r.iter_mut(),i.iter(),perm.iter()) {
+            *r = unsafe{ i.get_unchecked(p) };
+        }
+
+        r
+    })
+}
+
+
+
+
+
+
 
 
 #[cfg(test)]
@@ -479,4 +590,5 @@ mod tests {
 
         assert!([1,5,4,7,3,2].iter().fold_map(0,|&a,b| a+b).zip([1,6,10,17,20,22].iter()).all(|(a,&b)| a == b));
     }
+}
 }
