@@ -84,7 +84,6 @@ pub(super) fn permute_axes(perm : &[usize],
 }
 
 
-
 /// Add `n` expression residing on `ws`. Result pushed to `rs`.
 pub(super) fn add(n  : usize,
                   rs : & mut WorkStack,

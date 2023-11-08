@@ -68,13 +68,14 @@ pub fn diag(data : &[f64]) -> SparseMatrix {
     }
 }
 
-
+/// Represents a dense matrix.
 #[derive(Clone)]
 pub struct DenseMatrix {
     dim  : (usize,usize),
     data : Vec<f64>
 }
 
+/// Represents a sparse matrix.
 #[derive(Clone)]
 pub struct SparseMatrix {
     dim  : (usize,usize),
@@ -82,6 +83,20 @@ pub struct SparseMatrix {
     data : Vec<f64>,
 }
 
+/// Represents a Dense n-dimensional array
+#[derive(Clone)]
+pub struct DenseNDArray<const N : usize> {
+    dim : [usize; N],
+    data : Vec<f64>,
+}
+
+/// represents a Sparse n-dimensional array
+#[derive(Clone)]
+pub struct SparseNDArray<const N : usize> {
+    dim : [usize; N],
+    data : Vec<usize>,
+    data : Vec<f64>,
+}
 
 
 impl SparseMatrix {
