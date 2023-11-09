@@ -33,12 +33,15 @@ fn efficient_frontier( n : usize,
 
     // Defines the variables (holdings). Shortselling is not allowed.
     let x = model.variable(Some("x"), greater_than(vec![0.0; n])); // Portfolio variables
-    let s = model.variable(Some("s"), &[] as &[usize]);  // Variance variable
+    let s = model.variable(Some("s"), &[]);  // Variance variable
 
     model.constraint(Some("budget"), &x.clone().sum(), equal_to(w + x0.iter().sum::<f64>()));
 
     // Computes the risk
-    model.constraint(Some("variance"), &vstack![s.clone(), 0.5, GT.clone().mul(x.clone())], in_rotated_quadratic_cone(n+2));
+    model.constraint(Some("variance"), 
+                     &vstack![s.clone().reshape(&[1]), 
+                              (0.5).reshape(&[1]), 
+                              x.clone().rev_mul::<1,DenseMatrix>(GT.clone())], in_rotated_quadratic_cone(n+2));
 
     // Solve the problem for many values of parameter alpha
 
