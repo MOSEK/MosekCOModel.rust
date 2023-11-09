@@ -55,7 +55,7 @@ pub trait ExprTrait<const N : usize> {
     /// elements in the expression.
     fn gather(self) -> ExprGatherToVec<N,Self>  where Self:Sized { ExprGatherToVec{item:self} }
 
-
+    fn mul<RHS>(self,other : RHS) -> RHS::Result where Self: Sized, RHS : ExprRightMultipliable<N,Self> { other.mul_right(self) }
 }
 
 pub trait ExprTrait0 : ExprTrait<0> {
@@ -92,6 +92,7 @@ pub trait ExprTrait1 : ExprTrait<1> {
     }
     fn dot<V:ExprInnerProductFactorTrait<Self>>(self,v: V) -> V::Output where Self:Sized   { v.dot(self) }
     fn mul<const N : usize,V>(self,other : V) -> V::Result where V : ExprRightMultipliable<1,Self>, Self:Sized { other.mul_right(self) }
+    fn rev_mul<const N : usize,V>(self,other : V) -> V::Result where V : ExprLeftMultipliable<1,Self>, Self:Sized { other.mul(self) }
 
     /// Creates a sparse expression with the given shape and sparsity
     /// from the elements in the expression. The sparsity [sp] must
@@ -109,6 +110,7 @@ pub trait ExprTrait2 : ExprTrait<2> {
     fn trilvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:false,with_diag} } } 
     fn triuvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
     fn mul<V>(self, other : V) -> V::Result where V : ExprRightMultipliable<2,Self>, Self:Sized { other.mul_right(self) }
+    fn rev_mul<V>(self, other : V) -> V::Result where V : ExprLeftMultipliable<2,Self>, Self:Sized { other.mul(self) }
 }
 
 impl<E : ExprTrait<0>> ExprTrait0 for E {}

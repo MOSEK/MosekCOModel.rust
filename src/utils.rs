@@ -405,19 +405,17 @@ impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
         if index < usize::MAX {
             unsafe { &mut * self.data.get_unchecked_mut(index) }
         }
-        else {
-            if self.n < self.next.len() {
-                index = self.n; self.n += 1;
-                unsafe { *self.next.get_unchecked_mut(index) = head; }
-                unsafe { *self.index.get_unchecked_mut(index) = i; }
-                unsafe { *self.bucket.get_unchecked_mut(head) = index; }
+        else if self.n < self.next.len() {
+            index = self.n; self.n += 1;
+            unsafe { *self.next.get_unchecked_mut(index) = head; }
+            unsafe { *self.index.get_unchecked_mut(index) = i; }
+            unsafe { *self.bucket.get_unchecked_mut(head) = index; }
 
-                unsafe { *self.data.get_unchecked_mut(index) = self.dflt; }
-                unsafe { & mut *self.data.get_unchecked_mut(index) }
-            }
-            else {
-                panic!("Hashmap is full");
-            }
+            unsafe { *self.data.get_unchecked_mut(index) = self.dflt; }
+            unsafe { & mut *self.data.get_unchecked_mut(index) }
+        }
+        else {
+            panic!("Hashmap is full");
         }
     }
 

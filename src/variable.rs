@@ -424,7 +424,7 @@ impl<const N : usize> Variable<N> {
     }
 }
 
-impl<const N : usize> super::ExprTrait<N> for Variable<N> where {
+impl<const N : usize> super::ExprTrait<N> for Variable<N> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.eval_common(rs,ws,xs);
     }

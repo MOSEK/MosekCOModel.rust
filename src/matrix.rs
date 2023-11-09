@@ -1,4 +1,4 @@
-use crate::expr::ExprReshapeOneRow;
+use crate::expr::{ExprReshapeOneRow, ExprLeftMultipliable};
 
 //use itertools::{izip};
 use super::expr::{ExprRightMultipliable,ExprTrait,ExprTrait0,ExprTrait1,ExprTrait2,ExprMulLeftDense,ExprMulRightDense};
@@ -127,13 +127,22 @@ impl<E:ExprTrait2> ExprRightMultipliable<2,E> for DenseMatrix {
     fn mul_right(self,other : E) -> Self::Result { other.mul_right_dense(self) }
 }
 
-impl<E:ExprTrait1> ExprRightMultipliable<1,E> for DenseMatrix {
+impl<E:ExprTrait1> ExprRightMultipliable<1,E> for DenseMatrix where E : ExprTrait1 {
     type Result = ExprReshapeOneRow<2,1,ExprMulRightDense<ExprReshapeOneRow<1,2,E>>>;
     fn mul_right(self,other : E) -> Self::Result { 
         other.mul_right_dense(self) 
     }
 }
 
+impl<E:ExprTrait2> ExprLeftMultipliable<2,E> for DenseMatrix where E : ExprTrait2 {
+    type Result = ExprMulLeftDense<E>;
+    fn mul(self,other : E) -> Self::Result { other.mul_left_dense(self) }
+}
+
+impl<E:ExprTrait1> ExprLeftMultipliable<1,E> for DenseMatrix where E : ExprTrait1 {
+    type Result = ExprReshapeOneRow<2,1,ExprMulLeftDense<ExprReshapeOneRow<1,2,E>>>;
+    fn mul(self,other : E) -> Self::Result { other.mul_left_dense(self) }
+}
 
 // Trait defining the behaviour of multiplying different shapes of expressions on a dense matrix
 pub trait DenseMatrixMulLeftExpr {
