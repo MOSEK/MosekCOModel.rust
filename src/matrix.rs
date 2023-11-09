@@ -94,7 +94,7 @@ pub struct DenseNDArray<const N : usize> {
 #[derive(Clone)]
 pub struct SparseNDArray<const N : usize> {
     dim : [usize; N],
-    data : Vec<usize>,
+    sp  : Vec<usize>,
     data : Vec<f64>,
 }
 
@@ -147,13 +147,15 @@ impl<E> DenseMatrixMulLeftExpr for E where E : ExprTrait<2> {
         self.mul_left_dense(m)
     }
 }
+
+
 // Defines the behaviour when multiplying a 1D expression on a dense matrix
-impl<E> DenseMatrixMulLeftExpr for E where E : ExprTrait<0> {
-    type Output = ExprReshapeOneRow<2,1,ExprMulLeftDense<ExprReshapeOneRow<1,2,E>>>;
-    fn rev_mul(self,m : DenseMatrix) -> Self::Output {
-        self.mul_left_dense(m)
-    }
-}
+//impl<E> DenseMatrixMulLeftExpr for E where E : ExprTrait<0> {
+//    type Output = ExprReshapeOneRow<2,1,ExprMulLeftDense<ExprReshapeOneRow<1,2,E>>>;
+//    fn rev_mul(self,m : DenseMatrix) -> Self::Output {
+//        self.mul_left_dense(m)
+//    }
+//}
 
 impl DenseMatrix {
     pub fn mul<E>(self, other : E) -> E::Output where E : DenseMatrixMulLeftExpr {

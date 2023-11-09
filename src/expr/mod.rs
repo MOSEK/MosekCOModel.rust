@@ -55,13 +55,7 @@ pub trait ExprTrait<const N : usize> {
     /// elements in the expression.
     fn gather(self) -> ExprGatherToVec<N,Self>  where Self:Sized { ExprGatherToVec{item:self} }
 
-    fn dot<V:ExprInnerProductFactorTrait<Self>>(self,v: V) -> V::Output where Self:Sized { v.dot(self) }
-    fn mul<V>(self,other : V) -> V::Result where V : ExprRightMultipliable<1,Self>, Self:Sized { other.mul_right(self) }
 
-    /// Creates a sparse expression with the given shape and sparsity
-    /// from the elements in the expression. The sparsity [sp] must
-    /// match the actual number of elements in the expression.
-    fn scatter<const M : usize>(self,shape : &[usize; M], sp : Vec<usize>) -> ExprScatter<M,Self>  where Self:Sized { ExprScatter::new(self,shape,sp) }
 }
 
 pub trait ExprTrait0 : ExprTrait<0> {
