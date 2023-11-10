@@ -2,6 +2,7 @@
 // evaluation part that is not concerned with expression sub-part
 // types.
 
+use std::iter::once;
 use super::*;
 use super::super::utils;
 use super::workstack::WorkStack;
@@ -951,18 +952,57 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
     }
 }
 
+pub(super) fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+    let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+    let nd = shape.len();
+
+    let d = shape[shape.len()-num..].iter().product();
+    let rshape = shape.to_vec();
+    rshape[shape.len()-num..].iter_mut().for_each(|s| *s = 1);
+
+    if let Some(sp) = sp {
+        let rnelm = 
+            if sp.len() == 0 {
+                0
+            }
+            else {
+                sp.iter().zip(sp[1..].iter()).filter(|(&i0,&i1)| i0/d < i1/d).count()+1
+            };
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(), subj.len(), rnelm);
+        
+        rptr[0] = 0;
+        if let Some(rsp) = rsp {
+            for (rp,r,(p,v)) in izip!(rptr[1..].iter_mut(),
+                                      rsp.iter_mut(),
+                                      izip!(ptr[1..].iter(),
+                                            sp.iter(),
+                                            sp[1..].iter().chain(once(&usize::MAX)))
+                                        .filter(|(_,&i0,&i1)| i0/d < i1/d)
+                                        .map(|(&p,&i0,_)| (p,i0/d))) {
+                *r = v;
+                *rp = p
+            }
+        }
+        rsubj.clone_from_slice(subj);
+        rcof.clone_from_slice(cof);
+    } 
+    else {
+        let rnelm = shape.iter().product::<usize>()/d; 
+        let (rptr,_,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),subj.len(),rnelm);
+
+        rsubj.clone_from_slice(subj);
+        rcof.clone_from_slice(cof);
+        rptr.iter_mut().zip(ptr.iter().step_by(d)).for_each(|(rp,&p)| *rp = p );
+    }
+}
 
 pub(super) fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-    //println!("{}:{}: eval_finalize",file!(),line!());
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-    // println!("{}:{}: eval_finalize:\n\tshape = {:?}\n\rsp = {:?}\n\tptr = {:?}\n\tsubj = {:?}",file!(),line!(),shape,sp,ptr,subj);
 
     let nnz  = subj.len();
     let nelm = shape.iter().product();
     let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,nnz,nelm);
  
-    // println!("ExprTrait::eval_finalize. cof = {:?}",cof);
-
     let maxj = subj.iter().max().unwrap_or(&0);
     let (jj,ff) = xs.alloc(maxj*2+2,maxj+1);
     let (jj,jjind) = jj.split_at_mut(maxj+1);

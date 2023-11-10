@@ -4,14 +4,16 @@ extern crate itertools;
 
 mod utils;
 pub mod variable;
+pub mod domain;
 pub mod matrix;
 pub mod expr;
 use expr::workstack::WorkStack;
-use itertools::{iproduct};
+use itertools::iproduct;
 use std::iter::once;
 
 pub use expr::{ExprTrait,ExprTrait0,ExprTrait1,ExprTrait2,ExprRightMultipliable};
 pub use variable::{Variable};
+pub use domain::{LinearDomain,ConicDomain,LinearDomainType,ConicDomainType,LinearDomainOfsType,PSDDomain};
 
 use utils::*;
 
@@ -81,6 +83,94 @@ struct Solution {
 impl Solution {
     fn new() -> Solution { Solution{primal : SolutionPart::new(0,0) , dual : SolutionPart::new(0,0)  } }
 }
+
+////////////////////////////////////////////////////////////
+// Domain
+////////////////////////////////////////////////////////////
+
+/// Represents something that can be used as a domain for a constraint.
+pub trait ConDomainTrait<const N : usize> {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N>;
+}
+/// Represents something that can be used as a domain for a variable.
+pub trait VarDomainTrait<const N : usize> {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N>;
+}
+
+/// Implement LinearDomain as variable domain
+impl<const N : usize> VarDomainTrait<N> for LinearDomain<N> {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
+        m.linear_variable(name,self)
+    }
+}
+/// Implement LinearDomain as constraint domain
+impl<const N : usize> ConDomainTrait<N> for LinearDomain<N> {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
+        m.linear_constraint(name,self)
+    }
+
+}
+
+/// Implement ConicDomain as a variable domain
+impl<const N : usize> VarDomainTrait<N> for ConicDomain<N> {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
+        m.conic_variable(name,self)
+    }
+}
+/// Implement ConicDomain as a constraint domain
+impl<const N : usize> ConDomainTrait<N> for ConicDomain<N> {
+    /// Add a constraint with expression expected to be on the top of the rs stack.
+    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
+        m.conic_constraint(name,self)
+    }
+}
+
+/// Implement a fixed-size integer array as domain for variable, meaning unbounded with the array
+/// as shape.
+impl<const N : usize> VarDomainTrait<N> for &[usize;N] {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
+        m.free_variable(name,self)
+    }
+}
+
+/// Implement a fixed-size integer array as domain for constraint, meaning unbounded with the array
+/// as shape.
+impl<const N : usize> ConDomainTrait<N> for &[usize;N] {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
+        m.linear_constraint(name,
+                            LinearDomain{
+                                dt:LinearDomainType::Free,
+                                ofs:LinearDomainOfsType::Scalar(0.0),
+                                shape:*self,
+                                sp:None})
+    }
+}
+
+/// Implement integer as domain for variable, producing a vector variable if the given size.
+impl VarDomainTrait<1> for usize {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<1> {
+        m.free_variable(name,&[self])
+    }
+}
+/// Implement integer as domain for constraint, producing a vector variable if the given size.
+impl ConDomainTrait<1> for usize {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<1> {
+        m.linear_constraint(name,
+                            LinearDomain{
+                                dt:LinearDomainType::Free,
+                                ofs:LinearDomainOfsType::Scalar(0.0),
+                                shape:[self],
+                                sp:None})
+    }
+}
+/// Implements PSD domain for variables.
+impl<const N : usize> VarDomainTrait<N> for PSDDomain<N> {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
+        m.psd_variable(name,self)
+    }
+}
+
+
 
 ////////////////////////////////////////////////////////////
 // Model
@@ -161,251 +251,6 @@ impl<const N : usize> ModelItem<N> for Constraint <N> {
             m.dual_con_solution(solid,self.idxs.as_slice(),res)?;
             Ok(sz)
         }
-    }
-}
-
-/////////////////////////////////////////////////////////////////////
-
-
-
-////////////////////////////////////////////////////////////
-// Domain definitions
-pub enum LinearDomainType {
-    NonNegative,
-    NonPositive,
-    Zero,
-    Free
-}
-
-pub enum ConicDomainType {
-    QuadraticCone,
-    RotatedQuadraticCone,
-    GeometricMeanCone,
-    DualGeometricMeanCone,
-    ExponentialCone,
-    DualExponentialCone
-}
-pub enum ParamConicDomainType {
-    PrimalPowerCone,
-    DualPowerCone
-}
-
-pub trait ConDomainTrait<const N : usize> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N>;
-}
-pub trait VarDomainTrait<const N : usize> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N>;
-}
-
-
-pub struct LinearDomain<const N : usize> {
-    dt    : LinearDomainType,
-    ofs   : Vec<f64>,
-    shape : [usize; N],
-    sp    : Option<Vec<usize>>
-}
-
-pub struct ConicDomain<const N : usize> {
-    dt      : ConicDomainType,
-    ofs     : Vec<f64>,
-    shape : [usize; N],
-    conedim : usize
-}
-
-pub struct PSDDomain<const N : usize> { // 
-    shape : [usize; N],
-    conedims : (usize,usize)
-}
-
-impl<const N : usize> VarDomainTrait<N> for ConicDomain<N> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
-        m.conic_variable(name,self)
-    }
-}
-impl<const N : usize> ConDomainTrait<N> for ConicDomain<N> {
-/// Add a constraint with expression expected to be on the top of the rs stack.
-fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
-        m.conic_constraint(name,self)
-    }
-}
-
-impl<const N : usize> VarDomainTrait<N> for &[usize;N] {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
-        m.free_variable(name,self)
-    }
-}
-impl<const N : usize> ConDomainTrait<N> for &[usize;N] {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
-        m.linear_constraint(name,
-                            LinearDomain{
-                                dt:LinearDomainType::Free,
-                                ofs:vec![0.0; self.iter().product::<usize>()],
-                                shape:*self,
-                                sp:None})
-    }
-}
-
-impl VarDomainTrait<1> for usize {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<1> {
-        m.free_variable(name,&[self])
-    }
-}
-impl ConDomainTrait<1> for usize {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<1> {
-        m.linear_constraint(name,
-                            LinearDomain{
-                                dt:LinearDomainType::Free,
-                                ofs:vec![0.0; self],
-                                shape:[self],
-                                sp:None})
-    }
-}
-impl<const N : usize> VarDomainTrait<N> for PSDDomain<N> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
-        m.psd_variable(name,self)
-    }
-}
-
-
-impl<const N : usize> LinearDomain<N> {
-    pub fn with_shape<const M : usize>(self,shape : &[usize; M]) -> LinearDomain<M> {
-        match self.sp {
-            Some(ref sp) => if ! sp.last().map_or_else(|| true,|&v| v < shape.iter().product()) {
-                panic!("Shaped does not match sparsity");
-            },
-            None => if self.ofs.len() != shape.iter().product()  {
-                panic!("Shaped does not fit expression");
-            }
-        }
-        LinearDomain{
-            dt    : self.dt,
-            ofs   : self.ofs,
-            shape : *shape,
-            sp    : self.sp
-        }
-    }
-
-    pub fn with_sparsity(self,sp : Vec<usize>) -> LinearDomain<N> {
-        if sp.len() > 1 && ! sp[..sp.len()-1].iter().zip(sp[1..].iter()).all(|(a,b)| a < b) {
-            panic!("Sparsity pattern is not sorted");
-        }
-        if ! sp.last().map_or_else(|| true, |&v| v < self.shape.iter().product()) {
-                panic!("Sparsity pattern does not fit in shape");
-        }
-        LinearDomain{
-            dt    : self.dt,
-            ofs   : self.ofs,
-            shape : self.shape,
-            sp    : Some(sp)
-        }
-    }
-
-    pub fn with_shape_and_sparsity<const M : usize>(self,shape : &[usize; M], sp : Vec<usize>) -> LinearDomain<M> {
-        if sp.len() > 1 && ! sp[..sp.len()-1].iter().zip(sp[1..].iter()).all(|(a,b)| a < b) {
-            panic!("Sparsity pattern is not sorted");
-        }
-        if ! sp.last().map_or_else(|| true, |&v| v < shape.iter().product()) {
-                panic!("Sparsity pattern does not fit in shape");
-        }
-        LinearDomain{
-            dt    : self.dt,
-            ofs   : self.ofs,
-            shape : *shape,
-            sp    : Some(sp)
-        }
-    }
-}
-
-impl<const N : usize> VarDomainTrait<N> for LinearDomain<N> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
-        m.linear_variable(name,self)
-    }
-}
-impl<const N : usize> ConDomainTrait<N> for LinearDomain<N> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
-        m.linear_constraint(name,self)
-    }
-
-}
-
-pub trait OffsetTrait<const N : usize> {
-    fn greater_than(self) -> LinearDomain<N>;
-    fn less_than(self)    -> LinearDomain<N>;
-    fn equal_to(self)     -> LinearDomain<N>;
-}
-
-impl OffsetTrait<0> for f64 {
-    fn greater_than(self) -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::NonNegative, ofs:vec![self],  shape:[], sp : None } }
-    fn less_than(self)    -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::NonPositive,  ofs:vec![self], shape:[], sp : None } }
-    fn equal_to(self)     -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::Zero,         ofs:vec![self], shape:[], sp : None } }
-}
-
-impl OffsetTrait<1> for Vec<f64> {
-    fn greater_than(self) -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:self, shape:[n], sp : None } }
-    fn less_than(self)    -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:self, shape:[n], sp : None } }
-    fn equal_to(self)     -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::Zero, ofs:self, shape:[n], sp : None } }
-}
-
-impl OffsetTrait<1> for &[f64] {
-    fn greater_than(self) -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:self.to_vec(), shape:[n], sp : None } }
-    fn less_than(self)    -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:self.to_vec(), shape:[n], sp : None } }
-    fn equal_to(self)     -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::Zero, ofs:self.to_vec(), shape:[n], sp : None } }
-}
-
-////////////////////////////////////////////////////////////
-// Domain constructors
-////////////////////////////////////////////////////////////
-
-pub fn greater_than<const N : usize, T : OffsetTrait<N>>(v : T) -> LinearDomain<N> { v.greater_than() }
-pub fn less_than<const N : usize, T : OffsetTrait<N>>(v : T) -> LinearDomain<N> { v.less_than() }
-pub fn equal_to<const N : usize, T : OffsetTrait<N>>(v : T) -> LinearDomain<N> { v.equal_to() }
-pub fn in_quadratic_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::QuadraticCone,ofs:vec![0.0; dim],shape:[dim],conedim:0} }
-pub fn in_rotated_quadratic_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::RotatedQuadraticCone,ofs:vec![0.0; dim],shape:[dim],conedim:0} }
-pub fn in_geometric_mean_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::GeometricMeanCone,ofs:vec![0.0; dim],shape:[dim],conedim:0} }
-pub fn in_dual_geometric_mean_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::DualGeometricMeanCone,ofs:vec![0.0; dim],shape:[dim],conedim:0} }
-pub fn in_exponential_cone() -> ConicDomain<1> { 
-    ConicDomain{dt:ConicDomainType::ExponentialCone,ofs:vec![0.0; 3],shape:[3],conedim:0} }
-pub fn in_dual_exponential_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::DualExponentialCone,ofs:vec![0.0; dim],shape:[dim],conedim:0} }
-
-fn in_cones<const N : usize>(shape : &[usize; N], conedim : usize,ct : ConicDomainType) -> ConicDomain<N> {
-    if conedim >= shape.len() {
-        panic!("Invalid cone dimension");
-    }
-    ConicDomain{dt:ct,
-                ofs : vec![0.0; shape.iter().product()],
-                shape:*shape,
-                conedim}
-}
-
-pub fn in_quadratic_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> ConicDomain<N> { in_cones(shape,conedim,ConicDomainType::QuadraticCone) }
-pub fn in_rotated_quadratic_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> ConicDomain<N> { in_cones(shape,conedim,ConicDomainType::RotatedQuadraticCone) }
-pub fn in_geometric_mean_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> ConicDomain<N> { in_cones(shape,conedim,ConicDomainType::GeometricMeanCone) }
-pub fn in_dual_geometric_mean_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> ConicDomain<N> { in_cones(shape,conedim,ConicDomainType::DualGeometricMeanCone) }
-pub fn in_exponential_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> ConicDomain<N> { 
-    if let Some(&d) = shape.get(conedim) { if d != 3 { panic!("Invalid shape or exponential cone") } }
-    in_cones(shape,conedim,ConicDomainType::GeometricMeanCone) 
-}
-pub fn in_dual_exponential_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> ConicDomain<N> { 
-    if let Some(&d) = shape.get(conedim) { if d != 3 { panic!("Invalid shape or exponential cone") } }
-    in_cones(shape,conedim,ConicDomainType::DualGeometricMeanCone) 
-}
-
-pub fn in_psd_cone<const N : usize>(dim : usize) -> PSDDomain<2> {
-    PSDDomain{
-        shape : [dim,dim],
-        conedims : (0,1)
-    }
-}
-pub fn in_psd_cones<const N : usize>(shape : &[usize; N], conedim1 : usize, conedim2 : usize) -> PSDDomain<N> {
-    if conedim1 == conedim2 || conedim1 >= shape.len() || conedim2 >= shape.len() {
-        panic!("Invalid shape or cone dimensions");
-    }
-    if shape[conedim1] != shape[conedim2] {
-        panic!("Mismatching cone dimensions");
-    }
-    PSDDomain{
-        shape : *shape,
-        conedims : (conedim1,conedim2)
     }
 }
 
@@ -506,16 +351,18 @@ impl Model {
     }
 
     fn linear_variable<const N : usize>(&mut self, name : Option<&str>,dom : LinearDomain<N>) -> Variable<N> {
-        let n = dom.ofs.len();
+        let (dt,b,shape,sp) = dom.extract();
+
+        let n = b.len();
         let vari = self.task.get_num_var().unwrap();
         let varend : i32 = ((vari as usize)+n).try_into().unwrap();
         self.task.append_vars(n.try_into().unwrap()).unwrap();
         if let Some(name) = name {
-            if let Some(ref sp) = dom.sp {
-                self.var_names(name,vari,dom.shape.as_slice(),Some(sp.as_slice()))
+            if let Some(ref sp) = sp {
+                self.var_names(name,vari,shape.as_slice(),Some(sp.as_slice()))
             }
             else {
-                self.var_names(name,vari,dom.shape.as_slice(),None)
+                self.var_names(name,vari,shape.as_slice(),None)
             }
         }
         self.vars.reserve(n);
@@ -523,25 +370,25 @@ impl Model {
         let firstvar = self.vars.len();
         (vari..vari+n as i32).for_each(|j| self.vars.push(VarAtom::Linear(j)));
 
-        match dom.dt {
+        match dt {
             LinearDomainType::Free        => self.task.put_var_bound_slice_const(vari,vari+n as i32,mosek::Boundkey::FR,0.0,0.0).unwrap(),
             LinearDomainType::Zero        => {
                 let bk = vec![mosek::Boundkey::FX; n];
-                self.task.put_var_bound_slice(vari,varend,bk.as_slice(),dom.ofs.as_slice(),dom.ofs.as_slice()).unwrap();
+                self.task.put_var_bound_slice(vari,varend,bk.as_slice(),b.as_slice(),b.as_slice()).unwrap();
             },
             LinearDomainType::NonNegative => {
                 let bk = vec![mosek::Boundkey::LO; n];
-                self.task.put_var_bound_slice(vari,varend,bk.as_slice(),dom.ofs.as_slice(),dom.ofs.as_slice()).unwrap();
+                self.task.put_var_bound_slice(vari,varend,bk.as_slice(),b.as_slice(),b.as_slice()).unwrap();
             },
             LinearDomainType::NonPositive => {
                 let bk = vec![mosek::Boundkey::UP; n];
-                self.task.put_var_bound_slice(vari,varend,bk.as_slice(),dom.ofs.as_slice(),dom.ofs.as_slice()).unwrap()
+                self.task.put_var_bound_slice(vari,varend,bk.as_slice(),b.as_slice(),b.as_slice()).unwrap()
             }
         }
 
         Variable::new((firstvar..firstvar+n).collect(),
-                      dom.sp,
-                      &dom.shape)
+                      sp,
+                      &shape)
     }
 
     fn free_variable<const N : usize>(&mut self, name : Option<&str>, shape : &[usize;N]) -> Variable<N> {
@@ -724,9 +571,10 @@ impl Model {
     fn linear_constraint<const N : usize>(& mut self,
                          name : Option<&str>,
                          dom  : LinearDomain<N>) -> Constraint<N> {
+        let (dt,b,dshape,sp) = dom.extract();
+
         let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
-        // println!("{}:{}: dom.shape = {:?}",file!(),line!(),dom.shape);
-        if dom.shape.len() != shape.len() || ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
+        if shape.len() != dshape.len() || shape.iter().zip(dshape.iter()).any(|(&a,&b)| a != b) {
             panic!("Mismatching shapes of expression and domain");
         }
         // let nnz = subj.len();
@@ -740,14 +588,14 @@ impl Model {
         self.task.append_cons(nelm.try_into().unwrap()).unwrap();
 
         if let Some(name) = name {
-            Self::con_names(& mut self.task,name,coni,dom.shape.as_slice())
+            Self::con_names(& mut self.task,name,coni,shape)
         }
 
         self.cons.reserve(nelm);
         let firstcon = self.cons.len();
         (coni..coni+nelm as i32).for_each(|i| self.cons.push(ConAtom::Linear(i)));
 
-        let bk = match dom.dt {
+        let bk = match dt {
             LinearDomainType::NonNegative => mosek::Boundkey::LO,
             LinearDomainType::NonPositive => mosek::Boundkey::UP,
             LinearDomainType::Zero        => mosek::Boundkey::FX,
@@ -810,7 +658,7 @@ impl Model {
         }
         // self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
 
-        let rhs : Vec<f64> = dom.ofs.iter().zip(afix.iter()).map(|(&ofs,&b)| ofs-b).collect();
+        let rhs : Vec<f64> = b.iter().zip(afix.iter()).map(|(&ofs,&b)| ofs-b).collect();
         // println!("{}:{}: coni = {}:{}, dom.ofs : {}, afix : {}",file!(),line!(),coni,coni+nelm as i32,dom.ofs.len(), afix.len());
         self.task.put_con_bound_slice(coni,
                                       coni+nelm as i32,
@@ -833,7 +681,7 @@ impl Model {
 
         Constraint{
             idxs : (firstcon..firstcon+nelm).collect(),
-            shape : dom.shape
+            shape : dshape,
         }
     }
 
