@@ -51,7 +51,7 @@ pub trait ExprTrait<const N : usize> {
             }
         }
 
-        let perm = [0usize; N];
+        let mut perm = [0usize; N];
         perm[0..K].clone_from_slice(axes);
         {
             let (_,perm1) = perm.split_at_mut(K);
@@ -189,6 +189,24 @@ pub trait ExprDottable<const N : usize, E>
 {
     type Result;
     fn dot(self,other : E) -> Self::Result;
+}
+
+impl<E> ExprDottable<1,E> for &[f64] where E : ExprTrait<1> {
+    type Result = ExprDotVec<E>;
+    fn dot(self,other : E) -> Self::Result { ExprDotVec{data : self.to_vec(), expr : other } }
+}
+
+impl<E> ExprDottable<1,E> for Vec<f64> where E : ExprTrait<1> {
+    type Result = ExprDotVec<E>;
+    fn dot(self,other : E) -> Self::Result { ExprDotVec{data : self.clone(), expr : other } }
+}
+
+impl<E> ExprDottable<2,E> for SparseMatrix where E : ExprTrait<2> {
+    type Result = ExprDotSparse<ExprReshapeOneRow<2,1,E>>;
+    fn dot(self,other : E) -> Self::Result { 
+        let (sp,data) = self.get_flat_data();
+        ExprDotSparse{ data, sparsity : sp, expr : ExprReshapeOneRow { item: other, dim: 0 } } 
+    }
 }
 
 /// Implement `Expr<N>.mul(s)` for scalar `s` and any `N`.
@@ -469,6 +487,20 @@ impl<E:ExprTrait<1>> ExprInnerProductFactorTrait<E> for &[f64] {
 pub struct ExprDotVec<E:ExprTrait<1>> {
     data : Vec<f64>,
     expr : E
+}
+
+pub struct ExprDotSparse<E:ExprTrait<1>> {
+    data : Vec<f64>,
+    sparsity : Vec<usize>,
+    expr : E
+}
+
+impl<E> ExprTrait<0> for ExprDotSparse<E> where E : ExprTrait<1> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.expr.eval(ws,rs,xs);
+        eval::dot_sparse(self.sparsity.as_slice(),self.data.as_slice(),
+                         rs,ws,xs);
+    }
 }
 
 impl<E:ExprTrait<2>> ExprMulLeftDense<E> {

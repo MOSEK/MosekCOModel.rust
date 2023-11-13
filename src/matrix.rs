@@ -26,7 +26,7 @@ pub fn sparse(height : usize, width : usize,
         }
 
     SparseMatrix{
-        dim : (height,width),
+        dim : [height,width],
         sp  : perm.iter().map(|&p| unsafe{*subi.get_unchecked(p)}*width+unsafe{*subj.get_unchecked(p)}).collect(),
         data : perm.iter().map(|&p| unsafe{*cof.get_unchecked(p)}).collect()
     }
@@ -48,7 +48,7 @@ pub fn from_triplets(height : usize,
             panic!("Matrix contains duplicates");
         }
     SparseMatrix{
-        dim : (height,width),
+        dim : [height,width],
         sp  : perm.iter().map(|&p| { let i = unsafe{data.get_unchecked(p)}; i.0*width+i.1 }).collect(),
         data : perm.iter().map(|&p| unsafe{data.get_unchecked(p)}.2 ).collect()
     }
@@ -62,7 +62,7 @@ pub fn ones(height : usize, width : usize) -> DenseMatrix {
 }
 pub fn diag(data : &[f64]) -> SparseMatrix {
     SparseMatrix{
-        dim : (data.len(),data.len()),
+        dim : [data.len(),data.len()],
         sp  : (0..data.len()*data.len()).step_by(data.len()+1).collect(),
         data : data.to_vec()
     }
@@ -78,7 +78,7 @@ pub struct DenseMatrix {
 /// Represents a sparse matrix.
 #[derive(Clone)]
 pub struct SparseMatrix {
-    dim  : (usize,usize),
+    dim  : [usize; 2],
     sp   : Vec<usize>,
     data : Vec<f64>,
 }
@@ -106,12 +106,15 @@ pub struct SparseNDArray<const N : usize> {
 
 
 impl SparseMatrix {
-    pub fn dim(&self) -> (usize,usize) { self.dim }
-    pub fn shape(&self) -> [usize; 2] { let (d0,d1) = self.dim; [d0,d1] }
-    pub fn height(&self) -> usize { self.dim.0 }
-    pub fn width(&self) -> usize { self.dim.1 }
+    pub fn shape(&self) -> [usize; 2] { self.dim }
+    pub fn height(&self) -> usize { self.dim[0] }
+    pub fn width(&self) -> usize { self.dim[1] }
     pub fn data(&self) -> &[f64] { self.data.as_slice() }
     pub fn sparsity(&self) -> &[usize] { self.sp.as_slice() }
+
+    pub fn get_flat_data(self) -> (Vec<usize>,Vec<f64>) {
+        (self.sp,self.data)
+    }
 }
 
 

@@ -722,6 +722,15 @@ pub(super) fn mul_right_sparse(mheight : usize,
     }
 }
 
+pub(super) fn dot_sparse(sparsity : &[usize],
+                         data     : &[f64],
+                         rs : & mut WorkStack,
+                         ws : & mut WorkStack,
+                         _xs : & mut WorkStack) {
+    let (_shape,ptr,sp,subj,cof) = ws.pop_expr();
+    
+
+}
 
 pub(super) fn dot_vec(data : &[f64],
                       rs : & mut WorkStack,
@@ -952,12 +961,11 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
     }
 }
 
-pub(super) fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub(super) fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-    let nd = shape.len();
 
     let d = shape[shape.len()-num..].iter().product();
-    let rshape = shape.to_vec();
+    let mut rshape = shape.to_vec();
     rshape[shape.len()-num..].iter_mut().for_each(|s| *s = 1);
 
     if let Some(sp) = sp {
