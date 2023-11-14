@@ -88,10 +88,30 @@ pub trait ExprTrait<const N : usize> {
     fn hstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,1) }
     fn stack<E:ExprTrait<N>>(self,dim : usize, other : E) -> ExprStack<N,Self,E> where Self:Sized { ExprStack::new(self,other,dim) }
 
+    fn slice<E>(self,begin : &[usize; N], end : &[usize; N]) -> ExprSlice<N,Self> where Self:Sized {
+        assert!(begin.iter().zip(end.iter()).all(|(&a,&b)| a <= b));
+        ExprSlice{expr : self, begin : *begin, end : *end} 
+    }
+
     /// Reshape the experssion. The new shape must match the old
     /// shape, meaning that the product of the dimensions are the
     /// same.
     fn reshape<const M : usize>(self,shape : &[usize; M]) -> ExprReshape<N,M,Self>  where Self:Sized { ExprReshape{item:self,shape:*shape} }
+
+    /// Flatten the expression into a vector. Preserve sparsity.
+    fn flatten(self) -> ExprReshapeOneRow<N,1,Self> where Self:Sized { ExprReshapeOneRow { item:self, dim : 0 } }
+    fn into_column(self) -> ExprReshapeOneRow<N,2,Self> where Self:Sized { ExprReshapeOneRow { item:self, dim : 1 } }
+    /// Reshape an expression into a vector expression, where all but (at most) one dimension are
+    /// of size 1.
+    ///
+    /// # Arguments
+    /// - `i` - The dimension where the vector is defined, i.e the non-one dimension.
+    fn into_vec<const M : usize>(self, i : usize) -> ExprReshapeOneRow<N,M,Self> where Self:Sized+ExprTrait<1> { 
+        if i >= M {
+            panic!("Invalid dimension index")
+        }
+        ExprReshapeOneRow{item:self, dim : i }
+    }
 
 
     /// Reshape a sparse expression into a dense expression with the
@@ -975,6 +995,102 @@ pub fn vstack<const N : usize>(exprs : Vec<Box<dyn ExprTrait<N>>>) -> ExprDynSta
 }
 pub fn hstack<const N : usize>(exprs : Vec<Box<dyn ExprTrait<N>>>) -> ExprDynStack<N> {
     ExprDynStack{exprs,dim:1}
+}
+
+
+////////////////////////////////////////////////////////////
+//
+//
+pub struct ExprSlice<const N : usize, E : ExprTrait<N>> {
+    expr : E,
+    begin : [usize; N],
+    end : [usize; N]
+}
+
+impl<const N : usize, E> ExprTrait<N> for ExprSlice<N,E> where E : ExprTrait<N> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.expr.eval(ws,rs,xs);
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+        let nnz = *ptr.last().unwrap();
+        let nelem = ptr.len()-1;
+
+        // check indexes
+        assert!(shape.len() == N);
+        if shape.iter().zip(self.end.iter()).any(|(a,b)| a < b) { panic!("Index out of bounds") }
+
+        let mut strides : [usize; N] = [0; N];
+        let mut rstrides : [usize; N] = [0; N];
+        let _ = strides.iter_mut().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v*d } );
+        let _ = izip!(rstrides.iter_mut(),self.begin.iter(),self.end.iter()).rev().fold(1,|v,(s,&b,&e)| { *s = v; v*(e-b) } );
+
+        let mut rshape = [0usize; N];
+        izip!(rshape.iter_mut(),self.begin.iter(),self.end.iter()).for_each(|(r,&b,&e)| *r = e-b );
+
+        if let Some(sp) = sp {
+            let (upart,xcof) = xs.alloc(nelem*2+1+nnz,nnz);
+            let (xptr,upart) = upart.split_at_mut(nelem+1);
+            let (xsp,xsubj) = upart.split_at_mut(nelem);
+            xptr[0] = 0;
+
+            let mut rnnz = 0usize;
+            let mut rnelem = 0usize;
+            for ((&spi,&p0,&p1),(xp,xs)) in 
+                izip!(sp.iter(), ptr.iter(), ptr[1..].iter())
+                    .filter(|(&spi,_,_)| {
+                        let mut ix = [0usize; N];
+                        let _ = ix.iter_mut().zip(strides.iter()).fold(spi,|v,(i,&s)| { *i = v / s; v % s});
+
+                       izip!(ix.iter(),self.begin.iter(),self.end.iter()).all(|(&i,&b,&e)| b <= i && i < e ) })
+                    .zip(xptr[1..].iter_mut().zip(xsp.iter_mut())) {
+
+                let mut ix = [0usize; N];
+                let _ = ix.iter_mut().zip(strides.iter()).fold(spi,|v,(i,&s)| { *i = v / s; v % s});
+               
+                (*xs,_) = izip!(strides.iter(),rstrides.iter(),self.begin.iter()).fold((spi,0),|(i,r),(&s,&rs,&b)| (i%s, r + (i/s-b) * rs) );
+                xsubj.clone_from_slice(&subj[p0..p1]);
+                xcof.clone_from_slice(&cof[p0..p1]);
+                rnnz += p1-p0;                    
+                *xp = rnnz;
+                rnelem += 1;
+            }
+
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+            rptr[0] = 0;
+            rptr.clone_from_slice(&xptr[..rnelem+1]);
+            rsubj.clone_from_slice(&xsubj[..rnnz]);
+            rcof.clone_from_slice(&xcof[..rnnz]);
+            if let Some(rsp) = rsp {
+                rsp.clone_from_slice(&xsp[..rnelem]);
+            }
+        } 
+        else {
+            let rnelem : usize = self.begin.iter().zip(self.end.iter()).map(|(&a,&b)| b-a).product(); 
+            let (upart,xcof) = xs.alloc(rnelem+1+nnz,nnz);
+            let (xptr,xsubj) = upart.split_at_mut(rnelem+1);
+            let mut rnnz = 0usize;
+            {
+                xptr[0] = 0;
+                let mut idx : [usize; N] = self.begin;
+                for xp in xptr[1..].iter_mut() {
+                    // inc 
+                    let _ = izip!(idx.iter_mut(),
+                                  self.begin.iter(),
+                                  self.end.iter()).rev().fold(1,|inc,(i,&b,&e)| { if *i + inc >= e { *i = b; 1 } else { *i += inc; 0 } });
+                    let lidx = idx.iter().zip(strides.iter()).fold(0,|r,(&i,&s)| r+i*s);
+                    let (&p0,&p1) = unsafe{ (ptr.get_unchecked(lidx),ptr.get_unchecked(lidx+1)) };
+                   
+                    xsubj[rnnz..rnnz+p1-p0].clone_from_slice(&subj[p0..p1]);
+                    xcof[rnnz..rnnz+p1-p0].clone_from_slice(&cof[p0..p1]);
+                    rnnz += p1-p0;
+                    *xp = rnnz;
+                }
+            }    
+            let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+            rptr.clone_from_slice(xptr);
+            rsubj.clone_from_slice(&xsubj[..rnnz]);
+            rcof.clone_from_slice(&xcof[..rnnz]);
+        }
+    }
 }
 
 

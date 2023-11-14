@@ -74,10 +74,17 @@ impl WorkStack {
 
     /// Allocate a new expression on the stack.
     ///
-    /// Arguments:
-    /// - shape Shape of the expression
-    /// - nsp None if the expression is dense, otherwise the number of nonzeros. This must ne
-    ///   strictly smaller than the product of the dimensions.
+    /// # Arguments
+    /// - `shape` - Shape of the expression
+    /// - `nnz` - Total number of non-zeros
+    /// - `nelm` - Number of elements. This must not be greater than the size of `shape`. If it
+    ///   equals the size of `shape`, the returned `sp` is None
+    ///
+    /// # returns
+    /// - `ptr` - Ptr array of size `nelm+1`
+    /// - `sp` - `None` for a dense expression, otherwise `Some(a)` with an array of size `nelm`.
+    /// - `subj` - Subscripts array of size `nnz`
+    /// - `cof` - Coefficients array of size `nnz`
     /// Returns (ptr,sp,subj,cof)
     ///
     pub fn alloc_expr(& mut self, shape : &[usize], nnz : usize, nelm : usize) -> (& mut [usize], Option<& mut [usize]>,& mut [usize], & mut [f64]) {

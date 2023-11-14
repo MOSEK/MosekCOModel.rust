@@ -13,7 +13,31 @@ use std::iter::once;
 
 pub use expr::{ExprTrait,ExprTrait0,ExprTrait1,ExprTrait2,ExprRightMultipliable};
 pub use variable::{Variable};
-pub use domain::{LinearDomain,ConicDomain,LinearDomainType,ConicDomainType,LinearDomainOfsType,PSDDomain,less_than,greater_than,nonnegative,nonpositive,equal_to,in_quadratic_cone,in_rotated_quadratic_cone,in_geometric_mean_cone,in_dual_geometric_mean_cones,in_exponential_cone,in_dual_exponential_cones,in_psd_cone};
+pub use domain::{LinearDomain,
+                 ConicDomain,
+                 LinearDomainType,
+                 ConicDomainType,
+                 LinearDomainOfsType,
+                 PSDDomain,
+                 less_than,
+                 greater_than,
+                 nonnegative,
+                 nonpositive,
+                 equal_to,
+                 in_quadratic_cone,
+                 in_quadratic_cones,
+                 in_rotated_quadratic_cone,
+                 in_rotated_quadratic_cones,
+                 in_geometric_mean_cone,
+                 in_geometric_mean_cones,
+                 in_dual_geometric_mean_cone,
+                 in_dual_geometric_mean_cones,
+                 in_exponential_cone,
+                 in_exponential_cones,
+                 in_dual_exponential_cone,
+                 in_dual_exponential_cones,
+                 in_psd_cone,
+                 in_psd_cones };
 
 use utils::*;
 

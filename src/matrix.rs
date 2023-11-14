@@ -1,9 +1,28 @@
 //use crate::expr::{ExprReshapeOneRow, ExprLeftMultipliable};
 
-//use itertools::{izip};
+use itertools::izip;
 use super::expr::{ExprRightMultipliable,ExprTrait,ExprTrait0,ExprTrait1,ExprTrait2,ExprMulLeftDense,ExprMulRightDense};
 
+
+/// Create a dense matrix from data
+///
+/// # Arguments
+/// - `height` - Height of matrix
+/// - `width` - Width if matrix
+/// - `data` - Coefficients of data (consumed). This must contain exactly `height * width`
+///   elements.
 pub fn dense(height : usize, width : usize, data : Vec<f64>) -> DenseMatrix { DenseMatrix::new(height,width,data) }
+/// Create a sparse matrix.
+///
+/// # Arguments
+/// - `height`
+/// - `width`
+/// - `subi` Row indexes of non-zeros
+/// - `subj` Column indexes of non-zeros
+/// - `cof` Non-zero coefficients
+///
+/// Note that the lengths if `subi`, `subj` and `cof` must be the same. They must not define
+/// duplicate entries, and the number of non-zeros must be at most `height * width`.
 pub fn sparse(height : usize, width : usize,
               subi : &[usize],
               subj : &[usize],
@@ -12,23 +31,32 @@ pub fn sparse(height : usize, width : usize,
         panic!("Invalid matrix data")
     }
 
+
     if subi.iter().max().copied().unwrap_or(0) >= height
         || subj.iter().max().copied().unwrap_or(0) >= width {
             panic!("Invalid matrix data")
         }
-
-    let mut perm : Vec<usize> = (0..subi.len()).collect();
-    perm.sort_by_key(|&k| unsafe{(*subi.get_unchecked(k),*subj.get_unchecked(k)) });
-
-    if ! perm.iter().zip(perm[1..].iter()).map(|(&p0,&p1)| unsafe{(*subi.get_unchecked(p0),*subi.get_unchecked(p1),*subj.get_unchecked(p0),*subj.get_unchecked(p1))})
-        .all(|(i0,i1,j0,j1)| i0 < i1 || (i0 == i1 && j0 < j1)) {
-            panic!("Matrix contains duplicates");
+    if subi.len() < 2 || izip!(subi.iter(),subi[1..].iter(),subj.iter(),subj[1..].iter()).all(|(i0,i1,j0,j1)| i0 < i1 || (i0 == i1 && j0 < j1)) {
+        SparseMatrix{
+            dim  : [height,width],
+            sp   : subi.iter().zip(subj.iter()).map(|(i,j)| i * width + j).collect(),
+            data : cof.to_vec()
         }
+    }
+    else {
+        let mut perm : Vec<usize> = (0..subi.len()).collect();
+        perm.sort_by_key(|&k| unsafe{(*subi.get_unchecked(k),*subj.get_unchecked(k)) });
 
-    SparseMatrix{
-        dim : [height,width],
-        sp  : perm.iter().map(|&p| unsafe{*subi.get_unchecked(p)}*width+unsafe{*subj.get_unchecked(p)}).collect(),
-        data : perm.iter().map(|&p| unsafe{*cof.get_unchecked(p)}).collect()
+        if ! perm.iter().zip(perm[1..].iter()).map(|(&p0,&p1)| unsafe{(*subi.get_unchecked(p0),*subi.get_unchecked(p1),*subj.get_unchecked(p0),*subj.get_unchecked(p1))})
+            .all(|(i0,i1,j0,j1)| i0 < i1 || (i0 == i1 && j0 < j1)) {
+                panic!("Matrix contains duplicates");
+            }
+
+        SparseMatrix{
+            dim : [height,width],
+            sp  : perm.iter().map(|&p| unsafe{*subi.get_unchecked(p)}*width+unsafe{*subj.get_unchecked(p)}).collect(),
+            data : perm.iter().map(|&p| unsafe{*cof.get_unchecked(p)}).collect()
+        }
     }
 }
 
