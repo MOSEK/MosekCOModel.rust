@@ -82,6 +82,7 @@ pub trait ExprTrait<const N : usize> {
     fn add<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,R>  where Self:Sized { ExprAdd{lhs:self,rhs} }
     fn sub<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,ExprMulScalar<N,R>>  where Self:Sized { ExprAdd{lhs:self, rhs:ExprMulScalar{item:rhs,lhs:-1.0}} }
 
+    fn mul_elm<RHS>(self, other : RHS) -> RHS::Result where Self : Sized, RHS : ExprRightElmMultipliable<N,Self> { other.mul_elm(self) } 
     //fn mul_scalar(self, s : f64) -> ExprMulScalar<N,Self> where Self:Sized { ExprMulScalar { item : self, lhs : s } }
 
     fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }
@@ -185,6 +186,13 @@ impl<E : ExprTrait<2>> ExprTrait2 for E {}
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
 // Expression Helper objects
+
+pub trait ExprRightElmMultipliable<const N: usize, E> 
+    where E : ExprTrait<N>
+{
+    type Result;
+    fn mul_elm(self, other : E) -> Self::Result;
+}
 
 /// Trait defining something that can be right-multiplied on an
 /// expression of dimension N, producing an expression of .
@@ -334,6 +342,44 @@ impl<E:ExprTrait<1>> ExprLeftMultipliable<1,E> for DenseMatrix {
         }
     }
 }
+
+pub struct ExprMulElmDense<const N : usize,E> where E : ExprTrait<N> {
+    expr : E,
+    datashape : [usize; N],
+    data : Vec<f64>
+}
+
+pub struct ExprMulElmSparse<const N : usize,E> where E : ExprTrait<N> {
+    expr : E,
+    datashape : [usize; N],
+    datasparsity : Vec<usize>,
+    data : Vec<f64>
+}
+
+impl<E:ExprTrait<2>> ExprRightElmMultipliable<2,E> for DenseMatrix {
+    type Result = ExprMulElmDense<2,E>;
+
+    fn mul_elm(self, expr : E) -> Self::Result { ExprMulElmDense{ expr, datashape : self.shape(), data : self.data().to_vec() }}
+}
+
+impl<E:ExprTrait<2>> ExprRightElmMultipliable<2,E> for SparseMatrix {
+    type Result = ExprMulElmSparse<2,E>;
+
+    fn mul_elm(self, expr : E) -> Self::Result { ExprMulElmSparse{ expr, datashape : self.shape(), datasparsity : self.sparsity().to_vec(), data : self.data().to_vec() }}
+}
+
+impl<const N : usize,E> ExprTrait<N> for ExprMulElmDense<N,E> where E : ExprTrait<N> {
+    fn eval(&self,_rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+        panic!("TODO")
+    }
+}
+
+impl<const N : usize,E> ExprTrait<N> for ExprMulElmSparse<N,E> where E : ExprTrait<N> {
+    fn eval(&self,_rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+        panic!("TODO")
+    }
+}
+
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
 // Expression objects
