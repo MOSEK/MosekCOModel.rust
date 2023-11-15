@@ -3,6 +3,179 @@ use itertools::{izip, iproduct};
 use super::expr::{ExprRightMultipliable,ExprTrait,ExprTrait0,ExprTrait1,ExprTrait2,ExprMulLeftDense,ExprMulRightDense};
 
 
+pub trait Matrix {
+    fn shape(&self) -> [usize; 2];
+    fn width(&self) -> usize { self.shape()[1] }
+    fn height(&self) -> usize { self.shape()[0] } 
+    fn nnz(&self) -> usize;
+    fn data(&self) -> &[f64];
+    fn sparsity<'a>(& 'a self) -> Option<& 'a [usize]>;
+
+
+    fn transpose(&self) -> Self;
+    fn mul_scalar(self, s : f64) -> Self;
+}
+
+
+/// Represents a dense matrix.
+#[derive(Clone)]
+pub struct DenseMatrix {
+    shape  : [usize;2],
+    data : Vec<f64>
+}
+
+impl Matrix for DenseMatrix {
+    fn shape(&self) -> [usize; 2] { self.shape }
+    fn nnz(&self) -> usize { self.data.len() }
+    fn data(&self) -> &[f64] { self.data.as_slice() }
+    fn sparsity<'a>(&'a self) -> Option<& 'a [usize]> { None }
+
+
+    fn transpose(&self) -> DenseMatrix {
+        let shape = [self.shape[1],self.shape[0]];
+        let data : Vec<f64> = (0..self.shape[1]).map(|j| self.data[j..].iter().step_by(self.shape[1])).flat_map(|it| it.clone()).map(|&i| i).collect();
+        DenseMatrix { shape, data }
+    }
+    fn mul_scalar(mut self, s : f64) -> DenseMatrix {
+       self.data.iter_mut().for_each(|v| *v *= s);
+       self
+    }
+}
+
+impl DenseMatrix {
+    pub fn new(height : usize, width : usize, data : Vec<f64>) -> DenseMatrix {
+        if height*width != data.len() { panic!("Invalid data size for matrix")  }
+        DenseMatrix{
+            shape : [height,width],
+            data
+        }
+    }
+    pub fn extract(self) -> ([usize;2],Vec<f64>) { (self.shape,self.data) }
+    //pub fn data(&self) -> &[f64] { self.data.as_slice() }
+    //pub fn to_vec(&self) -> Vec<f64> { self.data.clone() }
+}
+
+/// Represents a sparse matrix.
+#[derive(Clone)]
+pub struct SparseMatrix {
+    shape  : [usize; 2],
+    sp   : Vec<usize>,
+    data : Vec<f64>,
+}
+
+impl Matrix for SparseMatrix {
+    fn shape(&self) -> [usize; 2] { self.shape }
+    fn nnz(&self) -> usize { self.data.len() }
+    fn data(&self) -> &[f64] { self.data.as_slice() }
+    fn sparsity<'a>(&'a self) -> Option<& 'a [usize]> { Some(self.sp.as_slice()) }
+
+
+    fn transpose(&self) -> SparseMatrix {
+        let shape = [self.shape[1],self.shape[0]];
+        let nnz = self.data.len();
+        let mut data = vec![0.0; nnz];
+        let mut sp   = vec![0usize; nnz];
+        let mut ptr  = vec![0usize; self.shape[1]+1];
+
+        self.sp.iter().for_each(|&i| unsafe { *ptr.get_unchecked_mut(i % shape[1] + 1) += 1; } );
+        _ = ptr.iter_mut().fold(0,|c,v| { *v += c; *v });
+
+        for (&k,&v) in self.sp.iter().zip(self.data.iter()) {
+            let (i,j) = (k / self.shape[1], k % self.shape[1]);
+            unsafe {
+                let p = *ptr.get_unchecked(k);
+                *ptr.get_unchecked_mut(j) += 1;
+                *sp.get_unchecked_mut(p) = j*shape[0]+i;
+                *data.get_unchecked_mut(p) = v;
+            }
+        }
+
+        SparseMatrix { shape, data, sp }
+    }
+    fn mul_scalar(mut self, s : f64) -> SparseMatrix {
+       self.data.iter_mut().for_each(|v| *v *= s);
+       self
+    }
+}
+
+
+
+
+impl SparseMatrix {
+    pub fn new(height : usize, width : usize, sparsity : &[[usize;2]], coefficients : &[f64]) -> SparseMatrix {
+        if sparsity.len() != coefficients.len() { panic!("Mismatching data dimensions"); }
+        if sparsity.iter().any(|&i| i[0] >= height || i[1] >= width) {
+            panic!("Sparsity pattern out of bounds");
+        }
+        let nnz = coefficients.len();
+
+        if sparsity.iter().zip(sparsity[1..].iter()).all(|(i0,i1)| i0[0] < i1[0] || (i0[0] == i1[0] && i0[1] < i1[1])) {
+            //sorted
+            SparseMatrix{ shape : [height,width],
+                          sp    : sparsity.iter().map(|&i| i[0]*width+i[1]).collect(),
+                          data  : coefficients.to_vec() }
+        }
+        else {
+            let mut sp   = vec![0usize; nnz];
+            let mut data = vec![0.0; nnz];
+            let mut perm = vec![0usize;nnz];
+            let mut ptr  = vec![0usize; usize::max(height,width)+1];
+
+            sparsity.iter().for_each(|i| unsafe { *ptr.get_unchecked_mut(i[1]+1) += 1; } );
+            _ = ptr.iter_mut().fold(0,|c,v| { *v += c; *v });
+            sparsity.iter().enumerate().for_each(|(i,&si)| unsafe{ *perm.get_unchecked_mut(*ptr.get_unchecked(si[1])) = i; *ptr.get_unchecked_mut(si[1]) += 1; });
+
+            ptr.iter_mut().for_each(|p| *p = 0);
+            sparsity.iter().for_each(|i| unsafe { *ptr.get_unchecked_mut(i[0]+1) += 1; } );
+            _ = ptr.iter_mut().fold(0,|c,v| { *v += c; *v });
+            for &p in perm.iter() {
+                let i = unsafe{ *sparsity.get_unchecked(p) };
+                let ti = unsafe{ *ptr.get_unchecked(i[0]) };
+                unsafe { 
+                    *sp.get_unchecked_mut(ti) = i[0] * width + i[1];
+                    *data.get_unchecked_mut(ti) = *coefficients.get_unchecked(p);
+                    *ptr.get_unchecked_mut(i[0]) += 1;
+                }
+            }
+
+            SparseMatrix{ shape : [height,width], sp,data}
+        }
+    }
+    pub fn shape(&self) -> [usize; 2] { self.shape }
+    pub fn data(&self) -> &[f64] { self.data.as_slice() }
+    pub fn sparsity(&self) -> &[usize] { self.sp.as_slice() }
+
+    pub fn get_flat_data(self) -> (Vec<usize>,Vec<f64>) {
+        (self.sp,self.data)
+    }
+}
+
+
+//impl Matrix for DenseMatrix {
+//    fn shape(&self) -> [usize; 2] { self.shape }
+//    fn nnz(&self) -> usize { self.data.len() }
+//    fn data(&self) -> Vec<f64> { self.data.clone() }
+//    fn sparsity(&self) -> Vec<usize> { (0..self.data.len()).collect() }
+//
+//
+//    fn transpose(&self) -> DenseMatrix {
+//        let shape = [self.shape[1],self.shape[0]];
+//        let data : Vec<f64> = (0..self.shape[1]).map(|j| self.data[j..].iter().step_by(self.shape[1])).flat_map(|it| it.clone()).collect();
+//        DenseMatrix { shape, data }
+//    }
+//    fn mul_scalar(self, s : f64) -> DenseMatrix {
+//       self.data.iter_mut().for_each(|v| *v *= s);
+//       self
+//    }
+//}
+
+
+
+
+
+
+
+
 /// Create a dense matrix from data
 ///
 /// # Arguments
@@ -37,7 +210,7 @@ pub fn sparse(height : usize, width : usize,
         }
     if subi.len() < 2 || izip!(subi.iter(),subi[1..].iter(),subj.iter(),subj[1..].iter()).all(|(i0,i1,j0,j1)| i0 < i1 || (i0 == i1 && j0 < j1)) {
         SparseMatrix{
-            dim  : [height,width],
+            shape  : [height,width],
             sp   : subi.iter().zip(subj.iter()).map(|(i,j)| i * width + j).collect(),
             data : cof.to_vec()
         }
@@ -52,7 +225,7 @@ pub fn sparse(height : usize, width : usize,
             }
 
         SparseMatrix{
-            dim : [height,width],
+            shape : [height,width],
             sp  : perm.iter().map(|&p| unsafe{*subi.get_unchecked(p)}*width+unsafe{*subj.get_unchecked(p)}).collect(),
             data : perm.iter().map(|&p| unsafe{*cof.get_unchecked(p)}).collect()
         }
@@ -75,7 +248,7 @@ pub fn from_triplets(height : usize,
             panic!("Matrix contains duplicates");
         }
     SparseMatrix{
-        dim : [height,width],
+        shape : [height,width],
         sp  : perm.iter().map(|&p| { let i = unsafe{data.get_unchecked(p)}; i.0*width+i.1 }).collect(),
         data : perm.iter().map(|&p| unsafe{data.get_unchecked(p)}.2 ).collect()
     }
@@ -83,31 +256,16 @@ pub fn from_triplets(height : usize,
 
 pub fn ones(height : usize, width : usize) -> DenseMatrix {
     DenseMatrix{
-        dim : (height,width),
+        shape : [height,width],
         data : vec![1.0; height*width]
     }
 }
 pub fn diag(data : &[f64]) -> SparseMatrix {
     SparseMatrix{
-        dim : [data.len(),data.len()],
+        shape : [data.len(),data.len()],
         sp  : (0..data.len()*data.len()).step_by(data.len()+1).collect(),
         data : data.to_vec()
     }
-}
-
-/// Represents a dense matrix.
-#[derive(Clone)]
-pub struct DenseMatrix {
-    dim  : (usize,usize),
-    data : Vec<f64>
-}
-
-/// Represents a sparse matrix.
-#[derive(Clone)]
-pub struct SparseMatrix {
-    dim  : [usize; 2],
-    sp   : Vec<usize>,
-    data : Vec<f64>,
 }
 
 /// Represents a Dense n-dimensional array
@@ -131,35 +289,6 @@ pub struct SparseNDArray<const N : usize> {
     data : Vec<f64>,
 }
 
-
-impl SparseMatrix {
-    pub fn shape(&self) -> [usize; 2] { self.dim }
-    pub fn height(&self) -> usize { self.dim[0] }
-    pub fn width(&self) -> usize { self.dim[1] }
-    pub fn data(&self) -> &[f64] { self.data.as_slice() }
-    pub fn sparsity(&self) -> &[usize] { self.sp.as_slice() }
-
-    pub fn get_flat_data(self) -> (Vec<usize>,Vec<f64>) {
-        (self.sp,self.data)
-    }
-}
-
-
-impl DenseMatrix {
-    pub fn new(height : usize, width : usize, data : Vec<f64>) -> DenseMatrix {
-        if height*width != data.len() { panic!("Invalid data size for matrix")  }
-        DenseMatrix{
-            dim : (height,width),
-            data
-        }
-    }
-    pub fn shape(&self) -> [usize; 2] { let (d0,d1) = self.dim; [d0,d1] }
-    pub fn dim(&self) -> (usize,usize) { self.dim }
-    pub fn height(&self) -> usize { self.dim.0 }
-    pub fn width(&self) -> usize { self.dim.1 }
-    pub fn data(&self) -> &[f64] { self.data.as_slice() }
-    pub fn to_vec(&self) -> Vec<f64> { self.data.clone() }
-}
 
 
 //impl<E:ExprTrait2> ExprRightMultipliable<2,E> for DenseMatrix {

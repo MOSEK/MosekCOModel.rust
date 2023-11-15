@@ -4,7 +4,7 @@ mod eval;
 pub mod workstack;
 
 use itertools::{iproduct,izip};
-use crate::matrix::{SparseMatrix,DenseMatrix};
+use crate::matrix::{SparseMatrix,DenseMatrix,Matrix};
 
 use super::utils::*;
 use workstack::WorkStack;
