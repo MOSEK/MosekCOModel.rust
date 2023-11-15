@@ -1,6 +1,5 @@
-//use crate::expr::{ExprReshapeOneRow, ExprLeftMultipliable};
 
-use itertools::izip;
+use itertools::{izip, iproduct};
 use super::expr::{ExprRightMultipliable,ExprTrait,ExprTrait0,ExprTrait1,ExprTrait2,ExprMulLeftDense,ExprMulRightDense};
 
 
@@ -215,3 +214,47 @@ impl DenseMatrix {
 //    }
 //}
 //
+//
+
+
+impl std::ops::Mul<f64> for DenseMatrix {
+    type Output = DenseMatrix;
+    fn mul(self,rhs : f64) -> DenseMatrix {
+        self.data.iter_mut().for_each(|v| *v *= rhs);
+        self
+    }
+}
+
+impl std::ops::Mul<DenseMatrix> for f64 {
+    type Output = DenseMatrix;
+    fn mul(self,rhs : DenseMatrix) -> DenseMatrix {
+        rhs.data.iter_mut().for_each(|v| *v *= self );
+        rhs
+    }
+}
+
+impl std::ops::MulAssign<f64> for DenseMatrix {
+    fn mul_assign(&mut self, rhs: f64) {
+        self.data.iter_mut().for_each(|v| *v *= rhs);
+    } 
+}
+
+impl std::ops::Mul<DenseMatrix> for DenseMatrix {
+    type Output = DenseMatrix;
+
+    fn mul(self,rhs : DenseMatrix) -> DenseMatrix {
+        let lhsshape = self.shape();
+        let rhsshape = rhs.shape();
+        if lhsshape[1] != rhsshape[0] { panic!("Mismatching operand dimensions"); }
+        // naive implementation:
+        
+        let shape = [lhsshape[0],rhsshape[1]];
+
+        let data = iproduct!(0..lhsshape[0],0..rhsshape[1]).map(|(i,j)| self.data[i*lhsshape[1]..].iter().zip(rhs.data[j..].iter().step_by(rhsshape[1])).map(|(&v0,&v1)| v0*v1).sum() ).collect();
+
+        DenseMatrix{
+            dim : shape.into(),
+            data
+        }
+    }
+}
