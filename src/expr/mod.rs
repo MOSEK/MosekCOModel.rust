@@ -741,7 +741,7 @@ impl<const N : usize, const M : usize, E> ExprTrait<M> for ExprReduceShape<N,M,E
                 rshape[N..].iter_mut().for_each(|s| *s = 1);
             }
         }
-        rs.inline_reshape_expr(rshape);
+        rs.inline_reshape_expr(rshape).nunuwrap()
     }
 }
 
