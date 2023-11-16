@@ -3,15 +3,18 @@ extern crate itertools;
 mod eval;
 pub mod workstack;
 mod dot;
+mod mul;
+
 
 use itertools::{iproduct,izip};
-use crate::matrix::{SparseMatrix,DenseMatrix,Matrix};
+use crate::matrix::{SparseMatrix,DenseMatrix};
 
 use super::utils::*;
 use workstack::WorkStack;
 use super::matrix;
 
 pub use dot::{Dot,ExprDot};
+pub use mul::*;
 
 
 /// The `ExprTrait<N>` represents a `N`-dimensional expression.
@@ -83,9 +86,9 @@ pub trait ExprTrait<const N : usize> {
     }
 
     fn add<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,R>  where Self:Sized { ExprAdd{lhs:self,rhs} }
-    fn sub<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,ExprMulScalar<N,R>>  where Self:Sized { ExprAdd{lhs:self, rhs:ExprMulScalar{item:rhs,lhs:-1.0}} }
+    fn sub<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,ExprMulScalar<N,R>>  where Self:Sized { ExprAdd{lhs:self, rhs:rhs.mul(-1.0) } }
 
-    fn mul_elm<RHS>(self, other : RHS) -> RHS::Result where Self : Sized, RHS : ExprRightElmMultipliable<N,Self> { other.mul_elm(self) } 
+    fn mul_elem<RHS>(self, other : RHS) -> RHS::Result where Self : Sized, RHS : ExprRightElmMultipliable<N,Self> { other.mul_elem(self) } 
     //fn mul_scalar(self, s : f64) -> ExprMulScalar<N,Self> where Self:Sized { ExprMulScalar { item : self, lhs : s } }
 
     fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }
@@ -123,203 +126,25 @@ pub trait ExprTrait<const N : usize> {
     /// elements in the expression.
     fn gather(self) -> ExprGatherToVec<N,Self>  where Self:Sized { ExprGatherToVec{item:self} }
 
+
     fn mul<RHS>(self,other : RHS) -> RHS::Result where Self: Sized, RHS : ExprRightMultipliable<N,Self> { other.mul_right(self) }
 
-    //fn dot<RHS>(self, other : RHS) -> RHS::Result where Self: Sized, RHS : ExprDottable<N,Self> { other.dot(self) }
+
+    fn transpose(self) -> ExprPermuteAxes<2,Self> where Self:Sized+ExprTrait<2> { ExprPermuteAxes{ item : self, perm : [1,0]} }
+    fn tril(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized+ExprTrait<2> { ExprTriangularPart{item:self,upper:false,with_diag} }
+    fn triu(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized+ExprTrait<2> { ExprTriangularPart{item:self,upper:true,with_diag} }
+    fn trilvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:false,with_diag} } } 
+    fn triuvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
 }
 
 
 pub trait ExprTrait2 : ExprTrait<2> {
-    //fn into_diag(self) -> ExprIntoDiag<Self> { ExprIntoDiag{ item : self } }
-    fn mul_left_dense(self, v : matrix::DenseMatrix) -> ExprMulLeftDense<Self> where Self:Sized { ExprMulLeftDense{item:self,lhs:v} }
-    fn mul_right_dense(self, v : matrix::DenseMatrix) -> ExprMulRightDense<Self> where Self:Sized  { ExprMulRightDense{item:self,rhs:v} }
-    fn transpose(self) -> ExprPermuteAxes<2,Self> where Self:Sized { ExprPermuteAxes{ item : self, perm : [1,0]} }
-    fn tril(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized { ExprTriangularPart{item:self,upper:false,with_diag} }
-    fn triu(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized { ExprTriangularPart{item:self,upper:true,with_diag} }
-    fn trilvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:false,with_diag} } } 
-    fn triuvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
-    //fn mul<V>(self, other : V) -> V::Result where V : ExprRightMultipliable<2,Self>, Self:Sized { other.mul_right(self) }
-    fn rev_mul<V>(self, other : V) -> V::Result where V : ExprLeftMultipliable<2,Self>, Self:Sized { other.mul(self) }
 }
 
-impl<E : ExprTrait<2>> ExprTrait2 for E {}
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
 // Expression Helper objects
 
-pub trait ExprRightElmMultipliable<const N: usize, E> 
-    where E : ExprTrait<N>
-{
-    type Result;
-    fn mul_elm(self, other : E) -> Self::Result;
-}
-
-/// Trait defining something that can be right-multiplied on an
-/// expression of dimension N, producing an expression of .
-pub trait ExprRightMultipliable<const N : usize,E> 
-    where E:ExprTrait<N>
-{
-    type Result;
-    fn mul_right(self,other : E) -> Self::Result;
-}
-
-/// Trait defining something that can be left-multiplied on an
-/// expression.
-pub trait ExprLeftMultipliable<const N : usize,E> 
-    where E:ExprTrait<N>
-{
-    type Result : ExprTrait<N>;
-    fn mul(self,other : E) -> Self::Result;
-}
-
-
-
-
-
-
-
-/// Implement `Expr<N>.mul(s)` for scalar `s` and any `N`.
-impl<const N : usize,E> ExprRightMultipliable<N,E> for f64 
-    where E:ExprTrait<N> 
-{
-    type Result = ExprMulScalar<N,E>;
-    fn mul_right(self,other : E) -> Self::Result { ExprMulScalar{item : other, lhs : self} }
-}
-
-/// Implement `s.mul(Expr<N>)` for scalar `s` and any `N`.
-impl<const N : usize, E> ExprLeftMultipliable<N,E> for f64 
-    where E:ExprTrait<N> 
-{
-    type Result = ExprMulScalar<N,E>;
-    fn mul(self,other : E) -> Self::Result { ExprMulScalar{item : other, lhs : self} }
-}
-
-/// Implement `Expr<2>.mul(M)` for sparse matrix M
-impl<E:ExprTrait<2>> ExprRightMultipliable<2,E> for SparseMatrix {
-    type Result = ExprMulRightSparse<E>;
-    fn mul_right(self,other : E) -> Self::Result { ExprMulRightSparse{expr : other, data : self} }
-}
-
-/// Implement `M.mul(Expr<2>)` for sparse matrix M
-impl<E:ExprTrait<2>> ExprLeftMultipliable<2,E> for SparseMatrix {
-    type Result = ExprMulLeftSparse<E>;
-    fn mul(self,other : E) -> Self::Result { ExprMulLeftSparse{expr : other, data : self} }
-}
-
-/// Implement `Expr<1>.mul(M)` for sparse matrix M
-impl<E:ExprTrait<1>> ExprRightMultipliable<1,E> for SparseMatrix {
-    type Result = ExprReshapeOneRow<2,1,ExprMulRightSparse<ExprReshapeOneRow<1,2,E>>>;
-    fn mul_right(self,other : E) -> Self::Result { 
-        ExprReshapeOneRow{ 
-            dim : 0, 
-            item: ExprMulRightSparse{
-                expr : ExprReshapeOneRow { 
-                    item: other, 
-                    dim: 0 
-                }, 
-                data : self} 
-        } 
-    }
-}
-
-/// Implement `M.mul(Expr<1>)` for sparse matrix M
-impl<E:ExprTrait<1>> ExprLeftMultipliable<1,E> for SparseMatrix {
-    type Result = ExprReshapeOneRow<2,1,ExprMulLeftSparse<ExprReshapeOneRow<1,2,E>>>;
-    fn mul(self,other : E) -> Self::Result {
-        ExprReshapeOneRow{
-            dim : 0,
-            item : ExprMulLeftSparse{
-                expr : ExprReshapeOneRow{
-                    dim : 1,
-                    item : other
-                }, 
-                data : self
-            }
-        }
-    }
-}
-
-/// Implement `Expr<2>.mul(M)` for dense matrix M
-impl<E:ExprTrait<2>> ExprRightMultipliable<2,E> for DenseMatrix {
-    type Result = ExprMulRightDense<E>;
-    fn mul_right(self,other : E) -> Self::Result { ExprMulRightDense{item : other, rhs : self} }
-}
-
-/// Implement `M.mul(Expr<2>)` for dense matrix M
-impl<E:ExprTrait<2>> ExprLeftMultipliable<2,E> for DenseMatrix {
-    type Result = ExprMulLeftDense<E>;
-    fn mul(self,other : E) -> Self::Result { ExprMulLeftDense{item : other, lhs : self} }
-}
-
-/// Implement `Expr<1>.mul(M)` for dense matrix M
-impl<E:ExprTrait<1>> ExprRightMultipliable<1,E> for DenseMatrix {
-    type Result = ExprReshapeOneRow<2,1,ExprMulRightDense<ExprReshapeOneRow<1,2,E>>>;
-    fn mul_right(self,other : E) -> Self::Result { 
-        ExprReshapeOneRow{ 
-            dim : 0, 
-            item: ExprMulRightDense{
-                item : ExprReshapeOneRow { 
-                    item: other, 
-                    dim: 0 
-                }, 
-                rhs : self} 
-        } 
-    }
-}
-
-/// Implement `M.mul(Expr<1>)` for dense matrix M
-impl<E:ExprTrait<1>> ExprLeftMultipliable<1,E> for DenseMatrix {
-    type Result = ExprReshapeOneRow<2,1,ExprMulLeftDense<ExprReshapeOneRow<1,2,E>>>;
-    fn mul(self,other : E) -> Self::Result {
-        ExprReshapeOneRow{
-            dim : 0,
-            item : ExprMulLeftDense{
-                item : ExprReshapeOneRow{
-                    dim : 1,
-                    item : other
-                }, 
-                lhs : self
-            }
-        }
-    }
-}
-
-pub struct ExprMulElmDense<const N : usize,E> where E : ExprTrait<N> {
-    expr : E,
-    datashape : [usize; N],
-    data : Vec<f64>
-}
-
-pub struct ExprMulElmSparse<const N : usize,E> where E : ExprTrait<N> {
-    expr : E,
-    datashape : [usize; N],
-    datasparsity : Vec<usize>,
-    data : Vec<f64>
-}
-
-impl<E:ExprTrait<2>> ExprRightElmMultipliable<2,E> for DenseMatrix {
-    type Result = ExprMulElmDense<2,E>;
-
-    fn mul_elm(self, expr : E) -> Self::Result { ExprMulElmDense{ expr, datashape : self.shape(), data : self.data().to_vec() }}
-}
-
-impl<E:ExprTrait<2>> ExprRightElmMultipliable<2,E> for SparseMatrix {
-    type Result = ExprMulElmSparse<2,E>;
-
-    fn mul_elm(self, expr : E) -> Self::Result { ExprMulElmSparse{ expr, datashape : self.shape(), datasparsity : self.sparsity().to_vec(), data : self.data().to_vec() }}
-}
-
-impl<const N : usize,E> ExprTrait<N> for ExprMulElmDense<N,E> where E : ExprTrait<N> {
-    fn eval(&self,_rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
-        panic!("TODO")
-    }
-}
-
-impl<const N : usize,E> ExprTrait<N> for ExprMulElmSparse<N,E> where E : ExprTrait<N> {
-    fn eval(&self,_rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
-        panic!("TODO")
-    }
-}
 
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
@@ -466,82 +291,6 @@ pub fn nil<const N : usize>(shape : &[usize; N]) -> ExprNil<N> {
 //
 
 
-pub struct ExprMulLeftDense<E:ExprTrait<2>> {
-    item : E,
-    lhs  : matrix::DenseMatrix
-}
-pub struct ExprMulRightDense<E:ExprTrait<2>> {
-    item : E,
-    rhs  : matrix::DenseMatrix
-}
-pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
-    item : E,
-    lhs  : f64
-}
-
-
-impl<E:ExprTrait<2>> ExprMulLeftDense<E> {
-    pub fn new(item : E, lhs : matrix::DenseMatrix ) -> ExprMulLeftDense<E> {
-        ExprMulLeftDense{item,lhs}
-    }
-}
-
-impl<E:ExprTrait<2>> ExprTrait<2> for ExprMulLeftDense<E> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
-        eval::mul_left_dense(self.lhs.data(),self.lhs.height(), self.lhs.width(),rs,ws,xs);
-    }
-}
-
-impl<E:ExprTrait<2>> ExprTrait<2> for ExprMulRightDense<E> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
-        eval::mul_right_dense(self.rhs.data(), self.rhs.height(),self.rhs.width(),rs,ws,xs);
-    }
-}
-
-// inplace evaluation
-impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprMulScalar<N,E> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(rs,ws,xs);
-        let (_shape,_ptr,_sp,_subj,cof) = rs.peek_expr_mut();
-        cof.iter_mut().for_each(|c| *c *= self.lhs)
-    }
-}
-
-
-////////////////////////////////////////////////////////////
-//
-pub struct ExprMulLeftSparse<E:ExprTrait<2>> {
-    data : matrix::SparseMatrix,
-    expr : E
-}
-pub struct ExprMulRightSparse<E:ExprTrait<2>> {
-    data : matrix::SparseMatrix,
-    expr : E
-}
-
-impl<E:ExprTrait<2>> ExprTrait<2> for ExprMulLeftSparse<E> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.expr.eval(ws,rs,xs);
-        eval::mul_left_sparse(self.data.height(),
-                              self.data.width(),
-                              self.data.sparsity(),
-                              self.data.data(),
-                              rs,ws,xs);
-    }
-}
-
-impl<E:ExprTrait<2>> ExprTrait<2> for ExprMulRightSparse<E> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.expr.eval(ws,rs,xs);
-        eval::mul_right_sparse(self.data.height(),
-                               self.data.width(),
-                               self.data.sparsity(),
-                               self.data.data(),
-                               rs,ws,xs);
-    }
-}
 ////////////////////////////////////////////////////////////
 //
 
@@ -812,25 +561,6 @@ impl<const N : usize, E:ExprTrait<N>> ExprTrait<1> for ExprGatherToVec<N,E> {
     }
 }
 
-
-impl ExprTrait<0> for f64 {
-    fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
-        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[],1,1);
-        rptr[0] = 0;
-        rptr[1] = 1;
-        rsubj[0] = 0;
-        rcof[0] = *self;
-    }
-}
-
-impl ExprTrait<1> for Vec<f64> {
-    fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
-        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[self.len()],self.len(),self.len());
-        rptr.iter_mut().enumerate().for_each(|(i,rp)| *rp = i);
-        rsubj.fill(0);
-        rcof.clone_from_slice(self.as_slice())
-    }
-}
 
 ////////////////////////////////////////////////////////////
 //
