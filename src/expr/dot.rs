@@ -80,25 +80,6 @@ impl<E,M> Dot<M> for E
     }
 }
 
-//impl<E> Dot<Vec<f64>> for E where E : ExprTrait<1> {
-//    type Result = ExprDot<1,E>;
-//    fn dot(self,rhs : Vec<f64>) -> Self::Result { 
-//        ExprDot{
-//            expr : self,
-//            shape : [rhs.len()],
-//            cof : rhs,
-//            sp : None
-//        }
-//    }
-//}
-//
-//impl<E> Dot<E> for Vec<f64> where E : ExprTrait<1> {
-//    type Result = ExprDot<1,E>;
-//    fn dot(self,rhs : E) -> Self::Result { rhs.dot(self) }
-//}
-//
-
-
 impl<E> Dot<&[f64]> for E where E : ExprTrait<1> {
     type Result = ExprDot<1,E>;
     fn dot(self,rhs : &[f64]) -> Self::Result {

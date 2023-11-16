@@ -7,7 +7,6 @@ mod mul;
 
 
 use itertools::{iproduct,izip};
-use crate::matrix::{SparseMatrix,DenseMatrix};
 
 use super::utils::*;
 use workstack::WorkStack;
@@ -235,8 +234,6 @@ impl<const N : usize> Expr<N> {
 }
 
 
-
-
 impl<const N : usize> ExprTrait<N> for Expr<N> {
     fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
         let nnz  = self.asubj.len();
@@ -244,9 +241,8 @@ impl<const N : usize> ExprTrait<N> for Expr<N> {
 
         let (aptr,sp,asubj,acof) = rs.alloc_expr(self.shape.as_slice(),nnz,nelm);
 
-        match (&self.sparsity,sp) {
-            (Some(ref ssp),Some(dsp)) => dsp.clone_from_slice(ssp.as_slice()),
-            _ => {}
+        if let (Some(ref ssp),Some(dsp)) = (&self.sparsity,sp) {
+            dsp.clone_from_slice(ssp.as_slice())
         }
 
         aptr.clone_from_slice(self.aptr.as_slice());
@@ -270,82 +266,6 @@ pub fn nil<const N : usize>(shape : &[usize; N]) -> ExprNil<N> {
     }
     ExprNil{shape:*shape}
 }
-
-
-////////////////////////////////////////////////////////////
-// Multiply
-
-///// Trait that indicates that the `v:T` implementing it supports
-///// v.mul(expr)
-//pub trait ExprMultiplyableLeft {
-//    type O : ExprTrait;
-//    fn mul<E:ExprTrait>(self,rhs : E) -> Self::O;
-//}
-//
-///// Trait that indicates that the type implementing T it supports
-///// expr.mul(t.mul(expr)
-//pub trait ExprMultiplyableRight {
-//    type O : ExprTrait;
-//    fn mul<E:ExprTrait>(self,lhs : E) -> Self::O;
-//}
-//
-
-
-////////////////////////////////////////////////////////////
-//
-
-// Disabled to avoid conflicts doing symmetrix left/right operations like dot, mul etc.
-//  impl ExprTrait<2> for DenseMatrix {
-//      fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
-//          let shape = self.shape();
-//          let (ptr,_sp,subj,cof) = rs.alloc_expr(&shape, shape[0]*shape[1], shape[0]*shape[1]);
-//  
-//          ptr.iter_mut().enumerate().for_each(|(i,p)| *p = i);
-//          subj.iter_mut().for_each(|s| *s = 0);
-//          cof.clone_from_slice(self.data());
-//      }
-//  }
-//  
-//  impl ExprTrait<2> for SparseMatrix {
-//      fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
-//          let shape = self.shape();
-//          let nelem = self.nnz();
-//          let (ptr,sp,subj,cof) = rs.alloc_expr(&shape, nelem, nelem);
-//  
-//          if let Some(sp) = sp {
-//              sp.clone_from_slice(self.sparsity());
-//          }
-//          ptr.iter_mut().enumerate().for_each(|(i,p)| *p = i);
-//          subj.iter_mut().for_each(|s| *s = 0);
-//          cof.clone_from_slice(self.data());
-//      }
-//  }
-
-
-
-// ExprAdd is constructed for `e,d : ExprTrait` by
-// ```
-//   e.add(d)
-// ```
-// The following construction is meant to turn a chain of adds like this
-// ```
-//   e.add(e1).add(e2).add(e3)
-// ```
-// which would end up as a structure
-// ```
-//   ExprAdd(ExprAdd(ExprAdd(e,e1),e2),e3)
-// ```
-//
-// which would by default be evaluated one expression at a time, into
-// a construction that is aware of the recursion:
-// ```
-//   ExprAddRec(ExprAddRec(ExprAdd(e,e1),e2),e3)
-// ```
-// ExprAddRec will have a specialized `eval` function that first
-// evaluates the whole chain of terms, then adds them
-//
-// For this purpose we use a private trait implemented only by ExprAdd
-// and ExprAddRec providing a recursive evaluation function.
 
 pub trait ExprAddRecTrait {
     fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize;
