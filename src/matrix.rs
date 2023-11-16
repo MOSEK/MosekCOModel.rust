@@ -15,6 +15,9 @@ pub trait Matrix {
 
     fn transpose(&self) -> Self;
     fn mul_scalar(self, s : f64) -> Self;
+    
+    fn extract(self) -> ([usize; 2],Vec<f64>,Option<Vec<usize>>);
+    fn extract_full(self) -> ([usize; 2],Vec<f64>);
 }
 
 
@@ -41,6 +44,10 @@ impl Matrix for DenseMatrix {
        self.data.iter_mut().for_each(|v| *v *= s);
        self
     }
+    
+    fn extract(self) -> ([usize;2],Vec<f64>,Option<Vec<usize>>) { (self.shape,self.data,None) }
+
+    fn extract_full(self) -> ([usize; 2],Vec<f64>) { (self.shape,self.data) }
 }
 
 impl DenseMatrix {
@@ -51,7 +58,6 @@ impl DenseMatrix {
             data
         }
     }
-    pub fn extract(self) -> ([usize;2],Vec<f64>) { (self.shape,self.data) }
     //pub fn data(&self) -> &[f64] { self.data.as_slice() }
     //pub fn to_vec(&self) -> Vec<f64> { self.data.clone() }
 }
@@ -96,6 +102,17 @@ impl Matrix for SparseMatrix {
     fn mul_scalar(mut self, s : f64) -> SparseMatrix {
        self.data.iter_mut().for_each(|v| *v *= s);
        self
+    }
+    
+    fn extract(self) -> ([usize;2],Vec<f64>,Option<Vec<usize>>) { (self.shape,self.data,Some(self.sp)) }
+
+    fn extract_full(self) -> ([usize; 2],Vec<f64>) {
+        let mut data = vec![0.0; self.shape[0]*self.shape[1]];
+        for (&i,&c) in self.sp.iter().zip(self.data.iter()) {
+            unsafe{ *data.get_unchecked_mut(i) = c; }
+        }
+
+        (self.shape,data) 
     }
 }
 

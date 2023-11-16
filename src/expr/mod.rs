@@ -2,6 +2,7 @@ extern crate itertools;
 
 mod eval;
 pub mod workstack;
+mod dot;
 
 use itertools::{iproduct,izip};
 use crate::matrix::{SparseMatrix,DenseMatrix,Matrix};
@@ -10,6 +11,7 @@ use super::utils::*;
 use workstack::WorkStack;
 use super::matrix;
 
+pub use dot::{Dot,ExprDot};
 
 
 pub trait ExprTrait<const N : usize> {
@@ -122,8 +124,13 @@ pub trait ExprTrait<const N : usize> {
 
     fn mul<RHS>(self,other : RHS) -> RHS::Result where Self: Sized, RHS : ExprRightMultipliable<N,Self> { other.mul_right(self) }
 
-    fn dot<RHS>(self, other : RHS) -> RHS::Result where Self: Sized, RHS : ExprDottable<N,Self> { other.dot(self) }
+    //fn dot<RHS>(self, other : RHS) -> RHS::Result where Self: Sized, RHS : ExprDottable<N,Self> { other.dot(self) }
 }
+
+
+
+
+
 
 pub trait ExprTrait0 : ExprTrait<0> {
     //fn mul_left_dense(self,v:DenseMatrix) -> ExprScalarMulLeftDense where Self:Sized {}
@@ -212,30 +219,11 @@ pub trait ExprLeftMultipliable<const N : usize,E>
     fn mul(self,other : E) -> Self::Result;
 }
 
-pub trait ExprDottable<const N : usize, E> 
-    where E : ExprTrait<N> 
-{
-    type Result;
-    fn dot(self,other : E) -> Self::Result;
-}
 
-impl<E> ExprDottable<1,E> for &[f64] where E : ExprTrait<1> {
-    type Result = ExprDotVec<E>;
-    fn dot(self,other : E) -> Self::Result { ExprDotVec{data : self.to_vec(), expr : other } }
-}
 
-impl<E> ExprDottable<1,E> for Vec<f64> where E : ExprTrait<1> {
-    type Result = ExprDotVec<E>;
-    fn dot(self,other : E) -> Self::Result { ExprDotVec{data : self.clone(), expr : other } }
-}
 
-impl<E> ExprDottable<2,E> for SparseMatrix where E : ExprTrait<2> {
-    type Result = ExprDotSparse<ExprReshapeOneRow<2,1,E>>;
-    fn dot(self,other : E) -> Self::Result { 
-        let (sp,data) = self.get_flat_data();
-        ExprDotSparse{ data, sparsity : sp, expr : ExprReshapeOneRow { item: other, dim: 0 } } 
-    }
-}
+
+
 
 /// Implement `Expr<N>.mul(s)` for scalar `s` and any `N`.
 impl<const N : usize,E> ExprRightMultipliable<N,E> for f64 
@@ -538,36 +526,6 @@ pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
     lhs  : f64
 }
 
-pub trait ExprInnerProductFactorTrait<E:ExprTrait<1>> {
-    type Output;
-    fn dot(self, expr : E) -> Self::Output;
-}
-
-impl<E:ExprTrait<1>> ExprInnerProductFactorTrait<E> for &[f64] {
-    type Output = ExprDotVec<E>;
-    fn dot(self, expr : E) -> Self::Output {
-        ExprDotVec{ expr, data:self.to_vec() }
-    }
-}
-
-pub struct ExprDotVec<E:ExprTrait<1>> {
-    data : Vec<f64>,
-    expr : E
-}
-
-pub struct ExprDotSparse<E:ExprTrait<1>> {
-    data : Vec<f64>,
-    sparsity : Vec<usize>,
-    expr : E
-}
-
-impl<E> ExprTrait<0> for ExprDotSparse<E> where E : ExprTrait<1> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.expr.eval(ws,rs,xs);
-        eval::dot_sparse(self.sparsity.as_slice(),self.data.as_slice(),
-                         rs,ws,xs);
-    }
-}
 
 impl<E:ExprTrait<2>> ExprMulLeftDense<E> {
     pub fn new(item : E, lhs : matrix::DenseMatrix ) -> ExprMulLeftDense<E> {
@@ -598,12 +556,6 @@ impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprMulScalar<N,E> {
     }
 }
 
-impl<E:ExprTrait<1>> ExprTrait<0> for ExprDotVec<E> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.expr.eval(ws,rs,xs);
-        eval::dot_vec(self.data.as_slice(),rs,ws,xs);
-    }
-}
 
 ////////////////////////////////////////////////////////////
 //
@@ -639,6 +591,36 @@ impl<E:ExprTrait<2>> ExprTrait<2> for ExprMulRightSparse<E> {
 }
 ////////////////////////////////////////////////////////////
 //
+
+// Disabled to avoid conflicts doing symmetrix left/right operations like dot, mul etc.
+//  impl ExprTrait<2> for DenseMatrix {
+//      fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+//          let shape = self.shape();
+//          let (ptr,_sp,subj,cof) = rs.alloc_expr(&shape, shape[0]*shape[1], shape[0]*shape[1]);
+//  
+//          ptr.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+//          subj.iter_mut().for_each(|s| *s = 0);
+//          cof.clone_from_slice(self.data());
+//      }
+//  }
+//  
+//  impl ExprTrait<2> for SparseMatrix {
+//      fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+//          let shape = self.shape();
+//          let nelem = self.nnz();
+//          let (ptr,sp,subj,cof) = rs.alloc_expr(&shape, nelem, nelem);
+//  
+//          if let Some(sp) = sp {
+//              sp.clone_from_slice(self.sparsity());
+//          }
+//          ptr.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+//          subj.iter_mut().for_each(|s| *s = 0);
+//          cof.clone_from_slice(self.data());
+//      }
+//  }
+
+
+
 // ExprAdd is constructed for `e,d : ExprTrait` by
 // ```
 //   e.add(d)
@@ -741,7 +723,7 @@ impl<const N : usize, const M : usize, E> ExprTrait<M> for ExprReduceShape<N,M,E
                 rshape[N..].iter_mut().for_each(|s| *s = 1);
             }
         }
-        rs.inline_reshape_expr(rshape).nunuwrap()
+        rs.inline_reshape_expr(rshape).unwrap()
     }
 }
 
