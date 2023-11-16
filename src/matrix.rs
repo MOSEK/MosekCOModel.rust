@@ -1,7 +1,5 @@
 
 use itertools::{izip, iproduct};
-use super::expr::{ExprRightMultipliable,ExprTrait,ExprTrait0,ExprTrait1,ExprTrait2,ExprMulLeftDense,ExprMulRightDense};
-//use super::expr::{ExprRightMultipliable,ExprTrait,ExprTrait0,ExprTrait1,ExprTrait2,ExprMulLeftDense,ExprMulRightDense};
 
 
 pub trait Matrix {
@@ -366,7 +364,7 @@ pub struct SparseNDArray<const N : usize> {
 
 impl std::ops::Mul<f64> for DenseMatrix {
     type Output = DenseMatrix;
-    fn mul(self,rhs : f64) -> DenseMatrix {
+    fn mul(mut self,rhs : f64) -> DenseMatrix {
         self.data.iter_mut().for_each(|v| *v *= rhs);
         self
     }
@@ -374,7 +372,7 @@ impl std::ops::Mul<f64> for DenseMatrix {
 
 impl std::ops::Mul<DenseMatrix> for f64 {
     type Output = DenseMatrix;
-    fn mul(self,rhs : DenseMatrix) -> DenseMatrix {
+    fn mul(self,mut rhs : DenseMatrix) -> DenseMatrix {
         rhs.data.iter_mut().for_each(|v| *v *= self );
         rhs
     }
@@ -400,7 +398,7 @@ impl std::ops::Mul<DenseMatrix> for DenseMatrix {
         let data = iproduct!(0..lhsshape[0],0..rhsshape[1]).map(|(i,j)| self.data[i*lhsshape[1]..].iter().zip(rhs.data[j..].iter().step_by(rhsshape[1])).map(|(&v0,&v1)| v0*v1).sum() ).collect();
 
         DenseMatrix{
-            dim : shape.into(),
+            shape,
             data
         }
     }
