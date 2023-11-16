@@ -11,7 +11,7 @@ use expr::workstack::WorkStack;
 use itertools::iproduct;
 use std::iter::once;
 
-pub use expr::{ExprTrait,ExprTrait0,ExprTrait1,ExprTrait2,ExprRightMultipliable};
+pub use expr::{ExprTrait,ExprTrait2,ExprRightMultipliable};
 pub use variable::{Variable};
 pub use domain::{LinearDomain,
                  ConicDomain,

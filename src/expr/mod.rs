@@ -14,6 +14,7 @@ use super::matrix;
 pub use dot::{Dot,ExprDot};
 
 
+/// The `ExprTrait<N>` represents a `N`-dimensional expression.
 pub trait ExprTrait<const N : usize> {
     /// Evaluate the expression and put the result on the [rs] stack,
     /// using the [ws] to evaluate sub-expressions and [xs] for
@@ -128,52 +129,6 @@ pub trait ExprTrait<const N : usize> {
 }
 
 
-
-
-
-
-pub trait ExprTrait0 : ExprTrait<0> {
-    //fn mul_left_dense(self,v:DenseMatrix) -> ExprScalarMulLeftDense where Self:Sized {}
-    //fn mul_left_sparse(self,v:SparseMatrix) -> ExprScalarMulLeftDense where Self:Sized {}
-    //fn mul_right_dense(self,v:DenseMatrix) -> ExprScalarMulLeftDense where Self:Sized {}
-    //fn mul_right_sparse(self,v:SparseMatrix) -> ExprScalarMulLeftDense where Self:Sized {}
-    //fn mul(self, other : ExprRightMultipliable) -> 
-}
-
-pub trait ExprTrait1 : ExprTrait<1> {
-//    fn mul_left_dense(self, v : matrix::DenseMatrix) -> ExprReshapeOneRow<2,1,ExprMulLeftDense<ExprReshapeOneRow<1,2,Self>>> where Self:Sized { 
-//        ExprReshapeOneRow{
-//            item:ExprMulLeftDense{
-//                item:ExprReshapeOneRow{
-//                    item: self, 
-//                    dim : 0 
-//                },
-//                lhs:v
-//            } ,
-//            dim : 0
-//        }
-//    }
-//    fn mul_right_dense(self, v : matrix::DenseMatrix) -> ExprReshapeOneRow<2,1,ExprMulRightDense<ExprReshapeOneRow<1,2,Self>>> where Self:Sized  { 
-//        ExprReshapeOneRow{
-//            dim : 0,
-//            item : ExprMulRightDense{
-//                item:ExprReshapeOneRow {
-//                    item : self,
-//                    dim : 1 
-//                },
-//                rhs:v}
-//        }
-//    }
-//    fn dot<V:ExprInnerProductFactorTrait<Self>>(self,v: V) -> V::Output where Self:Sized   { v.dot(self) }
-//    //fn mul<const N : usize,V>(self,other : V) -> V::Result where V : ExprRightMultipliable<1,Self>, Self:Sized { other.mul_right(self) }
-//    fn rev_mul<const N : usize,V>(self,other : V) -> V::Result where V : ExprLeftMultipliable<1,Self>, Self:Sized { other.mul(self) }
-//
-//    /// Creates a sparse expression with the given shape and sparsity
-//    /// from the elements in the expression. The sparsity [sp] must
-//    /// match the actual number of elements in the expression.
-//    fn scatter<const M : usize>(self,shape : &[usize; M], sp : Vec<usize>) -> ExprScatter<M,Self>  where Self:Sized { ExprScatter::new(self,shape,sp) }
-}
-
 pub trait ExprTrait2 : ExprTrait<2> {
     //fn into_diag(self) -> ExprIntoDiag<Self> { ExprIntoDiag{ item : self } }
     fn mul_left_dense(self, v : matrix::DenseMatrix) -> ExprMulLeftDense<Self> where Self:Sized { ExprMulLeftDense{item:self,lhs:v} }
@@ -187,8 +142,6 @@ pub trait ExprTrait2 : ExprTrait<2> {
     fn rev_mul<V>(self, other : V) -> V::Result where V : ExprLeftMultipliable<2,Self>, Self:Sized { other.mul(self) }
 }
 
-impl<E : ExprTrait<0>> ExprTrait0 for E {}
-impl<E : ExprTrait<1>> ExprTrait1 for E {}
 impl<E : ExprTrait<2>> ExprTrait2 for E {}
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////

@@ -239,7 +239,6 @@ impl<const N : usize> OffsetTrait<N> for DenseNDArray<N> {
 ////////////////////////////////////////////////////////////
 
 
-
 /// Scalar domain of nonnegative values
 pub fn nonnegative() -> LinearDomain<0> { 0f64.greater_than() }
 /// Scalar domain of nonpositive values

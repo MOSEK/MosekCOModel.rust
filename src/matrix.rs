@@ -1,6 +1,4 @@
-
 use itertools::{izip, iproduct};
-
 
 pub trait Matrix {
     fn shape(&self) -> [usize; 2];
@@ -8,12 +6,9 @@ pub trait Matrix {
     fn height(&self) -> usize { self.shape()[0] } 
     fn nnz(&self) -> usize;
     fn data(&self) -> &[f64];
-    fn sparsity<'a>(& 'a self) -> Option<& 'a [usize]>;
-
-
+    fn sparsity(& self) -> Option<& [usize]>;
     fn transpose(&self) -> Self;
     fn mul_scalar(self, s : f64) -> Self;
-    
     fn extract(self) -> ([usize; 2],Vec<f64>,Option<Vec<usize>>);
     fn extract_full(self) -> ([usize; 2],Vec<f64>);
 }
@@ -30,7 +25,7 @@ impl Matrix for DenseMatrix {
     fn shape(&self) -> [usize; 2] { self.shape }
     fn nnz(&self) -> usize { self.data.len() }
     fn data(&self) -> &[f64] { self.data.as_slice() }
-    fn sparsity<'a>(&'a self) -> Option<& 'a [usize]> { None }
+    fn sparsity(&self) -> Option<& [usize]> { None }
 
 
     fn transpose(&self) -> DenseMatrix {
@@ -72,7 +67,7 @@ impl Matrix for SparseMatrix {
     fn shape(&self) -> [usize; 2] { self.shape }
     fn nnz(&self) -> usize { self.data.len() }
     fn data(&self) -> &[f64] { self.data.as_slice() }
-    fn sparsity<'a>(&'a self) -> Option<& 'a [usize]> { Some(self.sp.as_slice()) }
+    fn sparsity(& self) -> Option<&  [usize]> { Some(self.sp.as_slice()) }
 
 
     fn transpose(&self) -> SparseMatrix {
@@ -118,6 +113,10 @@ impl Matrix for SparseMatrix {
 
 
 impl SparseMatrix {
+    pub fn diagonal(data : Vec<f64>) -> SparseMatrix {
+        let n = data.len();
+        SparseMatrix{ shape : [n,n], sp : (0..n*n).step_by(n+1).collect(), data}
+    }
     pub fn new(height : usize, width : usize, sparsity : &[[usize;2]], coefficients : &[f64]) -> SparseMatrix {
         if sparsity.len() != coefficients.len() { panic!("Mismatching data dimensions"); }
         if sparsity.iter().any(|&i| i[0] >= height || i[1] >= width) {
@@ -160,6 +159,33 @@ impl SparseMatrix {
     pub fn shape(&self) -> [usize; 2] { self.shape }
     pub fn data(&self) -> &[f64] { self.data.as_slice() }
     pub fn sparsity(&self) -> &[usize] { self.sp.as_slice() }
+
+    pub fn transpose(&self) -> SparseMatrix {
+        let n = self.sp.len();
+        let (height,width) = (self.shape[0],self.shape[1]);
+        let mut ptr = vec![0; width+1];
+        self.sp.iter().for_each(|&i| unsafe{ *ptr.get_unchecked_mut(1 + i % width) += 1 });
+        _ = ptr.iter_mut().fold(0,|c,p| {*p += c; *p });
+
+        let mut sp = vec![0usize; n];
+        let mut data = vec![0.0; n];
+
+        for (&k,&d) in self.sp.iter().zip(self.data.iter()) {
+            let (i,j) = (k / width, k % width); 
+            let p = unsafe{ *ptr.get_unchecked(j) };
+            unsafe {
+                *sp.get_unchecked_mut(p) = j*height + i;
+                *data.get_unchecked_mut(p) = d;
+                *ptr.get_unchecked_mut(j) += 1;
+            }
+        }
+
+        SparseMatrix{
+            shape : [width,height],
+            sp,
+            data
+        }
+    }
 
     pub fn get_flat_data(self) -> (Vec<usize>,Vec<f64>) {
         (self.sp,self.data)
