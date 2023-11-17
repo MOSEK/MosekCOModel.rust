@@ -117,7 +117,53 @@ impl SparseMatrix {
         let n = data.len();
         SparseMatrix{ shape : [n,n], sp : (0..n*n).step_by(n+1).collect(), data}
     }
-    pub fn new(height : usize, width : usize, sparsity : &[[usize;2]], coefficients : &[f64]) -> SparseMatrix {
+    pub fn from_ijv(height : usize, width : usize, subi : &[usize], subj : &[usize], coefficients : Vec<f64>) -> SparseMatrix {
+        if subi.len() != subj.len() || subi.len() != coefficients.len() {
+            panic!("Mismatching vector length");
+        } 
+        if let Some(&v) = subi.iter().max() { if v >= height { panic!("Invalid subi entry"); } }
+        if let Some(&v) = subj.iter().max() { if v >= width { panic!("Invalid subj entry"); } }
+
+        let sp = subi.iter().zip(subj.iter()).map(|(&i,&j)| i*width+j).collect();
+        SparseMatrix::from_sparsity_v(height, width, sp, coefficients)
+    }
+    pub fn from_sparsity_v(height : usize, width : usize, sp : Vec<usize>, coefficients : Vec<f64>) -> SparseMatrix {
+        if sp.len() != coefficients.len() { panic!("Mismatching data dimensions"); }
+
+        if let Some(&v) = sp.iter().max() { if v >= width*height { panic!("Invalid sparsity entry"); } };
+        if sp.iter().zip(sp[1..].iter()).all(|(&i0,&i1)| i0 < i1) {
+            SparseMatrix{
+                shape : [height,width],
+                data : coefficients,
+                sp
+            }
+        } else {
+            let nnz = sp.len();
+            let mut sparsity   = vec![0usize; nnz];
+            let mut data = vec![0.0; nnz];
+            let mut perm = vec![0usize;nnz];
+            let mut ptr  = vec![0usize; usize::max(height,width)+1];
+
+            sp.iter().for_each(|i| unsafe { *ptr.get_unchecked_mut(i%width+1) += 1; } );
+            _ = ptr.iter_mut().fold(0,|c,v| { *v += c; *v });
+            sp.iter().enumerate().for_each(|(i,&si)| unsafe{ *perm.get_unchecked_mut(*ptr.get_unchecked(si%width)) = i; *ptr.get_unchecked_mut(si%width) += 1; });
+
+            ptr.iter_mut().for_each(|p| *p = 0);
+            sp.iter().for_each(|i| unsafe { *ptr.get_unchecked_mut(i%width+1) += 1; } );
+            _ = ptr.iter_mut().fold(0,|c,v| { *v += c; *v });
+            for &p in perm.iter() {
+                let i = unsafe{ *sp.get_unchecked(p) };
+                let ti = unsafe{ *ptr.get_unchecked(i/width) };
+                unsafe { 
+                    *sparsity.get_unchecked_mut(ti) = (i/width) * width + i%width;
+                    *data.get_unchecked_mut(ti) = *coefficients.get_unchecked(p);
+                    *ptr.get_unchecked_mut(i/width) += 1;
+                }
+            }
+            SparseMatrix{ shape : [height,width], sp:sparsity,data}
+        }
+    }
+    pub fn new(height : usize, width : usize, sparsity : &[[usize;2]], coefficients : Vec<f64>) -> SparseMatrix {
         if sparsity.len() != coefficients.len() { panic!("Mismatching data dimensions"); }
         if sparsity.iter().any(|&i| i[0] >= height || i[1] >= width) {
             panic!("Sparsity pattern out of bounds");

@@ -87,7 +87,7 @@ pub trait ExprTrait<const N : usize> {
     fn add<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,R>  where Self:Sized { ExprAdd{lhs:self,rhs} }
     fn sub<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,ExprMulScalar<N,R>>  where Self:Sized { ExprAdd{lhs:self, rhs:rhs.mul(-1.0) } }
 
-    fn mul_elem<RHS>(self, other : RHS) -> RHS::Result where Self : Sized, RHS : ExprRightElmMultipliable<N,Self> { other.mul_elem(self) } 
+    fn mul_elm<RHS>(self, other : RHS) -> RHS::Result where Self : Sized, RHS : ExprRightElmMultipliable<N,Self> { other.mul_elem(self) } 
     //fn mul_scalar(self, s : f64) -> ExprMulScalar<N,Self> where Self:Sized { ExprMulScalar { item : self, lhs : s } }
 
     fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }

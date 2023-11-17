@@ -98,7 +98,7 @@ impl<E> Dot<E> for &[f64] where E : ExprTrait<1> {
     fn dot(self,rhs : E) -> Self::Result { rhs.dot(self) }
 }
 
-impl<const N : usize, E> ExprTrait<N> for ExprDot<N,E> where E : ExprTrait<N> {
+impl<const N : usize, E> ExprTrait<0> for ExprDot<N,E> where E : ExprTrait<N> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.expr.eval(ws,rs,xs);
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();

@@ -1,6 +1,7 @@
 use super::{ExprTrait, ExprReshapeOneRow};
 use super::workstack::WorkStack;
 use super::matrix::Matrix;
+use itertools::izip;
 
 pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
     item : E,
@@ -397,4 +398,71 @@ impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprMulScalar<N,E> {
     }
 }
 
+impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprMulElm<N,E> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.expr.eval(ws,rs,xs);
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+        let &nnz = ptr.last().unwrap();
+        let nelm = ptr.len()-1;
+
+        if shape.iter().zip(self.datashape.iter()).any(|(&s0,&s1)| s0 != s1) { panic!("Mismatching operand shapes in mul_elm"); }
+
+        if let Some(msp) = &self.datasparsity {
+            if let Some(esp) = sp {
+                panic!("Unimplemented: Sparse Expr .* Sparse Matrix");
+            }
+            else {
+                // count result size
+                let rnelm = msp.len();
+                let rnnz = msp.iter().map(|&i| ptr[i+1]-ptr[i]).sum();
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape, rnnz, rnelm);
+                rptr[0] = 0;
+                let mut nzi = 0usize;
+
+                if let Some(rsp) = rsp {
+                    for (ri,rp,&i,&mc) in izip!(rsp.iter_mut(),
+                                                rptr[1..].iter_mut(),
+                                                msp.iter(),
+                                                self.data.iter()) {
+                        let p0 = ptr[i];
+                        let p1 = ptr[i+1];
+
+                        *ri = i;
+                        *rp = p1-p0; 
+                        rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                        rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * mc);
+                        nzi += p1-p0;
+                    }
+                }
+            }
+        }
+        else if let Some(esp) = sp {
+            let rnnz = nnz;
+            let rnelm = nelm;
+
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape, rnnz, rnelm);
+
+            if let Some(rsp) = rsp {
+                rsp.clone_from_slice(esp);
+            }
+            rsubj.clone_from_slice(subj);
+            rptr.clone_from_slice(ptr);
+            rcof.clone_from_slice(cof);
+            for (&p0,&p1,&i) in izip!(ptr.iter(),ptr[1..].iter(),esp.iter()) {
+                let mc = self.data[i];
+                rcof[p0..p1].iter_mut().for_each(|c| *c *= mc);
+            }
+        }
+        else {
+            let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(shape, nnz, nelm);
+            rptr.clone_from_slice(ptr);
+            rsubj.clone_from_slice(subj);
+            rcof.clone_from_slice(cof);
+            for (&p0,&p1,&c) in izip!(ptr.iter(),ptr[1..].iter(),self.data.iter()) {
+                rcof[p0..p1].iter_mut().for_each(|t| *t *= c );
+            }
+        }
+
+    }
+}
 
