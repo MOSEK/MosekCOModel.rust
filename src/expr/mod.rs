@@ -4,6 +4,7 @@ mod eval;
 pub mod workstack;
 mod dot;
 mod mul;
+mod add;
 
 
 use itertools::{iproduct,izip};
@@ -14,6 +15,7 @@ use super::matrix;
 
 pub use dot::{Dot,ExprDot};
 pub use mul::*;
+pub use add::*;
 
 
 /// The `ExprTrait<N>` represents a `N`-dimensional expression.
@@ -84,8 +86,19 @@ pub trait ExprTrait<const N : usize> {
         }
     }
 
-    fn add<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,R>  where Self:Sized { ExprAdd{lhs:self,rhs} }
-    fn sub<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,ExprMulScalar<N,R>>  where Self:Sized { ExprAdd{lhs:self, rhs:rhs.mul(-1.0) } }
+    fn add<RHS>(self, rhs : RHS) -> RHS::Result
+        where 
+            Self : Sized, 
+            RHS : ExprAddable<N,Self> 
+    { rhs.add_internal(self) }
+
+    //fn add<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,R>  where Self:Sized { ExprAdd{lhs:self,rhs} }
+    fn sub<RHS>(self, rhs : RHS) -> RHS::SubResult
+        where 
+            Self : Sized,
+            RHS : ExprAddable<N,Self> 
+    { rhs.sub_internal(self) }
+    //fn sub<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,ExprMulScalar<N,R>>  where Self:Sized { ExprAdd{lhs:self, rhs:rhs.mul(-1.0) } }
 
     fn mul_elm<RHS>(self, other : RHS) -> RHS::Result where Self : Sized, RHS : ExprRightElmMultipliable<N,Self> { other.mul_elem(self) } 
     //fn mul_scalar(self, s : f64) -> ExprMulScalar<N,Self> where Self:Sized { ExprMulScalar { item : self, lhs : s } }
@@ -267,62 +280,6 @@ pub fn nil<const N : usize>(shape : &[usize; N]) -> ExprNil<N> {
     ExprNil{shape:*shape}
 }
 
-pub trait ExprAddRecTrait {
-    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize;
-}
-
-pub struct ExprAdd<const N : usize, L:ExprTrait<N>+Sized,R:ExprTrait<N>> {
-    lhs : L,
-    rhs : R
-}
-pub struct ExprAddRec<const N : usize, L:ExprAddRecTrait,R:ExprTrait<N>> {
-    lhs : L,
-    rhs : R
-}
-
-// ExprAdd implementation
-impl<const N : usize, L:ExprTrait<N>,R:ExprTrait<N>> ExprAdd<N,L,R> {
-    pub fn add<T:ExprTrait<N>>(self,rhs : T) -> ExprAddRec<N,ExprAdd<N,L,R>,T> {
-        ExprAddRec{lhs: self, rhs}
-    }
-}
-
-impl<const N : usize,L:ExprTrait<N>,R:ExprTrait<N>> ExprTrait<N> for ExprAdd<N,L,R> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.lhs.eval(ws,rs,xs);
-        self.rhs.eval(ws,rs,xs);
-
-        eval::add(2,rs,ws,xs);
-    }
-}
-impl<const N : usize,L:ExprTrait<N>,R:ExprTrait<N>> ExprAddRecTrait for ExprAdd<N,L,R> {
-    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
-        self.rhs.eval(rs,ws,xs);
-        self.lhs.eval(rs,ws,xs);
-        2
-    }
-}
-// ExprAddRec implementation
-impl<const N : usize, L:ExprAddRecTrait,R:ExprTrait<N>>  ExprAddRec<N,L,R> {
-    pub fn add<T:ExprTrait<N>>(self,rhs : T) -> ExprAddRec<N,Self,T> {
-        ExprAddRec{lhs: self, rhs}
-    }
-}
-
-impl<const N : usize, L:ExprAddRecTrait,R:ExprTrait<N>> ExprAddRecTrait for ExprAddRec<N,L,R> {
-    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
-        self.rhs.eval(rs,ws,xs);
-        1+self.lhs.eval_rec(rs,ws,xs)
-    }
-}
-
-impl<const N : usize, L:ExprAddRecTrait,R:ExprTrait<N>> ExprTrait<N> for ExprAddRec<N,L,R> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        let n = self.eval_rec(ws,rs,xs);
-
-        eval::add(n,rs,ws,xs);
-    }
-}
 
 /// Reduce (or increase) the number of dimensions in the shape from `N` to `M`. If `M<N`, the
 /// trailing `N-M` dimensions are flattened into one dimension. If `N<M` the shape is padded with
