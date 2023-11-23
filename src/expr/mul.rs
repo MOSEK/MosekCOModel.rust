@@ -1,6 +1,8 @@
 use super::{ExprTrait, ExprReshapeOneRow};
 use super::workstack::WorkStack;
 use super::matrix::Matrix;
+use crate::utils::*;
+use std::slice::Chunks;
 use itertools::izip;
 
 pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
@@ -29,6 +31,14 @@ pub struct ExprMulElm<const N : usize,E> where E : ExprTrait<N> {
     datasparsity : Option<Vec<usize>>,
     data : Vec<f64>
 }
+
+pub struct ExprDotRows<E> where E : ExprTrait<2> {
+    expr : E,
+    shape : [usize; 2],
+    sparsity : Option<Vec<usize>>,
+    data : Vec<f64>
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Left multiplication
@@ -465,4 +475,64 @@ impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprMulElm<N,E> {
 
     }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// MulDiag
+//
+///////////////////////////////////////////////////////////////////////////////
+
+pub trait ExprRightDiagMultipliable<E> where E : ExprTrait<2> {
+    fn mul_internal(self, other : E) -> ExprDotRows<E>;
+}
+
+impl<E> ExprTrait<1> for ExprDotRows<E> where E : ExprTrait<2> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.expr.eval(ws,rs,xs);
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+        let &nnz = ptr.last().unwrap();
+    
+        if shape[0] != self.shape[0] || shape[1] != self.shape[1] {
+            panic!("Mismatching shpes");
+        }
+
+        match (& self.sparsity,sp) {
+            (None,None) => {
+                let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[shape[0]], nnz, shape[0]);
+                
+                rsubj.clone_from_slice(subj);
+                rcof.clone_from_slice(cof);
+                rcof.iter_mut().zip(self.data.iter()).for_each(|(c,&v)| *c *= v);
+                rptr.iter_mut().zip(ptr.iter().step_by(self.shape[1])).for_each(|(d,&s)| *d = s);
+            },
+            (Some(msp),None) => {
+                let mwidth = self.shape[1];
+                let (xmptr,_) = xs.alloc(self.shape[0]+1,0);
+                xmptr.iter_mut().for_each(|v| *v = 0);
+                msp.iter().for_each(|&i| unsafe{ *xmptr.get_unchecked_mut(i / mwidth) += 1 });
+                _ = xmptr.iter_mut().fold(0,|c,v| { *v += c; *v });
+    
+                // count elements and nonzeros
+                let mut rnnz = 0;
+                let mut rnelem = ptr.iter().step_by(mwidth).zip(ptr[1..].iter().step_by(mwidth)).filter(|(&i0,&i1)| i1-i0 > 0).count();
+                for (msp_row,eptr0,eptr1) in izip!(msp.as_slice().chunks_by(xmptr),
+                                                   ptr.chunks(shape[1]),
+                                                   ptr[1..].chunks(shape[1])) {
+                    let rownns : usize = msp_row.iter()
+                        .map(|&i| i % mwidth)
+                        .map(|j| eptr1[j] - eptr0[j])
+                        .sum();
+                }
+                ...
+            },
+            (None, Some(esp)) => {},
+            (Some(msp),Some(esp)) => {}
+        }
+    } 
+}
+
+
+
+
+
+
 
