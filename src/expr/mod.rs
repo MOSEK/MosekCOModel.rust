@@ -9,6 +9,8 @@ mod add;
 
 use itertools::{iproduct,izip};
 
+use crate::matrix::Matrix;
+
 use super::utils::*;
 use workstack::WorkStack;
 use super::matrix;
@@ -101,6 +103,25 @@ pub trait ExprTrait<const N : usize> {
     //fn sub<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,ExprMulScalar<N,R>>  where Self:Sized { ExprAdd{lhs:self, rhs:rhs.mul(-1.0) } }
 
     fn mul_elm<RHS>(self, other : RHS) -> RHS::Result where Self : Sized, RHS : ExprRightElmMultipliable<N,Self> { other.mul_elem(self) } 
+    fn dot_rows<M>(self, other : M) -> ExprReduceShape<2,1,ExprSumLastDims<2,ExprMulElm<2,Self>>>
+        where 
+            Self : Sized+ExprTrait<2>, 
+            M : Matrix
+    { 
+        let (shape,data,sparsity) = other.extract();
+        ExprReduceShape{
+            item : ExprSumLastDims{
+                num : 1,
+                item : ExprMulElm{
+                    datashape : shape,
+                    datasparsity : sparsity,
+                    data,
+                    expr : self,
+                }
+            }
+        }
+    }
+
     //fn mul_scalar(self, s : f64) -> ExprMulScalar<N,Self> where Self:Sized { ExprMulScalar { item : self, lhs : s } }
 
     fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }

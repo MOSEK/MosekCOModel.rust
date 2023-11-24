@@ -1,4 +1,7 @@
 use itertools::{izip, iproduct};
+use crate::expr::{ExprReduceShape,ExprPermuteAxes,ExprMulElm, ExprSumLastDims};
+
+use super::ExprTrait;
 
 pub trait Matrix {
     fn shape(&self) -> [usize; 2];
