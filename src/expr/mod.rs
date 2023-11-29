@@ -1048,16 +1048,16 @@ mod test {
         a.len() == b.len() && a.iter().zip(b.iter()).all(|(a,b)| *a == *b )
     }
 
-    fn dense_expr() -> Expr {
-        super::Expr::new(vec![3,3],
+    fn dense_expr() -> Expr<2> {
+        super::Expr::new(&[3,3],
                          None,
                          vec![0,1,2,3,4,5,6,7,8,9],
                          vec![0,1,2,0,1,2,0,1,2],
                          vec![1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,3.3])
     }
 
-    fn sparse_expr() -> Expr {
-        super::Expr::new(vec![3,3],
+    fn sparse_expr() -> Expr<2> {
+        super::Expr::new(&[3,3],
                          Some(vec![0,4,5,6,7]),
                          vec![0,1,2,3,4,5],
                          vec![0,1,2,3,4],
@@ -1066,10 +1066,6 @@ mod test {
 
     #[test]
     fn mul_left() {
-        let mut rs = WorkStack::new(512);
-        let mut ws = WorkStack::new(512);
-        let mut xs = WorkStack::new(512);
-
         let e0 = dense_expr();
         let e1 = sparse_expr();
 
@@ -1273,5 +1269,4 @@ mod test {
         assert!(rs.is_empty());
         assert!(ws.is_empty());
     }
-
 }

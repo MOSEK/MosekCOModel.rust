@@ -238,7 +238,8 @@ impl<const N : usize> OffsetTrait<N> for DenseNDArray<N> {
 // Domain constructors
 ////////////////////////////////////////////////////////////
 
-
+/// Unbounded domain
+pub fn unbounded() -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::Free, ofs : LinearDomainOfsType::Scalar(0.0), shape : [], sp : None } }   
 /// Scalar domain of nonnegative values
 pub fn nonnegative() -> LinearDomain<0> { 0f64.greater_than() }
 /// Scalar domain of nonpositive values

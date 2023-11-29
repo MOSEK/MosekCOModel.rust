@@ -218,6 +218,22 @@ impl<const N : usize> Variable<N> {
         }
     }
 
+    pub fn gather(self) -> Variable<1> {
+        Variable {
+            shape : [self.idxs.len()],
+            idxs : self.idxs,
+            sparsity : None,
+        }
+    }
+    
+    pub fn into_column(self) -> Variable<2> {
+        Variable {
+            shape : [self.shape.iter().product(),1],
+            idxs : self.idxs,
+            sparsity : None,
+        }
+    }
+
     pub fn with_shape_and_sparsity<const M : usize>(self,shape : &[usize; M], sp : Vec<usize>) -> Variable<M> {
         if sp.len() != self.idxs.len() {
             panic!("Sparsity does not match the size");
@@ -460,4 +476,6 @@ impl<const N : usize> super::ExprTrait<N> for Variable<N> {
         self.eval_common(rs,ws,xs);
     }
 }
+
+
 

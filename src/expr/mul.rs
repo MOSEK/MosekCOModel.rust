@@ -25,7 +25,7 @@ pub struct ExprMulRight<E:ExprTrait<2>> {
     sp    : Option<Vec<usize>>
 }
 
-pub struct ExprMulElm<const N : usize,E> where E : ExprTrait<N> {
+pub struct ExprMulElm<const N : usize,E> where E : ExprTrait<N>+Sized {
     pub(super) expr : E,
     pub(super)datashape : [usize; N],
     pub(super)datasparsity : Option<Vec<usize>>,
