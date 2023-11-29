@@ -170,10 +170,6 @@ pub trait ExprTrait<const N : usize> {
     fn triuvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
 }
 
-
-pub trait ExprTrait2 : ExprTrait<2> {
-}
-
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
 // Expression Helper objects
@@ -305,7 +301,7 @@ pub fn nil<const N : usize>(shape : &[usize; N]) -> ExprNil<N> {
 /// Reduce (or increase) the number of dimensions in the shape from `N` to `M`. If `M<N`, the
 /// trailing `N-M` dimensions are flattened into one dimension. If `N<M` the shape is padded with
 /// ones.
-pub struct ExprReduceShape<const N : usize, const M : usize, E> where E : ExprTrait<N> { item : E }
+pub struct ExprReduceShape<const N : usize, const M : usize, E> where E : ExprTrait<N>+Sized { item : E }
 impl<const N : usize, const M : usize, E> ExprTrait<M> for ExprReduceShape<N,M,E> 
     where E : ExprTrait<N> 
 {

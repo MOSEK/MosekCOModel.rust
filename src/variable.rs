@@ -407,6 +407,38 @@ impl<const N : usize> Variable<N> {
     }
     pub fn vstack(xs : &[&Variable<N>]) -> Variable<N> { Self::stack(0,xs) }
     pub fn hstack(xs : &[&Variable<N>]) -> Variable<N> { Self::stack(1,xs) }
+
+    pub fn transpose(self) -> Self where Self : ExprTrait<2> {
+        let mut shape = [0usize; N]; 
+        shape[0] = self.shape[1];
+        shape[1] = self.shape[0];
+        if let Some(sp) = self.sparsity {
+            let mut xsp : Vec<(usize,usize)> = sp.iter().zip(self.idxs.iter()).map(|(&i,&ni)| (( i % self.shape[1]) * self.shape[0] + i / self.shape[1], ni) ).collect();
+            xsp.sort();
+            let rsp = xsp.iter().map(|v| v.0).collect();
+            let rnidxs = xsp.iter().map(|v| v.1).collect();
+            
+            Variable{
+                sparsity : Some(rsp),
+                idxs : rnidxs,
+                shape
+            }
+        } else {
+            let mut idxs = vec![0usize; self.idxs.len()];
+
+            for (t,&s) in izip!(idxs.iter_mut(),
+                                (0..self.shape[1])
+                                    .flat_map(|i| self.idxs[i..].iter().step_by(self.shape[1]))) {
+                *t = s;
+            }
+
+            Variable{
+                idxs,
+                sparsity : None,
+                shape
+            }
+        }
+    }
 }
 
 impl<const N : usize> Variable<N> {
@@ -417,9 +449,8 @@ impl<const N : usize> Variable<N> {
         rptr.iter_mut().enumerate().for_each(|(i,p)| *p = i);
         rsubj.clone_from_slice(self.idxs.as_slice());
         rcof.fill(1.0);
-        match (rsp,&self.sparsity) {
-            (Some(rsp),Some(sp)) => rsp.clone_from_slice(sp.as_slice()),
-            _ => {}
+        if let (Some(rsp),Some(sp)) = (rsp,&self.sparsity) {
+            rsp.clone_from_slice(sp.as_slice())
         }
     }
 }
