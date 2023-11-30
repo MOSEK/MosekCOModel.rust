@@ -36,6 +36,8 @@ pub trait ExprTrait<const N : usize> {
         eval::eval_finalize(rs,ws,xs);
     }
 
+    fn dynamic<'a>(self) -> ExprDynamic<'a,N> where Self : Sized+'a { ExprDynamic::new(self) }
+
     // fn mul_scalar(self, c : f64) -> ExprMulScalar<Self> { ExprMulScalar{ item:self, c : c } }
     // fn mul_vec_left(self, v : Vec<f64>) -> ExprMulVec<Self>
     fn axispermute(self,perm : &[usize; N]) -> ExprPermuteAxes<N,Self> where Self:Sized { ExprPermuteAxes{item : self, perm: *perm } }
@@ -566,6 +568,27 @@ impl<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>> ExprStackRecTrait
         }
     }
 }
+
+
+
+pub struct ExprDynamic<'a,const N : usize> {
+    expr : Box<dyn ExprTrait<N>+'a>
+}
+
+impl<'a,const N : usize> ExprDynamic<'a,N> {
+    fn new<E>(e : E) -> ExprDynamic<'a,N> where E : ExprTrait<N>+'a {
+        ExprDynamic{
+            expr : Box::new(e)
+        }
+    }
+}
+
+impl<'a,const N : usize> ExprTrait<N> for ExprDynamic<'a,N> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.expr.eval(rs,ws,xs);
+    }
+}
+
 
 /// Dynamic stacking. To stack a list of heterogenous expressions we
 /// need to create a list of dynamic ExprTraits
