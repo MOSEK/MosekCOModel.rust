@@ -849,9 +849,9 @@ impl Model {
     /// - `expr` Objective expression, this must contain exactly one
     ///   element. The shape is otherwise ignored.
     pub fn objective<E : expr::ExprTrait<0>>(& mut self,
-                                          name  : Option<&str>,
-                                          sense : Sense,
-                                          expr  : & E) {
+                                             name  : Option<&str>,
+                                             sense : Sense,
+                                             expr  : & E) {
         expr.eval_finalize(& mut self.rs,& mut self.ws, & mut self.xs);
         self.set_objective(name,sense);
     }
@@ -1211,18 +1211,18 @@ mod tests {
         let mut m = Model::new(Some("SuperModel"));
         let mut v1 = m.variable(None, greater_than(5.0));
         let mut v2 = m.variable(None, 10);
-        let mut v3 = m.variable(None, vec![3,3]);
+        let mut v3 = m.variable(None, &[3,3]);
         let mut v4 = m.variable(None, in_quadratic_cone(5));
-        let mut v5 = m.variable(None, greater_than(vec![1.0,2.0,3.0,4.0]).with_shape(vec![2,2]));
-        let mut v6 = m.variable(None, greater_than(vec![1.0,3.0]).with_shape_and_sparsity(vec![2,2],vec![0,3]));
+        let mut v5 = m.variable(None, greater_than(vec![1.0,2.0,3.0,4.0]).with_shape(&[2,2]));
+        let mut v6 = m.variable(None, greater_than(vec![1.0,3.0]).with_shape_and_sparsity(&[2,2],&[[0,0],[1,1]]));
     }
 
     #[test]
     fn variable_stack() {
         let mut m = Model::new(Some("SuperModel"));
-        let mut v1 = m.variable(None, vec![3,2,1]);
-        let mut v2 = m.variable(None, vec![3,2,1]);
-        let mut v3 = m.variable(None, equal_to(vec![1.0,2.0,3.0,4.0]).with_shape_and_sparsity(vec![3,2,1],vec![0,2,3,5]));
+        let mut v1 = m.variable(None, &[3,2,1]);
+        let mut v2 = m.variable(None, &[3,2,1]);
+        let mut v3 = m.variable(None, equal_to(vec![1.0,2.0,3.0,4.0]).with_shape_and_sparsity(&[3,2,1],&[[0,0,0],[1,0,0],[1,1,0],[2,1,0]]));
 
         let mut w_0 = Variable::stack(0,&[&v1,&v2]);
         let mut w_1 = Variable::stack(1,&[&v1,&v2]);

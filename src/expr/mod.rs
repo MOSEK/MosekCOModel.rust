@@ -20,12 +20,18 @@ pub use mul::*;
 pub use add::*;
 
 
+pub trait IntoExpr<const N : usize> {
+    type Result : ExprTrait<N>;
+    fn into_expr(self) -> Self::Result;
+}
+
 /// The `ExprTrait<N>` represents a `N`-dimensional expression.
 pub trait ExprTrait<const N : usize> {
     /// Evaluate the expression and put the result on the [rs] stack,
     /// using the [ws] to evaluate sub-expressions and [xs] for
     /// general storage.
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack);
+   
     /// Evaluate the expression, then clean it up and put
     /// it on the [rs] stack. The result will guarantee that
     /// - non-zeros in each row are sorted by `subj`
@@ -36,14 +42,37 @@ pub trait ExprTrait<const N : usize> {
         eval::eval_finalize(rs,ws,xs);
     }
 
+    /// Create a dynamic expression from an expression. Expression types generally depend on the
+    /// types of all the sub-expressions, so it is not possible to make e.g. an array of
+    /// expressions unless they are exactly the same types. Wrapping each expression in a dynamic
+    /// expression allows us to create structures like arrays that requires all elements to have
+    /// the same type. The down-side is heap-allocated objects and that `eval()` calls are dynamic.
+    ///
+    /// # Example
+    /// ```
+    /// use mosekmodel::*;
+    /// let mut M = Model::new(None);
+    /// let v = M.variable(None, greater_than(0.0));
+    /// 
+    /// // Create a list of heterogenous expressions:
+    /// // let l = &[ v.clone(), v.clone().add(v.clone()), v.clone().mul(2.0) ]; // invalid!
+    /// let l = &[ v.clone().dynamic(), 
+    ///            v.clone().add(v.clone()).dynamic(),
+    ///            v.clone().mul(2.0).dynamic() ];
+    /// ```
     fn dynamic<'a>(self) -> ExprDynamic<'a,N> where Self : Sized+'a { ExprDynamic::new(self) }
 
-    // fn mul_scalar(self, c : f64) -> ExprMulScalar<Self> { ExprMulScalar{ item:self, c : c } }
-    // fn mul_vec_left(self, v : Vec<f64>) -> ExprMulVec<Self>
+    /// Permute axes of the expression. Permute the index coordinates of each entry in the
+    /// expression, and similarly permute the shape.
+    ///
+    /// # Arguments
+    /// - `perm` - The permutation. This must be a valid permutation, i.e. it must be a permutation
+    ///   of the range `0..N`. If the permutation is not valid, the function will panic.
     fn axispermute(self,perm : &[usize; N]) -> ExprPermuteAxes<N,Self> where Self:Sized { ExprPermuteAxes{item : self, perm: *perm } }
 
     /// Sum all elements in an expression producing a scalar expression.
     fn sum(self) -> ExprSum<N,Self> where Self:Sized { ExprSum{item:self} }
+
     /// Sum over a number of axes.
     ///
     /// # Arguments
@@ -90,21 +119,43 @@ pub trait ExprTrait<const N : usize> {
         }
     }
 
-    fn add<RHS>(self, rhs : RHS) -> RHS::Result
+    /// Add an expression and an item that is addable to an expression, e.g. constants or other
+    /// expressions.
+    fn add<RHS>(self, rhs : RHS) -> ExprAdd<N,Self,RHS::Result> 
         where 
-            Self : Sized, 
-            RHS : ExprAddable<N,Self> 
-    { rhs.add_internal(self) }
+            RHS : IntoExpr<N>,
+            Self : Sized
+    {
+        ExprAdd::new(self,rhs.into_expr(),1.0,1.0) 
+    }
 
-    //fn add<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,R>  where Self:Sized { ExprAdd{lhs:self,rhs} }
-    fn sub<RHS>(self, rhs : RHS) -> RHS::SubResult
+    //fn add<RHS>(self, rhs : RHS) -> RHS::Result
+    //    where 
+    //        Self : Sized, 
+    //        RHS : ExprAddable<N,Self> 
+    //{ rhs.add_internal(self) }
+
+    /// Subtract expression and an item that is addable to an expression, e.g. constants or other
+    /// expressions.
+    fn sub<RHS>(self, rhs : RHS) -> ExprAdd<N,Self,RHS::Result> 
         where 
-            Self : Sized,
-            RHS : ExprAddable<N,Self> 
-    { rhs.sub_internal(self) }
-    //fn sub<R:ExprTrait<N>>(self,rhs : R) -> ExprAdd<N,Self,ExprMulScalar<N,R>>  where Self:Sized { ExprAdd{lhs:self, rhs:rhs.mul(-1.0) } }
+            RHS : IntoExpr<N>,
+            Self : Sized
+    {
+        ExprAdd::new(self,rhs.into_expr(),1.0,-1.0) 
+    }
+    //fn sub<RHS>(self, rhs : RHS) -> RHS::SubResult
+    //    where 
+    //        Self : Sized,
+    //        RHS : ExprAddable<N,Self> 
+    //{ rhs.sub_internal(self) }
 
-    fn mul_elm<RHS>(self, other : RHS) -> RHS::Result where Self : Sized, RHS : ExprRightElmMultipliable<N,Self> { other.mul_elem(self) } 
+    /// Element-wise multiplication of two operands. The operand shapes must be the same.
+    fn mul_elm<RHS>(self, other : RHS) -> RHS::Result where Self : Sized, RHS : ExprRightElmMultipliable<N,Self> { other.mul_elem(self) }
+
+    /// An expression that produces a vector of dot-products of the rows of the operands,
+    /// specifically, `[r_0,r_1,...] = [dot(e_{0,*},m_{0,*},dot(e_{1,*},m_{1,*},...]`, where `e` if
+    /// an expression and `m` is a matrix. The shapes of the operands must be identical.
     fn dot_rows<M>(self, other : M) -> ExprReduceShape<2,1,ExprSumLastDims<2,ExprMulElm<2,Self>>>
         where 
             Self : Sized+ExprTrait<2>, 
@@ -124,12 +175,11 @@ pub trait ExprTrait<const N : usize> {
         }
     }
 
-    //fn mul_scalar(self, s : f64) -> ExprMulScalar<N,Self> where Self:Sized { ExprMulScalar { item : self, lhs : s } }
-
     fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }
     fn hstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,1) }
     fn stack<E:ExprTrait<N>>(self,dim : usize, other : E) -> ExprStack<N,Self,E> where Self:Sized { ExprStack::new(self,other,dim) }
 
+    /// Take a slice of an expression
     fn slice<E>(self,begin : &[usize; N], end : &[usize; N]) -> ExprSlice<N,Self> where Self:Sized {
         assert!(begin.iter().zip(end.iter()).all(|(&a,&b)| a <= b));
         ExprSlice{expr : self, begin : *begin, end : *end} 
@@ -142,7 +192,11 @@ pub trait ExprTrait<const N : usize> {
 
     /// Flatten the expression into a vector. Preserve sparsity.
     fn flatten(self) -> ExprReshapeOneRow<N,1,Self> where Self:Sized { ExprReshapeOneRow { item:self, dim : 0 } }
+
+    /// Flatten expression into a column, i.e. an expression of size `[n,1]` where
+    /// `n=shape.iter().product()`.
     fn into_column(self) -> ExprReshapeOneRow<N,2,Self> where Self:Sized { ExprReshapeOneRow { item:self, dim : 1 } }
+
     /// Reshape an expression into a vector expression, where all but (at most) one dimension are
     /// of size 1.
     ///
@@ -175,7 +229,6 @@ pub trait ExprTrait<const N : usize> {
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
 // Expression Helper objects
-
 
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
@@ -594,7 +647,7 @@ impl<'a,const N : usize> ExprTrait<N> for ExprDynamic<'a,N> {
 /// need to create a list of dynamic ExprTraits
 
 pub struct ExprDynStack<const N : usize> {
-    exprs : Vec<Box<dyn ExprTrait<N>>>,
+    exprs : Vec<ExprDynamic<'static,N>>,
     dim   : usize
 }
 
@@ -615,13 +668,13 @@ impl<const N : usize> ExprTrait<N> for ExprDynStack<N> {
 ///
 /// - dim : Dimension to stack in
 /// - exprs : List of expressions
-pub fn stack<const N : usize>(dim : usize, exprs : Vec<Box<dyn ExprTrait<N>>>) -> ExprDynStack<N> {
+pub fn stack<const N : usize>(dim : usize, exprs : Vec<ExprDynamic<'static,N>>) -> ExprDynStack<N> {
     ExprDynStack{exprs,dim}
 }
-pub fn vstack<const N : usize>(exprs : Vec<Box<dyn ExprTrait<N>>>) -> ExprDynStack<N> {
+pub fn vstack<const N : usize>(exprs : Vec<ExprDynamic<'static, N>>) -> ExprDynStack<N> {
     ExprDynStack{exprs,dim:0}
 }
-pub fn hstack<const N : usize>(exprs : Vec<Box<dyn ExprTrait<N>>>) -> ExprDynStack<N> {
+pub fn hstack<const N : usize>(exprs : Vec<ExprDynamic<'static,N>>) -> ExprDynStack<N> {
     ExprDynStack{exprs,dim:1}
 }
 
@@ -1056,6 +1109,32 @@ impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprPermuteAxes<N,E> {
     
 }
 
+impl<const N : usize,E> IntoExpr<N> for E where E : ExprTrait<N> {
+    type Result = E;
+    fn into_expr(self) -> Self::Result {
+       self
+    }
+}
+
+impl IntoExpr<0> for f64 {
+    type Result = Expr<0>;
+    fn into_expr(self) -> Expr<0> { Expr::new(&[], None, vec![0,1], vec![0], vec![self]) }
+}
+
+impl IntoExpr<1> for &[f64] {
+    type Result = Expr<1>;
+    fn into_expr(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.to_vec()) }
+}
+
+impl IntoExpr<1> for Vec<f64> {
+    type Result = Expr<1>;
+    fn into_expr(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.clone()) }
+}
+
+
+
+
+
 
 
 
@@ -1089,6 +1168,10 @@ mod test {
 
     #[test]
     fn mul_left() {
+        let mut rs = WorkStack::new(512);
+        let mut ws = WorkStack::new(512);
+        let mut xs = WorkStack::new(512);
+
         let e0 = dense_expr();
         let e1 = sparse_expr();
 
@@ -1149,12 +1232,12 @@ mod test {
 
     #[test]
     fn stack() {
-        let e0 = super::Expr::new(vec![3,2,1],
+        let e0 = super::Expr::new(&[3,2,1],
                                   None,
                                   (0..7).collect(),
                                   (0..6).collect(),
                                   (0..6).map(|v| v as f64 * 1.1).collect());
-        let e1 = super::Expr::new(vec![3,2,1],
+        let e1 = super::Expr::new(&[3,2,1],
                                   Some(vec![0,2,3,5]),
                                   (0..5).collect(),
                                   vec![6,8,9,11],

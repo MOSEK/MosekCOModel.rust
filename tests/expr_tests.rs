@@ -1,4 +1,66 @@
-use mosekmodel::*;
+use mosekmodel::{*, expr::workstack::WorkStack,expr::*};
+
+
+#[test]
+fn add_test() {
+    let mut m = Model::new(Some("M"));
+
+    //      | 1 2 3 |       | 10 11 12 |
+    // vd = | 4 5 6 |  wd = | 13 14 15 |
+    //      | 7 8 9 |       | 16 17 18 |
+    let dv = m.variable(Some("vd"), unbounded().with_shape(&[3,3]));
+    let dw = m.variable(Some("wd"), unbounded().with_shape(&[3,3]));
+    //      | 19  .  . |      | 23  .  . |
+    // vs = |  . 20 21 | ws = |  . 24  . |
+    //      |  .  . 22 |      |  . 25 26 | 
+    let sv = m.variable(Some("vs"), unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[1,1],[1,2],[2,2]]));
+    let sw = m.variable(Some("vs"), unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[1,1],[2,1],[2,2]]));
+
+    let mut rs = WorkStack::new(512);
+    let mut ws = WorkStack::new(512);
+    let mut xs = WorkStack::new(512);
+    {
+        rs.clear(); ws.clear(); xs.clear();
+            
+        dv.clone().add(dw.clone()).eval(&mut rs,&mut ws,&mut xs);
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();        
+
+        assert_eq!(shape,&[3,3]); 
+        assert_eq!(sp,None);
+        assert_eq!(ptr,&[0usize,2,4,6,8,10,12,14,16,18]);
+        assert_eq!(subj,&[ 1,10, 2,11, 3,12, 4,13, 5,14, 6,15, 7,16, 8,17, 9,18]);
+    }
+    
+    {
+        rs.clear(); ws.clear(); xs.clear();
+        
+        dv.clone().add(sw.clone()).eval(&mut rs,&mut ws,&mut xs);
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();        
+
+        assert_eq!(shape,&[3,3]); 
+        assert_eq!(sp,None);
+        assert_eq!(ptr,&[0usize,2,3,4,5,7,8,9,11,13]);
+        assert_eq!(subj,&[ 1,23,2,3,4,5,24,6,7,8,25,9,26]);
+    }
+
+    {
+        rs.clear(); ws.clear(); xs.clear();
+        
+        sv.clone().add(sw.clone()).eval(&mut rs,&mut ws,&mut xs);
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();        
+
+        assert_eq!(shape,&[3,3]); 
+        if let Some(sp) = sp {
+            assert_eq!(sp,&[0usize,4,5,7,8]);
+        } else {
+            panic!("sp is not None");
+        }
+        assert_eq!(ptr,&[0,2,4,5,6,7]);
+        assert_eq!(subj,&[ 19,23,20,24,21,25,22,26]);
+    }
+}
+
+
 
 #[test]
 fn mul_left() {

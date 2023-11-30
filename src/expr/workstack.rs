@@ -35,6 +35,12 @@ impl WorkStack {
     }
 
 
+    pub fn inplace_mul(& mut self, c : f64) {
+        let selfutop = self.utop;
+        let nnz   = self.susize[selfutop-2];
+        self.sf64[self.ftop-nnz..].iter_mut().for_each(|v| *v *= c);
+    }
+
     pub fn inline_reshape_expr(& mut self, shape: &[usize]) -> Result<(),String> {
         let newnd = shape.len();
         if shape.len() > 8 { 
@@ -51,7 +57,7 @@ impl WorkStack {
         {
             let shape_field = & mut self.susize[(selfutop-3-nd) .. (selfutop-3)];
 
-            if newtotalsize != shape_field.iter().product() {
+            if newtotalsize != shape_field.iter().product::<usize>() {
                 return Err("New shape and original shape do not match".to_string());
             }
         }
