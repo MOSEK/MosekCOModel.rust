@@ -333,6 +333,8 @@ impl<const N : usize> ExprTrait<N> for Expr<N> {
         aptr.clone_from_slice(self.aptr.as_slice());
         asubj.clone_from_slice(self.asubj.as_slice());
         acof.clone_from_slice(self.acof.as_slice());
+
+        println!("Expr::eval() aptr = {:?}",aptr);
     }
 }
 

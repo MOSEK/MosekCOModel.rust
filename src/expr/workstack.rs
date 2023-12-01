@@ -1,8 +1,8 @@
-use itertools::izip;
 
+use itertools::izip;
 /// Structure of a computed expression on the workstack:
 /// stack bottom <---> top 
-/// susize: [ asubj[nnz], sp[0 if nelm < fullsize else nelm], ptr[nelm+1], shape[ndim], shape[ndim], nelm, nnz, nd ]
+/// susize: [ asubj[nnz], sp[0 if nelm < fullsize else nelm], ptr[nelm+1], shape[ndim], nelm, nnz, nd ]
 /// sf64:   [ acof[nnz] ]
 /// 
 /// NOTE: We allocate some extra space for the shape to allow fast reshaping.
@@ -95,14 +95,13 @@ impl WorkStack {
     ///
     pub fn alloc_expr(& mut self, shape : &[usize], nnz : usize, nelm : usize) -> (& mut [usize], Option<& mut [usize]>,& mut [usize], & mut [f64]) {
         let nd      = shape.len();
-        let padding = if nd < 8 { 8 - nd } else { 0 };
         let ubase   = self.utop;
         let fbase   = self.ftop;
 
         let fullsize : usize = shape.iter().product();
         if fullsize < nelm { panic!("Number of elements too large for shape: {} in {:?}",nelm,shape); }
 
-        let unnz  = 3+nd+padding+(nelm+1)+nnz+(if nelm < fullsize { nelm } else { 0 } );
+        let unnz  = 3+nd+(nelm+1)+nnz+(if nelm < fullsize { nelm } else { 0 } );
 
         self.utop += unnz;
         self.ftop += nnz;
@@ -127,7 +126,6 @@ impl WorkStack {
                 (None,upart)
             };
         let (ptr,upart)    = upart.split_at_mut(nelm+1);
-        let (_,upart)      = upart.split_at_mut(padding);
         let (shape_,head)  = upart.split_at_mut(nd);
         shape_.clone_from_slice(shape);
 
@@ -188,7 +186,10 @@ impl WorkStack {
         }
 
         if izip!(ptr.iter(),ptr[1..].iter()).any(|(&a,&b)| a > b) { return Err("Popped invalid expression: Ptr is not ascending".to_string()); }
-        if nnz > subj.len() { return Err("Popped invalid expression: Ptr does not match the number of actual nonzeros".to_string()) }
+        if nnz > subj.len() { 
+            println!("workstack::validate(), ptr = {:?}",ptr);
+            return Err(format!("Popped invalid expression: Ptr does not match the number of actual nonzeros: {} vs {}",nnz,subj.len()).to_string()) 
+        }
         Ok(())
     }
 

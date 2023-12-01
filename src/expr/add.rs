@@ -189,8 +189,8 @@ impl<const N : usize,L,R> ExprAddRecTrait for ExprAdd<N,L,R>
         R : ExprTrait<N>
 {
     fn eval_rec(&self, c : f64, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
-        self.rhs.eval(rs,ws,xs); ws.inplace_mul(self.rcof * c);
-        self.lhs.eval(rs,ws,xs); ws.inplace_mul(self.lcof * c);
+        self.rhs.eval(rs,ws,xs); rs.inplace_mul(self.rcof * c);
+        self.lhs.eval(rs,ws,xs); rs.inplace_mul(self.lcof * c);
         2
     }
 }

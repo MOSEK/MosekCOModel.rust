@@ -133,7 +133,36 @@ fn dense_left_mul() {
 }
 
 
+#[test]
+fn basic_expr() {
+    let mut rs = WorkStack::new(1024);
+    let mut ws = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
 
+    // | x0+x1  x2+x3    x4+x5 |
+    // | x6+x7  x8+x9  x10+x11 |
+    let ed = Expr::new(&[2,3],
+                       None,
+                       vec![0,2,4,6,8,10,12],
+                       vec![0,1,2,3,4,5,6,7,8,9,10,11],
+                       vec![1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0]);
+    // | x0+x1  x2+x3        |
+    // |        x4+x5  x6+x7 |
+    let es = Expr::new(&[2,3],
+                       Some(vec![0,1,4,5]),
+                       vec![0,2,4,6,8],
+                       vec![0,1,2,3,4,5,6,7],
+                       vec![1.0,1.0,2.0,2.0,3.0,3.0,4.0,4.0]);
+
+    let m = matrix::dense(3,3,vec![1.1,1.2,1.3,
+                                   2.1,2.2,2.3,
+                                   3.1,3.2,3.3]);
+    ed.eval(& mut rs, & mut ws, & mut xs);
+    println!("Workstack = {}",rs);
+    _ = rs.pop_expr();
+    //es.eval(& mut rs, & mut ws, & mut xs);
+    //_ = rs.pop_expr();
+}
 #[test]
 fn dense_right_mul() {
     let mut rs = WorkStack::new(1024);
