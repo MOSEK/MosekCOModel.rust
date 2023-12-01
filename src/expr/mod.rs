@@ -400,7 +400,7 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprResh
             
         let mut newshape = [ 0usize; M ]; newshape.iter_mut().for_each(|s| *s = 1 );
         newshape[self.dim] = {
-            let (shp,_,_,_,_) = ws.peek_expr();
+            let (shp,_,_,_,_) = rs.peek_expr();
             shp.iter().product()
         };
 

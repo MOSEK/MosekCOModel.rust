@@ -67,6 +67,9 @@ impl WorkStack {
         }
         else {
             self.utop += newnd - nd;
+            if self.susize.len() < self.utop {
+                self.susize.resize(self.utop, 0);
+            }
         }
 
         self.susize[self.utop-newnd-3..self.utop-3].clone_from_slice(shape);
@@ -158,10 +161,12 @@ impl WorkStack {
         let ubase = utop - totalusize;
         let fbase = ftop - totalfsize;
 
+
+        println!("totalusize = {}, utop = {}, nd = {}, nnz = {}, nelem = {}",totalusize,utop,nd,nnz,nelm);
         let uslice : &[usize] = & self.susize[ubase..utop];
         let cof    : &[f64]   = & self.sf64[fbase..ftop];
 
-        let subj_base = ubase;
+        let subj_base = 0;
         let sp_base = subj_base+nnz;
         let ptr_base = if nelm < totalsize { sp_base + nelm } else { sp_base };
         let shape_base = ptr_base + nelm+1;
