@@ -39,9 +39,9 @@ fn efficient_frontier( n : usize,
 
     // Computes the risk
     model.constraint(Some("variance"), 
-                     &vstack![s.clone().reshape(&[1]), 
-                              (0.5).reshape(&[1]), 
-                              x.clone().rev_mul::<1,DenseMatrix>(GT.clone())], in_rotated_quadratic_cone(n+2));
+                     &vstack![s.clone().flatten(), 
+                              (0.5).into_expr().flatten(), 
+                              GT.clone().mul(x.clone())], in_rotated_quadratic_cone(n+2));
 
     // Solve the problem for many values of parameter alpha
 

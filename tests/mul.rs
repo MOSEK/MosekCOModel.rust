@@ -13,7 +13,7 @@ fn mul_dense_matrix_x_dense_expr() {
     let mut ws = WorkStack::new(1024);
     let mut xs = WorkStack::new(1024);
 
-    let e = Expr::new(vec![N1,N1], // dim
+    let e = Expr::new(&[N1,N1], // dim
                       None, // sparsity
                       (0..(N1*N1*2+2)).step_by(2).collect(), // ptr
                       (0..N1*N1*2).collect(), // subj
@@ -29,7 +29,7 @@ fn mul_dense_matrix_x_sparse_expr() {
     let mut ws = WorkStack::new(1024);
     let mut xs = WorkStack::new(1024);
 
-    let e = Expr::new(vec![N2,N2], // dim
+    let e = Expr::new(&[N2,N2], // dim
                       Some((0..N2*N2).step_by(7).collect()), // sparsity
                       (0..((N2*N2)/7+2)*2).step_by(2).collect(), // ptr
                       (0..((N2*N2)/7+1)*2).collect(), // subj
@@ -45,7 +45,7 @@ fn mul_dense_expr_x_dense_matrix() {
     let mut ws = WorkStack::new(1024);
     let mut xs = WorkStack::new(1024);
 
-    let e = Expr::new(vec![N1,N1], // dim
+    let e = Expr::new(&[N1,N1], // dim
                       None, // sparsity
                       (0..(N1*N1*2+2)).step_by(2).collect(), // ptr
                       (0..N1*N1*2).collect(), // subj
@@ -61,7 +61,7 @@ fn mul_sparse_expr_x_dense_matrix() {
     let mut ws = WorkStack::new(1024);
     let mut xs = WorkStack::new(1024);
 
-    let e = Expr::new(vec![N2,N2], // dim
+    let e = Expr::new(&[N2,N2], // dim
                       Some((0..N2*N2).step_by(7).collect()), // sparsity
                       (0..((N2*N2)/7+2)*2).step_by(2).collect(), // ptr
                       (0..((N2*N2)/7+1)*2).collect(), // subj
@@ -81,7 +81,7 @@ fn dense_left_mul() {
     // | x0+x1    x2+x3 |
     // | x4+x5    x6+x7 |
     // | x8+x9  x10+x11 |
-    let ed = Expr::new(vec![3,2],
+    let ed = Expr::new(&[3,2],
                        None,
                        vec![0,2,4,6,8,10,12],
                        vec![0,1,2,3,4,5,6,7,8,9,10,11],
@@ -89,7 +89,7 @@ fn dense_left_mul() {
     // | x0+x1      0 |
     // | x2+x3  x4+x5 |
     // |        x6+x7 |
-    let es = Expr::new(vec![3,2],
+    let es = Expr::new(&[3,2],
                        Some(vec![0,2,3,5]),
                        vec![0,2,4,6,8],
                        vec![0,1,2,3,4,5,6,7],
@@ -141,14 +141,14 @@ fn dense_right_mul() {
 
     // | x0+x1  x2+x3    x4+x5 |
     // | x6+x7  x8+x9  x10+x11 |
-    let ed = Expr::new(vec![2,3],
+    let ed = Expr::new(&[2,3],
                        None,
                        vec![0,2,4,6,8,10,12],
                        vec![0,1,2,3,4,5,6,7,8,9,10,11],
                        vec![1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0]);
     // | x0+x1  x2+x3        |
     // |        x4+x5  x6+x7 |
-    let es = Expr::new(vec![2,3],
+    let es = Expr::new(&[2,3],
                        Some(vec![0,1,4,5]),
                        vec![0,2,4,6,8],
                        vec![0,1,2,3,4,5,6,7],
@@ -208,7 +208,7 @@ fn sparse_left_mul() {
     // | 1 x0 + 2 x1   3 x2 + 4x3   |
     // | 5 x4 + 6 x5   7 x6 + 8x7   |
     // | 9 x8 +10 x9  11 x10+12 x11 |
-    let ed = Expr::new(vec![3,2],
+    let ed = Expr::new(&[3,2],
                        None,
                        vec![0,2,4,6,8,10,12],
                        vec![0,1,2,3,4,5,6,7,8,9,10,11],
@@ -216,7 +216,7 @@ fn sparse_left_mul() {
     // | x0+x1      0 |
     // | x2+x3  x4+x5 |
     // |        x6+x7 |
-    let es = Expr::new(vec![3,2],
+    let es = Expr::new(&[3,2],
                        Some(vec![0,2,3,5]),
                        vec![0,2,4,6,8],
                        vec![0,1,2,3,4,5,6,7],
@@ -275,14 +275,14 @@ fn sparse_right_mul() {
 
     // | x0+x1  x2+x3    x4+x5 |
     // | x6+x7  x8+x9  x10+x11 |
-    let ed = Expr::new(vec![2,3],
+    let ed = Expr::new(&[2,3],
                        None,
                        vec![0,2,4,6,8,10,12],
                        vec![0,1,2,3,4,5,6,7,8,9,10,11],
                        vec![1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0]);
     // | x0+x1  x2+x3        |
     // |        x4+x5  x6+x7 |
-    let es = Expr::new(vec![2,3],
+    let es = Expr::new(&[2,3],
                        Some(vec![0,1,4,5]),
                        vec![0,2,4,6,8],
                        vec![0,1,2,3,4,5,6,7],
@@ -342,10 +342,9 @@ fn bigmul() {
     
     let mut model = Model::new(None);
     let v = model.variable(None,n);
-    //let w = model.variable(None,in_psd_cone(n));
     let mx = matrix::dense(n,n,vec![1.0; n*n]);
 
-    let _ = model.constraint(None, &mx.clone().mul(v.clone()).reshape(vec![n]),equal_to(vec![100.0;n]));
-    let _ = model.constraint(None, &v.mul(mx).reshape(vec![n]),equal_to(vec![100.0;n]));
+    let _ = model.constraint(None, &mx.clone().mul(v.clone()).reshape(&[n]),equal_to(vec![100.0;n]));
+    let _ = model.constraint(None, &v.mul(mx).reshape(&[n]),equal_to(vec![100.0;n]));
 }
 

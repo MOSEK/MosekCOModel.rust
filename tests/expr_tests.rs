@@ -1,5 +1,20 @@
 use mosekmodel::{*, expr::workstack::WorkStack,expr::*};
 
+fn dense_expr() -> Expr<2> {
+    Expr::new(&[3,3],
+              None,
+              vec![0,1,2,3,4,5,6,7,8,9],
+              vec![0,1,2,0,1,2,0,1,2],
+              vec![1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,3.3])
+}
+
+fn sparse_expr() -> Expr<2> {
+    Expr::new(&[3,3],
+              Some(vec![0,4,5,6,7]),
+              vec![0,1,2,3,4,5],
+              vec![0,1,2,3,4],
+              vec![1.1,2.2,3.3,4.4,5.5])
+}
 
 #[test]
 fn add_test() {
@@ -69,19 +84,14 @@ fn mul_left() {
     //      | 1 2 3 |       | 10 11 12 |
     // vd = | 4 5 6 |  wd = | 13 14 15 |
     //      | 7 8 9 |       | 16 17 18 |
-    let vd = M.variable(Some("vd"), unbounded().with_shape(&[3,3]));
-    let wd = M.variable(Some("wd"), unbounded().with_shape(&[3,3]));
-    let vs = M.variable(Some("vs"), unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[1,1],[1,2],[2,2]]));
-    let ws = M.variable(Some("vs"), unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[1,1],[1,2],[2,2]]));
+    let dv = M.variable(Some("vd"), unbounded().with_shape(&[3,3]));
+    let dw = M.variable(Some("wd"), unbounded().with_shape(&[3,3]));
+    let sv = M.variable(Some("vs"), unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[1,1],[1,2],[2,2]]));
+    let sw = M.variable(Some("vs"), unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[1,1],[1,2],[2,2]]));
 
-    {
-        let mut rs = WorkStack::new(512);
-        let mut ws = WorkStack::new(512);
-        let mut xs = WorkStack::new(512);
-
-        
-
-    }
+    let mut rs = WorkStack::new(512);
+    let mut ws = WorkStack::new(512);
+    let mut xs = WorkStack::new(512);
 
     let e0 = dense_expr();
     let e1 = sparse_expr();
