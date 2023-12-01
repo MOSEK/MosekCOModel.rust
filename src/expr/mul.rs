@@ -1,8 +1,6 @@
 use super::{ExprTrait, ExprReshapeOneRow};
 use super::workstack::WorkStack;
 use super::matrix::Matrix;
-use crate::utils::*;
-use std::slice::Chunks;
 use itertools::izip;
 
 pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
@@ -31,14 +29,6 @@ pub struct ExprMulElm<const N : usize,E> where E : ExprTrait<N>+Sized {
     pub(super)datasparsity : Option<Vec<usize>>,
     pub(super)data : Vec<f64>
 }
-
-pub struct ExprDotRows<E> where E : ExprTrait<2> {
-    expr : E,
-    shape : [usize; 2],
-    sparsity : Option<Vec<usize>>,
-    data : Vec<f64>
-}
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // Left multiplication
@@ -486,113 +476,3 @@ pub trait ExprDiagMultipliable<E> where E : ExprTrait<2> {
     fn mul_internal(self, other : E) -> Self::Result;
 }
 
-
-
-//
-//impl<E> ExprTrait<1> for ExprDotRows<E> where E : ExprTrait<2> {
-//    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-//        self.expr.eval(ws,rs,xs);
-//        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-//        let &nnz = ptr.last().unwrap();
-//        let nelm = ptr.len()-1;
-//
-//        let mheight = self.shape[0];
-//        let mwidth  = self.shape[1];
-//    
-//        if shape[0] != self.shape[0] || shape[1] != self.shape[1] {
-//            panic!("Mismatching shpes");
-//        }
-//
-//        if let (None,None) = (& self.sparsity,sp) {
-//            let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[shape[0]], nnz, shape[0]);
-//            
-//            rsubj.clone_from_slice(subj);
-//            rcof.clone_from_slice(cof);
-//            rcof.iter_mut().zip(self.data.iter()).for_each(|(c,&v)| *c *= v);
-//            rptr.iter_mut().zip(ptr.iter().step_by(self.shape[1])).for_each(|(d,&s)| *d = s);
-//        }
-//        else {
-//            let (tmp,_) = xs.alloc(self.data.len()+nelm,0);
-//            let (xmsp,xesp) = tmp.split_at_mut(self.data.len());
-//            if let Some(msp) = &self.sparsity { xmsp.clone_from_slice(msp.as_slice()) }
-//            else { xmsp.iter_mut().enumerate().for_each(|(i,s)| *s = i); }
-//            if let Some(esp) = &self.sparsity { xesp.clone_from_slice(&esp); }
-//            else { xesp.iter_mut().enumerate().for_each(|(i,s)| *s = i); }
-//        
-//            //=========== count nonzeros and element 
-//            let mut rnnz = 0;
-//            let mut rnelem = 0;
-//            {
-//                let mut prev_row = usize::MAX;
-//                let mut mspit = xmsp.iter().peekable();
-//                let mut espit = izip!(xesp.iter(),ptr.iter(),ptr[1..].iter()).peekable();
-//                while let (Some(&mi),Some((&ei,&p0,&p1))) = (mspit.peek(),espit.peek()) {
-//                    match ei.cmp(mi) {
-//                        std::cmp::Ordering::Greater => { _ = mspit.next(); },
-//                        std::cmp::Ordering::Less => { _ = espit.next() },
-//                        std::cmp::Ordering::Equal => {
-//                            rnnz += p1-p0;
-//                            if prev_row != mi / mwidth {
-//                                prev_row = mi / mwidth;
-//                                rnelem += 1;
-//                            }
-//                        }
-//                    }
-//                }
-//            }
-//            //=========== allocate result
-//            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[mheight], rnnz, rnelem);
-//            rptr[0] = 0;
-//            let mut nzi = 0;
-//            let mut elmi = 0;
-//            {
-//                let mut prev_row = usize::MAX;
-//                let mut mspit = (xmsp.iter().zip(self.data.iter())).peekable();
-//                let mut espit = izip!(xesp.iter(),ptr.iter(),ptr[1..].iter()).peekable();
-//
-//                if let Some(rsp) = rsp {
-//                    while let (Some((&mi,&mc)),Some((&ei,&p0,&p1))) = (mspit.peek(),espit.peek()) {
-//                        match ei.cmp(&mi) {
-//                            std::cmp::Ordering::Greater => {_ = mspit.next(); },
-//                            std::cmp::Ordering::Less => { _ = espit.next() },
-//                            std::cmp::Ordering::Equal => {
-//                                if prev_row != mi / mwidth {
-//                                    prev_row = mi / mwidth;
-//                                    rsp[elmi] = prev_row; 
-//                                    elmi += 1;
-//                                }
-//                            
-//                                rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
-//                                rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
-//                                rcof[nzi..nzi+p1-p0].iter_mut().for_each(|v| *v *= mc);
-//
-//                                nzi += p1-p0;
-//                                rptr[elmi] = nzi;
-//                            }
-//                        }
-//                    }
-//                } else {
-//                    while let (Some((&mi,&mc)),Some((&ei,&p0,&p1))) = (mspit.peek(),espit.peek()) {
-//                        match ei.cmp(&mi) {
-//                            std::cmp::Ordering::Greater => { _ = mspit.next(); },
-//                            std::cmp::Ordering::Less => { _ = espit.next() }
-//                            std::cmp::Ordering::Equal => {
-//                                if prev_row != mi / mwidth {
-//                                    prev_row = mi / mwidth;
-//                                    elmi += 1;
-//                                }
-//                                
-//                                rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
-//                                rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
-//                                rcof[nzi..nzi+p1-p0].iter_mut().for_each(|v| *v *= mc);
-//
-//                                nzi += p1-p0;
-//                                rptr[elmi] = nzi;
-//                            }
-//                        }
-//                    }
-//                }
-//            }
-//        }
-//    } 
-//}

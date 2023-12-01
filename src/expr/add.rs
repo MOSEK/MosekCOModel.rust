@@ -1,6 +1,5 @@
-use super::{ExprTrait,Expr};
+use super::{ExprTrait};
 use super::workstack::WorkStack;
-use super::matrix::{Matrix,DenseMatrix,SparseMatrix};
 
 
 //pub trait ExprAddable<const N : usize, E> where E : ExprTrait<N> {
