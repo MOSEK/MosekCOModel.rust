@@ -29,7 +29,7 @@ fn add_test() {
     // vs = |  . 20 21 | ws = |  . 24  . |
     //      |  .  . 22 |      |  . 25 26 | 
     let sv = m.variable(Some("vs"), unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[1,1],[1,2],[2,2]]));
-    let sw = m.variable(Some("vs"), unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[1,1],[2,1],[2,2]]));
+    let sw = m.variable(Some("ws"), unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[1,1],[2,1],[2,2]]));
 
     let mut rs = WorkStack::new(512);
     let mut ws = WorkStack::new(512);
