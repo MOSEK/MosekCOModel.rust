@@ -195,7 +195,7 @@ pub trait ExprTrait<const N : usize> {
 
     /// Flatten expression into a column, i.e. an expression of size `[n,1]` where
     /// `n=shape.iter().product()`.
-    fn into_column(self) -> ExprReshapeOneRow<N,2,Self> where Self:Sized { ExprReshapeOneRow { item:self, dim : 1 } }
+    fn into_column(self) -> ExprReshapeOneRow<N,2,Self> where Self:Sized { ExprReshapeOneRow { item:self, dim : 0 } }
 
     /// Reshape an expression into a vector expression, where all but (at most) one dimension are
     /// of size 1.

@@ -162,7 +162,6 @@ impl WorkStack {
         let fbase = ftop - totalfsize;
 
 
-        println!("totalusize = {}, utop = {}, nd = {}, nnz = {}, nelem = {}",totalusize,utop,nd,nnz,nelm);
         let uslice : &[usize] = & self.susize[ubase..utop];
         let cof    : &[f64]   = & self.sf64[fbase..ftop];
 

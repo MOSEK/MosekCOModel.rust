@@ -782,6 +782,10 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
     // println!("{}:{}: eval::stack n={}, dim={}",file!(),line!(),n,dim);
     let exprs = ws.pop_exprs(n);
 
+    for (i,e)  in exprs.iter().enumerate() {
+        println!("stack expr {}: shape = {:?}",i,e.0);
+    }
+
     // check shapes
     if ! exprs.iter().zip(exprs[1..].iter()).any(|((s0,_,_,_,_),(s1,_,_,_,_))| shape_eq_except(s0,s1,dim)) {
         panic!("Mismatching shapes or stacking dimension");
@@ -789,11 +793,8 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
 
     let nd = (dim+1).max(exprs.iter().map(|(shape,_,_,_,_)| shape.len()).max().unwrap());
     let (rnnz,rnelm,ddim) = exprs.iter().fold((0,0,0),|(nnz,nelm,d),(shape,ptr,_sp,_subj,_cof)| (nnz+ptr.last().unwrap(),nelm+ptr.len()-1,d+shape.get(dim).copied().unwrap_or(1)));
-    let rshape = {
-        let mut tmp = vec![1; nd];
-        tmp.iter_mut().zip(exprs.iter().max_by_key(|e| e.0.len()).unwrap().0.iter()).for_each(|(a,&b)| *a = b );
-        tmp[dim] = ddim;
-        tmp };
+    let mut rshape = exprs.first().unwrap().0.to_vec();
+    rshape[dim] = ddim;
 
     let (rptr,mut rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),rnnz,rnelm);
 
