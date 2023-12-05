@@ -503,8 +503,10 @@ impl<const N : usize, E:ExprTrait<N>> ExprTrait<1> for ExprGatherToVec<N,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
         let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
+        let rnelm = ptr.len()-1;
+        let rnnz  = subj.len();        
 
-        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[ptr.last().copied().unwrap()],ptr.len()-1,subj.len());
+        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr( &[rnelm],rnnz,rnelm);
 
         rptr.clone_from_slice(ptr);
         rsubj.clone_from_slice(subj);
@@ -794,7 +796,7 @@ impl<const N : usize, T:ExprTrait<N>> ExprTrait<0> for ExprSum<N,T> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
         let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
-        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[],*ptr.last().unwrap(),1);
+        let (rptr,_rsp,rsubj,rcof)    = rs.alloc_expr(&[],*ptr.last().unwrap(),1);
         rptr[0] = 0;
         rptr[1] = *ptr.last().unwrap();
         rsubj.clone_from_slice(subj);

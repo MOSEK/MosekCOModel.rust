@@ -409,7 +409,40 @@ impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprMulElm<N,E> {
 
         if let Some(msp) = &self.datasparsity {
             if let Some(esp) = sp {
-                panic!("Unimplemented: Sparse Expr .* Sparse Matrix");
+                let (upart,xcof) = xs.alloc(esp.len()*2+1+subj.len(),subj.len());
+                let (xsp,upart) = upart.split_at_mut(esp.len());
+                let (xptr,xsubj) = upart.split_at_mut(esp.len()+1);
+
+                let mut mit = msp.iter().zip(self.data.iter()).peekable();
+                let mut eit = izip!(esp.iter(),ptr.iter(),ptr[1..].iter()).peekable();
+                let mut rnelm = 0usize;
+                let mut rnnz = 0usize;
+
+                while let (Some((&mi,&mc)),Some((ei,&p0,&p1))) = (mit.peek(),eit.peek()) {
+                    match mi.cmp(ei) {
+                        std::cmp::Ordering::Less => _ = mit.next(),
+                        std::cmp::Ordering::Greater => _ = eit.next(),
+                        std::cmp::Ordering::Equal => {
+                            xsp[rnelm] = mi;                            
+                            xsubj[rnnz..rnnz+p1-p0].clone_from_slice(&subj[p0..p1]);                            
+                            xcof[rnnz..rnnz+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(tc,&sc)| *tc = sc * mc);
+
+                            rnelm += 1;
+                            rnnz += p1-p0;
+                            xptr[rnelm] = rnnz;
+
+                            _ = mit.next();
+                            _ = eit.next();
+                        }
+                    }
+                }
+
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape, rnnz, rnelm);
+                rptr.clone_from_slice(&xptr[..rnelm+1]);
+                if let Some(rsp) = rsp { rsp.clone_from_slice(&xsp[..rnelm]) };
+                rsubj.clone_from_slice(&xsubj[..rnnz]);
+                rcof.clone_from_slice(&xcof[..rnnz]);
+                xs.clear();
             }
             else {
                 // count result size

@@ -1,4 +1,7 @@
-use super::matrix::{DenseMatrix,DenseNDArray,Matrix};
+use itertools::izip;
+
+use super::matrix::{DenseNDArray,Matrix};
+use super::utils::perm_iter;
 
 pub enum LinearDomainType {
     NonNegative,
@@ -137,26 +140,39 @@ impl<const N : usize> LinearDomain<N> {
             }
         }
 
-        let maxval = 
-            if sp.len() > 1 && sp.iter().zip(sp[1..].iter()).any(|(a,b)| b <= a) {
-                panic!("Sparsity pattern is unsorted or contains duplicates");
+        if sp.iter().zip(sp[1..].iter()).any(|(&i0,&i1)| i1 <= i0) {
+            // unsorted
+            let mut perm : Vec<usize> = (0..sp.len()).collect();
+            perm.sort_by_key(|&i| unsafe{ *sp.get_unchecked(i) });
+            if izip!(perm_iter(perm.as_slice(),sp.as_slice()),
+                     perm_iter(&perm[1..],sp.as_slice())).any(|(&i0,&i1)| i1 <= i0) {
+                panic!("Sparsity pattern contains duplicates");
             }
-            else if let Some(&last) = sp.last() {
-                last 
-            } 
-            else {
-                0
+            
+            let rsp = perm_iter(perm.as_slice(),sp.as_slice()).cloned().collect::<Vec<usize>>();
+            let ofs = if let LinearDomainOfsType::M(ref ofs) = self.ofs {
+                LinearDomainOfsType::M(perm_iter(perm.as_slice(),ofs.as_slice()).cloned().collect())
+            } else {
+                self.ofs
             };
 
-        if maxval >= self.shape.iter().product() {
-            panic!("Sparsity pattern does not match domain");
-        }
+            if *rsp.last().unwrap() >= self.shape.iter().product() {
+                panic!("Sparsity pattern does not match domain");
+            }
 
-        LinearDomain::<N>{
-            dt    : self.dt,
-            ofs   : self.ofs,
-            shape : self.shape,
-            sp    : Some(sp)
+            LinearDomain{
+                dt    : self.dt,
+                ofs,
+                shape : self.shape,
+                sp    : Some(rsp)
+            }
+        } else {
+            LinearDomain::<N>{
+                dt    : self.dt,
+                ofs   : self.ofs,
+                shape : self.shape,
+                sp    : Some(sp)
+            }
         }
     }
 

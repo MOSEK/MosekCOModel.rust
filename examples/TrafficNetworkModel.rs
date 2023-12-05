@@ -22,7 +22,6 @@ extern crate mosekmodel;
 
 use mosekmodel::*;
 use mosekmodel::matrix::SparseMatrix;
-use itertools::izip;
 
 
 /// Solve traffix network model.
@@ -42,7 +41,6 @@ fn traffic_network_model( number_of_nodes : usize,
     let n = number_of_nodes;
     let m = arcs.len();
     
-    let n_ones : Vec<f64> = (0..m).map(|_| 1.0).collect();
     let basetime = SparseMatrix::from_iterator(n,n,arcs.iter().map(|arc| (arc.i,arc.j,arc.basetime)));
 
     let sparsity : Vec<[usize;2]> = arcs.iter().map(|arc| [arc.i,arc.j]).collect();

@@ -118,7 +118,7 @@ impl Extend<(usize,usize,f64)> for SparseMatrix {
             let sp : Vec<usize> = perm.iter().map(|&i| unsafe{ * self.sp.get_unchecked(i)}).collect();
             let data : Vec<f64> = perm.iter().map(|&i| unsafe{ * self.data.get_unchecked(i)}).collect();
 
-            if sp.iter().zip(sp[1..].iter()).any(|(&i0,&i1)| i1 >= i0) {
+            if sp.iter().zip(sp[1..].iter()).any(|(&i0,&i1)| i1 <= i0) {
                 self.sp.truncate(origlen);
                 self.data.truncate(origlen);
                 panic!("Sparse data contains duplicates");

@@ -104,7 +104,7 @@ impl<'a,'b,T> Iterator for PermIter<'a,'b,T> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(&i) = self.perm.get(self.i) {
             self.i += 1;
-            Some(unsafe{&*self.data.get_unchecked(i)})
+            Some(unsafe{self.data.get_unchecked(i)})
         }
         else {
             None
@@ -478,9 +478,9 @@ impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
         let head = unsafe { self.bucket.get_unchecked_mut(key) };
         let mut index = *head;
 
-        println!("IndexHashMap, lookup {}\n\thead = {}",i,index);
+        //println!("IndexHashMap, lookup {}\n\thead = {}",i,index);
         while index < usize::MAX && i != unsafe { * self.index.get_unchecked(index) } {
-            println!("\tindex = {}",index);
+            //println!("\tindex = {}",index);
             index = unsafe{ * self.next.get_unchecked(index) };
         }
 

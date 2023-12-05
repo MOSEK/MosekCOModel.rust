@@ -210,6 +210,8 @@ impl WorkStack {
 
         if izip!(ptr[..ptr.len()-1].iter(),
                  ptr[1..].iter()).any(|(&a,&b)| a > b) {  panic!("Stack does not contain a valid expression: invalid ptr"); }
+        println!("workstack ptr = {:?}",ptr);
+        println!("workstack sp  = {:?}",sp);
         if ptr.last().copied().unwrap() > nnz { panic!("Stack does not contain a valid expression: invalid ptr"); }
 
         (shape,ptr,sp,subj,cof,ubase,fbase)

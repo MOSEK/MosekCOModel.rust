@@ -15,8 +15,9 @@ pub(super) fn permute_axes(perm : &[usize],
                            xs : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nelem = ptr.len()-1;
+    let nd = shape.len();
 
-    if perm.len() != shape.len() {
+    if perm.len() != nd || *perm.iter().max().unwrap() >= nd {
         panic!("Mismatching permutation and shape");
     }
     let mut rshape = vec![usize::MAX; shape.len()];
@@ -29,44 +30,54 @@ pub(super) fn permute_axes(perm : &[usize],
         }
     });
 
+    let nd = shape.len();
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),subj.len(),*ptr.last().unwrap());
-    
-    let (uslice,_) = xs.alloc(nelem*2+shape.len()*3,0);
-    let (spx,uslice) = uslice.split_at_mut(nelem);
-    let (perm,uslice) = uslice.split_at_mut(nelem);
-    let (strides,uslice) = uslice.split_at_mut(nelem);
-    let (rstrides,prstrides) = uslice.split_at_mut(nelem);
+    rptr[0] = 0;
+        
+    let (uslice,_)           = xs.alloc(nelem*2+shape.len()*3,0);
+    let (spx,uslice)         = uslice.split_at_mut(nelem);
+    let (elmperm,uslice)     = uslice.split_at_mut(nelem);
+    let (strides,uslice)     = uslice.split_at_mut(nd);
+    let (rstrides,prstrides) = uslice.split_at_mut(nd);
+
 
     strides.iter_mut().rev().zip(shape.iter().rev().fold_map0(1usize,|cum,d| d*cum )).for_each(|(t,s)| *t = s);
     rstrides.iter_mut().rev().zip(rshape.iter().rev().fold_map0(1,|cum,d| d*cum )).for_each(|(t,s)| *t = s);
-    prstrides.iter_mut().zip(perm.iter()).for_each(|(s,&p)| unsafe{ *s = *rstrides.get_unchecked(p); } );
+    prstrides.iter_mut().zip(perm.iter()).for_each(|(s,&p)| *s = rstrides[p] );
 
     if let Some(sp) = sp {
+        //println!("permute_axes: sparse, strides = {:?}, rstrides = {:?}, prstrides = {:?}",strides,rstrides,prstrides);
         spx.iter_mut().zip(sp.iter()).for_each(|(ix,&i)| {
             let (_,ri) = strides.iter().zip(prstrides.iter()).fold((i,0),|(v,r),(&s,&rs)| (v%s,r+(v/s)*rs));
             *ix = ri;
         });
 
-        perm.iter_mut().enumerate().for_each(|(i,t)| *t = i);
-        perm.sort_by_key(|&i| unsafe{* spx.get_unchecked(i) });
+        elmperm.iter_mut().enumerate().for_each(|(i,t)| *t = i);
+        elmperm.sort_by_key(|&i| unsafe{* spx.get_unchecked(i) });
        
         // apply permutation
-        if let Some(rsp) = rsp { rsp.iter_mut().zip(perm_iter(perm,sp)).for_each(|(t,&s)| *t = s); };
+        if let Some(rsp) = rsp { 
+            for (t,&s) in rsp.iter_mut().zip(perm_iter(elmperm,sp)) {
+                (_,*t) = izip!(strides.iter(),prstrides.iter()).fold((s,0),|(sv,r),(&s,&ps)| (sv % s,r + (sv/s)*ps)  );
+            }
+            //println!("\trsp = {:?}",rsp);
+        };
         //let _ = rptr.iter_mut().zip(perm_iter(ptr[0..nelem].iter()).zip(ptr[1..].iter())).fold(0,|c,(t,(&p0,&p1))| { *t = c+p1-p0; *t });
         rptr.iter_mut().for_each(|p| *p = 0);
 
         { 
             let mut nzi = 0;
     
-            for (&p0,&p1) in perm_iter(perm,&ptr[0..nelem]).zip(perm_iter(perm,&ptr[1..nelem+1])) {
+            for (&p0,&p1) in perm_iter(elmperm,&ptr[0..nelem]).zip(perm_iter(elmperm,&ptr[1..nelem+1])) {
                 rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
                 rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
                 nzi += p1-p0;
             }
+            //println!("permute_axes: sparse\n\trsubj = {:?}\n\trcof = {:?}\n\trptr = {:?}",rsubj,rcof,rptr);
         }
     }
     else {
-        rptr[0] = 0;
+        //println!("permute_axes: dense");
         for (si,n) in ptr.iter().zip(ptr[1..].iter()).map(|(&p0,&p1)| p1-p0).enumerate() {
             let (_,ti) = strides.iter().zip(prstrides.iter()).fold((si,0),|(v,r),(&s,&rs)| (v%s,r+(v/s)*rs));
             rptr[ti+1] = n
@@ -82,6 +93,7 @@ pub(super) fn permute_axes(perm : &[usize],
             rcof[nzi..nzi+n].clone_from_slice(scof);
         }
     }
+    println!("eval::permute_axes: end");
 }
 
 
@@ -174,13 +186,13 @@ pub(super) fn add(n  : usize,
                     izip!(sp.iter(),ptr.iter(),ptr[1..].iter()).for_each(|(&i,&p0,&p1)| *h.at_mut(i) += p1-p0);
                 }
             }
-            println!("h = {:?}",h);
+            //println!("h = {:?}",h);
             rs.alloc_expr(shape,rnnz,h.len())
         };
         rptr[0] = 0;
 
         let rnelm = rptr.len()-1;
-        println!("hindex = {:?}",&hindex[..rnelm]); 
+        //println!("hindex = {:?}",&hindex[..rnelm]); 
 
         rptr[0] = 0;
         // Compute sorting permutation
@@ -209,7 +221,7 @@ pub(super) fn add(n  : usize,
                                                &mut hbucket[..rnelm],
                                                0);
 
-        println!("rptr = {:?}\nrnnz = {}",rptr,rnnz); 
+        //println!("rptr = {:?}\nrnnz = {}",rptr,rnnz); 
         for (_,ptr,sp,subj,cof) in exprs.iter() {
             if let Some(sp) = sp {
                 for (&i,sj,sc) in izip!(sp.iter(),
@@ -217,7 +229,6 @@ pub(super) fn add(n  : usize,
                                         cof.chunks_by(ptr)) {
                     let n = sj.len();
                     if let Some(index) = h.at(i) {
-                        println!("rptr = {:?}, index = {}",rptr,index); 
                         let rp = { let p = &mut rptr[*index]; *p += n; *p - n };
                         rsubj[rp..rp+n].clone_from_slice(sj);
                         rcof[rp..rp+n].clone_from_slice(sc);
@@ -227,7 +238,9 @@ pub(super) fn add(n  : usize,
         }
         // Recompute ptr
         _ = rptr.iter_mut().fold(0,|v,p| { let tmp = *p; *p = v; tmp } );
+        println!("rptr = {:?}",rptr); 
     }
+    println!("eval::add: end");
 } // add
 
 /// Evaluates `lhs` * expr.
@@ -980,8 +993,15 @@ pub(super) fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, 
     let mut rshape = shape.to_vec();
     rshape[shape.len()-num..].iter_mut().for_each(|s| *s = 1);
 
+    println!("sum_last: shape = {:?}",shape);
+    println!("sum_last: ptr = {:?}",ptr);
+    println!("sum_last: sp = {:?}",sp);
+    println!("sum_last: subj = {:?}",subj);
+    println!("sum_last: cof = {:?}",cof);
+
+
     if let Some(sp) = sp {
-        let rnelm = 
+        let rnelm =
             if sp.len() == 0 {
                 0
             }
@@ -1002,9 +1022,24 @@ pub(super) fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, 
                 *r = v;
                 *rp = p
             }
+        } else {
+            for (rp,(p,v)) in izip!(rptr[1..].iter_mut(),
+                                    izip!(ptr[1..].iter(),
+                                          sp.iter(),
+                                          sp[1..].iter().chain(once(&usize::MAX)))
+                                      .filter(|(_,&i0,&i1)| i0/d < i1/d)
+                                      .map(|(&p,&i0,_)| (p,i0/d))) {
+                *rp = p
+            }
+            
         }
         rsubj.clone_from_slice(subj);
         rcof.clone_from_slice(cof);
+        println!("sum_last sparse");
+        println!("sum_last: rnelm = {:?}",rnelm);
+        println!("sum_last: rsubj = {:?}",rsubj);
+        println!("sum_last: rcof = {:?}",rcof);
+        println!("sum_last: rptr = {:?}",rptr);
     } 
     else {
         let rnelm = shape.iter().product::<usize>()/d; 
@@ -1013,7 +1048,14 @@ pub(super) fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, 
         rsubj.clone_from_slice(subj);
         rcof.clone_from_slice(cof);
         rptr.iter_mut().zip(ptr.iter().step_by(d)).for_each(|(rp,&p)| *rp = p );
+        
+        println!("sum_last dense");
+        println!("sum_last: rnelm = {:?}",rnelm);
+        println!("sum_last: rsubj = {:?}",rsubj);
+        println!("sum_last: rcof = {:?}",rcof);
+        println!("sum_last: rptr = {:?}",rptr);
     }
+    println!("eval::sum_last: end");
 }
 
 pub(super) fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
