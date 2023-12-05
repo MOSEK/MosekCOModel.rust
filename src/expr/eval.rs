@@ -165,6 +165,7 @@ pub(super) fn add(n  : usize,
         hdata.fill(0);
 
         let (rptr,rsp,rsubj,rcof) = {
+            // We use a hash map to count number of elements and nonzeros
             let mut h = utils::IndexHashMap::new(hdata,hindex,hnext,hbucket,0);
 
             // count row nonzeros
@@ -173,49 +174,59 @@ pub(super) fn add(n  : usize,
                     izip!(sp.iter(),ptr.iter(),ptr[1..].iter()).for_each(|(&i,&p0,&p1)| *h.at_mut(i) += p1-p0);
                 }
             }
-
+            println!("h = {:?}",h);
             rs.alloc_expr(shape,rnnz,h.len())
         };
+        rptr[0] = 0;
 
         let rnelm = rptr.len()-1;
+        println!("hindex = {:?}",&hindex[..rnelm]); 
 
         rptr[0] = 0;
         // Compute sorting permutation
         let perm = & mut hperm[..rnelm];
         perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
         perm.sort_by_key(|&i| unsafe{* hindex.get_unchecked(i) });
-        // cummulate
-        let _ = perm.iter().fold(0,|v,&p| {
-            let d = unsafe{ &mut*hdata.get_unchecked_mut(p) };
-            let prev = *d;
-            unsafe{ *rptr.get_unchecked_mut(p+1) = prev+v; }
-            *d = v;
-            prev + v
-        });
-        if let Some(sp) = rsp {
-            izip!(hperm.iter(),sp.iter_mut()).for_each(|(&p,sp)| {
-                *sp = unsafe{ *hindex.get_unchecked(p) };
-            });
+        // copy data to solution
+        if let Some(rsp) = rsp {
+            for (rp,ri,&si,&sd) in izip!(rptr[1..].iter_mut(),
+                                         rsp.iter_mut(),
+                                         perm_iter(perm, hindex),
+                                         perm_iter(perm, hdata)) {
+                *ri = si;
+                *rp = sd;
+            }
+            hindex[..rnelm].clone_from_slice(rsp);
         }
+        // cummulate ptr
+        _ = rptr.iter_mut().fold(0,|c,p| { *p += c; *p });
+                 
+        // Create a mapping from linear sparsity index into sp/ptr index
+        hdata.iter_mut().enumerate().for_each(|(i,d)| *d = i);
+        let h = utils::IndexHashMap::with_data(&mut hdata[..rnelm],
+                                               &mut hindex[..rnelm],
+                                               &mut hnext[..rnelm],
+                                               &mut hbucket[..rnelm],
+                                               0);
 
-        let mut h = utils::IndexHashMap::with_data(&mut hdata[..rnelm],
-                                                   &mut hindex[..rnelm],
-                                                   &mut hnext[..rnelm],
-                                                   &mut hbucket[..rnelm],
-                                                   0);
-
+        println!("rptr = {:?}\nrnnz = {}",rptr,rnnz); 
         for (_,ptr,sp,subj,cof) in exprs.iter() {
             if let Some(sp) = sp {
-                izip!(sp.iter(),ptr.iter(),ptr[1..].iter())
-                    .for_each(|(&i,&p0,&p1)| {
-                        let d = h.at_mut(i);
-                        let n = p1-p0;
-                        rsubj[*d..*d+n].clone_from_slice(&subj[p0..p1]);
-                        rcof[*d..*d+n].clone_from_slice(&cof[p0..p1]);
-                        *d += n;
-                    });
+                for (&i,sj,sc) in izip!(sp.iter(),
+                                        subj.chunks_by(ptr),
+                                        cof.chunks_by(ptr)) {
+                    let n = sj.len();
+                    if let Some(index) = h.at(i) {
+                        println!("rptr = {:?}, index = {}",rptr,index); 
+                        let rp = { let p = &mut rptr[*index]; *p += n; *p - n };
+                        rsubj[rp..rp+n].clone_from_slice(sj);
+                        rcof[rp..rp+n].clone_from_slice(sc);
+                    }
+               }
             }
         }
+        // Recompute ptr
+        _ = rptr.iter_mut().fold(0,|v,p| { let tmp = *p; *p = v; tmp } );
     }
 } // add
 

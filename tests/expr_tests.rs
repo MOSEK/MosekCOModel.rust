@@ -43,7 +43,8 @@ fn add_test() {
         assert_eq!(shape,&[3,3]); 
         assert_eq!(sp,None);
         assert_eq!(ptr,&[0usize,2,4,6,8,10,12,14,16,18]);
-        assert_eq!(subj,&[ 1,10, 2,11, 3,12, 4,13, 5,14, 6,15, 7,16, 8,17, 9,18]);
+        println!("subj = {:?}",subj);
+        assert_eq!(subj,&[ 10,1, 11,2, 12,3, 13,4, 14,5, 15,6, 16,7, 17,8, 18,9]);
     }
     
     {
@@ -55,7 +56,7 @@ fn add_test() {
         assert_eq!(shape,&[3,3]); 
         assert_eq!(sp,None);
         assert_eq!(ptr,&[0usize,2,3,4,5,7,8,9,11,13]);
-        assert_eq!(subj,&[ 1,23,2,3,4,5,24,6,7,8,25,9,26]);
+        assert_eq!(subj,&[ 23,1,2,3,4,24,5,6,7,25,8,26,9]);
     }
 
     {
@@ -70,8 +71,8 @@ fn add_test() {
         } else {
             panic!("sp is not None");
         }
-        assert_eq!(ptr,&[0,2,4,5,6,7]);
-        assert_eq!(subj,&[ 19,23,20,24,21,25,22,26]);
+        assert_eq!(ptr,&[0,2,4,5,6,8]);
+        assert_eq!(subj,&[ 23,19,24,20,21,25,26,22]);
     }
 }
 

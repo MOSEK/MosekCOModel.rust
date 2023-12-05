@@ -165,38 +165,123 @@ impl<'a,'b,'c,'d,'e> Iterator for IJKLSliceIterator<'a,'b,'c,'d,'e> {
 
 ////////////////////////////////////////////////////////////
 
-/// Given a shape, and optionally a sparsity pattern, call a function
-/// f with each index in the shape by lexicalic order.
-///
-/// Arguments:
-/// - shape The shape
-/// - sp Optional sparsity pattern
-/// - f Function called for each index in the shape
-pub fn for_each_index<F>(shape : &[usize], sp : Option<&[usize]>, mut f : F) where F : FnMut(usize,&[usize]) {
-    let mut idx = vec![0;shape.len()];
+/// Given a shape, iterate over all indexes in that shape.
+pub struct IndexIterator<const N : usize> {
+    shape : [usize; N],
+    cur   : [usize; N]
+}
 
-    if let Some(sp) = sp {
-        let mut stride : Vec<usize> = vec![0; shape.len()];
-        let _ = shape.iter().rev().zip(stride.iter_mut().rev()).fold(1,|k,(&d,s)| { *s = k; k*d });
-        for &i in sp {
-            let _ = idx.iter_mut().zip(stride.iter()).fold(i,|k,(ix,&s)| { *ix = k / s; k % s } );
-            f(i,idx.as_slice());
+impl<const N : usize> Iterator for IndexIterator<N> {
+    type Item = [usize; N];
+    fn next(& mut self) -> Option<Self::Item> {
+        let carry = self.shape.iter().zip(self.cur.iter_mut()).rev().fold(1, |v,(&d, i)| { *i += v; if *i < d { 0 } else { *i = 0; 1 } });
+        if carry > 0 {
+            None
+        } else {
+            Some(self.cur)
         }
     }
-    else {
-        for i in 0..shape.iter().product() {
-            f(i,idx.as_slice());
-            let _ = shape.iter().zip(idx.iter_mut()).rev()
-                .fold(1,|carry,(&d,ix)| {
-                    if carry == 0 { 0 }
-                    else {
-                        *ix += carry;
-                        if *ix < d { 0 }
-                        else { *ix = 0; 1 }
-                    }
-                });
+}
+
+impl<const N : usize> IndexIterator<N> {
+    pub fn new(shape : &[usize; N]) -> IndexIterator<N> {
+        IndexIterator{
+            shape : *shape,
+            cur   : [0; N]
         }
     }
+}
+
+/// Given a shape and a list of linear indexes, iterate over the sparsity yielding the indexes
+/// corresponding to the given shape.
+pub struct SparseIndexIterator<'a, const N : usize> {
+    stride : [usize; N],
+    sp     : & 'a [usize],
+    i      : usize
+}
+
+impl<'a, const N : usize> SparseIndexIterator<'a,N> {
+    /// Create a new SparseIndexIterator
+    ///
+    /// The indexes are not verified.
+    ///
+    /// # Arguments
+    /// - `shape` - shape to use
+    /// - `sp` - list of sparsity indexes
+    pub fn new(shape : &[usize; N], sp : &'a [usize]) -> SparseIndexIterator<'a,N> {
+        let mut stride = [1usize; N];
+        _ = stride.iter_mut().zip(shape.iter()).rev().fold(1, |v,(st,&d)| { *st = &v*d; *st });
+        SparseIndexIterator{
+            stride,
+            sp,
+            i : 0
+        }
+    }
+}
+
+impl<'a, const N : usize> Iterator for SparseIndexIterator<'a,N> {
+    type Item = [usize; N];
+    fn next(& mut self) -> Option<Self::Item> {
+        if self.i < self.sp.len() {
+            let mut res = [0usize; N];
+            let v = unsafe{ *self.sp.get_unchecked(self.i) };
+            self.i += 1;
+            _ = res.iter_mut().zip(self.stride.iter()).fold(v,|v, (r,&s)| { *r = v / s; v % s });
+            Some(res)
+        }
+        else {
+            None
+        }
+    }
+}
+
+
+// /// Given a shape, and optionally a sparsity pattern, call a function
+// /// f with each index in the shape by lexicalic order.
+// ///
+// /// Arguments:
+// /// - shape The shape
+// /// - sp Optional sparsity pattern
+// /// - f Function called for each index in the shape
+// pub fn for_each_index<F>(shape : &[usize], sp : Option<&[usize]>, mut f : F) where F : FnMut(usize,&[usize]) {
+//     let mut idx = vec![0;shape.len()];
+// 
+//     if let Some(sp) = sp {
+//         let mut stride : Vec<usize> = vec![0; shape.len()];
+//         let _ = shape.iter().rev().zip(stride.iter_mut().rev()).fold(1,|k,(&d,s)| { *s = k; k*d });
+//         for &i in sp {
+//             let _ = idx.iter_mut().zip(stride.iter()).fold(i,|k,(ix,&s)| { *ix = k / s; k % s } );
+//             f(i,idx.as_slice());
+//         }
+//     }
+//     else {
+//         for i in 0..shape.iter().product() {
+//             f(i,idx.as_slice());
+//             let _ = shape.iter().zip(idx.iter_mut()).rev()
+//                 .fold(1,|carry,(&d,ix)| {
+//                     if carry == 0 { 0 }
+//                     else {
+//                         *ix += carry;
+//                         if *ix < d { 0 }
+//                         else { *ix = 0; 1 }
+//                     }
+//                 });
+//         }
+//     }
+// }
+
+////////////////////////////////////////////////////////////
+
+pub fn append_name_index(buf : & mut String, index : &[usize]) {
+    buf.push('[');
+    if let Some(i) = index.first() {
+        for c in i.digits_10() { buf.push(c); }
+        for i in &index[1..] {
+            buf.push(',');
+            for c in i.digits_10() { buf.push(c); }
+        }
+    }
+    buf.push(']');
 }
 
 ////////////////////////////////////////////////////////////
@@ -316,7 +401,7 @@ impl<T> SelectFromSliceExt<T> for &[T] {
 
 ////////////////////////////////////////////////////////////
 
-
+#[derive(Debug)]
 pub struct IndexHashMap<'a,'b,'c,'d,T : Copy> {
     data   : & 'a mut[T],
     index  : & 'b mut[usize],
@@ -374,20 +459,19 @@ impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
             index,
             next,
             bucket,
-            dflt : dflt,
+            dflt,
             n}
     }
 
-    #[allow(dead_code)]
     pub fn at(&self,i : usize) -> Option<&T> {
         let mut index = unsafe { * self.bucket.get_unchecked(hash(i) % self.bucket.len()) };
 
-        while index < usize::MAX || i == unsafe { * self.index.get_unchecked(index) }  {
+        while index < usize::MAX && i != unsafe { * self.index.get_unchecked(index) }  {
             index = unsafe{ * self.next.get_unchecked(index) };
         }
 
         if index < usize::MAX {
-            Some(unsafe { &* self.data.get_unchecked(index) })
+            Some(unsafe { self.data.get_unchecked(index) })
         }
         else {
             None
@@ -395,10 +479,13 @@ impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
     }
 
     pub fn at_mut(&mut self, i : usize) -> &mut T {
-        let head = unsafe { * self.bucket.get_unchecked(hash(i) % self.bucket.len()) };
-        let mut index = head;
+        let key = hash(i) % self.bucket.len();
+        let head = unsafe { self.bucket.get_unchecked_mut(key) };
+        let mut index = *head;
 
-        while index < usize::MAX || i == unsafe { * self.index.get_unchecked(index) }  {
+        println!("IndexHashMap, lookup {}\n\thead = {}",i,index);
+        while index < usize::MAX && i != unsafe { * self.index.get_unchecked(index) } {
+            println!("\tindex = {}",index);
             index = unsafe{ * self.next.get_unchecked(index) };
         }
 
@@ -407,9 +494,9 @@ impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
         }
         else if self.n < self.next.len() {
             index = self.n; self.n += 1;
-            unsafe { *self.next.get_unchecked_mut(index) = head; }
+            unsafe { *self.next.get_unchecked_mut(index) = *head; }
             unsafe { *self.index.get_unchecked_mut(index) = i; }
-            unsafe { *self.bucket.get_unchecked_mut(head) = index; }
+            *head = index;
 
             unsafe { *self.data.get_unchecked_mut(index) = self.dflt; }
             unsafe { & mut *self.data.get_unchecked_mut(index) }

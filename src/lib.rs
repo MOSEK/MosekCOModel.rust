@@ -331,63 +331,57 @@ impl Model {
         dom.create(self,name)
     }
 
-    fn var_names(& mut self, name : &str, first : i32, shape : &[usize], sp : Option<&[usize]>) {
+    fn var_names<const N : usize>(& mut self, name : &str, first : i32, shape : &[usize;N], sp : Option<&[usize]>) {
         let mut buf = name.to_string();
         let baselen = buf.len();
-        utils::for_each_index(shape,
-                              sp,
-                              |j,idx:&[usize]| {
-                                  buf.truncate(baselen);
-                                  buf.push('[');
-                                  if let Some(&i) = idx.first() {
-                                      for c in i.digits_10() { buf.push(c); }
-                                      for &i in idx[1..].iter() {
-                                          buf.push(',');
-                                          for c in i.digits_10() {
-                                              buf.push(c);
-                                          }
-                                      }
-                                  }
-                                  buf.push(']');
-                                  self.task.put_var_name(first + j as i32,buf.as_str()).unwrap();
-                              });
+
+        if let Some(sp) = sp {
+            SparseIndexIterator::new(shape,sp)
+                .enumerate()
+                .for_each(|(j,index)| {
+                    buf.truncate(baselen);
+                    utils::append_name_index(& mut buf,&index);
+                    self.task.put_var_name(first + j as i32,buf.as_str()).unwrap();
+                });
+        }
+        else {
+            IndexIterator::new(shape)
+                .enumerate()
+                .for_each(|(j,index)| {
+                    buf.truncate(baselen);
+                    utils::append_name_index(&mut buf, &index);
+                    self.task.put_var_name(first + j as i32,buf.as_str()).unwrap();
+                });
+        }
     }
 
-    fn con_names(task : & mut mosek::TaskCB, name : &str, first : i32, shape : &[usize]) {
+    fn con_names<const N : usize>(task : & mut mosek::TaskCB, name : &str, first : i32, shape : &[usize; N]) {
         let mut buf = name.to_string();
         let baselen = buf.len();
-        utils::for_each_index(shape,
-                              None,
-                              |j,idx:&[usize]| {
-                                  buf.truncate(baselen);
-                                  buf.push('[');
-                                  if let Some(&i) = idx.first() {
-                                      for c in i.digits_10() { buf.push(c); }
-                                      for &i in idx[1..].iter() {
-                                          buf.push(',');
-                                          for c in i.digits_10() {
-                                              buf.push(c);
-                                          }
-                                      }
-                                  }
-                                  buf.push(']');
-                                  task.put_con_name(first + j as i32,buf.as_str()).unwrap();
-                              });
+        IndexIterator::new(shape)
+            .enumerate()
+            .for_each(|(j,index)| {
+                buf.truncate(baselen);
+                utils::append_name_index(&mut buf, &index);
+                task.put_var_name(first + j as i32,buf.as_str()).unwrap();
+            });
     }
 
     fn linear_variable<const N : usize>(&mut self, name : Option<&str>,dom : LinearDomain<N>) -> Variable<N> {
-        let (dt,b,shape,sp) = dom.extract();
+        let (dt,b,shape_,sp) = dom.extract();
+        let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
 
         let n = b.len();
         let vari = self.task.get_num_var().unwrap();
         let varend : i32 = ((vari as usize)+n).try_into().unwrap();
         self.task.append_vars(n.try_into().unwrap()).unwrap();
+        //println!("linear_variable n = {},curnumvar = {}",n,vari);
         if let Some(name) = name {
             if let Some(ref sp) = sp {
-                self.var_names(name,vari,shape.as_slice(),Some(sp.as_slice()))
+                self.var_names(name,vari,&shape,Some(sp.as_slice()))
             }
             else {
-                self.var_names(name,vari,shape.as_slice(),None)
+                self.var_names(name,vari,&shape,None)
             }
         }
         self.vars.reserve(n);
@@ -598,7 +592,8 @@ impl Model {
                          dom  : LinearDomain<N>) -> Constraint<N> {
         let (dt,b,dshape,sp) = dom.extract();
 
-        let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
+        let (shape_,ptr,_sp,subj,cof) = self.rs.pop_expr();
+        let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
         if shape.len() != dshape.len() || shape.iter().zip(dshape.iter()).any(|(&a,&b)| a != b) {
             panic!("Mismatching shapes of expression and domain");
         }
@@ -613,7 +608,7 @@ impl Model {
         self.task.append_cons(nelm.try_into().unwrap()).unwrap();
 
         if let Some(name) = name {
-            Self::con_names(& mut self.task,name,coni,shape)
+            Self::con_names(& mut self.task,name,coni,&shape)
         }
 
         self.cons.reserve(nelm);
