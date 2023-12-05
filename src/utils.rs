@@ -14,11 +14,6 @@ use itertools::izip;
 /// - i_0 -> v0
 /// - i_{n+1} -> f(i_{n-1},it_n
 ///
-/// # Example:
-/// ```
-///   [1,2,5,4,3].cummulate(0, |&v,&i| v+i)
-///   -> [1,3,8,12,15]
-/// ```
 pub struct FoldMapIter<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> {
     it : I,
     v : T,

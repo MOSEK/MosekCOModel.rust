@@ -370,10 +370,11 @@ fn bigmul() {
     const n : usize = 128; 
     
     let mut model = Model::new(None);
-    let v = model.variable(None,n);
+    let v = model.variable(None,&[n,1]);
     let mx = matrix::dense(n,n,vec![1.0; n*n]);
 
     let _ = model.constraint(None, &mx.clone().mul(v.clone()).reshape(&[n]),equal_to(vec![100.0;n]));
-    let _ = model.constraint(None, &v.mul(mx).reshape(&[n]),equal_to(vec![100.0;n]));
+    let _ = model.constraint(None, &v.reshape(&[1,n]).mul(mx), equal_to(vec![100.0;n]).with_shape(&[1,n]));
 }
+
 

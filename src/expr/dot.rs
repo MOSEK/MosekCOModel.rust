@@ -7,10 +7,6 @@ use itertools::izip;
 
 /// Implements support for dot-operator (inner product).
 ///
-/// ```
-/// let res = lhs.dot(rhs)
-/// ```
-///
 /// Implementations *should* adhere to the rules:
 /// - The operands must have the same shape, and
 /// - The result is a value representing the sum of elements in the element-wise multiplication of
