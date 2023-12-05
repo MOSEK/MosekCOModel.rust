@@ -113,12 +113,14 @@ impl<const N : usize, E> ExprTrait<0> for ExprDot<N,E> where E : ExprTrait<N> {
                     let mut v1 = i1.next();
                     let mut r : usize = 0;
                     while let (Some(&mspi),Some((&espi,(&p0,&p1)))) = (v0,v1) {
-                        if      mspi < espi { v0 = i0.next(); }
-                        else if mspi > espi { v1 = i1.next(); }
-                        else {
-                            v0 = i0.next();
-                            v1 = i1.next();
-                            r += p1-p0;
+                        match mspi.cmp(&espi) { 
+                            std::cmp::Ordering::Less => { v0 = i0.next(); },
+                            std::cmp::Ordering::Greater => { v1 = i1.next(); }
+                            std::cmp::Ordering::Equal => {
+                                v0 = i0.next();
+                                v1 = i1.next();
+                                r += p1-p0;
+                            }
                         }
                     }
                     r
@@ -143,15 +145,17 @@ impl<const N : usize, E> ExprTrait<0> for ExprDot<N,E> where E : ExprTrait<N> {
                 let mut v0 = i0.next();
                 let mut v1 = i1.next();
                 while let (Some((&mspi,&mc)),Some((&espi,(&p0,&p1)))) = (v0,v1) {
-                    if      mspi < espi { v0 = i0.next(); }
-                    else if mspi > espi { v1 = i1.next(); }
-                    else {
-                        rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(tc,&sc)| *tc = sc * mc );
-                        rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                    match mspi.cmp(&espi) { 
+                        std::cmp::Ordering::Less => { v0 = i0.next(); },
+                        std::cmp::Ordering::Greater => { v1 = i1.next(); }
+                        std::cmp::Ordering::Equal => {
+                            rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(tc,&sc)| *tc = sc * mc );
+                            rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
 
-                        v0 = i0.next();
-                        v1 = i1.next();
-                        nzi += p1-p0;
+                            v0 = i0.next();
+                            v1 = i1.next();
+                            nzi += p1-p0;
+                        }
                     }
                 }
             } else {
@@ -172,6 +176,13 @@ impl<const N : usize, E> ExprTrait<0> for ExprDot<N,E> where E : ExprTrait<N> {
             for (&espi,&p0,&p1) in izip!(esp.iter(),ptr.iter(),ptr[1..].iter()) {
                 let v = unsafe{ *self.cof.get_unchecked(espi) };
                 rcof[p0..p1].iter_mut().for_each(|c| *c *= v );
+            }
+        }
+        else {
+            rsubj.clone_from_slice(subj);
+            rcof.clone_from_slice(cof);
+            for (&p0,&p1,c) in izip!(ptr.iter(),ptr[1..].iter(),self.cof.iter()) {
+                rcof[p0..p1].iter_mut().for_each(|rc| *rc *= c );
             }
         }
     }

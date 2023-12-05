@@ -661,20 +661,14 @@ impl Model {
         // let abarsubi : Vec<i64> = abarsubi.iter().map(|&i| i + afei).collect();
 
         // let afeidxs : Vec<i64> = (afei..afei+nelm as i64).collect();
-        if asubj.len() > 0 {
+        if !asubj.is_empty() {
+            println!("coni = {}\n\taptr = {:?}\n\tasubj = {:?}\n\tacof = {:?}",coni,aptr,asubj,acof);
             self.task.put_a_row_slice(
                 coni,coni+nelm as i32,
                 &aptr[0..aptr.len()-1],
                 &aptr[1..],
                 asubj.as_slice(),
                 acof.as_slice()).unwrap();
-
-            // self.task.put_afe_f_row_list(
-            //     afeidxs.as_slice(),
-            //     aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0).try_into().unwrap()).collect::<Vec<i32>>().as_slice(),
-            //     &aptr[..nelm],
-            //     asubj.as_slice(),
-            //     acof.as_slice()).unwrap();
         }
         // self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
 
