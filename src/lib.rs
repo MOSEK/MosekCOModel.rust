@@ -662,7 +662,7 @@ impl Model {
 
         // let afeidxs : Vec<i64> = (afei..afei+nelm as i64).collect();
         if !asubj.is_empty() {
-            println!("coni = {}\n\taptr = {:?}\n\tasubj = {:?}\n\tacof = {:?}",coni,aptr,asubj,acof);
+            //println!("coni = {}\n\taptr = {:?}\n\tasubj = {:?}\n\tacof = {:?}",coni,aptr,asubj,acof);
             self.task.put_a_row_slice(
                 coni,coni+nelm as i32,
                 &aptr[0..aptr.len()-1],

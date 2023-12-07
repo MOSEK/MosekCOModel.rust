@@ -93,7 +93,7 @@ pub(super) fn permute_axes(perm : &[usize],
             rcof[nzi..nzi+n].clone_from_slice(scof);
         }
     }
-    println!("eval::permute_axes: end");
+    //println!("eval::permute_axes: end");
 }
 
 
@@ -238,9 +238,9 @@ pub(super) fn add(n  : usize,
         }
         // Recompute ptr
         _ = rptr.iter_mut().fold(0,|v,p| { let tmp = *p; *p = v; tmp } );
-        println!("rptr = {:?}",rptr); 
+        //println!("rptr = {:?}",rptr); 
     }
-    println!("eval::add: end");
+    //println!("eval::add: end");
 } // add
 
 /// Evaluates `lhs` * expr.
@@ -807,7 +807,7 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
     let exprs = ws.pop_exprs(n);
 
     for (i,e)  in exprs.iter().enumerate() {
-        println!("stack expr {}: shape = {:?}",i,e.0);
+        //println!("stack expr {}: shape = {:?}",i,e.0);
     }
 
     // check shapes
@@ -993,11 +993,11 @@ pub(super) fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, 
     let mut rshape = shape.to_vec();
     rshape[shape.len()-num..].iter_mut().for_each(|s| *s = 1);
 
-    println!("sum_last: shape = {:?}",shape);
-    println!("sum_last: ptr = {:?}",ptr);
-    println!("sum_last: sp = {:?}",sp);
-    println!("sum_last: subj = {:?}",subj);
-    println!("sum_last: cof = {:?}",cof);
+//    println!("sum_last: shape = {:?}",shape);
+//    println!("sum_last: ptr = {:?}",ptr);
+//    println!("sum_last: sp = {:?}",sp);
+//    println!("sum_last: subj = {:?}",subj);
+//    println!("sum_last: cof = {:?}",cof);
 
 
     if let Some(sp) = sp {
@@ -1035,11 +1035,11 @@ pub(super) fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, 
         }
         rsubj.clone_from_slice(subj);
         rcof.clone_from_slice(cof);
-        println!("sum_last sparse");
-        println!("sum_last: rnelm = {:?}",rnelm);
-        println!("sum_last: rsubj = {:?}",rsubj);
-        println!("sum_last: rcof = {:?}",rcof);
-        println!("sum_last: rptr = {:?}",rptr);
+        //println!("sum_last sparse");
+        //println!("sum_last: rnelm = {:?}",rnelm);
+        //println!("sum_last: rsubj = {:?}",rsubj);
+        //println!("sum_last: rcof = {:?}",rcof);
+        //println!("sum_last: rptr = {:?}",rptr);
     } 
     else {
         let rnelm = shape.iter().product::<usize>()/d; 
@@ -1049,13 +1049,13 @@ pub(super) fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, 
         rcof.clone_from_slice(cof);
         rptr.iter_mut().zip(ptr.iter().step_by(d)).for_each(|(rp,&p)| *rp = p );
         
-        println!("sum_last dense");
-        println!("sum_last: rnelm = {:?}",rnelm);
-        println!("sum_last: rsubj = {:?}",rsubj);
-        println!("sum_last: rcof = {:?}",rcof);
-        println!("sum_last: rptr = {:?}",rptr);
+        //println!("sum_last dense");
+        //println!("sum_last: rnelm = {:?}",rnelm);
+        //println!("sum_last: rsubj = {:?}",rsubj);
+        //println!("sum_last: rcof = {:?}",rcof);
+        //println!("sum_last: rptr = {:?}",rptr);
     }
-    println!("eval::sum_last: end");
+    //println!("eval::sum_last: end");
 }
 
 pub(super) fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {

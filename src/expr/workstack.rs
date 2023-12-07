@@ -193,7 +193,7 @@ impl WorkStack {
 
         if izip!(ptr.iter(),ptr[1..].iter()).any(|(&a,&b)| a > b) { return Err("Popped invalid expression: Ptr is not ascending".to_string()); }
         if nnz > subj.len() { 
-            println!("workstack::validate(), ptr = {:?}",ptr);
+            //println!("workstack::validate(), ptr = {:?}",ptr);
             return Err(format!("Popped invalid expression: Ptr does not match the number of actual nonzeros: {} vs {}",nnz,subj.len()).to_string()) 
         }
         Ok(())
@@ -212,8 +212,8 @@ impl WorkStack {
 
         if izip!(ptr[..ptr.len()-1].iter(),
                  ptr[1..].iter()).any(|(&a,&b)| a > b) {  panic!("Stack does not contain a valid expression: invalid ptr"); }
-        println!("workstack ptr = {:?}",ptr);
-        println!("workstack sp  = {:?}",sp);
+        //println!("workstack ptr = {:?}",ptr);
+        //println!("workstack sp  = {:?}",sp);
         if ptr.last().copied().unwrap() > nnz { panic!("Stack does not contain a valid expression: invalid ptr"); }
 
         (shape,ptr,sp,subj,cof,ubase,fbase)
