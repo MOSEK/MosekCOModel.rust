@@ -102,7 +102,7 @@ pub trait ExprTrait<const N : usize> {
                     unsafe { *perm1.get_unchecked_mut(j) = ii };
                     j += 1;
                 }
-                i = a;
+                i = a+1;
             }
             for ii in i..N {
                 unsafe { *perm1.get_unchecked_mut(j) = ii };
@@ -368,7 +368,7 @@ impl<const N : usize, const M : usize, E> ExprTrait<M> for ExprReduceShape<N,M,E
         {
             let (shape,_,_,_,_) = rs.peek_expr();
             if M <= N {
-                rshape.clone_from_slice(&shape[0..M-1]);
+                rshape[..M-1].clone_from_slice(&shape[0..M-1]);
                 *rshape.last_mut().unwrap() = shape[M-1..].iter().product();
             }
             else {

@@ -184,9 +184,11 @@ impl WorkStack {
         let fullsize : usize = shape.iter().product();
 
         if let Some(sp) = sp {
-            if izip!(sp.iter(),
-                     sp[1..].iter()).any(|(&a,&b)| a >= b) { return Err("Popped invalid expression: Sparsity not sorted or contains duplicates".to_string()); }
-            if let Some(&n) = sp.last() { if n > fullsize { return Err("Popped invalid expression: Sparsity entry out of bounds".to_string()); } }
+            if sp.len() > 0 {
+                if izip!(sp.iter(),
+                         sp[1..].iter()).any(|(&a,&b)| a >= b) { return Err("Popped invalid expression: Sparsity not sorted or contains duplicates".to_string()); }
+                if let Some(&n) = sp.last() { if n > fullsize { return Err("Popped invalid expression: Sparsity entry out of bounds".to_string()); } }
+            }
         }
 
         if izip!(ptr.iter(),ptr[1..].iter()).any(|(&a,&b)| a > b) { return Err("Popped invalid expression: Ptr is not ascending".to_string()); }

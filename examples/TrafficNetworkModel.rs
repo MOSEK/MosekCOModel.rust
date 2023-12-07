@@ -79,9 +79,10 @@ fn traffic_network_model( number_of_nodes : usize,
                      &x.clone().add(x_arc.clone()).sum_on(&[1])
                         .sub((x.clone().add(x_arc.clone())).sum_on(&[0])),
                      equal_to(vec![0.0; n]));
+
     // Constraint (3)
     model.constraint(Some("(3)"),
-                     &x.clone().index(&[sink_idx,source_idx]), equal_to(0.0));
+                     &x_arc.clone().gather().with_shape(&[]), equal_to(T));
 
     model.solve();
     
