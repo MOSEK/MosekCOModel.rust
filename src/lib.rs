@@ -37,6 +37,10 @@ pub use domain::{LinearDomain,
                  in_exponential_cones,
                  in_dual_exponential_cone,
                  in_dual_exponential_cones,
+                 in_power_cone,
+                 in_power_cones,
+                 in_dual_power_cone,
+                 in_dual_power_cones,
                  in_psd_cone,
                  in_psd_cones };
 
@@ -498,12 +502,14 @@ impl Model {
         let numcone  = d0*d2;
 
         let domidx = match dom.dt {
-            ConicDomainType::QuadraticCone        => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
-            ConicDomainType::RotatedQuadraticCone => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::ExponentialCone       => self.task.append_primal_exp_cone_domain().unwrap(),
-            ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain().unwrap()
+            ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain().unwrap(),
+            ConicDomainType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(),alpha.as_slice()).unwrap(),
+            ConicDomainType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(),alpha.as_slice()).unwrap(),
         };
 
         self.task.append_afes(n as i64).unwrap();
@@ -736,7 +742,9 @@ impl Model {
             ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::ExponentialCone       => self.task.append_primal_exp_cone_domain().unwrap(),
-            ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain().unwrap()
+            ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain().unwrap(),
+            ConicDomainType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice()).unwrap(),
+            ConicDomainType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice()).unwrap(),
         };
 
         self.task.append_afes(nelm as i64).unwrap();

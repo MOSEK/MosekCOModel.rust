@@ -16,7 +16,9 @@ pub enum ConicDomainType {
     GeometricMeanCone,
     DualGeometricMeanCone,
     ExponentialCone,
-    DualExponentialCone
+    DualExponentialCone,
+    PrimalPowerCone(Vec<f64>),
+    DualPowerCone(Vec<f64>)
 }
 
 pub enum ParamConicDomainType {
@@ -306,6 +308,37 @@ pub fn in_exponential_cone() -> ConicDomain<1> { ConicDomain{dt:ConicDomainType:
 /// - `dim` - dimension of the cone.
 pub fn in_dual_exponential_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::DualExponentialCone,ofs:vec![0.0; dim],shape:[dim],conedim:0} }
 
+/// Domain of a single power cone.
+///
+/// # Arguments
+/// - `dim` Dimension of the power cone
+/// - `alpha` The powers of the power cone. This will be normalized, i.e. each element is divided
+///   by `sum(alpha)`
+pub fn in_power_cone(dim : usize, alpha : &[f64]) -> ConicDomain<1> {
+    if dim <= alpha.len() { panic!("Mismatching dimension and alpha"); }
+    let alphasum : f64 = alpha.iter().sum();
+    ConicDomain{
+        dt:ConicDomainType::PrimalPowerCone(alpha.iter().map(|&a| a / alphasum ).collect()),
+        shape:[alpha.len()+1],
+        ofs:vec![0.0; dim],
+        conedim:0}
+}
+/// Domain of a single power cone.
+///
+/// # Arguments
+/// - `dim` Dimension of the power cone
+/// - `alpha` The powers of the power cone. This will be normalized, i.e. each element is divided
+///   by `sum(alpha)`
+pub fn in_dual_power_cone(dim : usize, alpha : &[f64]) -> ConicDomain<1> {
+    if dim <= alpha.len() { panic!("Mismatching dimension and alpha"); }
+    let alphasum : f64 = alpha.iter().sum();
+    ConicDomain{
+        dt:ConicDomainType::DualPowerCone(alpha.iter().map(|&a| a / alphasum ).collect()),
+        shape:[alpha.len()+1],
+        ofs:vec![0.0; dim],
+        conedim:0}
+}
+
 fn in_cones<const N : usize>(shape : &[usize; N], conedim : usize,ct : ConicDomainType) -> ConicDomain<N> {
     if conedim >= shape.len() {
         panic!("Invalid cone dimension");
@@ -357,6 +390,50 @@ pub fn in_exponential_cones<const N : usize>(shape : &[usize; N], conedim : usiz
 pub fn in_dual_exponential_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> ConicDomain<N> { 
     if let Some(&d) = shape.get(conedim) { if d != 3 { panic!("Invalid shape or exponential cone") } }
     in_cones(shape,conedim,ConicDomainType::DualGeometricMeanCone) 
+}
+
+/// Domain of a number of power cones.
+///
+/// # Arguments
+/// - `shape` Shape of the domain
+/// - `conedim` Index of the dimension in which the individual cones are alighed.
+/// - `alpha` The powers of the power cone. This will be normalized, i.e. each element is divided
+///   by `sum(alpha)`
+pub fn in_power_cones<const N : usize>(shape : &[usize;N], conedim : usize, alpha : &[f64]) -> ConicDomain<N> {
+    if conedim >= shape.len() {
+        panic!("Mismatching conedim and shape");
+    }
+    let dim = shape[conedim];
+
+    if dim <= alpha.len() { panic!("Mismatching cone dimension size and alpha"); }
+    let alphasum : f64 = alpha.iter().sum();
+    ConicDomain{
+        dt:ConicDomainType::PrimalPowerCone(alpha.iter().map(|&a| a / alphasum ).collect()),
+        shape : *shape,
+        ofs:vec![0.0; shape.iter().product()],
+        conedim}
+}
+
+/// Domain of a number of dual power cones.
+///
+/// # Arguments
+/// - `shape` Shape of the domain
+/// - `conedim` Index of the dimension in which the individual cones are alighed.
+/// - `alpha` The powers of the power cone. This will be normalized, i.e. each element is divided
+///   by `sum(alpha)`
+pub fn in_dual_power_cones<const N : usize>(shape : &[usize;N], conedim : usize, alpha : &[f64]) -> ConicDomain<N> {
+    if conedim >= shape.len() {
+        panic!("Mismatching conedim and shape");
+    }
+    let dim = shape[conedim];
+
+    if dim <= alpha.len() { panic!("Mismatching cone dimension size and alpha"); }
+    let alphasum : f64 = alpha.iter().sum();
+    ConicDomain{
+        dt:ConicDomainType::PrimalPowerCone(alpha.iter().map(|&a| a / alphasum ).collect()),
+        shape : *shape,
+        ofs:vec![0.0; shape.iter().product()],
+        conedim}
 }
 
 /// Domain of a single symmetric positive semidefinite cones.
