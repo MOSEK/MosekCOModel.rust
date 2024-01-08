@@ -67,7 +67,8 @@ enum VarAtom {
 }
 #[derive(Clone,Copy,Debug)]
 enum ConAtom {
-    ConicElm(i64,usize),
+    // Conic constraint element (acci, offset)
+    ConicElm(i64,usize), 
     Linear(i32)
 }
 
@@ -464,7 +465,8 @@ impl Model {
                 let (i1,i3) = if i3 < i1 { (i3,i1) } else { (i1,i3) };
 
                 let baridx = i0 * d2 * d4 + i2 * d4 + i4;
-                let ofs    = d1*i3-d3*(d3-1)/2-d3+i1;
+
+                let ofs    = d1*i3+i1-i3-i3*(i3+1)/2;
 
                 baridx*conesz+ofs
             }).collect()
@@ -474,7 +476,7 @@ impl Model {
                 let (i1,i3) = if i3 < i1 { (i3,i1) } else { (i1,i3) };
 
                 let baridx = i0 * d2 * d4 + i2 * d4 + i4;
-                let ofs    = d1*i3-d3*(d3-1)/2-d3+i1;
+                let ofs    = d1*i3+i1-i3-i3*(i3+1)/2;
 
                 baridx*conesz+ofs
             }).collect()
@@ -533,7 +535,7 @@ impl Model {
         iproduct!(0..d0,0..d1,0..d2).enumerate()
             .for_each(|(i,(i0,i1,i2))| {
                 self.vars.push(VarAtom::ConicElm(vari+i as i32,self.cons.len()));
-                self.cons.push(ConAtom::ConicElm(acci+i1 as i64,i0*d2+i2))
+                self.cons.push(ConAtom::ConicElm(acci+(i0*d2+i2) as i64,i1))
             } );
 
         Variable::new((firstvar..firstvar+n).collect(),
@@ -628,8 +630,6 @@ impl Model {
             LinearDomainType::Free        => mosek::Boundkey::FR
         };
 
-
-        
         // let acci = self.task.get_num_acc().unwrap();
         // let afei = self.task.get_num_afe().unwrap();
 
@@ -686,7 +686,7 @@ impl Model {
                                       rhs.as_slice(),
                                       rhs.as_slice()).unwrap();
 
-        if abarsubi.len() > 0 {
+        if ! abarsubi.is_empty() {
             for (i,j,subk,subl,cof) in utils::ijkl_slice_iterator(abarsubi.as_slice(),
                                                                   abarsubj.as_slice(),
                                                                   abarsubk.as_slice(),
@@ -922,9 +922,15 @@ impl Model {
                             VarAtom::ConicElm(j,_coni) => xx[j as usize]
                         };
                     });
+                    //println!("{}:{}: cons = {:?}",file!(),line!(),&self.cons);
+                    //println!("{}:{}: numacc = {:?}",file!(),line!(),numacc);
+                    //println!("{}:{}: accptr = {:?}",file!(),line!(),accptr);
                     self.cons.iter().zip(sol.primal.con.iter_mut()).for_each(|(&v,r)| {
                         *r = match v {
                             ConAtom::ConicElm(acci,ofs) => { 
+                                //println!("{}:{}: acci = {}",file!(),line!(),acci);
+                                //println!("{}:{}: accptr[{}] = {}",file!(),line!(),acci,accptr[acci as usize]);
+                                //println!("{}:{}: accx = {:?}",file!(),line!(),accx);
                                 accx[accptr[acci as usize]+ofs]
                             },
                             ConAtom::Linear(i) => xc[i as usize]

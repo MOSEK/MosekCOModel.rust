@@ -180,7 +180,7 @@ pub trait ExprTrait<const N : usize> {
     fn stack<E:ExprTrait<N>>(self,dim : usize, other : E) -> ExprStack<N,Self,E> where Self:Sized { ExprStack::new(self,other,dim) }
 
     /// Take a slice of an expression
-    fn slice<E>(self,begin : &[usize; N], end : &[usize; N]) -> ExprSlice<N,Self> where Self:Sized {
+    fn slice(self,begin : &[usize; N], end : &[usize; N]) -> ExprSlice<N,Self> where Self:Sized {
         assert!(begin.iter().zip(end.iter()).all(|(&a,&b)| a <= b));
         ExprSlice{expr : self, begin : *begin, end : *end} 
     }

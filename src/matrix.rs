@@ -329,11 +329,28 @@ impl SparseMatrix {
 //}
 
 
+pub trait MatrixData {
+    fn into_vec(self,size : usize) -> Vec<f64>;
+}
 
+impl MatrixData for &[f64] {
+    fn into_vec(self,size : usize) -> Vec<f64> {
+        let mut res = vec![0.0; size];
+        if size < self.len() {
+            res.clone_from_slice(&self[0..size])
+        }
+        else {
+            res[0..self.len()].clone_from_slice(self);
+        }
+        res
+    }
+}
 
-
-
-
+impl MatrixData for Vec<f64> {
+    fn into_vec(self,size : usize) -> Vec<f64> {
+       self
+    }
+}
 
 /// Create a dense matrix from data
 ///
@@ -342,7 +359,11 @@ impl SparseMatrix {
 /// - `width` - Width if matrix
 /// - `data` - Coefficients of data (consumed). This must contain exactly `height * width`
 ///   elements.
-pub fn dense(height : usize, width : usize, data : Vec<f64>) -> DenseMatrix { DenseMatrix::new(height,width,data) }
+pub fn dense<T>(height : usize, width : usize, data : T) -> DenseMatrix 
+    where T : MatrixData 
+{ 
+    DenseMatrix::new(height,width,data.into_vec(height*width))
+}
 /// Create a sparse matrix.
 ///
 /// # Arguments

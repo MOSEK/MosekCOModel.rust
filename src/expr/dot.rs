@@ -134,7 +134,7 @@ impl<const N : usize, E> ExprTrait<0> for ExprDot<N,E> where E : ExprTrait<N> {
         let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[],rnnz,1);
         rptr[0] = 0;
         rptr[1] = rnnz;
-        rsubj.clone_from_slice(subj);
+        //rsubj.clone_from_slice(subj);
         if let Some(ref msp) = self.sp {
             if let Some(esp) = sp {
                 let mut nzi = 0usize;
