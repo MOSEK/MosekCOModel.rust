@@ -148,6 +148,8 @@ pub trait ExprRightMultipliable<const N : usize,E>
     fn mul_right(self,other : E) -> Self::Result;
 }
 
+
+
 impl<E, M> ExprRightMultipliable<2,E> for M 
     where 
         M : Matrix,

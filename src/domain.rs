@@ -440,7 +440,7 @@ pub fn in_dual_power_cones<const N : usize>(shape : &[usize;N], conedim : usize,
 /// 
 /// # Arguments
 /// - `dim` - Dimension of the PSD cone.
-pub fn in_psd_cone<const N : usize>(dim : usize) -> PSDDomain<2> {
+pub fn in_psd_cone(dim : usize) -> PSDDomain<2> {
     PSDDomain{
         shape : [dim,dim],
         conedims : (0,1)

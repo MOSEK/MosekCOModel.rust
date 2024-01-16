@@ -471,15 +471,16 @@ pub struct SparseNDArray<const N : usize> {
 
 
 
-//impl<E:ExprTrait2> ExprRightMultipliable<2,E> for DenseMatrix {
-//    type Result = ExprMulRightDense<E>;
+//impl<E> super::expr::ExprRightMultipliable<2,E> for DenseMatrix where E : ExprTrait<2>{
+//    type Result = super::expr::ExprMulRight<E>;
 //    fn mul_right(self,other : E) -> Self::Result { 
+//        super::expr::ExprMulRight::new
 //        other.mul_right_dense(self)
 //    }
 //}
 //
-//impl<E:ExprTrait1> ExprRightMultipliable<1,E> for DenseMatrix where E : ExprTrait1 {
-//    type Result = ExprReshapeOneRow<2,1,ExprMulRightDense<ExprReshapeOneRow<1,2,E>>>;
+//impl<E> super::expr::ExprRightMultipliable<1,E> for DenseMatrix where E : ExprTrait<1> {
+//    type Result = super::expr::ExprReshapeOneRow<2,1,super::expr::ExprMulRight<ExprReshapeOneRow<1,2,E>>>;
 //    fn mul_right(self,other : E) -> Self::Result { 
 //        other.mul_right_dense(self) 
 //    }
