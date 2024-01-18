@@ -40,7 +40,9 @@ pub struct LinearDomain<const N : usize> {
     /// Shape of the domain, which will also define the shape of the model item
     pub(super) shape : [usize; N],
     /// Sparsity - this is used to create sparsity for the model item
-    pub(super) sp    : Option<Vec<usize>>
+    pub(super) sp    : Option<Vec<usize>>,
+    /// Indicates if the domain in integer or continuous.
+    pub(super) is_integer : bool
 }
 
 /// A Conic domain defines a conic domain, shape and cone dimension for a model item.
@@ -52,7 +54,9 @@ pub struct ConicDomain<const N : usize> {
     /// Shape if the domain
     pub(super) shape   : [usize; N],
     /// Dimension in which the cones are aligned
-    pub(super) conedim : usize
+    pub(super) conedim : usize,
+    /// Indicates if the domain in integer or continuous.
+    pub(super) is_integer : bool
 }
 
 /// A semidefinite conic domain.
@@ -66,14 +70,19 @@ pub struct PSDDomain<const N : usize> {
 
 /////////////////////////////////////////////////////////////////////
 // Domain implementations
-
+impl<const N :usize> ConicDomain<N> {
+    pub fn integer(mut self) -> ConicDomain<N> { 
+        self.is_integer = true;
+        self
+    }
+}
 impl<const N : usize> LinearDomain<N> {
     /// Reshape the domain. The new shape must "match" the domain, meaning that if 
     /// - if `sparsity` is present, the shape must contain all sparsity elements, otherwise
     /// - if `ofs` is a scalar, any shape goes, otherwise
     /// - the shape must match the length of `ofs`
     pub fn with_shape<const M : usize>(self,shape : &[usize; M]) -> LinearDomain<M> {
-        let (dt,ofs,_,sp) = (self.dt,self.ofs,self.shape,self.sp);
+        let (dt,ofs,_,sp,is_integer) = (self.dt,self.ofs,self.shape,self.sp,self.is_integer);
 
         let shapesize : usize = shape.iter().product();
         if let Some(ref sp) = sp {
@@ -100,7 +109,8 @@ impl<const N : usize> LinearDomain<N> {
             dt,
             ofs,
             shape:*shape,
-            sp
+            sp,
+            is_integer,
         }
     }
 
@@ -166,14 +176,16 @@ impl<const N : usize> LinearDomain<N> {
                 dt    : self.dt,
                 ofs,
                 shape : self.shape,
-                sp    : Some(rsp)
+                sp    : Some(rsp), 
+                is_integer : false
             }
         } else {
             LinearDomain::<N>{
                 dt    : self.dt,
                 ofs   : self.ofs,
                 shape : self.shape,
-                sp    : Some(sp)
+                sp    : Some(sp), 
+                is_integer : false
             }
         }
     }
@@ -193,19 +205,21 @@ impl<const N : usize> LinearDomain<N> {
             dt : self.dt,
             ofs : self.ofs,
             shape : *shape,
-            sp : None}.with_sparsity(sp)
+            sp : None, 
+            is_integer : false}.with_sparsity(sp)
     }
 
-    pub fn extract(self) -> (LinearDomainType,Vec<f64>,[usize;N],Option<Vec<usize>>) {
+    pub fn integer(mut self) -> Self { self.is_integer = true; self }
+    pub fn extract(self) -> (LinearDomainType,Vec<f64>,[usize;N],Option<Vec<usize>>,bool) {
         match self.ofs {
-            LinearDomainOfsType::M(v) => (self.dt,v,self.shape,self.sp),
+            LinearDomainOfsType::M(v) => (self.dt,v,self.shape,self.sp,self.is_integer),
             LinearDomainOfsType::Scalar(s) => 
                 if let Some(sp) = self.sp {
-                    (self.dt,vec![s; sp.len()],self.shape,Some(sp))
+                    (self.dt,vec![s; sp.len()],self.shape,Some(sp),self.is_integer)
                 } 
                 else {
                     let totalsize = self.shape.iter().product();
-                    (self.dt,vec![s; totalsize],self.shape,None)
+                    (self.dt,vec![s; totalsize],self.shape,None,self.is_integer)
                 }
         }
     }
@@ -220,36 +234,36 @@ pub trait OffsetTrait<const N : usize> {
 
 /// Make `f64` work as a scalar offset value.
 impl OffsetTrait<0> for f64 {
-    fn greater_than(self) -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::NonNegative,  ofs:LinearDomainOfsType::Scalar(self), shape:[], sp : None } }
-    fn less_than(self)    -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::NonPositive,  ofs:LinearDomainOfsType::Scalar(self), shape:[], sp : None } }
-    fn equal_to(self)     -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::Zero,         ofs:LinearDomainOfsType::Scalar(self), shape:[], sp : None } }
+    fn greater_than(self) -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::NonNegative,  ofs:LinearDomainOfsType::Scalar(self), shape:[], sp : None, is_integer : false } }
+    fn less_than(self)    -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::NonPositive,  ofs:LinearDomainOfsType::Scalar(self), shape:[], sp : None, is_integer : false } }
+    fn equal_to(self)     -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::Zero,         ofs:LinearDomainOfsType::Scalar(self), shape:[], sp : None, is_integer : false } }
 }
 
 /// Let `Vec<f64>` act as a vector offset value.
 impl OffsetTrait<1> for Vec<f64> {
-    fn greater_than(self) -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:LinearDomainOfsType::M(self), shape:[n], sp : None } }
-    fn less_than(self)    -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:LinearDomainOfsType::M(self), shape:[n], sp : None } }
-    fn equal_to(self)     -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::Zero,        ofs:LinearDomainOfsType::M(self), shape:[n], sp : None } }
+    fn greater_than(self) -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:LinearDomainOfsType::M(self), shape:[n], sp : None, is_integer : false } }
+    fn less_than(self)    -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:LinearDomainOfsType::M(self), shape:[n], sp : None, is_integer : false } }
+    fn equal_to(self)     -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::Zero,        ofs:LinearDomainOfsType::M(self), shape:[n], sp : None, is_integer : false } }
 }
 
 /// Let `&[f64]` act as a vector offset value.
 impl OffsetTrait<1> for &[f64] {
-    fn greater_than(self) -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:LinearDomainOfsType::M(self.to_vec()), shape:[n], sp : None } }
-    fn less_than(self)    -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:LinearDomainOfsType::M(self.to_vec()), shape:[n], sp : None } }
-    fn equal_to(self)     -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::Zero,        ofs:LinearDomainOfsType::M(self.to_vec()), shape:[n], sp : None } }
+    fn greater_than(self) -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:LinearDomainOfsType::M(self.to_vec()), shape:[n], sp : None, is_integer : false } }
+    fn less_than(self)    -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:LinearDomainOfsType::M(self.to_vec()), shape:[n], sp : None, is_integer : false } }
+    fn equal_to(self)     -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::Zero,        ofs:LinearDomainOfsType::M(self.to_vec()), shape:[n], sp : None, is_integer : false } }
 }
 
 impl<M> OffsetTrait<2> for M where M : Matrix {
-    fn greater_than(self) -> LinearDomain<2> { let (shape,data) = self.extract_full(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:LinearDomainOfsType::M(data), shape, sp:None }
+    fn greater_than(self) -> LinearDomain<2> { let (shape,data) = self.extract_full(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:LinearDomainOfsType::M(data), shape, sp:None, is_integer : false }
     }
-    fn less_than(self)    -> LinearDomain<2> { let (shape,data) = self.extract_full(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:LinearDomainOfsType::M(data), shape, sp:None } }
-    fn equal_to(self)     -> LinearDomain<2> { let (shape,data) = self.extract_full(); LinearDomain{ dt : LinearDomainType::Zero,        ofs:LinearDomainOfsType::M(data), shape, sp:None } }
+    fn less_than(self)    -> LinearDomain<2> { let (shape,data) = self.extract_full(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:LinearDomainOfsType::M(data), shape, sp:None, is_integer : false } }
+    fn equal_to(self)     -> LinearDomain<2> { let (shape,data) = self.extract_full(); LinearDomain{ dt : LinearDomainType::Zero,        ofs:LinearDomainOfsType::M(data), shape, sp:None, is_integer : false } }
 }
 
 impl<const N : usize> OffsetTrait<N> for DenseNDArray<N> {
-    fn greater_than(self) -> LinearDomain<N> { let (shape,data) = self.extract(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:LinearDomainOfsType::M(data), shape, sp : None } }
-    fn less_than(self)    -> LinearDomain<N> { let (shape,data) = self.extract(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:LinearDomainOfsType::M(data), shape, sp : None } }
-    fn equal_to(self)     -> LinearDomain<N> { let (shape,data) = self.extract() ;LinearDomain{ dt : LinearDomainType::Zero,        ofs:LinearDomainOfsType::M(data), shape, sp : None } }
+    fn greater_than(self) -> LinearDomain<N> { let (shape,data) = self.extract(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:LinearDomainOfsType::M(data), shape, sp : None, is_integer : false } }
+    fn less_than(self)    -> LinearDomain<N> { let (shape,data) = self.extract(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:LinearDomainOfsType::M(data), shape, sp : None, is_integer : false } }
+    fn equal_to(self)     -> LinearDomain<N> { let (shape,data) = self.extract() ;LinearDomain{ dt : LinearDomainType::Zero,        ofs:LinearDomainOfsType::M(data), shape, sp : None, is_integer : false } }
 }
 
 ////////////////////////////////////////////////////////////
@@ -257,7 +271,7 @@ impl<const N : usize> OffsetTrait<N> for DenseNDArray<N> {
 ////////////////////////////////////////////////////////////
 
 /// Unbounded domain
-pub fn unbounded() -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::Free, ofs : LinearDomainOfsType::Scalar(0.0), shape : [], sp : None } }   
+pub fn unbounded() -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::Free, ofs : LinearDomainOfsType::Scalar(0.0), shape : [], sp : None, is_integer : false } }   
 /// Scalar domain of nonnegative values
 pub fn nonnegative() -> LinearDomain<0> { 0f64.greater_than() }
 /// Scalar domain of nonpositive values
@@ -281,32 +295,32 @@ pub fn equal_to<const N : usize, T : OffsetTrait<N>>(v : T) -> LinearDomain<N> {
 /// 
 /// # Arguments
 /// - `dim` - dimension of the cone.
-pub fn in_quadratic_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::QuadraticCone,ofs:vec![0.0; dim],shape:[dim],conedim:0} }
+pub fn in_quadratic_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::QuadraticCone,ofs:vec![0.0; dim],shape:[dim],conedim:0, is_integer : false} }
 /// Domain of a single rotated quadratic cone if size `dim`. The result is a vector domain of size `dim`.
 /// 
 /// # Arguments
 /// - `dim` - dimension of the cone.
-pub fn in_rotated_quadratic_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::RotatedQuadraticCone,ofs:vec![0.0; dim],shape:[dim],conedim:0} }
+pub fn in_rotated_quadratic_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::RotatedQuadraticCone,ofs:vec![0.0; dim],shape:[dim],conedim:0, is_integer : false} }
 /// Domain of a single geometric mean cone if size `dim`. The result is a vector domain of size `dim`.
 /// 
 /// # Arguments
 /// - `dim` - dimension of the cone.
-pub fn in_geometric_mean_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::GeometricMeanCone,ofs:vec![0.0; dim],shape:[dim],conedim:0} }
+pub fn in_geometric_mean_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::GeometricMeanCone,ofs:vec![0.0; dim],shape:[dim],conedim:0, is_integer : false} }
 /// domain of a single dual geometric mean cone if size `dim`. the result is a vector domain of size `dim`.
 /// 
 /// # arguments
 /// - `dim` - dimension of the cone.
-pub fn in_dual_geometric_mean_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::DualGeometricMeanCone,ofs:vec![0.0; dim],shape:[dim],conedim:0} }
+pub fn in_dual_geometric_mean_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::DualGeometricMeanCone,ofs:vec![0.0; dim],shape:[dim],conedim:0, is_integer : false} }
 /// domain of a single exponential mean cone if size `dim`. the result is a vector domain of size `dim`.
 /// 
 /// # arguments
 /// - `dim` - dimension of the cone.
-pub fn in_exponential_cone() -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::ExponentialCone,ofs:vec![0.0; 3],shape:[3],conedim:0} }
+pub fn in_exponential_cone() -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::ExponentialCone,ofs:vec![0.0; 3],shape:[3],conedim:0, is_integer : false} }
 /// Domain of a single dual exponential cone if size `dim`. The result is a vector domain of size `dim`.
 /// 
 /// # Arguments
 /// - `dim` - dimension of the cone.
-pub fn in_dual_exponential_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::DualExponentialCone,ofs:vec![0.0; dim],shape:[dim],conedim:0} }
+pub fn in_dual_exponential_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::DualExponentialCone,ofs:vec![0.0; dim],shape:[dim],conedim:0, is_integer : false} }
 
 /// Domain of a single power cone.
 ///
@@ -321,7 +335,8 @@ pub fn in_power_cone(dim : usize, alpha : &[f64]) -> ConicDomain<1> {
         dt:ConicDomainType::PrimalPowerCone(alpha.iter().map(|&a| a / alphasum ).collect()),
         shape:[alpha.len()+1],
         ofs:vec![0.0; dim],
-        conedim:0}
+        conedim:0, 
+        is_integer : false}
 }
 /// Domain of a single power cone.
 ///
@@ -336,7 +351,8 @@ pub fn in_dual_power_cone(dim : usize, alpha : &[f64]) -> ConicDomain<1> {
         dt:ConicDomainType::DualPowerCone(alpha.iter().map(|&a| a / alphasum ).collect()),
         shape:[alpha.len()+1],
         ofs:vec![0.0; dim],
-        conedim:0}
+        conedim:0, 
+        is_integer : false}
 }
 
 fn in_cones<const N : usize>(shape : &[usize; N], conedim : usize,ct : ConicDomainType) -> ConicDomain<N> {
@@ -346,7 +362,8 @@ fn in_cones<const N : usize>(shape : &[usize; N], conedim : usize,ct : ConicDoma
     ConicDomain{dt:ct,
                 ofs : vec![0.0; shape.iter().product()],
                 shape:*shape,
-                conedim}
+                conedim, 
+                is_integer : false}
 }
 
 /// Domain of a multiple quadratic cones.
@@ -411,7 +428,8 @@ pub fn in_power_cones<const N : usize>(shape : &[usize;N], conedim : usize, alph
         dt:ConicDomainType::PrimalPowerCone(alpha.iter().map(|&a| a / alphasum ).collect()),
         shape : *shape,
         ofs:vec![0.0; shape.iter().product()],
-        conedim}
+        conedim,
+        is_integer : false}
 }
 
 /// Domain of a number of dual power cones.
@@ -433,7 +451,8 @@ pub fn in_dual_power_cones<const N : usize>(shape : &[usize;N], conedim : usize,
         dt:ConicDomainType::PrimalPowerCone(alpha.iter().map(|&a| a / alphasum ).collect()),
         shape : *shape,
         ofs:vec![0.0; shape.iter().product()],
-        conedim}
+        conedim,
+        is_integer : false}
 }
 
 /// Domain of a single symmetric positive semidefinite cones.

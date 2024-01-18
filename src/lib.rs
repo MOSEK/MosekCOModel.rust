@@ -172,7 +172,8 @@ impl<const N : usize> ConDomainTrait<N> for &[usize;N] {
                                 dt:LinearDomainType::Free,
                                 ofs:LinearDomainOfsType::Scalar(0.0),
                                 shape:*self,
-                                sp:None})
+                                sp:None,
+                                is_integer: false})
     }
 }
 
@@ -190,7 +191,8 @@ impl ConDomainTrait<1> for usize {
                                 dt:LinearDomainType::Free,
                                 ofs:LinearDomainOfsType::Scalar(0.0),
                                 shape:[self],
-                                sp:None})
+                                sp:None,
+                                is_integer:false})
     }
 }
 /// Implements PSD domain for variables.
@@ -373,13 +375,16 @@ impl Model {
     }
 
     fn linear_variable<const N : usize>(&mut self, name : Option<&str>,dom : LinearDomain<N>) -> Variable<N> {
-        let (dt,b,shape_,sp) = dom.extract();
+        let (dt,b,shape_,sp,isint) = dom.extract();
         let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
 
         let n = b.len();
         let vari = self.task.get_num_var().unwrap();
         let varend : i32 = ((vari as usize)+n).try_into().unwrap();
         self.task.append_vars(n.try_into().unwrap()).unwrap();
+        if isint {
+            self.task.put_var_type_list((vari..varend).collect::<Vec<i32>>().as_slice(), vec![mosek::Variabletype::TYPE_INT; n].as_slice());
+        }
         //println!("linear_variable n = {},curnumvar = {}",n,vari);
         if let Some(name) = name {
             if let Some(ref sp) = sp {
@@ -516,6 +521,9 @@ impl Model {
 
         self.task.append_afes(n as i64).unwrap();
         self.task.append_vars(n.try_into().unwrap()).unwrap();
+        if dom.is_integer {
+            self.task.put_var_type_list((vari..vari+n as i32).collect::<Vec<i32>>().as_slice(), vec![mosek::Variabletype::TYPE_INT; n].as_slice());
+        }
         self.task.append_accs_seq(vec![domidx; numcone].as_slice(),n as i64,afei,dom.ofs.as_slice()).unwrap();
         self.task.put_afe_f_entry_list(asubi.as_slice(),asubj.as_slice(),acof.as_slice()).unwrap();
 
@@ -598,7 +606,7 @@ impl Model {
     fn linear_constraint<const N : usize>(& mut self,
                          name : Option<&str>,
                          dom  : LinearDomain<N>) -> Constraint<N> {
-        let (dt,b,dshape,sp) = dom.extract();
+        let (dt,b,dshape,sp,_) = dom.extract();
 
         let (shape_,ptr,_sp,subj,cof) = self.rs.pop_expr();
         let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
