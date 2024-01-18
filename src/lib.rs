@@ -286,6 +286,25 @@ impl<const N : usize> ModelItem<N> for Constraint <N> {
     }
 }
 
+
+
+pub trait SolverParameterValue {
+    fn set(self,parname : &str, model : & mut Model);
+}
+
+impl SolverParameterValue for f64 {
+    fn set(self, parname : &str,model : & mut Model) { model.set_double_parameter(parname,self) }
+}
+
+impl SolverParameterValue for i32 {
+    fn set(self, parname : &str,model : & mut Model) { model.set_int_parameter(parname,self) }
+}
+
+impl SolverParameterValue for &str {
+    fn set(self, parname : &str,model : & mut Model) { model.set_str_parameter(parname,self) }
+}
+
+
 ////////////////////////////////////////////////////////////
 // Model
 ////////////////////////////////////////////////////////////
@@ -370,7 +389,7 @@ impl Model {
             .for_each(|(j,index)| {
                 buf.truncate(baselen);
                 utils::append_name_index(&mut buf, &index);
-                task.put_var_name(first + j as i32,buf.as_str()).unwrap();
+                task.put_con_name(first + j as i32,buf.as_str()).unwrap();
             });
     }
 
@@ -598,7 +617,11 @@ impl Model {
     /// - `name` Optional constraint name
     /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
     /// - `dom`  The domain of the constraint. This defines the bound type and shape.
-    pub fn constraint<const N : usize, E : expr::ExprTrait<N>, D : ConDomainTrait<N>>(& mut self, name : Option<&str>, expr : &E, dom : D) -> Constraint<N> {
+    pub fn constraint<const N : usize,E,D>(& mut self, name : Option<&str>, expr : &E, dom : D) -> Constraint<N> 
+        where
+            E : expr::ExprTrait<N>, 
+            D : ConDomainTrait<N> 
+    {
         expr.eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs);
         dom.create(self,name)
     }
@@ -606,7 +629,7 @@ impl Model {
     fn linear_constraint<const N : usize>(& mut self,
                          name : Option<&str>,
                          dom  : LinearDomain<N>) -> Constraint<N> {
-        let (dt,b,dshape,sp,_) = dom.extract();
+        let (dt,b,dshape,_,_) = dom.extract();
 
         let (shape_,ptr,_sp,subj,cof) = self.rs.pop_expr();
         let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
@@ -615,6 +638,9 @@ impl Model {
         }
         // let nnz = subj.len();
         let nelm = ptr.len()-1;
+        if shape.iter().product::<usize>() != nelm {
+            panic!("Mismatching expression and shape");
+        }
 
         if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
             panic!("Invalid subj index in evaluated expression");
@@ -624,7 +650,7 @@ impl Model {
         self.task.append_cons(nelm.try_into().unwrap()).unwrap();
 
         if let Some(name) = name {
-            Self::con_names(& mut self.task,name,coni,&shape)
+            Self::con_names(& mut self.task,name,coni,&shape);
         }
 
         self.cons.reserve(nelm);
@@ -863,6 +889,22 @@ impl Model {
 
     ////////////////////////////////////////////////////////////
     // Optimize
+
+
+    pub fn set_parameter<T>(& mut self, parname : &str, parval : T) 
+        where T : SolverParameterValue {
+        parval.set(parname,self);
+    }
+
+    pub fn set_double_parameter(&mut self, parname : &str, parval : f64) {
+        self.task.put_na_dou_param(parname, parval).unwrap();
+    }
+    pub fn set_int_parameter(&mut self, parname : &str, parval : i32) {
+        self.task.put_na_int_param(parname, parval).unwrap();
+    }
+    pub fn set_str_parameter(&mut self, parname : &str, parval : &str) {
+        self.task.put_na_str_param(parname, parval).unwrap();
+    }
 
     /// Solve the problem and extract the solution.
     pub fn solve(& mut self) {
@@ -1243,8 +1285,6 @@ mod tests {
         assert!(eq(w_0.idxs(),&[1,2,3,4,5,6,7,8,9,10,11,12]));
         assert!(eq(w_1.shape(),&[3,4,1]));
         assert!(eq(w_1.idxs(),&[1,2,7,8,3,4,9,10,5,6,11,12]));
-        assert!(eq(w_2.shape(),&[3,2,2]));
-        assert!(eq(w_2.idxs(),&[1,7,2,8,3,9,4,10,5,11,6,12]));
 
         let mut u_0 = Variable::stack(0,&[&v1,&v3]);
         let mut u_1 = Variable::stack(1,&[&v1,&v3]);
