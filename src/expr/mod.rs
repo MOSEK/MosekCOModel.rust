@@ -151,7 +151,7 @@ pub trait ExprTrait<const N : usize> {
     //{ rhs.sub_internal(self) }
 
     /// Element-wise multiplication of two operands. The operand shapes must be the same.
-    fn mul_elm<RHS>(self, other : RHS) -> RHS::Result where Self : Sized, RHS : ExprRightElmMultipliable<N,Self> { other.mul_elem(self) }
+    fn mul_elem<RHS>(self, other : RHS) -> RHS::Result where Self : Sized, RHS : ExprRightElmMultipliable<N,Self> { other.mul_elem(self) }
 
     /// An expression that produces a vector of dot-products of the rows of the operands,
     /// specifically, `[r_0,r_1,...] = [dot(e_{0,*},m_{0,*},dot(e_{1,*},m_{1,*},...]`, where `e` if
