@@ -231,6 +231,19 @@ pub struct Model {
 ////////////////////////////////////////////////////////////
 pub trait ModelItem<const N : usize> {
     fn len(&self) -> usize;
+    fn shape(&self) -> [usize;N];
+    //fn numnonzeros(&self) -> usize;
+    fn sparse_primal(&self,m : &Model,solid : SolutionType) -> Result<(Vec<f64>,Vec<[usize;N]>),String> {
+        let res = self.primal(m,solid)?;
+        let dflt = [0; N];
+        let mut idx = vec![dflt; res.len()];
+        let mut strides = [0; N];
+        _ = strides.iter_mut().zip(self.shape().iter()).rev().fold(1,|c,(s,&d)| { *s = c; *s * d} );
+        for (i,ix) in idx.iter_mut().enumerate() {
+            let _ = strides.iter().zip(ix.iter_mut()).fold(i, |i,(&s,ix)| { *ix = i / s; i % s } );
+        }
+        Ok((res,idx))
+    }
     fn primal(&self,m : &Model,solid : SolutionType) -> Result<Vec<f64>,String> {
         let mut res = vec![0.0; self.len()];
         self.primal_into(m,solid,res.as_mut_slice())?;
@@ -268,6 +281,7 @@ pub struct Constraint<const N : usize> {
 
 impl<const N : usize> ModelItem<N> for Constraint <N> {
     fn len(&self) -> usize { return self.shape.iter().product(); }
+    fn shape(&self) -> [usize; N] { self.shape }
     fn primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64]) -> Result<usize,String> {
         let sz = self.shape.iter().product();
         if res.len() < sz { panic!("Result array too small") }
@@ -1121,6 +1135,8 @@ impl Model {
     ///
     /// Returns: If solution item is defined, return the solution, otherwise a n error message.
     pub fn primal_solution<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> { item.primal(self,solid) }
+    
+    pub fn sparse_primal_solution<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String> { item.sparse_primal(self,solid) }
 
     /// Get dual solution values for an item
     ///

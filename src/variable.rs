@@ -13,8 +13,50 @@ pub struct Variable<const N : usize> {
     shape    : [usize; N]
 }
 
+impl<const N : usize> Variable<N> {
+    fn numnonzeros(&self) -> usize {
+        if let Some(ref sp) = self.sparsity {
+            sp.len()
+        }
+        else {
+            self.len()
+        }
+    }
+
+    fn sparse_primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64], idx : & mut [[usize;N]]) -> Result<usize,String> {
+        let sz = self.numnonzeros();
+        if res.len() < sz || idx.len() < sz { panic!("Result array too small") }
+        else {
+            m.primal_var_solution(solid,self.idxs.as_slice(),res)?;
+            let mut strides = [0; N];
+            _ = strides.iter_mut().zip(self.shape.iter()).rev().fold(1,|c,(s,&d)| { *s = c; *s * d} );
+            if let Some(ref sp) = self.sparsity {
+                for (&i,ix) in sp.iter().zip(idx.iter_mut()) {
+                    let _ = strides.iter().zip(ix.iter_mut()).fold(i, |i,(&s,ix)| { *ix = i / s; i % s } );
+                }
+            }
+            else {
+                for (i,ix) in idx.iter_mut().enumerate() {
+                    let _ = strides.iter().zip(ix.iter_mut()).fold(i, |i,(&s,ix)| { *ix = i / s; i % s } );
+                }
+            }
+            Ok(sz)
+        }
+    }
+}
+
 impl<const N : usize> ModelItem<N> for Variable<N> {
     fn len(&self) -> usize { return self.shape.iter().product(); }
+    fn shape(&self) -> [usize; N] { self.shape }
+    
+    fn sparse_primal(&self,m : &Model,solid : SolutionType) -> Result<(Vec<f64>,Vec<[usize;N]>),String> {
+        let mut nnz = vec![0.0; self.numnonzeros()];
+        let dflt = [0usize; N];
+        let mut idx : Vec<[usize;N]> = vec![dflt;self.numnonzeros()];
+        self.sparse_primal_into(m,solid,nnz.as_mut_slice(),idx.as_mut_slice())?;
+        Ok((nnz,idx))
+    }
+
     fn primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64]) -> Result<usize,String> {
         let sz = self.shape.iter().product();
         if res.len() < sz { panic!("Result array too small") }
@@ -225,7 +267,7 @@ impl<const N : usize> Variable<N> {
             sparsity : None,
         }
     }
-    
+
     pub fn into_column(self) -> Variable<2> {
         Variable {
             shape : [self.shape.iter().product(),1],
@@ -425,7 +467,7 @@ impl<const N : usize> Variable<N> {
     pub fn hstack(xs : &[&Variable<N>]) -> Variable<N> { Self::stack(1,xs) }
 
     pub fn transpose(self) -> Self where Self : ExprTrait<2> {
-        let mut shape = [0usize; N]; 
+        let mut shape = [0usize; N];
         shape[0] = self.shape[1];
         shape[1] = self.shape[0];
         if let Some(sp) = self.sparsity {
@@ -433,7 +475,7 @@ impl<const N : usize> Variable<N> {
             xsp.sort();
             let rsp = xsp.iter().map(|v| v.0).collect();
             let rnidxs = xsp.iter().map(|v| v.1).collect();
-            
+
             Variable{
                 sparsity : Some(rsp),
                 idxs : rnidxs,
