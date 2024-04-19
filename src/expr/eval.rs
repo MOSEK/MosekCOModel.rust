@@ -68,12 +68,14 @@ pub(super) fn permute_axes(perm : &[usize],
         { 
             let mut nzi = 0;
     
-            for (&p0,&p1) in perm_iter(elmperm,&ptr[0..nelem]).zip(perm_iter(elmperm,&ptr[1..nelem+1])) {
+            for (&p0,&p1,p) in izip!(perm_iter(elmperm,&ptr[0..nelem]),perm_iter(elmperm,&ptr[1..nelem+1]),rptr[1..].iter_mut()) {
                 rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
                 rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
+                *p = p1-p0;
                 nzi += p1-p0;
             }
-            //println!("permute_axes: sparse\n\trsubj = {:?}\n\trcof = {:?}\n\trptr = {:?}",rsubj,rcof,rptr);
+            _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p } );
+            println!("permute_axes: sparse\n\trsubj = {:?}\n\trcof = {:?}\n\trptr = {:?}",rsubj,rcof,rptr);
         }
     }
     else {
@@ -176,6 +178,7 @@ pub(super) fn add(n  : usize,
         let (hbucket,hperm) = uslice.split_at_mut(nelm_bound);
         hdata.fill(0);
 
+
         let (rptr,rsp,rsubj,rcof) = {
             // We use a hash map to count number of elements and nonzeros
             let mut h = utils::IndexHashMap::new(hdata,hindex,hnext,hbucket,0);
@@ -186,13 +189,10 @@ pub(super) fn add(n  : usize,
                     izip!(sp.iter(),ptr.iter(),ptr[1..].iter()).for_each(|(&i,&p0,&p1)| *h.at_mut(i) += p1-p0);
                 }
             }
-            //println!("h = {:?}",h);
             rs.alloc_expr(shape,rnnz,h.len())
         };
-        rptr[0] = 0;
 
         let rnelm = rptr.len()-1;
-        //println!("hindex = {:?}",&hindex[..rnelm]); 
 
         rptr[0] = 0;
         // Compute sorting permutation
@@ -201,6 +201,7 @@ pub(super) fn add(n  : usize,
         perm.sort_by_key(|&i| unsafe{* hindex.get_unchecked(i) });
         // copy data to solution
         if let Some(rsp) = rsp {
+            //println!("len rptr: {}, rsp: {}, perm: {}",rptr.len(),rsp.len(),perm.len());
             for (rp,ri,&si,&sd) in izip!(rptr[1..].iter_mut(),
                                          rsp.iter_mut(),
                                          perm_iter(perm, hindex),
@@ -209,6 +210,12 @@ pub(super) fn add(n  : usize,
                 *rp = sd;
             }
             hindex[..rnelm].clone_from_slice(rsp);
+        }
+        else {
+            for (rp,&sd) in izip!(rptr[1..].iter_mut(), perm_iter(perm, hdata)) {
+                *rp = sd;
+            }
+            hindex[..rnelm].iter_mut().enumerate().for_each(|(i,x)| *x = i);
         }
         // cummulate ptr
         _ = rptr.iter_mut().fold(0,|c,p| { *p += c; *p });
@@ -221,7 +228,6 @@ pub(super) fn add(n  : usize,
                                                &mut hbucket[..rnelm],
                                                0);
 
-        //println!("rptr = {:?}\nrnnz = {}",rptr,rnnz); 
         for (_,ptr,sp,subj,cof) in exprs.iter() {
             if let Some(sp) = sp {
                 for (&i,sj,sc) in izip!(sp.iter(),

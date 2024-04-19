@@ -415,10 +415,11 @@ impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprMulElm<N,E> {
                 let (xsp,upart) = upart.split_at_mut(esp.len());
                 let (xptr,xsubj) = upart.split_at_mut(esp.len()+1);
 
-                let mut mit = msp.iter().zip(self.data.iter()).peekable();
-                let mut eit = izip!(esp.iter(),ptr.iter(),ptr[1..].iter()).peekable();
+                xptr[0] = 0;
+                let mut mit   = msp.iter().zip(self.data.iter()).peekable();
+                let mut eit   = izip!(esp.iter(),ptr.iter(),ptr[1..].iter()).peekable();
                 let mut rnelm = 0usize;
-                let mut rnnz = 0usize;
+                let mut rnnz  = 0usize;
 
                 while let (Some((&mi,&mc)),Some((ei,&p0,&p1))) = (mit.peek(),eit.peek()) {
                     match mi.cmp(ei) {
@@ -441,6 +442,7 @@ impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprMulElm<N,E> {
 
                 let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape, rnnz, rnelm);
                 rptr.clone_from_slice(&xptr[..rnelm+1]);
+                assert!(rptr[0] == 0);
                 if let Some(rsp) = rsp { rsp.clone_from_slice(&xsp[..rnelm]) };
                 rsubj.clone_from_slice(&xsubj[..rnnz]);
                 rcof.clone_from_slice(&xcof[..rnnz]);

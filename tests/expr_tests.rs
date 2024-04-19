@@ -1,4 +1,4 @@
-use mosekmodel::{*, expr::workstack::WorkStack,expr::*};
+use mosekmodel::{*, expr::workstack::WorkStack,expr::*, matrix::{SparseMatrix, Matrix}};
 
 fn dense_expr() -> Expr<2> {
     Expr::new(&[3,3],
@@ -43,7 +43,7 @@ fn add_test() {
         assert_eq!(shape,&[3,3]); 
         assert_eq!(sp,None);
         assert_eq!(ptr,&[0usize,2,4,6,8,10,12,14,16,18]);
-        println!("subj = {:?}",subj);
+        //println!("subj = {:?}",subj);
         assert_eq!(subj,&[ 10,1, 11,2, 12,3, 13,4, 14,5, 15,6, 16,7, 17,8, 18,9]);
     }
     
@@ -74,9 +74,83 @@ fn add_test() {
         assert_eq!(ptr,&[0,2,4,5,6,8]);
         assert_eq!(subj,&[ 23,19,24,20,21,25,26,22]);
     }
+
+    {
+        rs.clear(); ws.clear(); xs.clear();
+
+        let mut model = Model::new(Some("TrafficNetwork"));
+        let m = 5;
+        let n = 4;
+
+        let mx = SparseMatrix::new(n,n,&[[0,1],[0,2],[1,3],[2,1],[2,3]],vec![1.0,1.0,1.0,1.0,1.0]);
+        let sparsity : Vec<[usize;2]> = vec![[0,1],[0,2],[1,3],[2,1],[2,3]];
+
+        let x = model.variable(Some("traffic_flow"), greater_than(0.0).with_shape_and_sparsity(&[n,n],sparsity.as_slice()));
+        let z = model.variable(Some("z"),            greater_than(0.0).with_shape_and_sparsity(&[n,n],sparsity.as_slice()));
+
+        //let e = &z.clone().mul_elem(mx.clone()).dynamic().add(x.clone().dynamic()).sub(mx.clone()).gather();
+        //let e = &z.clone().mul_elem(mx.clone()).dynamic().add(x.clone().dynamic()).gather();
+        let e = &z.clone().mul_elem(mx.clone()).dynamic().add(x.clone()).gather();
+        e.eval(&mut rs,&mut ws,&mut xs);
+
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+        assert_eq!(ptr.len()-1,mx.nnz());
+    }
 }
 
+#[test]
+fn sum_on_test2() {
+    {
+        let mut rs = WorkStack::new(512);
+        let mut ws = WorkStack::new(512);
+        let mut xs = WorkStack::new(512);
 
+        let mut model = Model::new(Some("TrafficNetwork"));
+        let m = 5;
+        let n = 4;
+
+        let mx = SparseMatrix::new(n,n,&[[0,1],[0,2],[1,3],[2,1],[2,3]],vec![1.0,1.0,1.0,1.0,1.0]);
+        let sparsity : Vec<[usize;2]> = vec![[0,1],[0,2],[1,3],[2,1],[2,3]];
+
+        let x = model.variable(Some("traffic_flow"), greater_than(0.0).with_shape_and_sparsity(&[n,n],sparsity.as_slice()));
+        let z = model.variable(Some("z"),            greater_than(0.0).with_shape_and_sparsity(&[n,n],sparsity.as_slice()));
+
+
+        let e0 = &z.clone().mul_elem(mx.clone()).axispermute(&[1,0]);
+        let e1 = &z.clone().mul_elem(mx.clone()).sum_on(&[0]);
+        let e2 = &z.clone().mul_elem(mx.clone()).sum_on(&[1]);
+
+        e0.eval(&mut rs,&mut ws,&mut xs);        
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+        //println!("shape = {:?}, ptr = {:?}, sp = {:?}",shape,ptr,sp);
+        assert_eq!(shape.len(),2);
+        assert_eq!(shape,&[4,4]);
+        assert_eq!(ptr.len(),6);
+        assert!(sp.is_some());
+        assert_eq!(ptr,&[0,1,2,3,4,5]);
+
+        e1.eval(&mut rs,&mut ws,&mut xs);        
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+        //println!("shape = {:?}, ptr = {:?}, sp = {:?}",shape,ptr,sp);
+        assert_eq!(shape.len(),1);
+        assert_eq!(shape[0],4);
+        assert_eq!(ptr.len(),4);
+        assert!(sp.is_some());
+        assert_eq!(ptr,&[0,2,3,5]);
+
+
+        rs.clear(); ws.clear(); xs.clear();
+        
+        e2.eval(&mut rs,&mut ws,&mut xs);
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+        assert!(sp.is_some());
+        assert_eq!(shape.len(),1);
+        assert_eq!(shape[0],4);
+        assert_eq!(ptr.len(),4);
+        assert_eq!(ptr,&[0,2,3,5]);
+    }
+    
+}
 
 #[test]
 fn mul_left() {

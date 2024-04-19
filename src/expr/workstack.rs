@@ -153,7 +153,7 @@ impl WorkStack {
         let nelm = self.susize[utop-3];
         let totalsize : usize = self.susize[utop-3-nd..utop-3].iter().product();
 
-        let totalusize = nd+nelm+1+nnz + (if totalsize < nelm { nelm } else { 0 });
+        let totalusize = nd+nelm+1+nnz + (if totalsize > nelm { nelm } else { 0 });
         let totalfsize = nnz;
 
         let utop = utop-3;
@@ -169,12 +169,18 @@ impl WorkStack {
         let sp_base = subj_base+nnz;
         let ptr_base = if nelm < totalsize { sp_base + nelm } else { sp_base };
         let shape_base = ptr_base + nelm+1;
+        //println!("totalusize = {}, nd = {}, nnz = {}, nelm = {}, base[ subj:{}, sp:{}, ptr:{}, shape:{} ]",
+        //         totalusize,
+        //         nd,nnz,nelm,
+        //         subj_base,sp_base,ptr_base,shape_base);
 
         let subj  = &uslice[subj_base..subj_base+nnz];
         let sp    = if totalsize > nelm { Some(&uslice[sp_base..sp_base+nelm]) } else { None };
         let ptr   = &uslice[ptr_base..ptr_base+nelm+1];
         let shape = &uslice[shape_base..shape_base+nd];
-
+        //println!("subj = {:?}",subj);
+        //println!("ptr = {:?}",ptr);
+        //println!("shape = {:?}",shape);
         (shape,ptr,sp,subj,cof,ubase,fbase)
     }
 
@@ -212,8 +218,6 @@ impl WorkStack {
 
         if izip!(ptr[..ptr.len()-1].iter(),
                  ptr[1..].iter()).any(|(&a,&b)| a > b) {  panic!("Stack does not contain a valid expression: invalid ptr"); }
-        //println!("workstack ptr = {:?}",ptr);
-        //println!("workstack sp  = {:?}",sp);
         if ptr.last().copied().unwrap() > nnz { panic!("Stack does not contain a valid expression: invalid ptr"); }
 
         (shape,ptr,sp,subj,cof,ubase,fbase)
@@ -261,6 +265,7 @@ impl WorkStack {
             selfutop = ubase;
             selfftop = fbase;
 
+            //println!("ptr = {:?}",ptr);
             Self::validate(shape,ptr,sp,subj).unwrap();
             res.push((shape,ptr,sp,&subj[..rnnz],&cof[..rnnz]))
         }
@@ -329,7 +334,7 @@ impl WorkStack {
         let totalsize : usize = self.susize[self.utop-3-nd..self.utop-3].iter().product();
 
         let ubase = self.utop - if totalsize > nelm { 3+2*nelm+1+nnz+nd } else { 3+nelm+1+nnz+nd };
-        let fbase = self.ftop-nelm;
+        let fbase = self.ftop-nnz;
 
         let utop = self.utop-3;
         let ftop = self.ftop;
@@ -346,6 +351,24 @@ impl WorkStack {
             let (ptr,shape) = uslice.split_at_mut(nelm+1);
             (shape,ptr,None,subj,cof)
         }
+    }
+    pub fn validate_top(&self) -> Result<(),String> {
+        if self.utop < 3 { return Err("Invalid utop".to_string()); }
+        let nd   = self.susize[self.utop-1];
+        let nnz  = self.susize[self.utop-2];
+        let nelm = self.susize[self.utop-3];
+
+        if self.utop < 3+nd+nnz+nelm+1 { return Err("Invalid utop".to_string()); }
+        let totalsize : usize = self.susize[self.utop-3-nd..self.utop-3].iter().product();
+        
+        if totalsize > nelm && self.utop < 3+nd+nnz+nelm*2+1 { return Err("Invalid utop".to_string()); }
+        if self.ftop < nnz { return Err("Invalid ftop".to_string()); } 
+        let ubase = self.utop - if totalsize > nelm { 3+2*nelm+1+nnz+nd } else { 3+nelm+1+nnz+nd };
+        let fbase = self.ftop-nnz;
+
+        
+
+        Ok(()) 
     }
 }
 impl std::fmt::Display for WorkStack {

@@ -163,17 +163,23 @@ impl<'a,'b,'c,'d,'e> Iterator for IJKLSliceIterator<'a,'b,'c,'d,'e> {
 /// Given a shape, iterate over all indexes in that shape.
 pub struct IndexIterator<const N : usize> {
     shape : [usize; N],
-    cur   : [usize; N]
+    cur   : [usize; N],
+    done  : bool
 }
 
 impl<const N : usize> Iterator for IndexIterator<N> {
     type Item = [usize; N];
     fn next(& mut self) -> Option<Self::Item> {
-        let carry = self.shape.iter().zip(self.cur.iter_mut()).rev().fold(1, |v,(&d, i)| { *i += v; if *i < d { 0 } else { *i = 0; 1 } });
-        if carry > 0 {
+        if self.done {
             None
-        } else {
-            Some(self.cur)
+        } 
+        else {
+            let res = self.cur;
+
+            if 0 < self.shape.iter().zip(self.cur.iter_mut()).rev().fold(1, |v,(&d, i)| { *i += v; if *i < d { 0 } else { *i = 0; 1 } }) {
+                self.done = true;
+            }
+            Some(res)
         }
     }
 }
@@ -182,7 +188,8 @@ impl<const N : usize> IndexIterator<N> {
     pub fn new(shape : &[usize; N]) -> IndexIterator<N> {
         IndexIterator{
             shape : *shape,
-            cur   : [0; N]
+            cur   : [0; N],
+            done : false
         }
     }
 }
@@ -205,7 +212,8 @@ impl<'a, const N : usize> SparseIndexIterator<'a,N> {
     /// - `sp` - list of sparsity indexes
     pub fn new(shape : &[usize; N], sp : &'a [usize]) -> SparseIndexIterator<'a,N> {
         let mut stride = [1usize; N];
-        _ = stride.iter_mut().zip(shape.iter()).rev().fold(1, |v,(st,&d)| { *st = &v*d; *st });
+        _ = stride.iter_mut().zip(shape.iter()).rev().fold(1, |v,(st,&d)| { *st = v; v*d });
+        //println!("shape = {:?}, stride = {:?}",shape,stride);
         SparseIndexIterator{
             stride,
             sp,

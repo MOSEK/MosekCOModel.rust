@@ -364,6 +364,7 @@ impl<const N : usize, const M : usize, E> ExprTrait<M> for ExprReduceShape<N,M,E
 {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(rs,ws,xs);
+        rs.validate_top().unwrap();
         let (rshape,_) = xs.alloc(M,0);
         {
             let (shape,_,_,_,_) = rs.peek_expr();

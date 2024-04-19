@@ -381,6 +381,7 @@ impl Model {
                 .for_each(|(j,index)| {
                     buf.truncate(baselen);
                     utils::append_name_index(& mut buf,&index);
+                    //println!("name is now: {}",buf);
                     self.task.put_var_name(first + j as i32,buf.as_str()).unwrap();
                 });
         }
@@ -398,11 +399,13 @@ impl Model {
     fn con_names<const N : usize>(task : & mut mosek::TaskCB, name : &str, first : i32, shape : &[usize; N]) {
         let mut buf = name.to_string();
         let baselen = buf.len();
+        //println!("---------con_names '{}' shape = {:?}",name,shape);
         IndexIterator::new(shape)
             .enumerate()
             .for_each(|(j,index)| {
                 buf.truncate(baselen);
                 utils::append_name_index(&mut buf, &index);
+                //println!("    name = {}",buf);
                 task.put_con_name(first + j as i32,buf.as_str()).unwrap();
             });
     }
@@ -646,6 +649,7 @@ impl Model {
         let (dt,b,dshape,_,_) = dom.extract();
 
         let (shape_,ptr,_sp,subj,cof) = self.rs.pop_expr();
+        //println!("---------con_names dshape = {:?} / shape = {:?}, ptr = {:?}",dshape,shape_, ptr);
         let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
         if shape.len() != dshape.len() || shape.iter().zip(dshape.iter()).any(|(&a,&b)| a != b) {
             panic!("Mismatching shapes of expression and domain");
