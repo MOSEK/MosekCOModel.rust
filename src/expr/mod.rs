@@ -178,6 +178,7 @@ pub trait ExprTrait<const N : usize> {
     fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }
     fn hstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,1) }
     fn stack<E:ExprTrait<N>>(self,dim : usize, other : E) -> ExprStack<N,Self,E> where Self:Sized { ExprStack::new(self,other,dim) }
+    fn repeat(self,dim : usize, num : usize) -> ExprRepeat<N,Self> where Self:Sized { ExprRepeat{ expr : self, dim, num } }
 
     /// Take a slice of an expression
     fn slice(self,begin : &[usize; N], end : &[usize; N]) -> ExprSlice<N,Self> where Self:Sized {
@@ -624,6 +625,18 @@ impl<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>> ExprStackRecTrait
             self.item1.eval(rs,ws,xs);
             2
         }
+    }
+}
+
+pub struct ExprRepeat<const N : usize, E : ExprTrait<N>> {
+    expr : E,
+    dim : usize,
+    num : usize
+}
+impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprRepeat<N,E> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.expr.eval(ws,rs,xs);
+        eval::repeat(self.dim,self.num,rs,ws,xs);
     }
 }
 
@@ -1101,6 +1114,8 @@ impl<E:ExprTrait<2>> ExprTrait<1> for ExprDiag<E> {
 }
 
 
+
+
 pub struct ExprPermuteAxes<const N : usize, E:ExprTrait<N>> {
     item : E,
     perm : [usize; N]
@@ -1231,6 +1246,34 @@ mod test {
         e0.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
     }
 
+    #[test]
+    fn repeat() {
+        let ed = super::Expr::new(&[3,2,1],
+                                  None,
+                                  (0..7).collect(),
+                                  (0..6).collect(),
+                                  (0..6).map(|v| v as f64 * 1.1).collect());
+        let es = super::Expr::new(&[3,2,1],
+                                  Some(vec![0,2,3,5]),
+                                  (0..5).collect(),
+                                  vec![6,8,9,11],
+                                  (0..4).map(|v| v as f64 * 1.1).collect());
+
+        let mut rs = WorkStack::new(512);
+        let mut ws = WorkStack::new(512);
+        let mut xs = WorkStack::new(512);
+
+        ed.repeat(0,2).eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert!(shape.len() == 3);
+        assert!(shape[0] == 6);
+        assert!(shape[1] == 2);
+        assert!(shape[2] == 1);
+        assert!(*ptr.last().unwrap() == 12);
+        assert!(sp.is_none());
+
+    }
+        
     #[test]
     fn stack() {
         let e0 = super::Expr::new(&[3,2,1],

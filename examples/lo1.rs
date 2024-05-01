@@ -1,4 +1,4 @@
-////
+//
 //  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
 //
 //  File:      lo1.rs
@@ -13,7 +13,7 @@
 //  and
 //           x0,x1,x2,x3 > 0,
 //           0 < x1 < 10
-////
+//
 extern crate mosekmodel;
 
 use mosekmodel::{SolutionType,Model,Sense,greater_than,less_than,equal_to,ModelItemIndex};

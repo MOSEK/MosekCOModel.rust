@@ -7,7 +7,73 @@ use super::*;
 use super::super::utils;
 use super::workstack::WorkStack;
 
-use itertools::izip;
+use itertools::{izip,iproduct};
+
+
+
+pub(super) fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+    let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+    if dim >= shape.len() {
+        panic!("Invalid stacking dimension");
+    }
+    let mut rshape = shape.to_vec();
+    rshape[dim] *= num;
+    let nelm = ptr.len()-1;
+    let rnnz = ptr.last().unwrap()*num;
+    let rnelm = (ptr.len()-1)*num+1;
+    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(), rnnz, rnelm);
+
+    if let (Some(ref sp),Some(rsp)) = (sp,rsp) {
+        let d0 : usize = shape[..dim].iter().product();
+        let d1 : usize = shape[dim];
+        let d2 : usize = shape[dim+1..].iter().product();
+        let rd1 = rshape[dim];
+        let (uslice,fslice) = xs.alloc(rnelm+1 + rnelm*3,0);
+        let (xptr,uslice) = uslice.split_at_mut(rnelm+1);
+        let (xsp,uslice) = uslice.split_at_mut(rnelm);
+        let (xidx,perm)  = uslice.split_at_mut(rnelm);
+        for (rsp,(i,spi),idx) in izip!(xsp.chunks_mut(nelm),
+                                       sp.iter().enumerate(),
+                                       xidx.chunks_mut(nelm)) {
+            let (i0,i1,i2) = (spi / (d1*d2), spi / d2, spi % d2);
+            rsp.iter_mut().for_each(|r| *r = i0 * rd1 * d2 + i1 * d2 + i2);
+            idx.iter_mut().for_each(|r| *r = i);
+        }
+        perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+        perm.sort_by_key(|&i| rsp[i]);
+
+        rptr.iter_mut().for_each(|p| *p = 0);
+        rsp.iter_mut().zip(perm_iter(perm,xsp)).for_each(|(t,&s)| *t = s);
+
+        let mut p = 0usize;
+        for (rptr,&i) in rptr[1..].iter_mut().zip(xidx.iter()) {
+            let ptrb = ptr[i];
+            let ptre = ptr[i+1];
+            let n = ptre-ptrb;
+            *rptr = n;
+            rsubj[p..p+n].copy_from_slice(&subj[ptrb..ptre]);
+            rcof[p..p+n].copy_from_slice(&cof[ptrb..ptre]);
+            p += n;
+        }
+        _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+    } 
+    else { // dense
+        let d0 : usize = shape[..dim].iter().product();
+        let d1 : usize = shape[dim..].iter().product();
+        let mut rptr_pos = 0usize;
+        for ((ptrb,ptre),rptr) in izip!(ptr.chunks(d1),ptr[1..].chunks(d1)).cycle().zip(rptr[1..].chunks_mut(d1)) {
+            izip!(rptr.iter_mut(),ptrb.iter(),ptre.iter()).for_each(|(r,&pb,&pe)| *r = pe-pb);
+            let pb = ptrb[0];
+            let pe = *ptre.last().unwrap();
+            let n = pe-pb;
+            rsubj[rptr_pos..rptr_pos+n].clone_from_slice(&subj[pb..pe]);
+            rcof[rptr_pos..rptr_pos+n].clone_from_slice(&cof[pb..pe]);
+        }
+
+        _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+    }
+}
+
 
 pub(super) fn permute_axes(perm : &[usize],
                            rs : & mut WorkStack,
