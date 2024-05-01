@@ -1267,11 +1267,12 @@ mod test {
         let (shape,ptr,sp,subj,cof) = rs.pop_expr();
         assert!(shape.len() == 3);
         assert!(shape[0] == 6);
-        assert!(shape[1] == 2);
-        assert!(shape[2] == 1);
-        assert!(*ptr.last().unwrap() == 12);
+        assert_eq!(shape[1] == 2);
+        assert_eq!(shape[2] == 1);
+        assert_eq!(*ptr.last().unwrap() == 12);
         assert!(sp.is_none());
 
+        assert_eq!();
     }
         
     #[test]
