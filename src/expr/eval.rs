@@ -9,8 +9,6 @@ use super::workstack::WorkStack;
 
 use itertools::{izip,iproduct};
 
-
-
 pub(super) fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     if dim >= shape.len() {
@@ -20,7 +18,11 @@ pub(super) fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut 
     rshape[dim] *= num;
     let nelm = ptr.len()-1;
     let rnnz = ptr.last().unwrap()*num;
-    let rnelm = (ptr.len()-1)*num+1;
+    let rnelm = (ptr.len()-1)*num;
+
+    println!("repeat: \n\tshape = {:?}\n\tptr = {:?}\n\tsubj = {:?}",shape,ptr,subj);
+    println!("repeat: rnnz = {}, rnelm = {}", rnnz,rnelm);
+
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(), rnnz, rnelm);
 
     if let (Some(ref sp),Some(rsp)) = (sp,rsp) {
@@ -60,14 +62,17 @@ pub(super) fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut 
     else { // dense
         let d0 : usize = shape[..dim].iter().product();
         let d1 : usize = shape[dim..].iter().product();
+        rptr[0] = 0;
+        println!("d = [{},{}]",d0,d1);
         let mut rptr_pos = 0usize;
-        for ((ptrb,ptre),rptr) in izip!(ptr.chunks(d1),ptr[1..].chunks(d1)).cycle().zip(rptr[1..].chunks_mut(d1)) {
+        for ((ptrb,ptre),rptr) in izip!(ptr.chunks(d1),ptr[1..].chunks(d1)).map(|v| std::iter::repeat(v).take(d0)).flatten().zip(rptr[1..].chunks_mut(d1)) {
             izip!(rptr.iter_mut(),ptrb.iter(),ptre.iter()).for_each(|(r,&pb,&pe)| *r = pe-pb);
             let pb = ptrb[0];
             let pe = *ptre.last().unwrap();
             let n = pe-pb;
-            rsubj[rptr_pos..rptr_pos+n].clone_from_slice(&subj[pb..pe]);
-            rcof[rptr_pos..rptr_pos+n].clone_from_slice(&cof[pb..pe]);
+            rsubj[rptr_pos..rptr_pos+n].copy_from_slice(&subj[pb..pe]);
+            rcof[rptr_pos..rptr_pos+n].copy_from_slice(&cof[pb..pe]);
+            rptr_pos += n;
         }
 
         _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });

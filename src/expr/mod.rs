@@ -6,7 +6,6 @@ mod dot;
 mod mul;
 mod add;
 
-
 use itertools::{iproduct,izip};
 
 use crate::matrix::Matrix;
@@ -1259,20 +1258,56 @@ mod test {
                                   vec![6,8,9,11],
                                   (0..4).map(|v| v as f64 * 1.1).collect());
 
+        // | 0 1 |
+        // | 2 3 |
+        // | 4 5 |
+
         let mut rs = WorkStack::new(512);
         let mut ws = WorkStack::new(512);
         let mut xs = WorkStack::new(512);
 
-        ed.repeat(0,2).eval(& mut rs,& mut ws,& mut xs);
+        ed.clone().repeat(0,2).eval(& mut rs,& mut ws,& mut xs);
         let (shape,ptr,sp,subj,cof) = rs.pop_expr();
-        assert!(shape.len() == 3);
-        assert!(shape[0] == 6);
-        assert_eq!(shape[1] == 2);
-        assert_eq!(shape[2] == 1);
-        assert_eq!(*ptr.last().unwrap() == 12);
+        assert_eq!(shape.len(),3);
+        assert_eq!(shape[0],6);
+        assert_eq!(shape[1],2);
+        assert_eq!(shape[2],1);
+        assert_eq!(*ptr.last().unwrap(), 12);
         assert!(sp.is_none());
+        assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12]);
+        assert_eq!(subj,&[0,1,2,3,4,5,0,1,2,3,4,5]);
 
-        assert_eq!();
+        rs.clear();
+        ws.clear();
+        xs.clear();
+
+        println!("--------------------------");
+        ed.clone().repeat(1,2).eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert_eq!(shape.len(),3);
+        assert_eq!(shape[0],3);
+        assert_eq!(shape[1],4);
+        assert_eq!(shape[2],1);
+        assert_eq!(*ptr.last().unwrap(), 12);
+        assert!(sp.is_none());
+        assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12]);
+        assert_eq!(subj,&[0,1,0,1,2,3,2,3,4,5,4,5]);
+        
+        println!("--------------------------");
+        rs.clear();
+        ws.clear();
+        xs.clear();
+
+        ed.clone().repeat(2,2).eval(& mut rs,& mut ws,& mut xs);
+        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        assert_eq!(shape.len(),3);
+        assert_eq!(shape[0],3);
+        assert_eq!(shape[1],2);
+        assert_eq!(shape[2],2);
+        assert_eq!(*ptr.last().unwrap(), 12);
+        assert!(sp.is_none());
+        assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12]);
+        assert_eq!(subj,&[0,0,1,1,2,2,3,3,4,4,5,5]);
     }
         
     #[test]
