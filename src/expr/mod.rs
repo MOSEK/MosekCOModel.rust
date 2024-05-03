@@ -1310,7 +1310,6 @@ mod test {
         // | 0 1 |      | 6  . |
         // | 2 3 |      | 8  9 |
         // | 4 5 |      | . 11 |
-        println!("--------------------------");
         rs.clear();
         ws.clear();
         xs.clear();
@@ -1324,7 +1323,6 @@ mod test {
         assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8]);
         assert_eq!(subj,&[6,8,9,11,6,8,9,11]);
 
-        println!("--------------------------");
         rs.clear(); 
         ws.clear();
         xs.clear();
@@ -1339,7 +1337,6 @@ mod test {
         assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8]);
         assert_eq!(subj,&[6,6,8,9,8,9,11,11]);
         
-        println!("--------------------------");
         rs.clear();
         ws.clear();
         xs.clear();

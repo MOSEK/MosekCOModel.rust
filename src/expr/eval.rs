@@ -20,8 +20,6 @@ pub(super) fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut 
     let rnnz = ptr.last().unwrap()*num;
     let rnelm = (ptr.len()-1)*num;
 
-    println!("repeat: \n\tshape = {:?}\n\tptr = {:?}\n\tsubj = {:?}",shape,ptr,subj);
-    println!("repeat: rnnz = {}, rnelm = {}", rnnz,rnelm);
 
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(), rnnz, rnelm);
 
@@ -40,7 +38,6 @@ pub(super) fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut 
             let (i0,i1,i2) = (spi / (d1*d2), (spi / d2) % d1, spi % d2);
             *xspi = i0 * rd1 * d2 + (i1 + i * d1) * d2 + i2;
             *xi = k;
-            println!("sp i {} -> ({},{},{}) -> {}",spi,i0,i1,i2,*xspi);
         }
 
         perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
@@ -49,20 +46,17 @@ pub(super) fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut 
         rptr.iter_mut().for_each(|p| *p = 0);
         rsp.iter_mut().zip(perm_iter(perm,xsp)).for_each(|(t,&s)| *t = s);
 
-        println!("xidx = {:?}",xidx);
         let mut p = 0usize;
         for (rptr,&i) in izip!(rptr[1..].iter_mut(), perm_iter(perm,xidx)) {
             let ptrb = ptr[i];
             let ptre = ptr[i+1];
             let n = ptre-ptrb;
-            println!("Copy [{}..{}] -> [{}..{}]",ptrb,ptre,p,p+n);
             *rptr = n;
             rsubj[p..p+n].copy_from_slice(&subj[ptrb..ptre]);
             rcof[p..p+n].copy_from_slice(&cof[ptrb..ptre]);
             p += n;
         }
         _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
-        println!("repeat sparse:\n\trptr = {:?}\n\trsubj = {:?}\n\trcof = {:?}\n\trsp = {:?}",rptr,rsubj,rcof,rsp);
     } 
     else { // dense
         let d0 : usize = num * shape[..dim].iter().product::<usize>();
