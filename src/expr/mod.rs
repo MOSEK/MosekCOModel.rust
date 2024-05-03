@@ -1258,16 +1258,16 @@ mod test {
                                   vec![6,8,9,11],
                                   (0..4).map(|v| v as f64 * 1.1).collect());
 
-        // | 0 1 |
-        // | 2 3 |
-        // | 4 5 |
+        // | 0 1 |      | 6  . |
+        // | 2 3 |      | 8  9 |
+        // | 4 5 |      | . 11 |
 
         let mut rs = WorkStack::new(512);
         let mut ws = WorkStack::new(512);
         let mut xs = WorkStack::new(512);
 
         ed.clone().repeat(0,2).eval(& mut rs,& mut ws,& mut xs);
-        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
         assert_eq!(shape.len(),3);
         assert_eq!(shape[0],6);
         assert_eq!(shape[1],2);
@@ -1281,9 +1281,8 @@ mod test {
         ws.clear();
         xs.clear();
 
-        println!("--------------------------");
         ed.clone().repeat(1,2).eval(& mut rs,& mut ws,& mut xs);
-        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
         assert_eq!(shape.len(),3);
         assert_eq!(shape[0],3);
         assert_eq!(shape[1],4);
@@ -1293,13 +1292,12 @@ mod test {
         assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12]);
         assert_eq!(subj,&[0,1,0,1,2,3,2,3,4,5,4,5]);
         
-        println!("--------------------------");
         rs.clear();
         ws.clear();
         xs.clear();
 
         ed.clone().repeat(2,2).eval(& mut rs,& mut ws,& mut xs);
-        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
         assert_eq!(shape.len(),3);
         assert_eq!(shape[0],3);
         assert_eq!(shape[1],2);
@@ -1308,6 +1306,53 @@ mod test {
         assert!(sp.is_none());
         assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12]);
         assert_eq!(subj,&[0,0,1,1,2,2,3,3,4,4,5,5]);
+        
+        // | 0 1 |      | 6  . |
+        // | 2 3 |      | 8  9 |
+        // | 4 5 |      | . 11 |
+        println!("--------------------------");
+        rs.clear();
+        ws.clear();
+        xs.clear();
+
+        es.clone().repeat(0,2).eval(&mut rs, &mut ws, &mut xs);
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+        assert_eq!(shape.len(),3);
+        assert_eq!(shape,&[6,2,1]);
+        assert_eq!(*ptr.last().unwrap(), 8);
+        assert!(sp.is_some());
+        assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8]);
+        assert_eq!(subj,&[6,8,9,11,6,8,9,11]);
+
+        println!("--------------------------");
+        rs.clear(); 
+        ws.clear();
+        xs.clear();
+
+        es.clone().repeat(1,2).eval(&mut rs, &mut ws, &mut xs);
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+        assert_eq!(shape.len(),3);
+        assert_eq!(shape,&[3,4,1]);
+        assert_eq!(*ptr.last().unwrap(), 8);
+        assert!(sp.is_some());
+        assert_eq!(sp.unwrap(),&[0,2,4,5,6,7,9,11]);
+        assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8]);
+        assert_eq!(subj,&[6,6,8,9,8,9,11,11]);
+        
+        println!("--------------------------");
+        rs.clear();
+        ws.clear();
+        xs.clear();
+
+        es.clone().repeat(2,2).eval(&mut rs, &mut ws, &mut xs);
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+        assert_eq!(shape.len(),3);
+        assert_eq!(shape,&[3,2,2]);
+        assert_eq!(*ptr.last().unwrap(), 8);
+        assert!(sp.is_some());
+        assert_eq!(sp.unwrap(),&[0,1,4,5,6,7,10,11]);
+        assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8]);
+        assert_eq!(subj,&[6, 6, 8, 8,9,9,11,11]);
     }
         
     #[test]

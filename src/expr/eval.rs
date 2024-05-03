@@ -30,34 +30,39 @@ pub(super) fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut 
         let d1 : usize = shape[dim];
         let d2 : usize = shape[dim+1..].iter().product();
         let rd1 = rshape[dim];
-        let (uslice,fslice) = xs.alloc(rnelm+1 + rnelm*3,0);
-        let (xptr,uslice) = uslice.split_at_mut(rnelm+1);
+        let (uslice,_) = xs.alloc(rnelm*3,0);
         let (xsp,uslice) = uslice.split_at_mut(rnelm);
         let (xidx,perm)  = uslice.split_at_mut(rnelm);
-        for (rsp,(i,spi),idx) in izip!(xsp.chunks_mut(nelm),
-                                       sp.iter().enumerate(),
-                                       xidx.chunks_mut(nelm)) {
-            let (i0,i1,i2) = (spi / (d1*d2), spi / d2, spi % d2);
-            rsp.iter_mut().for_each(|r| *r = i0 * rd1 * d2 + i1 * d2 + i2);
-            idx.iter_mut().for_each(|r| *r = i);
+
+        for (xspi,xi,(k,spi,i)) in izip!(xsp.iter_mut(),
+                                         xidx.iter_mut(),
+                                         (0..num).map(|i| izip!(0..nelm,sp.iter(),std::iter::repeat(i))).flatten()) {
+            let (i0,i1,i2) = (spi / (d1*d2), (spi / d2) % d1, spi % d2);
+            *xspi = i0 * rd1 * d2 + (i1 + i * d1) * d2 + i2;
+            *xi = k;
+            println!("sp i {} -> ({},{},{}) -> {}",spi,i0,i1,i2,*xspi);
         }
+
         perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
-        perm.sort_by_key(|&i| rsp[i]);
+        perm.sort_by_key(|&i| xsp[i]);
 
         rptr.iter_mut().for_each(|p| *p = 0);
         rsp.iter_mut().zip(perm_iter(perm,xsp)).for_each(|(t,&s)| *t = s);
 
+        println!("xidx = {:?}",xidx);
         let mut p = 0usize;
-        for (rptr,&i) in rptr[1..].iter_mut().zip(xidx.iter()) {
+        for (rptr,&i) in izip!(rptr[1..].iter_mut(), perm_iter(perm,xidx)) {
             let ptrb = ptr[i];
             let ptre = ptr[i+1];
             let n = ptre-ptrb;
+            println!("Copy [{}..{}] -> [{}..{}]",ptrb,ptre,p,p+n);
             *rptr = n;
             rsubj[p..p+n].copy_from_slice(&subj[ptrb..ptre]);
             rcof[p..p+n].copy_from_slice(&cof[ptrb..ptre]);
             p += n;
         }
         _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+        println!("repeat sparse:\n\trptr = {:?}\n\trsubj = {:?}\n\trcof = {:?}\n\trsp = {:?}",rptr,rsubj,rcof,rsp);
     } 
     else { // dense
         let d0 : usize = num * shape[..dim].iter().product::<usize>();
