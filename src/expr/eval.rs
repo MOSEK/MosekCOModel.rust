@@ -60,12 +60,11 @@ pub(super) fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut 
         _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
     } 
     else { // dense
-        let d0 : usize = shape[..dim].iter().product();
+        let d0 : usize = num * shape[..dim].iter().product::<usize>();
         let d1 : usize = shape[dim..].iter().product();
         rptr[0] = 0;
-        println!("d = [{},{}]",d0,d1);
         let mut rptr_pos = 0usize;
-        for ((ptrb,ptre),rptr) in izip!(ptr.chunks(d1),ptr[1..].chunks(d1)).map(|v| std::iter::repeat(v).take(d0)).flatten().zip(rptr[1..].chunks_mut(d1)) {
+        for ((ptrb,ptre),rptr) in izip!(ptr.chunks(d1),ptr[1..].chunks(d1)).map(|v| std::iter::repeat(v).take(num)).flatten().zip(rptr[1..].chunks_mut(d1)) {
             izip!(rptr.iter_mut(),ptrb.iter(),ptre.iter()).for_each(|(r,&pb,&pe)| *r = pe-pb);
             let pb = ptrb[0];
             let pe = *ptre.last().unwrap();
