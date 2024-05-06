@@ -419,7 +419,7 @@ impl Model {
         let varend : i32 = ((vari as usize)+n).try_into().unwrap();
         self.task.append_vars(n.try_into().unwrap()).unwrap();
         if isint {
-            self.task.put_var_type_list((vari..varend).collect::<Vec<i32>>().as_slice(), vec![mosek::Variabletype::TYPE_INT; n].as_slice());
+            self.task.put_var_type_list((vari..varend).collect::<Vec<i32>>().as_slice(), vec![mosek::Variabletype::TYPE_INT; n].as_slice()).unwrap();
         }
         //println!("linear_variable n = {},curnumvar = {}",n,vari);
         if let Some(name) = name {
@@ -558,7 +558,7 @@ impl Model {
         self.task.append_afes(n as i64).unwrap();
         self.task.append_vars(n.try_into().unwrap()).unwrap();
         if dom.is_integer {
-            self.task.put_var_type_list((vari..vari+n as i32).collect::<Vec<i32>>().as_slice(), vec![mosek::Variabletype::TYPE_INT; n].as_slice());
+            self.task.put_var_type_list((vari..vari+n as i32).collect::<Vec<i32>>().as_slice(), vec![mosek::Variabletype::TYPE_INT; n].as_slice()).unwrap();
         }
         self.task.append_accs_seq(vec![domidx; numcone].as_slice(),n as i64,afei,dom.ofs.as_slice()).unwrap();
         self.task.put_afe_f_entry_list(asubi.as_slice(),asubj.as_slice(),acof.as_slice()).unwrap();

@@ -174,9 +174,17 @@ pub trait ExprTrait<const N : usize> {
         }
     }
 
+    /// Stack vertically, i.e. in first dimension.
     fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }
+    /// Stack horizontally, i.e. stack in second dimension.
     fn hstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,1) }
+    /// Stack in arbitrary dimension.
     fn stack<E:ExprTrait<N>>(self,dim : usize, other : E) -> ExprStack<N,Self,E> where Self:Sized { ExprStack::new(self,other,dim) }
+    /// Repeat a fixed number of times in arbitrary dimension.
+    ///
+    /// # Arguments
+    /// - `dim` Dimension in which to repeat
+    /// - `num` Number of times to repeat
     fn repeat(self,dim : usize, num : usize) -> ExprRepeat<N,Self> where Self:Sized { ExprRepeat{ expr : self, dim, num } }
 
     /// Take a slice of an expression
@@ -215,8 +223,9 @@ pub trait ExprTrait<const N : usize> {
     /// elements in the expression.
     fn gather(self) -> ExprGatherToVec<N,Self>  where Self:Sized { ExprGatherToVec{item:self} }
 
-
+    /// Multiply `(self * other)`, where other must be right-multipliable with `Self`.
     fn mul<RHS>(self,other : RHS) -> RHS::Result where Self: Sized, RHS : ExprRightMultipliable<N,Self> { other.mul_right(self) }
+    /// Multiply `(other * self)`, where other must be left-multipliable with `Self`.
     fn rev_mul<LHS>(self, lhs: LHS) -> LHS::Result where Self: Sized, LHS : ExprLeftMultipliable<N,Self> { lhs.mul(self) }
 
     fn transpose(self) -> ExprPermuteAxes<2,Self> where Self:Sized+ExprTrait<2> { ExprPermuteAxes{ item : self, perm : [1,0]} }

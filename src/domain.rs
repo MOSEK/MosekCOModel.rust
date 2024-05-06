@@ -75,6 +75,10 @@ impl<const N :usize> ConicDomain<N> {
         self.is_integer = true;
         self
     }
+    pub fn axis(mut self, i : usize) -> ConicDomain<N> {
+        self.conedim = i;
+        self
+    }
 }
 impl<const N : usize> LinearDomain<N> {
     /// Reshape the domain. The new shape must "match" the domain, meaning that if 

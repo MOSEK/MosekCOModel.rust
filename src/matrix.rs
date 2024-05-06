@@ -447,6 +447,14 @@ pub fn diag(data : &[f64]) -> SparseMatrix {
         data : data.to_vec()
     }
 }
+pub fn speye(n : usize) -> SparseMatrix {
+    SparseMatrix{
+        shape : [n,n],
+        sp  : (0..n*n).step_by(n+1).collect(),
+        data : vec![1.0; n]
+    }
+    
+}
 
 /// Represents a Dense n-dimensional array
 #[derive(Clone)]
