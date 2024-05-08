@@ -8,11 +8,11 @@ pub mod domain;
 pub mod matrix;
 pub mod expr;
 use expr::workstack::WorkStack;
-use itertools::iproduct;
+use itertools::{iproduct, izip};
 use std::iter::once;
 
 pub use expr::{ExprTrait,ExprRightMultipliable};
-pub use variable::{Variable};
+pub use variable::Variable;
 pub use domain::{LinearDomain,
                  ConicDomain,
                  LinearDomainType,
@@ -493,36 +493,41 @@ impl Model {
         let barvar0 = self.task.get_num_barvar().unwrap();
         self.task.append_barvars(vec![d1 as i32; numcone].as_slice()).unwrap();
         self.vars.reserve(numcone*conesz);
+        let varidx0 = self.vars.len();
         for k in 0..numcone {
             for j in 0..d1 {
                 for i in j..d1 {
-                    self.vars.push(VarAtom::BarElm(barvar0 + k as i32, i*(i+1)/2+j))
+                    self.vars.push(VarAtom::BarElm(barvar0 + k as i32, i*(i+1)/2+j));
                 }
             }
         }
 
         let idxs : Vec<usize> = if conedim0 < conedim1 {
+            //println!("Conedims {},{}",conedim0,conedim1);
             iproduct!(0..d0,0..d1,0..d2,0..d3,0..d4).map(|(i0,i1,i2,i3,i4)| {
-                let (i1,i3) = if i3 < i1 { (i3,i1) } else { (i1,i3) };
+                let (i1,i3) = if i3 > i1 { (i3,i1) } else { (i1,i3) };
 
                 let baridx = i0 * d2 * d4 + i2 * d4 + i4;
 
-                let ofs    = d1*i3+i1-i3-i3*(i3+1)/2;
+                let ofs    = d1*i3+i1-i3*(i3+1)/2;
+                //println!("d = {}, (i,j) = ({},{}) -> {}",d1,i1,i3,ofs);
 
-                baridx*conesz+ofs
+                varidx0+baridx*conesz+ofs
             }).collect()
         }
         else {
+            //println!("Conedims {},{}",conedim0,conedim1);
             iproduct!(0..d0,0..d1,0..d2,0..d3,0..d4).map(|(i0,i3,i2,i1,i4)| {
-                let (i1,i3) = if i3 < i1 { (i3,i1) } else { (i1,i3) };
+                let (i1,i3) = if i3 > i1 { (i3,i1) } else { (i1,i3) };
 
                 let baridx = i0 * d2 * d4 + i2 * d4 + i4;
-                let ofs    = d1*i3+i1-i3-i3*(i3+1)/2;
+                let ofs    = d1*i3+i1 - i3*(i3+1)/2;
 
-                baridx*conesz+ofs
+                varidx0+baridx*conesz+ofs
             }).collect()
         };
 
+        //println!("PSD variable indexes = {:?}",idxs);
         Variable::new(idxs,
                       None,
                       &dom.shape)
@@ -650,9 +655,10 @@ impl Model {
 
         let (shape_,ptr,_sp,subj,cof) = self.rs.pop_expr();
         //println!("---------con_names dshape = {:?} / shape = {:?}, ptr = {:?}",dshape,shape_, ptr);
+        println!("Model::linear_constraint: ({:?}) ptr={:?}, subj={:?}\n\tvars = {:?}", name,ptr, subj,self.vars);
         let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
         if shape.len() != dshape.len() || shape.iter().zip(dshape.iter()).any(|(&a,&b)| a != b) {
-            panic!("Mismatching shapes of expression and domain");
+            panic!("Mismatching shapes of expression {:?} and domain {:?}",shape,dshape);
         }
         // let nnz = subj.len();
         let nelm = ptr.len()-1;
@@ -681,28 +687,6 @@ impl Model {
             LinearDomainType::Zero        => mosek::Boundkey::FX,
             LinearDomainType::Free        => mosek::Boundkey::FR
         };
-
-        // let acci = self.task.get_num_acc().unwrap();
-        // let afei = self.task.get_num_afe().unwrap();
-
-        // self.task.append_afes(nelm as i64).unwrap();
-        // let domidx = match dom.dt {
-        //     LinearDomainType::NonNegative => self.task.append_rplus_domain(nelm as i64).unwrap(),
-        //     LinearDomainType::NonPositive => self.task.append_rminus_domain(nelm as i64).unwrap(),
-        //     LinearDomainType::Zero        => self.task.append_rzero_domain(nelm as i64).unwrap(),
-        //     LinearDomainType::Free        => self.task.append_r_domain(nelm as i64).unwrap(),
-        // };
-
-        // match dom.sp {
-        //     None => self.task.append_acc_seq(domidx, afei,dom.ofs.as_slice()).unwrap(),
-        //     Some(sp) => {
-        //         let mut ofs = vec![0.0; nelm];
-        //         if sp.len() != dom.ofs.len() { panic!("Broken sparsity pattern") };
-        //         if let Some(&v) = sp.iter().max() { if v >= nelm { panic!("Broken sparsity pattern"); } }
-        //         sp.iter().zip(dom.ofs.iter()).for_each(|(&ix,&c)| unsafe { *ofs.get_unchecked_mut(ix) = c; } );
-        //         self.task.append_acc_seq(domidx, afei,ofs.as_slice()).unwrap();
-        //     }
-        // }
 
         self.cons.reserve(nelm);
         // (0..nelm).for_each(|i| self.cons.push(ConAtom::ConicElm(acci,i)));
@@ -739,14 +723,24 @@ impl Model {
                                       rhs.as_slice()).unwrap();
 
         if ! abarsubi.is_empty() {
-            for (i,j,subk,subl,cof) in utils::ijkl_slice_iterator(abarsubi.as_slice(),
-                                                                  abarsubj.as_slice(),
-                                                                  abarsubk.as_slice(),
-                                                                  abarsubl.as_slice(),
-                                                                  abarcof.as_slice()) {
+            println!("abarsubi = {:?}\nabarsubj = {:?}\nabarsubk = {:?}\nabarsubl = {:?}",abarsubi,abarsubj,abarsubk,abarsubl);
+
+            let mut p0 = 0usize;
+            for (i,j,p) in izip!(abarsubi.iter(),
+                                 abarsubi[1..].iter(),
+                                 abarsubj.iter(),
+                                 abarsubj[1..].iter())
+                .enumerate()
+                .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
+                .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+               
+                let subk = &abarsubk[p0..p];
+                let subl = &abarsubl[p0..p];
+                let cof  = &abarcof[p0..p];
+                p0 = p;
+
                 let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
                 let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
-                //self.task.put_afe_barf_entry(afei+i,j,&[matidx],&[1.0]).unwrap();
                 self.task.put_bara_ij(coni+i as i32, j,&[matidx],&[1.0]).unwrap();
             }
         }
@@ -758,7 +752,7 @@ impl Model {
     }
 
     fn conic_constraint<const N : usize>(& mut self,
-                        _name : Option<&str>,
+                        name : Option<&str>,
                         dom  : ConicDomain<N>) -> Constraint<N> {
         let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
         if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
@@ -811,11 +805,18 @@ impl Model {
             .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64)
             .collect();
 
-        // if let Some(name) = name {
-        //     let accshape = shape[0..dom.conedim].iter().join(shape[dom.conedim+1..].iter()).collect();
-        //     //iproduct!(0..d0,0..d2).for_each(|(i0,i2)| self.task.put_acc_name(format!("{}[{},*,{}]")).unwrap() )
+        if let Some(name) = name {
+            let accshape : Vec<usize> = shape[0..dom.conedim].iter().chain(shape[dom.conedim+1..].iter()).cloned().collect();
+            let mut accstride = vec!(0;shape.len()-1);
+
+            let mut idx = vec![1usize;accshape.len()];
+            for i in 0..accshape.iter().product() {                
+                accshape.iter().zip(idx.iter_mut()).rev().fold(1,|carry,(&d,i)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
+                self.task.put_acc_name(acci+i as i64,format!("{}{:?}",name,idx).as_str()).unwrap();
+            } 
+            //iproduct!(0..d0,0..d2).for_each(|(i0,i2)| self.task.put_acc_name(format!("{}[{},*,{}]")).unwrap() )
         //     }
-        // }
+        }
 
         if asubj.len() > 0 {
             self.task.put_afe_f_row_list(afeidxs.as_slice(),
@@ -826,11 +827,20 @@ impl Model {
         }
         self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
         if abarsubi.len() > 0 {
-            for (i,j,subk,subl,cof) in utils::ijkl_slice_iterator(abarsubi.as_slice(),
-                                                                  abarsubj.as_slice(),
-                                                                  abarsubk.as_slice(),
-                                                                  abarsubl.as_slice(),
-                                                                  abarcof.as_slice()) {
+            let mut p0 = 0usize;
+            for (i,j,p) in izip!(abarsubi.iter(),
+                                 abarsubi[1..].iter(),
+                                 abarsubj.iter(),
+                                 abarsubj[1..].iter())
+                .enumerate()
+                .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
+                .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+               
+                let subk = &abarsubk[p0..p];
+                let subl = &abarsubl[p0..p];
+                let cof  = &abarcof[p0..p];
+                p0 = p;
+
                 let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
                 let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
                 self.task.put_afe_barf_entry(afei+i,j,&[matidx],&[1.0]).unwrap();

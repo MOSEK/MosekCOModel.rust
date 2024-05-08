@@ -886,6 +886,7 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
     }
 
     // check shapes
+    println!("vec = {:?}",exprs.iter().map(|v| v.0).collect::<Vec<&[usize]>>());
     if ! exprs.iter().zip(exprs[1..].iter()).any(|((s0,_,_,_,_),(s1,_,_,_,_))| shape_eq_except(s0,s1,dim)) {
         panic!("Mismatching shapes or stacking dimension");
     }

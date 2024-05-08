@@ -112,51 +112,53 @@ impl<'a,'b,T> Iterator for PermIter<'a,'b,T> {
     }
 }
 
-////////////////////////////////////////////////////////////
-pub struct IJKLSliceIterator<'a,'b,'c,'d,'e> {
-    subi : & 'a [i64],
-    subj : & 'b [i32],
-    subk : & 'c [i32],
-    subl : & 'd [i32],
-    cof  : & 'e [f64],
-
-    pos  : usize
-}
-
-pub fn ijkl_slice_iterator<'a,'b,'c,'d,'e>(subi : & 'a [i64],
-                                           subj : & 'b [i32],
-                                           subk : & 'c [i32],
-                                           subl : & 'd [i32],
-                                           cof  : & 'e [f64]) -> IJKLSliceIterator<'a,'b,'c,'d,'e> {
-    if subi.len() != subj.len()
-        || subi.len() != subk.len()
-        || subi.len() != subl.len()
-        || subi.len() != cof.len() {
-        panic!("Mismatching array length");
-    }
-    IJKLSliceIterator{subi,subj,subk,subl,cof,pos:0}
-}
-
-impl<'a,'b,'c,'d,'e> Iterator for IJKLSliceIterator<'a,'b,'c,'d,'e> {
-    type Item = (i64,i32,&'c[i32],&'d[i32],&'e[f64]);
-    fn next(& mut self) -> Option<Self::Item> {
-        if self.pos < self.subi.len() {
-            let p0 = self.pos;
-            let i = unsafe{ *self.subi.get_unchecked(self.pos) };
-            let j = unsafe{ *self.subj.get_unchecked(self.pos) };
-            self.pos += 1;
-
-            while unsafe{ *self.subi.get_unchecked(self.pos) == i } &&
-                  unsafe{ *self.subj.get_unchecked(self.pos) == j } {
-                self.pos += 1;
-            }
-            Some((i,j,&self.subk[p0..self.pos],&self.subl[p0..self.pos],&self.cof[p0..self.pos]))
-        }
-        else {
-            None
-        }
-    }
-}
+//////////////////////////////////////////////////////////////
+//pub struct IJKLSliceIterator<'a,'b,'c,'d,'e> {
+//    subi : & 'a [i64],
+//    subj : & 'b [i32],
+//    subk : & 'c [i32],
+//    subl : & 'd [i32],
+//    cof  : & 'e [f64],
+//
+//    pos  : usize
+//}
+//
+//pub fn ijkl_slice_iterator<'a,'b,'c,'d,'e>(subi : & 'a [i64],
+//                                           subj : & 'b [i32],
+//                                           subk : & 'c [i32],
+//                                           subl : & 'd [i32],
+//                                           cof  : & 'e [f64]) -> IJKLSliceIterator<'a,'b,'c,'d,'e> {
+//    if let Some(_) = izip!(subi.iter(),subj.iter(),subi[1..].iter(),subj[1..].iter())
+//        .find(|(i0,j0,i1,j1)| i0 > i1 || (i0 == i1 && j0 > j1)) { panic!("Unsorted i,j"); }
+//    if subi.len() != subj.len()
+//        || subi.len() != subk.len()
+//        || subi.len() != subl.len()
+//        || subi.len() != cof.len() {
+//        panic!("Mismatching array length");
+//    }
+//    IJKLSliceIterator{subi,subj,subk,subl,cof,pos:0}
+//}
+//
+//impl<'a,'b,'c,'d,'e> Iterator for IJKLSliceIterator<'a,'b,'c,'d,'e> {
+//    type Item = (i64,i32,&'c[i32],&'d[i32],&'e[f64]);
+//    fn next(& mut self) -> Option<Self::Item> {
+//        if self.pos < self.subi.len() {
+//            let p0 = self.pos;
+//            let i = unsafe{ *self.subi.get_unchecked(self.pos) };
+//            let j = unsafe{ *self.subj.get_unchecked(self.pos) };
+//            self.pos += 1;
+//
+//            while unsafe{ *self.subi.get_unchecked(self.pos) == i } &&
+//                  unsafe{ *self.subj.get_unchecked(self.pos) == j } {
+//                self.pos += 1;
+//            }
+//            Some((i,j,&self.subk[p0..self.pos],&self.subl[p0..self.pos],&self.cof[p0..self.pos]))
+//        }
+//        else {
+//            None
+//        }
+//    }
+//}
 
 ////////////////////////////////////////////////////////////
 
@@ -193,6 +195,18 @@ impl<const N : usize> IndexIterator<N> {
         }
     }
 }
+
+pub trait IndexIteratorExt<const N : usize> {
+    type R;
+    fn index_iterator(&self) -> Self::R;
+}
+
+impl<const N : usize> IndexIteratorExt<N> for [usize;N] {
+    type R = IndexIterator<N>;
+    fn index_iterator(&self) -> Self::R { IndexIterator::new(self) }
+}
+
+
 
 /// Given a shape and a list of linear indexes, iterate over the sparsity yielding the indexes
 /// corresponding to the given shape.
