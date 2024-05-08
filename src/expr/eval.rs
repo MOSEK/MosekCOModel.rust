@@ -873,9 +873,7 @@ pub(super) fn dot_vec(data : &[f64],
             }
         }
     }
-} // dot_slice
-
-
+} // dot_vec
 
 pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
     // println!("{}:{}: eval::stack n={}, dim={}",file!(),line!(),n,dim);

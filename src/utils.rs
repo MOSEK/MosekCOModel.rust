@@ -7,6 +7,31 @@ use std::slice::SliceIndex;
 use itertools::izip;
 
 
+pub trait AssignFromIterExt<I> where I : Iterator, I::Item : Copy 
+{
+    fn copy_from_iter(&mut self, it : I) -> usize;
+}
+
+impl<I> AssignFromIterExt<I> for [I::Item]
+    where 
+        I : Iterator,
+        I::Item : Copy
+{
+    fn copy_from_iter(&mut self, it : I) -> usize {
+        self.iter_mut().zip(it).map(|(t,s)| *t = s).count()
+    }
+}
+
+impl<I> AssignFromIterExt<I> for Vec<I::Item>
+    where 
+        I : Iterator,
+        I::Item : Copy
+{
+    fn copy_from_iter(&mut self, it : I) -> usize {
+        self.iter_mut().zip(it).map(|(t,s)| *t = s).count()
+    }
+}
+
 /// An interator that produces an accumulation map, a bit like fold+map.
 ///
 /// The iterator is initialized with a value, a mapping function and

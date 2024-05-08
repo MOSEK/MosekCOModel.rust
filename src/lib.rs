@@ -654,7 +654,6 @@ impl Model {
         let (dt,b,dshape,_,_) = dom.extract();
 
         let (shape_,ptr,_sp,subj,cof) = self.rs.pop_expr();
-        //println!("---------con_names dshape = {:?} / shape = {:?}, ptr = {:?}",dshape,shape_, ptr);
         let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
         if shape.len() != dshape.len() || shape.iter().zip(dshape.iter()).any(|(&a,&b)| a != b) {
             panic!("Mismatching shapes of expression {:?} and domain {:?}",shape,dshape);
