@@ -313,8 +313,8 @@ impl<const N : usize> Expr<N> {
 
     pub fn reshape<const M : usize>(self,shape:&[usize;M]) -> Expr<M> {
         if self.shape.iter().product::<usize>() != shape.iter().product::<usize>() {
-            println!("Invalid shape {:?} for this expression which has shape {:?}",self.shape,shape);
-            panic!("Invalid shape for expression");
+            //println!("Invalid shape {:?} for this expression which has shape {:?}",self.shape,shape);
+            panic!("Invalid shape {:?} for expression with shape {:?}",shape,self.shape);
         }
 
         Expr{
@@ -877,7 +877,7 @@ impl<T:ExprTrait<2>> ExprTrait<2> for ExprTriangularPart<T> {
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
 
-        println!("ExprTriangularPart::eval");
+        //println!("ExprTriangularPart::eval");
 
         let nd = shape.len();
 
@@ -913,7 +913,7 @@ impl<T:ExprTrait<2>> ExprTrait<2> for ExprTriangularPart<T> {
             rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
         }
         else {  
-            println!("  case 2: Dense");
+            //println!("  case 2: Dense");
             let rnelm = if self.with_diag { d * (d+1)/2 } else { d * (d-1) / 2 };
             let rnnz : usize = match (self.upper,self.with_diag) {
                 (true,true)   => ptr.iter().step_by(d+1).zip(ptr[d..].iter().step_by(d)).map(|(&p0,&p1)| p1-p0).sum::<usize>(),
@@ -922,8 +922,8 @@ impl<T:ExprTrait<2>> ExprTrait<2> for ExprTriangularPart<T> {
                 (false,false) => ptr[d..].iter().step_by(d).zip(ptr[d+1..].iter().step_by(d+1)).map(|(&p0,&p1)| p1-p0).sum::<usize>()
             };
 
-            println!("======== upper = {}, ptr = {:?}, subj = {:?}",self.upper,ptr,subj);
-            println!("  Alloc: shape = {:?}, rnnz = {}, rnelm = {}",shape,rnnz,rnelm);
+            //println!("======== upper = {}, ptr = {:?}, subj = {:?}",self.upper,ptr,subj);
+            //println!("  Alloc: shape = {:?}, rnnz = {}, rnelm = {}",shape,rnnz,rnelm);
             let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
 
             izip!(subj.chunks_by(ptr),
@@ -1064,7 +1064,7 @@ impl<T:ExprTrait<2>> ExprTrait<2> for ExprTriangularPart<T> {
 //                }
 //            };
 //            rptr[0] = 0;
-            println!("rptr = {:?}",rptr);
+            //println!("rptr = {:?}",rptr);
             let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
 
         }

@@ -655,7 +655,6 @@ impl Model {
 
         let (shape_,ptr,_sp,subj,cof) = self.rs.pop_expr();
         //println!("---------con_names dshape = {:?} / shape = {:?}, ptr = {:?}",dshape,shape_, ptr);
-        println!("Model::linear_constraint: ({:?}) ptr={:?}, subj={:?}\n\tvars = {:?}", name,ptr, subj,self.vars);
         let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
         if shape.len() != dshape.len() || shape.iter().zip(dshape.iter()).any(|(&a,&b)| a != b) {
             panic!("Mismatching shapes of expression {:?} and domain {:?}",shape,dshape);
@@ -723,7 +722,6 @@ impl Model {
                                       rhs.as_slice()).unwrap();
 
         if ! abarsubi.is_empty() {
-            println!("abarsubi = {:?}\nabarsubj = {:?}\nabarsubk = {:?}\nabarsubl = {:?}",abarsubi,abarsubj,abarsubk,abarsubl);
 
             let mut p0 = 0usize;
             for (i,j,p) in izip!(abarsubi.iter(),
