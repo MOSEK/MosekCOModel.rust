@@ -479,8 +479,9 @@ impl Model {
 
     /// Write problem to a file. The filename extension determines the file format to use. If the
     /// file extension is not recognized, the MPS format is used.
-    pub fn write_problem(&self, filename : &Path) {
-        self.task.write_data(filename.to_str().unwrap()).unwrap();
+    pub fn write_problem<P>(&self, filename : P) where P : AsRef<Path> {
+        let path = filename.as_ref();
+        self.task.write_data(path.to_str().unwrap()).unwrap();
     }
 
     ////////////////////////////////////////////////////////////
@@ -682,7 +683,7 @@ impl Model {
                       &dom.shape)
     }
 
-    fn conic_variable<const N : usize>(&mut self, _name : Option<&str>, dom : ConicDomain<N>) -> Variable<N> {
+    fn conic_variable<const N : usize>(&mut self, name : Option<&str>, dom : ConicDomain<N>) -> Variable<N> {
         let n    = dom.shape.iter().product();
         let acci = self.task.get_num_acc().unwrap();
         let afei = self.task.get_num_afe().unwrap();
@@ -711,20 +712,27 @@ impl Model {
 
         self.task.append_afes(n as i64).unwrap();
         self.task.append_vars(n.try_into().unwrap()).unwrap();
+        self.task.put_var_bound_slice_const(vari, vari+n as i32, mosek::Boundkey::FR, 0.0, 0.0).unwrap();
         if dom.is_integer {
             self.task.put_var_type_list((vari..vari+n as i32).collect::<Vec<i32>>().as_slice(), vec![mosek::Variabletype::TYPE_INT; n].as_slice()).unwrap();
         }
         self.task.append_accs_seq(vec![domidx; numcone].as_slice(),n as i64,afei,dom.ofs.as_slice()).unwrap();
         self.task.put_afe_f_entry_list(asubi.as_slice(),asubj.as_slice(),acof.as_slice()).unwrap();
 
-        // if let Some(name) = name {
-        //     if let Some(ref sp) = dom.sp {
-        //         self.var_names(name,vari,dom.shape,Some(sp.as_slice()))
-        //     }
-        //     else {
-        //         self.var_names(name,vari,dom.shape,None)
-        //     }
-        // }
+        if let Some(name) = name {
+            self.var_names(name,vari,&dom.shape,None);
+            let mut xshape = [0usize; N];
+            xshape[0..dom.conedim].copy_from_slice(&dom.shape[0..dom.conedim]);
+            if dom.conedim < N-1 {
+                xshape[dom.conedim..N-1].copy_from_slice(&dom.shape[dom.conedim+1..N]);
+            }
+            let mut idx = [1usize; N];
+            for i in acci..acci+numcone as i64 {
+                let n = format!("{}{:?}",name,&idx[0..N-1]);
+                self.task.put_acc_name(i, n.as_str()).unwrap();
+                idx.iter_mut().zip(xshape.iter()).rev().fold(1,|carry,(t,&d)| { *t += carry; if *t > d { *t = 1; 1 } else { 0 } });
+            }
+        }
 
         let firstvar = self.vars.len();
         self.vars.reserve(n);
@@ -952,11 +960,18 @@ impl Model {
             .collect();
 
         if let Some(name) = name {
-            let accshape : Vec<usize> = shape[0..dom.conedim].iter().chain(shape[dom.conedim+1..].iter()).cloned().collect();
-            let mut idx = vec![1usize;accshape.len()];
-            for i in 0..accshape.iter().product() {                
-                accshape.iter().zip(idx.iter_mut()).rev().fold(1,|carry,(&d,i)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
-                self.task.put_acc_name(acci+i as i64,format!("{}{:?}",name,idx).as_str()).unwrap();
+            let numcone = d0*d2;
+            let mut xshape = [1usize; N]; 
+            xshape[0..dom.conedim].copy_from_slice(&shape[0..dom.conedim]);
+            if dom.conedim < N-1 {
+                xshape[dom.conedim+1..N-1].copy_from_slice(&shape[dom.conedim+1..N]);
+            }
+            let mut idx = [1usize; N];
+            for i in acci..acci+(d0*d2) as i64 {                
+                let n = format!("{}{:?}",name,&idx[0..N-1]);
+                println!("acc name {} -> '{}'",i,n);
+                xshape.iter().zip(idx.iter_mut()).rev().fold(1,|carry,(&d,i)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
+                self.task.put_acc_name(i,n.as_str()).unwrap();
             } 
         //     }
         }
