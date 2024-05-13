@@ -1,5 +1,27 @@
 ///
-/// MosekModel is a crate for setting up optimization models to be solved with MOSEK.
+/// # MosekModel library
+///
+/// MosekModel is a crate for setting up conic optimization models to be solved with MOSEK. The
+/// interface currently supports 
+/// - Linear and conic variables and constraints
+/// - Integer variables
+///
+/// The model used is this:
+/// ```math 
+/// min/max  c^t x 
+/// such that A x + b ∊ Kc
+///           X ∊ Kx
+/// ```
+/// where `Kc=Kc_0 × ... × Kc_m` and ``Kx=Kx_0 × ... × Kx_n`, each `Kc_i` and `Kx_i` is a conic
+/// domain from the currently supported set:
+/// - Non-positive or non-negative orthant
+/// - Unbounded values
+/// - Fixed values
+/// - Second order cone or rotated second order cone
+/// - Primal or dual exponential cone
+/// - Primal or dual power cone
+/// - Geometric mean cone
+/// - Symmetric positive semidefinite cone or scaled vectorized positive semidefinite cone
 ///
 /// The package is still somewhat exprimental.
 ///
