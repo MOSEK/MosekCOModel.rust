@@ -1,6 +1,4 @@
-
 use itertools::izip;
-
 
 /// The `WorkStack` struct defines working areas for evaluating expressions. An evaluated
 /// expression has a specific format on the stacks. A stack can contain multiple expressions.
@@ -61,12 +59,9 @@ impl WorkStack {
         self.sf64[self.ftop-nnz..].iter_mut().for_each(|v| *v *= c);
     }
 
-    /// Perform inline resize of 
+
+    /// Perform inline reshaping of the top-level expression.
     pub fn inline_reshape_expr(& mut self, shape: &[usize]) -> Result<(),String> {
-        let newnd = shape.len();
-        if shape.len() > 8 { 
-            return Err("Shape is too large".to_string());
-        } 
         let newtotalsize : usize = shape.iter().product();
 
         let selfutop = self.utop;
@@ -74,14 +69,15 @@ impl WorkStack {
         let nd    = self.susize[selfutop-1];
         let nnz   = self.susize[selfutop-2];
         let nelem = self.susize[selfutop-3];
-       
-        {
-            let shape_field = & mut self.susize[(selfutop-3-nd) .. (selfutop-3)];
 
-            if newtotalsize != shape_field.iter().product::<usize>() {
-                return Err("New shape and original shape do not match".to_string());
-            }
+        let totalsize : usize = self.susize[selfutop-3-nd .. selfutop-3].iter().product();
+        let newtotalsize : usize = shape.iter().product();
+
+        if newtotalsize != totalsize {
+            return Err("New shape and original shape do not match".to_string());
         }
+
+        let newnd = shape.len();
 
         if newnd < nd {
             self.utop -= nd-newnd;
@@ -110,7 +106,7 @@ impl WorkStack {
     /// - `nelm` - Number of elements. This must not be greater than the size of `shape`. If it
     ///   equals the size of `shape`, the returned `sp` is None
     ///
-    /// # returns
+    /// # Returns
     /// - `ptr` - Ptr array of size `nelm+1`
     /// - `sp` - `None` for a dense expression, otherwise `Some(a)` with an array of size `nelm`.
     /// - `subj` - Subscripts array of size `nnz`
@@ -162,12 +158,21 @@ impl WorkStack {
         (ptr,sp,subj,cof)
     }
 
+    /// Allocate data on an empty stack.
+    ///
+    /// # Arguments
+    /// - `nint` Number of integers to allocate.
+    /// - `nfloat` Number of floats to allocate.
+    ///
+    /// # Returns
+    /// - `ints : & mut [usize]` Allocated slice of ints.
+    /// - `floats : & mut [f64]` Allocated slice of floats.
     pub fn alloc(&mut self, nint : usize, nfloat : usize) -> (& mut [usize], & mut [f64]) {
         self.susize.resize(nint,0);
         self.sf64.resize(nfloat,0.0);
         (self.susize.as_mut_slice(),self.sf64.as_mut_slice())
     }
-
+    
     fn soft_pop(&self, utop : usize, ftop : usize) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64],usize,usize) {
         let nd   = self.susize[utop-1];
         let nnz  = self.susize[utop-2];
@@ -244,10 +249,21 @@ impl WorkStack {
         (shape,ptr,sp,subj,cof,ubase,fbase)
     }
 
-    /// Returns and validatas a list of views of the `n` top-most expressions on the stack, first in the result
-    /// list if the top-most.
+    /// Returns and validatas a list of views of the `n` top-most expressions on the stack, first
+    /// in the result list if the top-most. 
+    ///
+    /// # Arguments
+    /// - `n` Number of expressions to pop. Will panic if less than `n` are available.
+    ///
+    /// # Returns
+    /// A vector of tuples `(shape,ptr,sp,subj,cof)`:
+    /// - `shape : &[usize]` The shape of the expression.
+    /// - `ptr : &[usize]` Length of `nelem+1`.
+    /// - `sp : Option<&[usize]>` If `None`, the expression is dense, otherwise `sp` defines the
+    ///    sparsity pattern.
+    /// - `subj : &[usize]` Variable indexes. The length is `nnz`.
+    /// - `cof : &[f64]` Variable coefficients. The length is `nnz`.
     pub fn pop_exprs(&mut self, n : usize) -> Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])> {
-        // println!("-------------WorkStack::pop_exprs({})",n);
         let mut res = Vec::with_capacity(n);
 
         let mut selfutop = self.utop;
@@ -296,9 +312,18 @@ impl WorkStack {
 
         res
     }
+
     /// Returns and validatas a view of the top-most expression on the stack.
+    ///
+    /// # Returns
+    /// A tuple `(shape,ptr,sp,subj,cof)`:
+    /// - `shape : &[usize]` The shape of the expression.
+    /// - `ptr : &[usize]` Length of `nelem+1`.
+    /// - `sp : Option<&[usize]>` If `None`, the expression is dense, otherwise `sp` defines the
+    ///    sparsity pattern.
+    /// - `subj : &[usize]` Variable indexes. The length is `nnz`.
+    /// - `cof : &[f64]` Variable coefficients. The length is `nnz`.
     pub fn pop_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
-        // println!("ustack = {:?}",&self.susize[..self.utop]);
         let selfutop = self.utop;
         let selfftop = self.ftop;
 
@@ -337,10 +362,20 @@ impl WorkStack {
 
         (shape,ptr,sp,&subj[..rnnz],&cof[..rnnz])
     }
+
     /// Returns without validation a mutable view of the top-most
     /// expression on the stack, but does not remove it from the
     /// stack.  Note that this returns the full subj and cof, not just
     /// the part indexes by ptr.
+    ///
+    /// # Returns
+    /// A tuple `(shape,ptr,sp,subj,cof)`:
+    /// - `shape : &[usize]` The shape of the expression.
+    /// - `ptr : &[usize]` Length of `nelem+1`.
+    /// - `sp : Option<&[usize]>` If `None`, the expression is dense, otherwise `sp` defines the
+    ///    sparsity pattern.
+    /// - `subj : &[usize]` Variable indexes. The length is `nnz`.
+    /// - `cof : &[f64]` Variable coefficients. The length is `nnz`.
     pub fn peek_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
         let (shape,ptr,sp,subj,cof,_nextutop,_nextftop) = self.soft_pop_validate(self.utop,self.ftop);
 
@@ -348,6 +383,15 @@ impl WorkStack {
     }
     /// Returns without validation a mutable view of the top-most
     /// expression on the stack, but does not remove it from the stack
+    ///
+    /// # Returns
+    /// A tuple of mutable values `(shape,ptr,sp,subj,cof)`:
+    /// - `shape : &[usize]` The shape of the expression.
+    /// - `ptr : &[usize]` Length of `nelem+1`.
+    /// - `sp : Option<&[usize]>` If `None`, the expression is dense, otherwise `sp` defines the
+    ///    sparsity pattern.
+    /// - `subj : &[usize]` Variable indexes. The length is `nnz`.
+    /// - `cof : &[f64]` Variable coefficients. The length is `nnz`.
     pub fn peek_expr_mut(&mut self) -> (&mut [usize],&mut [usize],Option<&mut [usize]>,&mut [usize],&mut [f64]) {
         let nd   = self.susize[self.utop-1];
         let nnz  = self.susize[self.utop-2];
@@ -373,6 +417,8 @@ impl WorkStack {
             (shape,ptr,None,subj,cof)
         }
     }
+
+    /// Validate the top expression.
     pub fn validate_top(&self) -> Result<(),String> {
         if self.utop < 3 { return Err("Invalid utop".to_string()); }
         let nd   = self.susize[self.utop-1];
@@ -387,11 +433,10 @@ impl WorkStack {
         let ubase = self.utop - if totalsize > nelm { 3+2*nelm+1+nnz+nd } else { 3+nelm+1+nnz+nd };
         let fbase = self.ftop-nnz;
 
-        
-
         Ok(()) 
     }
 }
+
 impl std::fmt::Display for WorkStack {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f,"WorkStack{{ us : {:?}, fs : {:?} }}",&self.susize[..self.utop],&self.sf64[..self.ftop])

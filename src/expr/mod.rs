@@ -10,7 +10,7 @@ use std::ops::Range;
 
 use itertools::{iproduct,izip};
 
-use crate::{matrix::Matrix, utils};
+use crate::{matrix::Matrix};
 
 use super::utils::*;
 use workstack::WorkStack;
@@ -553,7 +553,7 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprGath
         self.item.eval(ws,rs,xs);
         let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
 
-        if ptr.len()-1 != self.shape.iter().product() {
+        if ptr.len()-1 != self.shape.iter().product::<usize>() {
             panic!("Shape does not match number of elements in expression");
         }
 
