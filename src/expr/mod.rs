@@ -6,6 +6,8 @@ mod dot;
 mod mul;
 mod add;
 
+use std::ops::Range;
+
 use itertools::{iproduct,izip};
 
 use crate::{matrix::Matrix, utils};
@@ -26,13 +28,13 @@ pub trait IntoExpr<const N : usize> {
 
 /// The `ExprTrait<N>` represents a `N`-dimensional expression.
 pub trait ExprTrait<const N : usize> {
-    /// Evaluate the expression and put the result on the [rs] stack,
-    /// using the [ws] to evaluate sub-expressions and [xs] for
+    /// Evaluate the expression and put the result on the `rs` stack,
+    /// using the `ws` to evaluate sub-expressions and `xs` for
     /// general storage.
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack);
    
     /// Evaluate the expression, then clean it up and put
-    /// it on the [rs] stack. The result will guarantee that
+    /// it on the `rs` stack. The result will guarantee that
     /// - non-zeros in each row are sorted by `subj`
     /// - expression contains no zeros or duplicate nonzeros.
     /// - the expression is dense
@@ -120,6 +122,9 @@ pub trait ExprTrait<const N : usize> {
 
     /// Add an expression and an item that is addable to an expression, e.g. constants or other
     /// expressions.
+    ///
+    /// # Arguments
+    /// - `rhs` Add two expressions. The expression shapes must match.
     fn add<RHS>(self, rhs : RHS) -> ExprAdd<N,Self,RHS::Result> 
         where 
             RHS : IntoExpr<N>,
@@ -128,14 +133,11 @@ pub trait ExprTrait<const N : usize> {
         ExprAdd::new(self,rhs.into_expr(),1.0,1.0) 
     }
 
-    //fn add<RHS>(self, rhs : RHS) -> RHS::Result
-    //    where 
-    //        Self : Sized, 
-    //        RHS : ExprAddable<N,Self> 
-    //{ rhs.add_internal(self) }
-
     /// Subtract expression and an item that is addable to an expression, e.g. constants or other
     /// expressions.
+    ///
+    /// # Arguments
+    /// - `rhs` Subtract two expressions. The expression shapes must match.
     fn sub<RHS>(self, rhs : RHS) -> ExprAdd<N,Self,RHS::Result> 
         where 
             RHS : IntoExpr<N>,
@@ -143,18 +145,19 @@ pub trait ExprTrait<const N : usize> {
     {
         ExprAdd::new(self,rhs.into_expr(),1.0,-1.0) 
     }
-    //fn sub<RHS>(self, rhs : RHS) -> RHS::SubResult
-    //    where 
-    //        Self : Sized,
-    //        RHS : ExprAddable<N,Self> 
-    //{ rhs.sub_internal(self) }
 
     /// Element-wise multiplication of two operands. The operand shapes must be the same.
+    ///
+    /// # Arguments
+    /// - `other` Multiply element-wise. The shapes of the operands must match. 
     fn mul_elem<RHS>(self, other : RHS) -> RHS::Result where Self : Sized, RHS : ExprRightElmMultipliable<N,Self> { other.mul_elem(self) }
 
     /// An expression that produces a vector of dot-products of the rows of the operands,
     /// specifically, `[r_0,r_1,...] = [dot(e_{0,*},m_{0,*},dot(e_{1,*},m_{1,*},...]`, where `e` if
     /// an expression and `m` is a matrix. The shapes of the operands must be identical.
+    ///
+    /// # Arguments
+    /// - `other` Matrix operand.
     fn dot_rows<M>(self, other : M) -> ExprReduceShape<2,1,ExprSumLastDims<2,ExprMulElm<2,Self>>>
         where 
             Self : Sized+ExprTrait<2>, 
@@ -174,28 +177,55 @@ pub trait ExprTrait<const N : usize> {
         }
     }
 
-    /// Stack vertically, i.e. in first dimension.
-    fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }
-    /// Stack horizontally, i.e. stack in second dimension.
-    fn hstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,1) }
-    /// Stack in arbitrary dimension.
-    fn stack<E:ExprTrait<N>>(self,dim : usize, other : E) -> ExprStack<N,Self,E> where Self:Sized { ExprStack::new(self,other,dim) }
-    /// Repeat a fixed number of times in arbitrary dimension.
+    /// Stack vertically, i.e. in first dimension. The two operands have the same number of
+    /// dimensions, and must have the same shapes except in the first dimension.
     ///
     /// # Arguments
-    /// - `dim` Dimension in which to repeat
+    /// - `other` The second operand.
+    fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }
+
+    /// Stack horizontally, i.e. stack in second dimension. The two operands have the same number of
+    /// dimensions, and must have the same shapes except in the second dimension.
+    ///
+    /// # Arguments
+    /// - `other` The second operand.
+    fn hstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,1) }
+
+    /// Stack in arbitrary dimension. The two operands have the same number of
+    /// dimensions, and must have the same shapes except in dimension `dim`.
+    ///
+    /// # Arguments
+    /// - `dim` The dimension in which to stack. This must be strictly less than `N`.
+    /// - `other` The second operand.
+    fn stack<E:ExprTrait<N>>(self,dim : usize, other : E) -> ExprStack<N,Self,E> where Self:Sized { ExprStack::new(self,other,dim) }
+
+    /// Repeat a fixed number of times in some dimension. 
+    ///
+    /// # Arguments
+    /// - `dim` Dimension in which to repeat. This must be strictly less than `N`.
     /// - `num` Number of times to repeat
     fn repeat(self,dim : usize, num : usize) -> ExprRepeat<N,Self> where Self:Sized { ExprRepeat{ expr : self, dim, num } }
 
     /// Take a slice of an expression
-    fn slice(self,begin : &[usize; N], end : &[usize; N]) -> ExprSlice<N,Self> where Self:Sized {
-        assert!(begin.iter().zip(end.iter()).all(|(&a,&b)| a <= b));
-        ExprSlice{expr : self, begin : *begin, end : *end} 
+    fn slice(self,ranges : &[Range<usize>;N]) -> ExprSlice<N,Self> where Self:Sized {
+        assert!(ranges.iter().all(|r| r.start <= r.end));
+        let mut begin = [0usize;N];
+        let mut end   = [0usize;N];
+        izip!(begin.iter_mut(),end.iter_mut(),ranges.iter()).for_each(|(b,e,r)| { *b = r.start; *e = r.end; } );
+
+        ExprSlice{expr : self, begin, end} 
     }
+    //fn slice(self,begin : &[usize; N], end : &[usize; N]) -> ExprSlice<N,Self> where Self:Sized {
+    //    assert!(begin.iter().zip(end.iter()).all(|(&a,&b)| a <= b));
+    //    ExprSlice{expr : self, begin : *begin, end : *end} 
+    //}
 
     /// Reshape the experssion. The new shape must match the old
     /// shape, meaning that the product of the dimensions are the
     /// same.
+    ///
+    /// # Arguments
+    /// - `shape` The new shape.
     fn reshape<const M : usize>(self,shape : &[usize; M]) -> ExprReshape<N,M,Self>  where Self:Sized { ExprReshape{item:self,shape:*shape} }
 
     /// Flatten the expression into a vector. Preserve sparsity.
@@ -217,21 +247,49 @@ pub trait ExprTrait<const N : usize> {
         ExprReshapeOneRow{item:self, dim : i }
     }
 
-
     /// Reshape a sparse expression into a dense expression with the
     /// given shape. The shape must match the actual number of
     /// elements in the expression.
     fn gather(self) -> ExprGatherToVec<N,Self>  where Self:Sized { ExprGatherToVec{item:self} }
 
     /// Multiply `(self * other)`, where other must be right-multipliable with `Self`.
+    ///
+    /// # Arguments
+    /// - `other` The right-hand matrix argument.
     fn mul<RHS>(self,other : RHS) -> RHS::Result where Self: Sized, RHS : ExprRightMultipliable<N,Self> { other.mul_right(self) }
+
     /// Multiply `(other * self)`, where other must be left-multipliable with `Self`.
+    ///
+    /// # Arguments
+    /// - `lhs` The left-hand matrix argument.
     fn rev_mul<LHS>(self, lhs: LHS) -> LHS::Result where Self: Sized, LHS : ExprLeftMultipliable<N,Self> { lhs.mul(self) }
 
+    /// Transpose a two-dimensional expression.
     fn transpose(self) -> ExprPermuteAxes<2,Self> where Self:Sized+ExprTrait<2> { ExprPermuteAxes{ item : self, perm : [1,0]} }
+
+    /// Create a new expression with only lower triangular nonzeros from the operand.
+    ///
+    /// # Arguments
+    /// - `with_diag` Indicating if the diagonal is included in the triangular non-zeros.
     fn tril(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized+ExprTrait<2> { ExprTriangularPart{item:self,upper:false,with_diag} }
+
+    /// Create a new expression with only upper triangular nonzeros from the operand.
+    ///
+    /// # Arguments
+    /// - `with_diag` Indicating if the diagonal is included in the triangular non-zeros.
     fn triu(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized+ExprTrait<2> { ExprTriangularPart{item:self,upper:true,with_diag} }
+
+    /// create a new expression with only lower triangular nonzeros from the operand put into a
+    /// vector in row-order.
+    ///
+    /// # arguments
+    /// - `with_diag` indicating if the diagonal is included in the triangular non-zeros.
     fn trilvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:false,with_diag} } } 
+
+    /// Create a new expression with only upper triangular nonzeros from the operand.
+    ///
+    /// # Arguments
+    /// - `with_diag` Indicating if the diagonal is included in the triangular non-zeros.
     fn triuvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
 }
 
@@ -257,20 +315,20 @@ impl<const N : usize> Expr<N> {
     /// Create a new literal expression from data
     ///
     /// Arguments:
-    /// * [shape] Shape of the expression. If `sparsity` is `None`,
+    /// * `shape` Shape of the expression. If `sparsity` is `None`,
     ///   the product of the dimensions in the shape must be equal to
     ///   the number of elements in the expression (`ptr.len()-1`)
-    /// * [sparsity] If not `None`, this defines the sparsity
+    /// * `sparsity` If not `None`, this defines the sparsity
     ///   pattern. The pattern denotes the linear indexes if nonzeros in
     ///   the shape. It must be sorted, must contain no duplicates and
     ///   must fit within the `shape`.
-    /// * [aptr] The number if elements is `aptr.len()-1`. [aptr] must
+    /// * `aptr` The number if elements is `aptr.len()-1`. `aptr` must
     ///   be ascending, so `aptr[i] <= aptr[i+1]`. `aptr` is a vector
-    ///   if indexes of the starting points of each element in [asubj]
-    ///   and [acof], so element `i` consists of nonzeros defined by
-    ///   [asubj[aptr[i]..aptr[i+1]]], acof[aptr[i]..aptr[i+1]]`
-    /// * [asubj] Variable subscripts.
-    /// * [acof]  Coefficients.
+    ///   if indexes of the starting points of each element in `asubj`
+    ///   and `acof`, so element `i` consists of nonzeros defined by
+    ///   `[asubj[aptr[i]..aptr[i+1]]], acof[aptr[i]..aptr[i+1]]`
+    /// * `asubj` Variable subscripts.
+    /// * `acof`  Coefficients.
     pub fn new(shape : &[usize;N],
                sparsity : Option<Vec<usize>>,
                aptr  : Vec<usize>,

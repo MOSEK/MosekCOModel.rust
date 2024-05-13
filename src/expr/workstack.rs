@@ -1,23 +1,39 @@
 
 use itertools::izip;
+
+
+/// The `WorkStack` struct defines working areas for evaluating expressions. An evaluated
+/// expression has a specific format on the stacks. A stack can contain multiple expressions.
+///
 /// Structure of a computed expression on the workstack:
+/// ```text
 /// stack bottom <---> top 
-/// susize: [ asubj[nnz], sp[0 if nelm < fullsize else nelm], ptr[nelm+1], shape[ndim], nelm, nnz, nd ]
+/// susize: [ asubj[nnz], 
+///           sp[0 if nelm < fullsize else nelm], 
+///           ptr[nelm+1], 
+///           shape[ndim], 
+///           nelm, 
+///           nnz, 
+///           nd ]
 /// sf64:   [ acof[nnz] ]
-/// 
-/// NOTE: We allocate some extra space for the shape to allow fast reshaping.
-
-
-
+/// ```
+///
+/// The top 3 values on the integer stack, `(nelm,nnz,nd)`, define the exact size on the stack of the
+/// top expression, so the offset of the next expression can be computed from these 3 values. 
 pub struct WorkStack {
+    /// Stack of unsigned integers
     susize : Vec<usize>,
+    /// Stack of floats
     sf64   : Vec<f64>,
 
+    /// Index of the current top of the integer stack, i.e. the index of the first unused element.
     utop : usize,
+    /// Index of the current top of the float stack, i.e. the index of the first unused element.
     ftop : usize
 }
 
 impl WorkStack {
+    /// Create a new stack with a given initial capacity.
     pub fn new(cap : usize) -> WorkStack {
         WorkStack{
             susize : Vec::with_capacity(cap),
@@ -26,21 +42,26 @@ impl WorkStack {
             ftop : 0  }
     }
 
+    /// Reset top pointers to 0. Note that this does not clear the actual values in the stack.
     pub fn clear(& mut self) {
         self.utop = 0;
         self.ftop = 0;
     }
+
+    /// Indicates if the stack is empty.
     pub fn is_empty(& mut self) -> bool {
         self.utop == 0 && self.ftop == 0
     }
 
-
+    /// Perform inplace multiplication of the top-level expression. Multiply all coefficients by a
+    /// constant.
     pub fn inplace_mul(& mut self, c : f64) {
         let selfutop = self.utop;
         let nnz   = self.susize[selfutop-2];
         self.sf64[self.ftop-nnz..].iter_mut().for_each(|v| *v *= c);
     }
 
+    /// Perform inline resize of 
     pub fn inline_reshape_expr(& mut self, shape: &[usize]) -> Result<(),String> {
         let newnd = shape.len();
         if shape.len() > 8 { 

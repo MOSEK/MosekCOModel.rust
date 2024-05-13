@@ -1,3 +1,44 @@
+///
+/// MosekModel is a crate for setting up optimization models to be solved with MOSEK.
+///
+/// The package is still somewhat exprimental.
+///
+/// # Example
+///
+/// ```
+/// use mosekmodel::*;
+/// use mosekmodel::expr::*;
+///
+/// let a0 = vec![ 3.0, 1.0, 2.0, 0.0 ];
+/// let a1 = vec![ 2.0, 1.0, 3.0, 1.0 ];
+/// let a2 = vec![ 0.0, 2.0, 0.0, 3.0 ];
+/// let c  = vec![ 3.0, 1.0, 5.0, 1.0 ];
+///
+/// // Create a model with the name 'lo1'
+/// let mut m = Model::new(Some("lo1"));
+/// // Create variable 'x' of length 4
+/// let x = m.variable(Some("x"), greater_than(vec![0.0,0.0,0.0,0.0]));
+///
+/// // Create constraints
+/// _ = m.constraint(None, &x.index(1), less_than(10.0));
+/// _ = m.constraint(Some("c1"), &x.clone().dot(a0.as_slice()), equal_to(30.0));
+/// _ = m.constraint(Some("c2"), &x.clone().dot(a1.as_slice()), greater_than(15.0));
+/// _ = m.constraint(Some("c3"), &x.clone().dot(a2.as_slice()), less_than(25.0));
+///
+/// // Set the objective function to (c^t * x)
+/// m.objective(Some("obj"), Sense::Maximize, &x.clone().dot(c.as_slice()));
+///
+/// // Solve the problem
+/// m.solve();
+///
+/// // Get the solution values
+/// let (psta,dsta) = m.solution_status(SolutionType::Default);
+/// println!("Status = {:?}/{:?}",psta,dsta);
+/// let xx = m.primal_solution(SolutionType::Default,&x);
+/// println!("x = {:?}", xx);
+/// ```
+
+
 //#![feature(specialization)]
 extern crate mosek;
 extern crate itertools;
