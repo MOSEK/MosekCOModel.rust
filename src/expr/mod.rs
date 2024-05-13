@@ -1006,125 +1006,7 @@ impl<T:ExprTrait<2>> ExprTrait<2> for ExprTriangularPart<T> {
                 .for_each(|((&pb,&pe,(i,j)),(rp,spi))|  { *rp = pe-pb; *spi = i * d + j } );
             rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
 
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//....match (self.upper,self.with_diag) {
-//                (true,true) => {
-//                    println!("  Upper with diag");
-//                    izip!((0..d*d).step_by(d+1),
-//                          (d+1..d*d+1).step_by(d))
-//                        .map(|(i0,i1)| &ptr[i0..i1])
-//                        .for_each(|ptr| {
-//                            let n = ptr.last().unwrap() - ptr.first().unwrap();
-//                            let &ptrb = ptr.first().unwrap();
-//                            let &ptre = ptr.last().unwrap();
-//                            rsubj[nzi..nzi+n].clone_from_slice(&subj[ptrb..ptre]);
-//                            rcof[nzi..nzi+n].clone_from_slice(&cof[ptrb..ptre]);
-//                            izip!(rptr[elmi+1..elmi+ptr.len()-1].iter_mut(),
-//                                  ptr.iter(),
-//                                  ptr[1..].iter()).for_each(|(rp,&p0,&p1)| *rp = p1-p0);
-//                            nzi += n;
-//                            elmi += ptr.len();
-//                        });
-//                    if let Some(rsp) = rsp {
-//                        izip!((0..d*d).step_by(d+1),
-//                              (d+1..d*d+1).step_by(d))
-//                            .map(|(i0,i1)| i0..i1)
-//                            .flatten()
-//                            .zip(rsp.iter_mut())
-//                            .for_each(|(i,ri)| *ri = i);
-//                    }
-//                },
-//                (true,false) => {
-//                    println!("  Upper without diag");
-//                    izip!((1..d*d).step_by(d+1),
-//                          (d+1..d*d+1).step_by(d))
-//                        .map(|(i0,i1)| &ptr[i0..i1])
-//                        .for_each(|ptr| {
-//                            let n = ptr.last().unwrap() - ptr.first().unwrap();
-//                            let &ptrb = ptr.first().unwrap();
-//                            let &ptre = ptr.last().unwrap();
-//                            rsubj[nzi..nzi+n].clone_from_slice(&subj[ptrb..ptre]);
-//                            rcof[nzi..nzi+n].clone_from_slice(&cof[ptrb..ptre]);
-//                            izip!(rptr[elmi+1..elmi+ptr.len()-1].iter_mut(),
-//                                  ptr.iter(),
-//                                  ptr[1..].iter()).for_each(|(rp,&p0,&p1)| *rp = p1-p0);
-//                            nzi += n;
-//                            elmi += ptr.len();
-//                        });
-//                    if let Some(rsp) = rsp {
-//                        izip!((1..d*d).step_by(d+1),
-//                              (d+1..d*d+1).step_by(d))
-//                            .map(|(i0,i1)| i0..i1)
-//                            .flatten()
-//                            .zip(rsp.iter_mut())
-//                            .for_each(|(i,ri)| *ri = i);
-//                    }
-//                },
-//                (false,true) => {
-//                    println!("  Lower with diag");
-//                    izip!((0..d*d).step_by(d),
-//                          (1..d*d+1).step_by(d+1))
-//                        .map(|(i0,i1)| &ptr[i0..i1])
-//                        .for_each(|ptr| {
-//                            let n = ptr.last().unwrap() - ptr.first().unwrap();
-//                            let &ptrb = ptr.first().unwrap();
-//                            let &ptre = ptr.last().unwrap();
-//                            rsubj[nzi..nzi+n].clone_from_slice(&subj[ptrb..ptre]);
-//                            rcof[nzi..nzi+n].clone_from_slice(&cof[ptrb..ptre]);
-//                            izip!(rptr[elmi+1..elmi+ptr.len()-1].iter_mut(),
-//                                  ptr.iter(),
-//                                  ptr[1..].iter()).for_each(|(rp,&p0,&p1)| *rp = p1-p0);
-//                            nzi += n;
-//                            elmi += ptr.len();
-//                        });
-//                    if let Some(rsp) = rsp {
-//                        izip!((0..d*d).step_by(d),
-//                              (1..d*d+1).step_by(d+1))
-//                            .map(|(i0,i1)| i0..i1)
-//                            .flatten()
-//                            .zip(rsp.iter_mut())
-//                            .for_each(|(i,ri)| *ri = i);
-//                    }
-//                },
-//                (false,false) => {
-//                    println!("  Lower without diag");
-//                    izip!((0..d*d).step_by(d),
-//                          (0..d*d+1).step_by(d+1))
-//                        .map(|(i0,i1)| &ptr[i0..i1])
-//                        .for_each(|ptr| {
-//                            let n = ptr.last().unwrap() - ptr.first().unwrap();
-//                            let &ptrb = ptr.first().unwrap();
-//                            let &ptre = ptr.last().unwrap();
-//                            rsubj[nzi..nzi+n].clone_from_slice(&subj[ptrb..ptre]);
-//                            rcof[nzi..nzi+n].clone_from_slice(&cof[ptrb..ptre]);
-//                            izip!(rptr[elmi+1..elmi+ptr.len()-1].iter_mut(),
-//                                  ptr.iter(),
-//                                  ptr[1..].iter()).for_each(|(rp,&p0,&p1)| *rp = p1-p0);
-//                            nzi += n;
-//                            elmi += ptr.len();
-//                        });
-//                    if let Some(rsp) = rsp {
-//                        izip!((0..d*d).step_by(d),
-//                              (0..d*d+1).step_by(d+1))
-//                            .map(|(i0,i1)| i0..i1)
-//                            .flatten()
-//                            .zip(rsp.iter_mut())
-//                            .for_each(|(i,ri)| *ri = i);
-//                    }
-//                }
-//            };
-//            rptr[0] = 0;
-            //println!("rptr = {:?}",rptr);
             let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
-
         }
     }
 }
@@ -1275,7 +1157,6 @@ impl IntoExpr<1> for Vec<f64> {
     type Result = Expr<1>;
     fn into_expr(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.clone()) }
 }
-
 
 
 

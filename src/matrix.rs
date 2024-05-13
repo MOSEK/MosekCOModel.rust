@@ -1,8 +1,6 @@
 use itertools::{izip, iproduct};
 use crate::expr::{Expr,IntoExpr};
 
-use super::ExprTrait;
-
 pub trait Matrix {
     fn shape(&self) -> [usize; 2];
     fn width(&self) -> usize { self.shape()[1] }
@@ -347,7 +345,7 @@ impl MatrixData for &[f64] {
 }
 
 impl MatrixData for Vec<f64> {
-    fn into_vec(self,size : usize) -> Vec<f64> {
+    fn into_vec(self,_size : usize) -> Vec<f64> {
        self
     }
 }
