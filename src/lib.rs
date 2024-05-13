@@ -473,7 +473,7 @@ impl Model {
                       shape)
     }
 
-    fn psd_variable<const N : usize>(&mut self, _name : Option<&str>, dom : PSDDomain<N>) -> Variable<N> {
+    fn psd_variable<const N : usize>(&mut self, name : Option<&str>, dom : PSDDomain<N>) -> Variable<N> {
         let nd = dom.shape.len();
         let (conedim0,conedim1) = dom.conedims;
         if conedim0 == conedim1 || conedim0 >= nd || conedim1 >= nd { panic!("Invalid cone dimensions") };
@@ -498,6 +498,25 @@ impl Model {
             for j in 0..d1 {
                 for i in j..d1 {
                     self.vars.push(VarAtom::BarElm(barvar0 + k as i32, i*(i+1)/2+j));
+                }
+            }
+        }
+
+        if let Some(name) = name {
+            if false && nd == 2 {
+                let name = format!("{}[]",name);
+                self.task.put_barvar_name(barvar0, name.as_str()).unwrap();
+            }
+            else {
+                //let mut xstrides = [0usize; N];
+                let mut xshape = [0usize; N];
+                xshape.iter_mut().zip(dom.shape[0..cdim0].iter().chain(dom.shape[cdim0+1..cdim1].iter()).chain(dom.shape[cdim1+1..].iter())).for_each(|(t,&s)| *t = s);
+                //xstrides.iter_mut().zip(xshape[0..N-2].iter()).rev().fold(1|v,(t,*s)| { *t = v; s * v});
+                let mut idx = [1usize; N];
+                for barj in barvar0..barvar0+numcone as i32 {
+                    idx[0..N-2].iter_mut().zip(xshape).rev().fold(1,|carry,(i,d)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
+                    let name = format!("{}{:?}",name,&idx[0..N-2]);
+                    self.task.put_barvar_name(barj, name.as_str()).unwrap();
                 }
             }
         }
@@ -804,14 +823,11 @@ impl Model {
 
         if let Some(name) = name {
             let accshape : Vec<usize> = shape[0..dom.conedim].iter().chain(shape[dom.conedim+1..].iter()).cloned().collect();
-            let mut accstride = vec!(0;shape.len()-1);
-
             let mut idx = vec![1usize;accshape.len()];
             for i in 0..accshape.iter().product() {                
                 accshape.iter().zip(idx.iter_mut()).rev().fold(1,|carry,(&d,i)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
                 self.task.put_acc_name(acci+i as i64,format!("{}{:?}",name,idx).as_str()).unwrap();
             } 
-            //iproduct!(0..d0,0..d2).for_each(|(i0,i2)| self.task.put_acc_name(format!("{}[{},*,{}]")).unwrap() )
         //     }
         }
 
@@ -1225,7 +1241,12 @@ fn split_expr(eptr    : &[usize],
                         barsubj.push(j);
                         barsubk.push(k as i32);
                         barsubl.push(l as i32);
-                        barcof.push(c);
+                        if k == l {
+                            barcof.push(c);
+                        }
+                        else {
+                            barcof.push(0.5 * c);
+                        }
                     }
                 }
             }

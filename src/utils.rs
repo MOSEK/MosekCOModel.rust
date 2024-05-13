@@ -7,6 +7,17 @@ use std::slice::SliceIndex;
 use itertools::izip;
 
 
+/// Trait that provides a function that copies from an iterator into a slice.
+///
+/// # Example 
+///
+/// ```
+/// let v : vec![0; 10];
+/// v.copy_from_iter(0..10);
+/// ```
+/// # Notes
+/// Implementations should not fail if the lengths do not match, but rather copy the maximum number
+/// possible and return that number.
 pub trait AssignFromIterExt<I> where I : Iterator, I::Item : Copy 
 {
     fn copy_from_iter(&mut self, it : I) -> usize;
