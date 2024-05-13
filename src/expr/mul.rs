@@ -517,17 +517,21 @@ pub trait ExprDiagMultipliable<E> where E : ExprTrait<2> {
 
 #[cfg(test)]
 mod test {
-    use crate::matrix;
+    use crate::matrix::*;
+    use crate::expr::*;
 
     #[test]
     fn mul() {
-        let m = matrix::dense(2, 5, vec![1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0]);
-        let e = super::super::Expr{ shape: [2,2],
+        let m = dense(2, 5, vec![1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0]);
+        let e = Expr{ shape: [2,2],
                                     aptr : vec![0,1,2,3,4],
                                     asubj: vec![5,6,7,8],
                                     acof: vec![1.0,1.0,1.0,1.0],
                                     sparsity : None};
-        m.rev_mul(e).eval()
+        let mut rs = WorkStack::new(512);
+        let mut ws = WorkStack::new(512);
+        let mut xs = WorkStack::new(512);
+        e.mul(m).eval(& mut rs, & mut ws, & mut xs);
     }
 }
 
