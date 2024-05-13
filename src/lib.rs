@@ -1,64 +1,98 @@
-///
-/// # MosekModel library
-///
-/// MosekModel is a crate for setting up conic optimization models to be solved with MOSEK. The
-/// interface currently supports 
-/// - Linear and conic variables and constraints
-/// - Integer variables
-///
-/// The model used is this:
-/// ```math 
-/// min/max  c^t x 
-/// such that A x + b ∊ Kc
-///           X ∊ Kx
-/// ```
-/// where `Kc=Kc_0 × ... × Kc_m` and ``Kx=Kx_0 × ... × Kx_n`, each `Kc_i` and `Kx_i` is a conic
-/// domain from the currently supported set:
-/// - Non-positive or non-negative orthant
-/// - Unbounded values
-/// - Fixed values
-/// - Second order cone or rotated second order cone
-/// - Primal or dual exponential cone
-/// - Primal or dual power cone
-/// - Geometric mean cone
-/// - Symmetric positive semidefinite cone or scaled vectorized positive semidefinite cone
-///
-/// The package is still somewhat exprimental.
-///
-/// # Example
-///
-/// ```
-/// use mosekmodel::*;
-/// use mosekmodel::expr::*;
-///
-/// let a0 = vec![ 3.0, 1.0, 2.0, 0.0 ];
-/// let a1 = vec![ 2.0, 1.0, 3.0, 1.0 ];
-/// let a2 = vec![ 0.0, 2.0, 0.0, 3.0 ];
-/// let c  = vec![ 3.0, 1.0, 5.0, 1.0 ];
-///
-/// // Create a model with the name 'lo1'
-/// let mut m = Model::new(Some("lo1"));
-/// // Create variable 'x' of length 4
-/// let x = m.variable(Some("x"), greater_than(vec![0.0,0.0,0.0,0.0]));
-///
-/// // Create constraints
-/// _ = m.constraint(None, &x.index(1), less_than(10.0));
-/// _ = m.constraint(Some("c1"), &x.clone().dot(a0.as_slice()), equal_to(30.0));
-/// _ = m.constraint(Some("c2"), &x.clone().dot(a1.as_slice()), greater_than(15.0));
-/// _ = m.constraint(Some("c3"), &x.clone().dot(a2.as_slice()), less_than(25.0));
-///
-/// // Set the objective function to (c^t * x)
-/// m.objective(Some("obj"), Sense::Maximize, &x.clone().dot(c.as_slice()));
-///
-/// // Solve the problem
-/// m.solve();
-///
-/// // Get the solution values
-/// let (psta,dsta) = m.solution_status(SolutionType::Default);
-/// println!("Status = {:?}/{:?}",psta,dsta);
-/// let xx = m.primal_solution(SolutionType::Default,&x);
-/// println!("x = {:?}", xx);
-/// ```
+//!
+//! # MosekModel library
+//!
+//! MosekModel is a crate for setting up conic optimization models to be solved with MOSEK. The
+//! interface currently supports 
+//! - Linear and conic variables and constraints
+//! - Integer variables
+//!
+//! The model used is this:
+//! ```math 
+//! min/max   c^t x 
+//! such that A x + b ∊ Kc
+//!           X ∊ Kx
+//! ```
+//! where `Kc=Kc_0 × ... × Kc_m` and `Kx=Kx_0 × ... × Kx_n`, each `Kc_i` and `Kx_i` is a conic
+//! domain from the currently supported set:
+//! - Non-positive or non-negative orthant
+//! - Unbounded values
+//! - Fixed values
+//! - Second order cone or rotated second order cone
+//! - Primal or dual exponential cone
+//! - Primal or dual power cone
+//! - Geometric mean cone
+//! - Symmetric positive semidefinite cone or scaled vectorized positive semidefinite cone
+//!
+//! # Expressions and shapes
+//!
+//! Constraint, domains, variables and expressions have shapes, and the latter three can be either
+//! dense or sparse meanning that some entries are fixed to zero. A shaped variable, expression and
+//! constraint is basically a multi-dimensional array of scalar variables, expressions and
+//! constraints respectively.
+//!
+//! ## Domains
+//! 
+//! A domain is a value that indicates things like cone type, cone parameters, right-hand sides,
+//! shape and sparsity pattern. This is used when creating constraint or variables to define their
+//! properties.
+//!
+//! ## Variables
+//!
+//! When a [Variable] is created in a model, the model adds the necessary
+//! internal information to map a linear variable index to something in the underlying task, but
+//! after that, a variable is essentially a list of indexes of the scalar variables t a shape and
+//! sparsity. Variable objects can be stacked, indexed and sliced to obtain new variable objects.
+//!
+//! When a model has been optimized, the variable object is used to access the parts of the
+//! solution it represents through the [Model] object.
+//!
+//! ## Constraints
+//! A constraint is created in a [Model] from an expression (something implementing [ExprTrait])
+//! and a domain. The sparsity pattern of the domain is ignored, and a constraint is always dense.
+//! When a constraint has been created it can be indexed, sliced and stacked like a variable, and
+//! it can be used to access the relevant parts of the solution through the [Model] object.
+//!
+//! ## Expression
+//!
+//! TODO
+//!
+//! # Note
+//! Please note that the package is still somewhat exprimental.
+//!
+//! # Example
+//!
+//! ```
+//! use mosekmodel::*;
+//! use mosekmodel::expr::*;
+//!
+//! let a0 = vec![ 3.0, 1.0, 2.0, 0.0 ];
+//! let a1 = vec![ 2.0, 1.0, 3.0, 1.0 ];
+//! let a2 = vec![ 0.0, 2.0, 0.0, 3.0 ];
+//! let c  = vec![ 3.0, 1.0, 5.0, 1.0 ];
+//!
+//! // Create a model with the name 'lo1'
+//! let mut m = Model::new(Some("lo1"));
+//! // Create variable 'x' of length 4
+//! let x = m.variable(Some("x"), greater_than(vec![0.0,0.0,0.0,0.0]));
+//!
+//! // Create constraints
+//! _ = m.constraint(None, &x.index(1), less_than(10.0));
+//! _ = m.constraint(Some("c1"), &x.clone().dot(a0.as_slice()), equal_to(30.0));
+//! _ = m.constraint(Some("c2"), &x.clone().dot(a1.as_slice()), greater_than(15.0));
+//! _ = m.constraint(Some("c3"), &x.clone().dot(a2.as_slice()), less_than(25.0));
+//!
+//! // Set the objective function to (c^t * x)
+//! m.objective(Some("obj"), Sense::Maximize, &x.clone().dot(c.as_slice()));
+//!
+//! // Solve the problem
+//! m.solve();
+//!
+//! // Get the solution values
+//! let (psta,dsta) = m.solution_status(SolutionType::Default);
+//! println!("Status = {:?}/{:?}",psta,dsta);
+//! let xx = m.primal_solution(SolutionType::Default,&x);
+//! println!("x = {:?}", xx);
+//! ```
 
 
 //#![feature(specialization)]
@@ -72,7 +106,7 @@ pub mod matrix;
 pub mod expr;
 use expr::workstack::WorkStack;
 use itertools::{iproduct, izip};
-use std::iter::once;
+use std::{iter::once, path::Path};
 
 pub use expr::{ExprTrait,ExprRightMultipliable};
 pub use variable::Variable;
@@ -135,22 +169,39 @@ enum ConAtom {
     Linear(i32)
 }
 
+/// Solution type selector
 #[derive(Clone,Copy)]
 pub enum SolutionType {
+    /// Default indicates to automatically select which solution to use, in order of priority:
+    /// `Integer`, `Basic`, `Interior`
     Default,
+    /// Basic solution, the result of the simplex solver or basis identification.
     Basic,
+    /// Interior solution, the result of the interior point solver.
     Interior,
+    /// Integer solution, the only solution available for integer problems.
     Integer
 }
 
-
+/// Solution status indicator. It is used to indicate the status of either the primal or the dual
+/// part of a solution.
 #[derive(Clone,Copy,Debug)]
 pub enum SolutionStatus {
+    /// Indicates that the solution is optimal within tolerances.
     Optimal,
+    /// Indicates that the solution is feasible within tolerances.
     Feasible,
+    /// Indicates that the solution is a certificate of either primal or dual infeasibility. A
+    /// primal certificate prooves dual infesibility, and a dual certificate indicates primal
+    /// infeasibility.
     CertInfeas,
+    /// Indicates that the solution is a certificate of either primal or dual illposedness. A
+    /// primal certificate prooves dual illposedness, and a dual certificate indicates primal
+    /// illposedness.
     CertIllposed,
+    /// Indicates that the solution status is not known, basically it can be arbitrary values. 
     Unknown,
+    /// Indicates that the solution is not available.
     Undefined
 }
 
@@ -269,8 +320,11 @@ impl<const N : usize> VarDomainTrait<N> for PSDDomain<N> {
 // Model
 ////////////////////////////////////////////////////////////
 
-/// The Model object encapsulates an optimization problem and a
+/// The `Model` object encapsulates an optimization problem and a
 /// mapping from the structured API to the internal Task items.
+///
+/// Variables and constraints are created through the `Model` object and belong to exactly that
+/// model.
 pub struct Model {
     /// The MOSEK task
     task : mosek::TaskCB,
@@ -290,6 +344,9 @@ pub struct Model {
 ////////////////////////////////////////////////////////////
 // ModelItem
 ////////////////////////////////////////////////////////////
+
+/// The `ModelItem` represents either a variable or a constraint belonging to a [Model]. It is used
+/// by the [Model] object when accessing solution assist overloading and determine which solution part to access.
 pub trait ModelItem<const N : usize> {
     fn len(&self) -> usize;
     fn shape(&self) -> [usize;N];
@@ -387,8 +444,10 @@ impl SolverParameterValue for &str {
 impl Model {
     /// Create new Model object
     ///
-    /// Arguments:
+    /// # Arguments
     /// - `name` An optional name
+    /// # Returns
+    /// An empty model.
     pub fn new(name : Option<&str>) -> Model {
         let mut task = mosek::Task::new().unwrap().with_callbacks();
         match name {
@@ -408,13 +467,20 @@ impl Model {
         }
     }
 
+    /// Attach a log printer callback to the Model.
+    ///
+    /// # Arguments
+    /// - `func` A function that will be called with strings from the log. Individual lines may be
+    ///   written in multiple chunks to there is no guarantee that the strings will end with a
+    ///   newline.
     pub fn set_log_handler<F>(& mut self, func : F) where F : 'static+Fn(&str) {
         self.task.put_stream_callback(mosek::Streamtype::LOG,func).unwrap();
     }
 
-    /// Write problem to a file
-    pub fn write_problem(&self, filename : &str) {
-        self.task.write_data(filename).unwrap();
+    /// Write problem to a file. The filename extension determines the file format to use. If the
+    /// file extension is not recognized, the MPS format is used.
+    pub fn write_problem(&self, filename : &Path) {
+        self.task.write_data(filename.to_str().unwrap()).unwrap();
     }
 
     ////////////////////////////////////////////////////////////
@@ -428,7 +494,10 @@ impl Model {
     ///   type, shape and sparsity of the variable. For sparse
     ///   variables, elements outside of the sparsity pattern are
     ///   treated as variables fixed to 0.0.
-    pub fn variable<const N : usize, D : VarDomainTrait<N>>(& mut self, name : Option<&str>, dom : D) -> Variable<N> {
+    pub fn variable<const N : usize, D>(& mut self, name : Option<&str>, dom : D) -> Variable<N> 
+        where 
+            D : VarDomainTrait<N> 
+    {
         dom.create(self,name)
     }
 
