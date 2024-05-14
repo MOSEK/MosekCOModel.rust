@@ -14,14 +14,27 @@
 //! ```
 //! where `Kc=Kc_0 × ... × Kc_m` and `Kx=Kx_0 × ... × Kx_n`, each `Kc_i` and `Kx_i` is a conic
 //! domain from the currently supported set:
-//! - Non-positive or non-negative orthant
+//! - Non-positive or non-negative orthant.
 //! - Unbounded values
 //! - Fixed values
-//! - Second order cone or rotated second order cone
-//! - Primal or dual exponential cone
-//! - Primal or dual power cone
-//! - Geometric mean cone
-//! - Symmetric positive semidefinite cone or scaled vectorized positive semidefinite cone
+//! - Second order cone: `{ x ∊ R^n | x_1^2 ≥ ‖ x_2^2 + ... + x_n^2 ‖^2, x_1 ≥ 0 }`
+//! - Rotated second order cone: `{ x ∊ R^n | 1/2 x_1 x_2 ≥ ‖ x_3^2 + ... + x_n^2 ‖^2, x_1, x_2 ≥ 0 }`
+//! - Symmetric positive semidefinite cone if dimension `n > 1`
+//! - Primal power cone: `{ x ∊ R^n | x_1^(β_1) ··· x_k^(β_k) ≥ √(x_(k+1)^2 ··· x_n^2), x_0,..., x_k ≥ 0 }`
+//! - Dual power cone: `{ x ∊ R^n | (x_1/β_1)^(β_1) ··· (x_k/β_k)^(β_k) ≥ √(x_(k+1)^2 ··· x_n^2), x_0,..., x_k ≥ 0 }`
+//! - Primal exponential cone: `{ x ∊ R^3 | x_1 ≥ x_1 exp(x_3/x_2), x_0, x_1 ≥ 0 }`
+//! - Dual exponential cone: `{ x ∊ R^3 | x_1 ≥ -x_3 exp(-1) exp(x_2/x_3), x_3 ≤ 0, x_1 ≥ 0 }`
+//! - Primal geometric mean cone: `{ x ∊ R^n | (x_1 ··· x_(n-1))^{1/(n-1)} |x_n|, x_1,...,x_(n-1) ≥ 0}`
+//! - Dual geometric mean cone: `{ x ∊ R^n | (n-1)(x_1 ··· x_(n-1))^{1/(n-1)} |x_n|, x_1,...,x_(n-1) ≥ 0}`
+//! - Scaled vectorized positive semidefinite cone. For a `n` dimensional positive symmetric this
+//!   is the scaled lower triangular part of the matrix in column-major format, i.e. 
+//!   `{ x ∊ R^(n(n+1)/2)} | sMat(x) ∊ S^n }`, where
+//! ```math
+//!             │ x_1    x_2/√2   ···    x_n/√2         │
+//!   sMat(x) = │ x_2/√2 x_n+1    ···    x_(2n-1)/√2    │
+//!             │                 ···                   │
+//!             │ x_n/√2 x_(2n-1)/√2 ... x_(n(n+1)/2)^2 │
+//! ```
 //!
 //! # Expressions and shapes
 //!
@@ -54,7 +67,7 @@
 //!
 //! ## Expression
 //!
-//! TODO
+//! An expression is an n-dimensional array of scalar affine expressions. 
 //!
 //! # Note
 //! Please note that the package is still somewhat exprimental.
