@@ -969,7 +969,6 @@ impl Model {
             let mut idx = [1usize; N];
             for i in acci..acci+(d0*d2) as i64 {                
                 let n = format!("{}{:?}",name,&idx[0..N-1]);
-                println!("acc name {} -> '{}'",i,n);
                 xshape.iter().zip(idx.iter_mut()).rev().fold(1,|carry,(&d,i)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
                 self.task.put_acc_name(i,n.as_str()).unwrap();
             } 

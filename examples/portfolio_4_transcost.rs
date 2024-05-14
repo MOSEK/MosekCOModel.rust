@@ -76,7 +76,7 @@ fn markowitz_with_transactions_cost( mu : &[f64],
     //model.constraint(Some("trade"), Expr.hstack(z,Expr.sub(x,x0)), Domain.inQcone())
 
     // Constraints for turning y off and on. z-diag(u)*y<=0 i.e. z_j <= u_j*y_j
-    _ = model.constraint(Some("y_on_off"), &z.clone().sub(y.clone().mul_elm(u)), less_than(vec![0.0;n]));
+    _ = model.constraint(Some("y_on_off"), &z.clone().sub(y.clone().mul_elem(u)), less_than(vec![0.0;n]));
 
     // Integer optimization problems can be very hard to solve so limiting the 
     // maximum amount of time is a valuable safe guard

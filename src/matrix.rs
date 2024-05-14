@@ -44,12 +44,7 @@ impl Matrix for DenseMatrix {
     fn data(&self) -> &[f64] { self.data.as_slice() }
     fn sparsity(&self) -> Option<& [usize]> { None }
 
-
-    fn transpose(&self) -> DenseMatrix {
-        let shape = [self.shape[1],self.shape[0]];
-        let data : Vec<f64> = (0..self.shape[1]).map(|j| self.data[j..].iter().step_by(self.shape[1])).flat_map(|it| it.clone()).map(|&i| i).collect();
-        DenseMatrix { shape, data }
-    }
+    fn transpose(&self) -> DenseMatrix { self.transpose() }
     fn mul_scalar(mut self, s : f64) -> DenseMatrix {
        self.data.iter_mut().for_each(|v| *v *= s);
        self
@@ -67,6 +62,28 @@ impl DenseMatrix {
             shape : [height,width],
             data
         }
+    }
+    pub fn transpose(&self) -> DenseMatrix {
+        let shape = [self.shape[1],self.shape[0]];
+        let data : Vec<f64> = (0..self.shape[1]).map(|j| self.data[j..].iter().step_by(self.shape[1])).flat_map(|it| it.clone()).map(|&i| i).collect();
+        DenseMatrix { shape, data }
+    }
+
+    pub fn inplace_mul(& mut self, c : f64) {
+        self.data.iter_mut().for_each(|v| *v *= c);
+    }
+
+    pub fn mul_matrix_dense(& self, other : & DenseMatrix) -> DenseMatrix {
+        let data = self.data.chunks(self.shape[1])
+            .flat_map(|row| (0..other.shape[1]).map(|i| 
+                                                    row.iter()
+                                                       .zip(other.data[i..].iter().step_by(other.shape[1]))
+                                                       .map(|(l,r)| l*r)
+                                                       .sum()))
+            .collect();
+        DenseMatrix{
+            shape : [ self.shape[0], other.shape[1]],
+            data }
     }
 }
 
