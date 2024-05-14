@@ -281,6 +281,8 @@ pub fn unbounded() -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::Fre
 pub fn nonnegative() -> LinearDomain<0> { 0f64.greater_than() }
 /// Scalar domain of nonpositive values
 pub fn nonpositive() -> LinearDomain<0> { 0f64.less_than() }
+/// Scalar domain of zeros
+pub fn zero() -> LinearDomain<0> { 0f64.equal_to() }
 /// Domain of values greater than the offset `v`. 
 /// 
 /// # Arguments
