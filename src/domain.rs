@@ -13,6 +13,7 @@ pub enum LinearDomainType {
 pub enum ConicDomainType {
     QuadraticCone,
     RotatedQuadraticCone,
+    SVecPSDCone,
     GeometricMeanCone,
     DualGeometricMeanCone,
     ExponentialCone,
@@ -305,6 +306,17 @@ pub fn in_quadratic_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDo
 /// # Arguments
 /// - `dim` - dimension of the cone.
 pub fn in_rotated_quadratic_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::RotatedQuadraticCone,ofs:vec![0.0; dim],shape:[dim],conedim:0, is_integer : false} }
+/// Domain of a single scaled vectorized PSD cone of size `dim`, where `dim = n(n+1)/2` for some integer `n` The result is a vector domain of size `dim`.
+/// 
+/// # Arguments
+/// - `dim` - dimension of the cone. This must be `dim = n(n+1)/2` for some positive integer `n`.
+pub fn in_svecpsd_cone(dim : usize) -> ConicDomain<1> { 
+    // 0 = n^2 +n -2d
+    // n = (-1 + sqrt(1+8d))/2
+    let n = ((-1.0 + (1.0+8.0*dim as f64).sqrt())/2.0).floor() as usize;
+    if n * (n+1)/2 != dim { panic!("Invalid dimension {} for svecpsd cone", dim) }
+    ConicDomain{dt:ConicDomainType::SVecPSDCone,ofs:vec![0.0; dim],shape:[dim],conedim:0, is_integer : false} 
+}
 /// Domain of a single geometric mean cone if size `dim`. The result is a vector domain of size `dim`.
 /// 
 /// # Arguments
@@ -382,6 +394,18 @@ pub fn in_quadratic_cones<const N : usize>(shape : &[usize; N], conedim : usize)
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
 pub fn in_rotated_quadratic_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> ConicDomain<N> { in_cones(shape,conedim,ConicDomainType::RotatedQuadraticCone) }
+/// Domain of a multiple scaled vectorized PSD cones.
+/// 
+/// # Arguments
+/// - `shape` - shape of the cone.
+/// - `conedim` - index of the dimension in which the cones are aligned.
+pub fn in_svecpsd_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> ConicDomain<N> { 
+    let dim = shape[conedim];
+    let n = ((-1.0 + (1.0+8.0*dim as f64).sqrt())/2.0).floor() as usize;
+    if n * (n+1)/2 != dim { panic!("Invalid dimension {} for svecpsd cone", dim) }
+
+    in_cones(shape,conedim,ConicDomainType::SVecPSDCone) 
+}
 /// Domain of a multiple geometric mean cones.
 /// 
 /// # Arguments

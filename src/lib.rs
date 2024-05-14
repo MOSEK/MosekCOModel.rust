@@ -13,20 +13,21 @@
 //!           X ∊ Kx
 //! ```
 //! where `Kc=Kc_0 × ... × Kc_m` and `Kx=Kx_0 × ... × Kx_n`, each `Kc_i` and `Kx_i` is a conic
-//! domain from the currently supported set:
-//! - Non-positive or non-negative orthant.
-//! - Unbounded values
-//! - Fixed values
-//! - Second order cone: `{ x ∊ R^n | x_1^2 ≥ ‖ x_2^2 + ... + x_n^2 ‖^2, x_1 ≥ 0 }`
-//! - Rotated second order cone: `{ x ∊ R^n | 1/2 x_1 x_2 ≥ ‖ x_3^2 + ... + x_n^2 ‖^2, x_1, x_2 ≥ 0 }`
-//! - Symmetric positive semidefinite cone if dimension `n > 1`
-//! - Primal power cone: `{ x ∊ R^n | x_1^(β_1) ··· x_k^(β_k) ≥ √(x_(k+1)^2 ··· x_n^2), x_0,..., x_k ≥ 0 }`
-//! - Dual power cone: `{ x ∊ R^n | (x_1/β_1)^(β_1) ··· (x_k/β_k)^(β_k) ≥ √(x_(k+1)^2 ··· x_n^2), x_0,..., x_k ≥ 0 }`
-//! - Primal exponential cone: `{ x ∊ R^3 | x_1 ≥ x_1 exp(x_3/x_2), x_0, x_1 ≥ 0 }`
-//! - Dual exponential cone: `{ x ∊ R^3 | x_1 ≥ -x_3 exp(-1) exp(x_2/x_3), x_3 ≤ 0, x_1 ≥ 0 }`
-//! - Primal geometric mean cone: `{ x ∊ R^n | (x_1 ··· x_(n-1))^{1/(n-1)} |x_n|, x_1,...,x_(n-1) ≥ 0}`
-//! - Dual geometric mean cone: `{ x ∊ R^n | (n-1)(x_1 ··· x_(n-1))^{1/(n-1)} |x_n|, x_1,...,x_(n-1) ≥ 0}`
-//! - Scaled vectorized positive semidefinite cone. For a `n` dimensional positive symmetric this
+//! domain from the currently supported set plus an offset:
+//! - Non-positive or non-negative orthant (see [nonpositive], [nonnegative], [less_than] and
+//!   [greater_than]).
+//! - Unbounded values (see [unbounded]).
+//! - Fixed values (see [zero] and [equal_to])
+//! - Second order cone(s) (see [in_quadratic_cone], [in_quadratic_cones]): `{ x ∊ R^n | x_1^2 ≥ ‖ x_2^2 + ... + x_n^2 ‖^2, x_1 ≥ 0 }`
+//! - Rotated second order cone(s) (see [in_rotated_quadratic_cone], [in_rotated_quadratic_cones]): `{ x ∊ R^n | 1/2 x_1 x_2 ≥ ‖ x_3^2 + ... + x_n^2 ‖^2, x_1, x_2 ≥ 0 }`
+//! - Symmetric positive semidefinite cone(s) if dimension `n > 1` (see [in_psd_cone], [in_psd_cones]).
+//! - Primal power cone(s) (see [in_power_cone], [in_power_cones]): `{ x ∊ R^n | x_1^(β_1) ··· x_k^(β_k) ≥ √(x_(k+1)^2 ··· x_n^2), x_0,..., x_k ≥ 0 }`
+//! - Dual power cone(s) (see [in_dual_power_cone], [in_dual_power_cones]): `{ x ∊ R^n | (x_1/β_1)^(β_1) ··· (x_k/β_k)^(β_k) ≥ √(x_(k+1)^2 ··· x_n^2), x_0,..., x_k ≥ 0 }`
+//! - Primal exponential cone(s) (see [in_exponential_cone], [in_exponential_cones]): `{ x ∊ R^3 | x_1 ≥ x_1 exp(x_3/x_2), x_0, x_1 ≥ 0 }`
+//! - Dual exponential cone(s) (see [in_dual_exponential_cone], [in_dual_exponential_cones]): `{ x ∊ R^3 | x_1 ≥ -x_3 exp(-1) exp(x_2/x_3), x_3 ≤ 0, x_1 ≥ 0 }`
+//! - Primal geometric mean cone(s) (see [in_geometric_mean_cone], [in_geometric_mean_cones]): `{ x ∊ R^n | (x_1 ··· x_(n-1))^{1/(n-1)} |x_n|, x_1,...,x_(n-1) ≥ 0}`
+//! - Dual geometric mean cone(s) (see [in_dual_geometric_mean_cone], [in_dual_geometric_mean_cones]): `{ x ∊ R^n | (n-1)(x_1 ··· x_(n-1))^{1/(n-1)} |x_n|, x_1,...,x_(n-1) ≥ 0}`
+//! - Scaled vectorized positive semidefinite cone(s) (see [in_svecpsd_cone], [in_svecpsd_cone]). For a `n` dimensional positive symmetric this
 //!   is the scaled lower triangular part of the matrix in column-major format, i.e. 
 //!   `{ x ∊ R^(n(n+1)/2)} | sMat(x) ∊ S^n }`, where
 //! ```math
@@ -713,6 +714,7 @@ impl Model {
         let numcone  = d0*d2;
 
         let domidx = match dom.dt {
+            ConicDomainType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
@@ -950,6 +952,7 @@ impl Model {
         let numcone  = shape.iter().product::<usize>() / conesize;
 
         let domidx = match dom.dt {
+            ConicDomainType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
