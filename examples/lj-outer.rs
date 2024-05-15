@@ -11,6 +11,8 @@ use mosekmodel::{equal_to, hstack, in_geometric_mean_cone, in_psd_cone, in_quadr
 use mosekmodel::expr::*;
 use mosekmodel::matrix::{speye,dense};
 
+
+
 /// Purpose: Models the hypograph of the n-th power of the
 /// determinant of a positive definite matrix. See [1,2] for more details.
 ///

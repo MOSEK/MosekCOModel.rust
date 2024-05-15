@@ -283,6 +283,7 @@ pub fn nonnegative() -> LinearDomain<0> { 0f64.greater_than() }
 pub fn nonpositive() -> LinearDomain<0> { 0f64.less_than() }
 /// Scalar domain of zeros
 pub fn zero() -> LinearDomain<0> { 0f64.equal_to() }
+pub fn zeros<const N : usize>(shape : &[usize; N]) -> LinearDomain<N> { equal_to(0.0).with_shape(shape) }
 /// Domain of values greater than the offset `v`. 
 /// 
 /// # Arguments
