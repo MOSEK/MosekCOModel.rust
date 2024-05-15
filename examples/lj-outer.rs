@@ -1,11 +1,9 @@
 //
 //  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
 // 
-//  File: lj-outer.rights
+//  File: lj-outer.rs
 //
-//  Computes the Löwner-John outer ellipsoid for a convex polygon. This is a 2D specialization of
-//  the more general n-dimensional case.
-//
+//  Computes the Löwner-John outer ellipsoid for a convex polygon. 
 //
 extern crate mosekmodel;
 
