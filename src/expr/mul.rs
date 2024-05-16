@@ -1,4 +1,4 @@
-use super::{ExprTrait, ExprReshapeOneRow};
+use super::{ExprReshape, ExprReshapeOneRow, ExprTrait};
 use super::workstack::WorkStack;
 use super::matrix::Matrix;
 use itertools::izip;
@@ -28,6 +28,17 @@ pub struct ExprMulElm<const N : usize,E> where E : ExprTrait<N>+Sized {
     pub(super)datashape : [usize; N],
     pub(super)datasparsity : Option<Vec<usize>>,
     pub(super)data : Vec<f64>
+}
+
+
+// multiply a scalar expression by a shaped value
+pub struct ExprScalarMul<const N : usize, E> 
+    where E : ExprTrait<0> 
+{
+    expr : E,
+    datashape : [usize; N],
+    datasparsity : Option<Vec<usize>>,
+    data : Vec<f64>
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -219,6 +230,21 @@ impl<E> ExprRightMultipliable<2,E> for &[f64]
     }
 }
 
+impl<E> ExprRightMultipliable<0,E> for &[f64] 
+    where
+        E : ExprTrait<0>
+{
+    type Result = ExprScalarMul<1,E>;
+    fn mul_right(self,rhs : E) -> Self::Result {
+        ExprScalarMul{
+            expr : rhs,
+            data : self.to_vec(),
+            datasparsity : None,
+            datashape : [self.len()]
+        }
+    }
+}
+
 impl<const N : usize, E> ExprRightMultipliable<N,E> for f64
     where E : ExprTrait<N>
 {
@@ -230,6 +256,7 @@ impl<const N : usize, E> ExprRightMultipliable<N,E> for f64
         }
     }
 }
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Left element-wise multiplication
@@ -504,6 +531,33 @@ impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprMulElm<N,E> {
         } // match (self.sparsity,sp)
     }
 }
+
+
+
+
+impl<const N : usize,E> ExprTrait<N> for ExprScalarMul<N,E> where E : ExprTrait<0> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.expr.eval(ws,rs,xs);
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+        assert_eq!(shape.len(), 0);
+        if let Some(sp) = sp {
+        }
+        else {
+            let nnz = *ptr.last().unwrap();
+            let rnelem = self.data.len();
+            let rnnz = nnz * rnelem;
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.datashape, rnnz, rnelem);
+            
+            rptr.iter_mut().fold(0,|c,r| { *r = c; c + nnz });
+            if let (Some(rsp),Some(dsp)) = (rsp,&self.datasparsity) {
+                rsp.copy_from_slice(dsp.as_slice());
+            }
+            rsubj.iter_mut().zip(subj[0..nnz].iter().cycle()).for_each(| (r,&s)| *r = s);
+            rcof.iter_mut().zip(cof[0..nnz].iter().cycle()).for_each(| (r,&s)| *r = s);
+        }
+    }
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // MulDiag
