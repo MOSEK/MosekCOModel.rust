@@ -2,6 +2,7 @@ use super::{ExprReshape, ExprReshapeOneRow, ExprTrait};
 use super::workstack::WorkStack;
 use super::matrix::Matrix;
 use itertools::izip;
+use std::iter::repeat;
 
 pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
     item : E,
@@ -268,12 +269,11 @@ impl<E,M> ExprRightMultipliable<0,E> for &M
 {
     type Result = ExprScalarMul<2,E>;
     fn mul_right(self,rhs : E) -> Self::Result {
-
         ExprScalarMul{
-            expr : rhs,
-            data : self.data().to_vec(),
+            expr         : rhs,
+            data         : self.data().to_vec(),
             datasparsity : self.sparsity().map(|v| v.to_vec()),
-            datashape : self.shape()
+            datashape    : self.shape()
         }
     }
 }
@@ -574,6 +574,8 @@ impl<const N : usize,E> ExprTrait<N> for ExprScalarMul<N,E> where E : ExprTrait<
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
         assert_eq!(shape.len(), 0);
         if let Some(sp) = sp {
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.datashape, 0, 0);
+            rptr[0] = 0;
         }
         else {
             let nnz = *ptr.last().unwrap();
@@ -586,7 +588,13 @@ impl<const N : usize,E> ExprTrait<N> for ExprScalarMul<N,E> where E : ExprTrait<
                 rsp.copy_from_slice(dsp.as_slice());
             }
             rsubj.iter_mut().zip(subj[0..nnz].iter().cycle()).for_each(| (r,&s)| *r = s);
-            rcof.iter_mut().zip(cof[0..nnz].iter().cycle()).for_each(| (r,&s)| *r = s);
+            izip!(rcof.iter_mut(),
+                  self.data.iter().flat_map(|&v| repeat(v).take(nnz)),  
+                  cof[0..nnz].iter().cycle())
+                .for_each(| (r,s0,&s1)| *r = s0 * s1);
+            println!("ExprScalarMul::eval() data = {:?}",self.data);
+            println!("ExprScalarMul::eval() rptr = {:?}, subj = {:?}, cof = {:?}, shape = {:?}",
+                     rptr, rsubj, rcof, self.datashape);
         }
     }
 }

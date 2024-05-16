@@ -482,7 +482,7 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprResh
         self.item.eval(ws,rs,xs);
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
-        if self.shape.iter().product::<usize>() != shape.iter().product() {
+        if self.shape.iter().product::<usize>() != shape.iter().product::<usize>() {
             panic!("Cannot reshape expression into given shape");
         }
 
@@ -1166,7 +1166,10 @@ impl IntoExpr<1> for Vec<f64> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use crate::*;
+    use crate::matrix::*;
+    use crate::expr::*;
+    use crate::variable::*;
 
     fn eq<T:std::cmp::Eq>(a : &[T], b : &[T]) -> bool {
         a.len() == b.len() && a.iter().zip(b.iter()).all(|(a,b)| *a == *b )
@@ -1503,5 +1506,19 @@ mod test {
                           5,11,5]));
         assert!(rs.is_empty());
         assert!(ws.is_empty());
+    }
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn slice() {
+        let mut m = Model::new(None);
+        let X = m.variable(Some("X"), in_psd_cone(2));
+        let t = m.variable(Some("t"),unbounded().with_shape(&[2]));
+        let Y = m.variable(Some("X"), in_psd_cone(2));
+        let mx = dense(2, 2, vec![1.1,2.2,3.3,4.4]);
+        //
+        m.constraint(Some("X-Y"), &X.sub(Y.sub((&mx).mul_right(t.clone().index(0)))), zeros(&[2,2]));
+        m.write_problem("X_minus_Y.ptf");
+
     }
 }

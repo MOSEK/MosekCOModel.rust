@@ -226,7 +226,7 @@ impl<const N : usize> Variable<N> {
     pub fn with_shape<const M : usize>(self, shape : &[usize; M]) -> Variable<M> {
         match self.sparsity {
             None =>
-                if self.idxs.len() != shape.iter().product() {
+                if self.idxs.len() != shape.iter().product::<usize>() {
                     panic!("Shape does not match the size");
                 },
             Some(ref sp) =>

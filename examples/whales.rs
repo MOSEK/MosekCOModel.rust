@@ -44,7 +44,7 @@ fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [f64;
     let t = M.variable(Some("t"), unbounded());
     let τ = M.variable(Some("τ"), nonnegative().with_shape(&[m]));
     let P_q = M.variable(Some("P_q"), unbounded().with_shape(&[n]));
-    let P_sq = det_rootn(Some("log(det(P²))"), & mut M, t.clone(), n);
+    let P_sq = det_rootn(Some("Psq"), & mut M, t.clone(), n);
 
     // LogDetConeSquare = { (t,u,X) ∊ R^(2+d²) | t ≤ u log(det(X/u)), X symmetric, u > 0 }
     // x > y exp(z/y), x,y > 0
@@ -68,7 +68,6 @@ fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [f64;
                             .sub(P_sq.clone().sub(τ.clone().index(i).mul(&A))),
                          zeros(&[n,n]));
         // P_q-τ[i]*b = Xi[n..n+1,0..n]]
-
         _ = M.constraint(Some(format!("EllipsBound[{}][2,1]",i+1).as_str()), 
                          &Xi.clone().slice(&[n..n+1,0..n]).reshape(&[n])
                             .sub(P_q.clone().sub(b.mul_right(τ.index(i)))),
@@ -90,6 +89,10 @@ fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [f64;
                          &Xi.clone().slice(&[n+1..2*n+1, n+1..2*n+1]).sub(P_sq.clone()),
                          zeros(&[n,n]));
     }
+
+    M.solve();
+    M.write_problem("whales.ptf");
+
 
     let Psol  = M.primal_solution(SolutionType::Default,&P_sq).unwrap();
     let Pqsol = M.primal_solution(SolutionType::Default,&P_q).unwrap();
