@@ -245,6 +245,39 @@ impl<E> ExprRightMultipliable<0,E> for &[f64]
     }
 }
 
+impl<E> ExprRightMultipliable<0,E> for Vec<f64> 
+    where
+        E : ExprTrait<0>
+{
+    type Result = ExprScalarMul<1,E>;
+    fn mul_right(self,rhs : E) -> Self::Result {
+        let n = self.len();
+        ExprScalarMul{
+            expr : rhs,
+            data : self,
+            datasparsity : None,
+            datashape : [n]
+        }
+    }
+}
+
+impl<E,M> ExprRightMultipliable<0,E> for &M 
+    where
+        E : ExprTrait<0>,
+        M : Matrix
+{
+    type Result = ExprScalarMul<2,E>;
+    fn mul_right(self,rhs : E) -> Self::Result {
+
+        ExprScalarMul{
+            expr : rhs,
+            data : self.data().to_vec(),
+            datasparsity : self.sparsity().map(|v| v.to_vec()),
+            datashape : self.shape()
+        }
+    }
+}
+
 impl<const N : usize, E> ExprRightMultipliable<N,E> for f64
     where E : ExprTrait<N>
 {

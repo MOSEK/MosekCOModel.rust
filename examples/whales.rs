@@ -5,6 +5,8 @@
 //
 //  Computes the minimal ellipsoid containing a set of ellipsoids
 
+#[allow(mixed_script_confusables)]
+
 use mosekmodel::matrix::{dense,speye};
 use mosekmodel::*;
 
@@ -49,7 +51,7 @@ fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [f64;
     // y log(x/y) > z
 
     for (i,e) in es.iter().enumerate() {
-        let Adata = e.get_A().iter().map(|v| v.iter()).flatten().collect();
+        let Adata : Vec<f64> = e.get_A().iter().map(|v| v.iter()).flatten().cloned().collect();
         let A = dense(n,n,Adata);
         let b = e.get_b();
         let c = e.get_c();
@@ -60,31 +62,40 @@ fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [f64;
         // | 0             P_q         -P²  |
         let name = format!("EllipsoidBound[{}]",i+1);
         let Xi = M.variable(Some(name.as_str()), in_psd_cone(n*2+1));
+        // P²-A*τ[i] = Xi[0..n,0..n]
         _ = M.constraint(Some(format!("EllipsBound[{}][1,1]",i+1).as_str()), 
-                         &Xi.clone().slice(&[0..n,0..n]).sub(P_sq.clone().sub(τ.clone().index(i))),
+                         &Xi.clone().slice(&[0..n,0..n])
+                            .sub(P_sq.clone().sub(τ.clone().index(i).mul(&A))),
                          zeros(&[n,n]));
+        // P_q-τ[i]*b = Xi[n..n+1,0..n]]
+
         _ = M.constraint(Some(format!("EllipsBound[{}][2,1]",i+1).as_str()), 
-                         &Xi.clone().slice(&[n..n+1,0..n]).reshape(&[n]).sub(P_q.clone().sub(τ.index(i).mul(b.to_vec()))),
+                         &Xi.clone().slice(&[n..n+1,0..n]).reshape(&[n])
+                            .sub(P_q.clone().sub(b.mul_right(τ.index(i)))),
                          zeros(&[n]));
+        // -(1+τ[i]*c) = Xi[n,n]
         _ = M.constraint(Some(format!("EllipsBound[{}][2,2]",i+1).as_str()), 
                          &Xi.clone().index(&[n,n]).add(τ.index(i).mul(c).add(1.0)),
                          zero());
+        // 0 = Xi[n+1..2n+1,0..n]
         _ = M.constraint(Some(format!("EllipsBound[{}][3,1]",i+1).as_str()),
                          &Xi.clone().slice(&[n+1..2*n+1,0..n]),
                          zero().with_shape(&[n,n]));
+        // P_q = Xi[n+1..2n+1,n..n+1]
         _ = M.constraint(Some(format!("EllipsBound[{}][3,2]",i+1).as_str()),
                          &Xi.clone().slice(&[n+1..2*n+1,n..n+1]).reshape(&[n]).sub(P_q.clone()),
                          zeros(&[n]));
+        // P`= Xi[n+1..2n+1,n+1..2n+1]
         _ = M.constraint(Some(format!("EllipsBound[{}][3,3]",i+1).as_str()),
-                         &Xi.clone().slice(&[n+1..2*n+1, n+1..2*n+1]).sub(P_sq),
+                         &Xi.clone().slice(&[n+1..2*n+1, n+1..2*n+1]).sub(P_sq.clone()),
                          zeros(&[n,n]));
     }
 
-    let Psol = M.primal_solution(SolutionType::Default,&P_sq).unwrap();
+    let Psol  = M.primal_solution(SolutionType::Default,&P_sq).unwrap();
     let Pqsol = M.primal_solution(SolutionType::Default,&P_q).unwrap();
 
-    let Psq_res = [[0.0;N];N];
-    let Pq_res  = [0.0;N];
+    let mut Psq_res = [[0.0;N];N];
+    let mut Pq_res  = [0.0;N];
 
     Psol.iter().zip(Psq_res.iter_mut().map(|item| item.iter_mut()).flatten()).for_each(|(&s,t)| *t = s);
     Pqsol.iter().zip(Pq_res.iter_mut()).for_each(|(&s,t)| *t = s);
