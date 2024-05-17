@@ -361,6 +361,12 @@ impl<const N : usize> VarDomainTrait<N> for PSDDomain<N> {
     }
 }
 
+impl<const N : usize> ConDomainTrait<N> for PSDDomain<N> {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
+        m.psd_constraint(name,self)
+    }
+}
+
 ////////////////////////////////////////////////////////////
 // Model
 ////////////////////////////////////////////////////////////
@@ -851,9 +857,74 @@ impl Model {
         dom.create(self,name)
     }
 
+    fn psd_constraint<const N : usize>(& mut self, name : Option<&str>, dom : PSDDomain<N>) -> Constraint<N> {
+        // validate domain
+        if dom.conedims.0 == dom.conedims.1 { panic!("Invalid cone dimension specification"); }
+        if dom.conedims.0 >= N || dom.conedims.1 >= N { panic!("Invalid cone dimension specification"); }
+        if dom.shape[dom.conedims.0] != dom.shape[dom.conedims.1] { panic!("Invalid cone shape"); }
+       
+        let conedim0 = dom.conedims.0;
+        let conedim1 = dom.conedims.1;
+        let numcone : usize = dom.shape.iter().enumerate().filter(|v| v.0 != conedim0 && v.0 != conedim1).map(|v| v.1).cloned().product();
+        let conesize = dom.shape[conedim0] * (dom.shape[conedim0]+1) / 2;
+
+        let (shape_,ptr,_sp,subj,cof) = self.rs.pop_expr();
+        let nelm = ptr.len()-1;
+
+        let shape = dom.shape;
+        if shape_.iter().zip(shape.iter()).any(|v| v.0 != v.1) { panic!("Mismatching shapes of expression {:?} and domain {:?}",shape_,shape); }
+        if shape.iter().product::<usize>() != nelm { panic!("Mismatching expression and shape"); }
+        if let Some(&j) = subj.iter().max() {
+            if j >= self.vars.len() {
+                panic!("Invalid subj index in evaluated expression");
+            }
+        }
+
+        // build transpose permutation
+        let mut strides = [0usize; N]; strides.iter_mut().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v * d });
+        let mut tperm : Vec<usize> = (0..nelm).collect();
+
+        tperm.sort_by_key(|&i| { 
+            let mut idx = [0usize; N];
+            izip!(idx.iter_mut(),strides.iter(),shape.iter()).for_each(|(idx,&s,&d)| *idx = (i / s) % d);
+            idx.swap(conedim0,conedim1);
+            idx.iter().zip(strides.iter()).map(|v| v.0 * v.1).sum::<usize>()
+        });
+
+
+//            
+//        let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
+//        let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
+//        if shape.len() != dshape.len() || shape.iter().zip(dshape.iter()).any(|(&a,&b)| a != b) {
+//            panic!("Mismatching shapes of expression {:?} and domain {:?}",shape,dshape);
+//        }
+//        // let nnz = subj.len();
+//        let nelm = ptr.len()-1;
+//        if shape.iter().product::<usize>() != nelm {
+//            panic!("Mismatching expression and shape");
+//        }
+//
+//        if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
+//            panic!("Invalid subj index in evaluated expression");
+//        }
+//
+//        let coni = self.task.get_num_con().unwrap();
+//        self.task.append_cons(nelm.try_into().unwrap()).unwrap();
+//
+//        if let Some(name) = name {
+//            Self::con_names(& mut self.task,name,coni,&shape);
+//        }
+
+        Constraint{
+            idxs : vec![],
+            shape : dom.shape
+        }
+    }
+
+
     fn linear_constraint<const N : usize>(& mut self,
-                         name : Option<&str>,
-                         dom  : LinearDomain<N>) -> Constraint<N> {
+                                          name : Option<&str>,
+                                          dom  : LinearDomain<N>) -> Constraint<N> {
         let (dt,b,dshape,_,_) = dom.extract();
 
         let (shape_,ptr,_sp,subj,cof) = self.rs.pop_expr();
