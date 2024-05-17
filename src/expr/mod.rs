@@ -213,6 +213,7 @@ pub trait ExprTrait<const N : usize> {
         let mut end   = [0usize;N];
         izip!(begin.iter_mut(),end.iter_mut(),ranges.iter()).for_each(|(b,e,r)| { *b = r.start; *e = r.end; } );
 
+        println!("ExprTrait::slice()");
         ExprSlice{expr : self, begin, end} 
     }
     //fn slice(self,begin : &[usize; N], end : &[usize; N]) -> ExprSlice<N,Self> where Self:Sized {
@@ -803,7 +804,6 @@ impl<const N : usize, E> ExprTrait<N> for ExprSlice<N,E> where E : ExprTrait<N> 
                     .filter(|(&spi,_,_)| {
                         let mut ix = [0usize; N];
                         let _ = ix.iter_mut().zip(strides.iter()).fold(spi,|v,(i,&s)| { *i = v / s; v % s});
-
                        izip!(ix.iter(),self.begin.iter(),self.end.iter()).all(|(&i,&b,&e)| b <= i && i < e ) })
                     .zip(xptr[1..].iter_mut().zip(xsp.iter_mut())) {
 
@@ -828,27 +828,26 @@ impl<const N : usize, E> ExprTrait<N> for ExprSlice<N,E> where E : ExprTrait<N> 
             }
         } 
         else {
+            println!("ExprSlice::eval(), ptr = {:?}, subj = {:?}",ptr,subj);
             let rnelem : usize = self.begin.iter().zip(self.end.iter()).map(|(&a,&b)| b-a).product(); 
             let (upart,xcof) = xs.alloc(rnelem+1+nnz,nnz);
             let (xptr,xsubj) = upart.split_at_mut(rnelem+1);
             let mut rnnz = 0usize;
             {
                 xptr[0] = 0;
-                let mut idx : [usize; N] = self.begin;
-                for xp in xptr[1..].iter_mut() {
-                    // inc 
-                    let _ = izip!(idx.iter_mut(),
-                                  self.begin.iter(),
-                                  self.end.iter()).rev().fold(1,|inc,(i,&b,&e)| { if *i + inc >= e { *i = b; 1 } else { *i += inc; 0 } });
-                    let lidx = idx.iter().zip(strides.iter()).fold(0,|r,(&i,&s)| r+i*s);
-                    let (&p0,&p1) = unsafe{ (ptr.get_unchecked(lidx),ptr.get_unchecked(lidx+1)) };
-                   
-                    xsubj[rnnz..rnnz+p1-p0].clone_from_slice(&subj[p0..p1]);
-                    xcof[rnnz..rnnz+p1-p0].clone_from_slice(&cof[p0..p1]);
+                //let mut idx : [usize; N] = self.begin;
+                for (xp,ridx) in xptr[1..].iter_mut().zip(rshape.index_iterator()) {
+                    let sofs = izip!(ridx.iter(), strides.iter(), self.begin.iter())
+                        .fold(0,|v,(&i,&s,&b)| v+(i+b)*s);
+
+                    let (&p0,&p1) = unsafe{ (ptr.get_unchecked(sofs),ptr.get_unchecked(sofs+1)) };
+                    
+                    xsubj[rnnz..rnnz+p1-p0].copy_from_slice(&subj[p0..p1]);
+                    xcof[rnnz..rnnz+p1-p0].copy_from_slice(&cof[p0..p1]);
                     rnnz += p1-p0;
                     *xp = rnnz;
                 }
-            }    
+            }
             let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
             rptr.clone_from_slice(xptr);
             rsubj.clone_from_slice(&xsubj[..rnnz]);
@@ -1164,6 +1163,7 @@ impl IntoExpr<1> for Vec<f64> {
 //
 // Tests
 
+#[allow(unused)]
 #[cfg(test)]
 mod test {
     use crate::*;
@@ -1512,13 +1512,47 @@ mod test {
     #[test]
     fn slice() {
         let mut m = Model::new(None);
-        let X = m.variable(Some("X"), in_psd_cone(2));
-        let t = m.variable(Some("t"),unbounded().with_shape(&[2]));
-        let Y = m.variable(Some("X"), in_psd_cone(2));
+        let t = m.variable(Some("t"),unbounded().with_shape(&[2])); // 1,2
+        let X = m.variable(Some("X"), in_psd_cone(4)); // 3,4,5,6, 7,8,9, 10,11, 12
+        //     | 3 4  5  6 |
+        // X = | 4 7  8  9 |
+        //     | 5 8 10 11 |
+        //     | 6 9 11 12 |
+        let Y = m.variable(Some("Y"), in_psd_cone(2)); // 13,14,15
         let mx = dense(2, 2, vec![1.1,2.2,3.3,4.4]);
-        //
-        m.constraint(Some("X-Y"), &X.sub(Y.sub((&mx).mul_right(t.clone().index(0)))), zeros(&[2,2]));
+
+        m.constraint(Some("X-Y"), &X.clone().slice(&[0..2,0..2]).sub(Y.clone().sub((&mx).mul_right(t.clone().clone().index(0)))), zeros(&[2,2]));
         m.write_problem("X_minus_Y.ptf");
 
+        let mut rs = WorkStack::new(512);
+        let mut ws = WorkStack::new(512);
+        let mut xs = WorkStack::new(512);
+        {
+            rs.clear(); ws.clear(); xs.clear();
+            X.clone().eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            assert_eq!(shape,&[4,4]);
+            assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]);
+            assert_eq!(subj,&[3,4,5,6, 4,7,8,9, 5,8,10,11, 6,9,11,12]);
+            println!("subj = {:?}",subj);
+        }
+        {
+            rs.clear(); ws.clear(); xs.clear();
+            X.clone().slice(&[0..2,0..2]).eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            assert_eq!(shape,&[2,2]);
+            assert_eq!(ptr,&[0,1,2,3,4]);
+            assert_eq!(subj,&[3,4,4,7]);
+            println!("subj = {:?}",subj);
+        }
+        {
+            rs.clear(); ws.clear(); xs.clear();
+            X.clone().slice(&[0..2,0..2]).sub(Y.sub((&mx).mul_right(t.clone().index(0)))).eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            assert_eq!(shape,&[2,2]);
+            assert_eq!(ptr,&[0,3,6,9,12]);
+            assert_eq!(subj,&[1,13,3, 1,14,4, 1,14,4, 1,15,7]);
+            println!("subj = {:?}",subj);
+        }
     }
 }

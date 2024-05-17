@@ -361,6 +361,7 @@ impl<const N : usize> Variable<N> {
                                              rstrides.iter()).map(|(&sh,&st,ra,&rst)| ((s / st) % sh - ra.start) * rst).sum());
                               ridxs.push(ix);
                           });
+            println!("Variable::slice({:?}): idxs={:?} -> {:?}, shape = {:?}",ranges,self.idxs,ridxs,rshape);
             Variable{idxs     : ridxs,
                      sparsity : Some(rsp),
                      shape    : rshape }
@@ -375,7 +376,8 @@ impl<const N : usize> Variable<N> {
                                strides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
                 .map(|i| self.idxs[i] /*TODO: unsafe get*/)
                 .collect();
-            //println!("Variable::slice({:?}): idxs={:?} -> {:?}, shape = {:?}",ranges,self.idxs,ridxs,rshape);
+
+            println!("Variable::slice({:?}): idxs={:?} -> {:?}, shape = {:?}",ranges,self.idxs,ridxs,rshape);
             Variable{idxs : ridxs,
                      sparsity : None,
                      shape : rshape}

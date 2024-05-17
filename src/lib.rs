@@ -1525,9 +1525,9 @@ mod tests {
         assert!(eq(w_1.shape(),&[3,4,1]));
         assert!(eq(w_1.idxs(),&[1,2,7,8,3,4,9,10,5,6,11,12]));
 
-        let mut u_0 = Variable::stack(0,&[&v1,&v3]);
-        let mut u_1 = Variable::stack(1,&[&v1,&v3]);
-        let mut u_2 = Variable::stack(2,&[&v1,&v3]);
+        let u_0 = Variable::stack(0,&[&v1,&v3]);
+        let u_1 = Variable::stack(1,&[&v1,&v3]);
+        let u_2 = Variable::stack(2,&[&v1,&v3]);
 
         assert!(eq(u_0.shape(),&[6,2,1]));
         assert!(eq(u_0.idxs(),&[1,2,3,4,5,6,13,14,15,16]));

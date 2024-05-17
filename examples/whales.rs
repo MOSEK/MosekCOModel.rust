@@ -46,10 +46,6 @@ fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [f64;
     let P_q = M.variable(Some("P_q"), unbounded().with_shape(&[n]));
     let P_sq = det_rootn(Some("Psq"), & mut M, t.clone(), n);
 
-    // LogDetConeSquare = { (t,u,X) ∊ R^(2+d²) | t ≤ u log(det(X/u)), X symmetric, u > 0 }
-    // x > y exp(z/y), x,y > 0
-    // y log(x/y) > z
-
     for (i,e) in es.iter().enumerate() {
         let Adata : Vec<f64> = e.get_A().iter().map(|v| v.iter()).flatten().cloned().collect();
         let A = dense(n,n,Adata);
