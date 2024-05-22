@@ -10,7 +10,7 @@ use std::ops::Range;
 
 use itertools::{iproduct,izip};
 
-use crate::{matrix::Matrix};
+use crate::matrix::Matrix;
 
 use super::utils::*;
 use workstack::WorkStack;
@@ -213,7 +213,6 @@ pub trait ExprTrait<const N : usize> {
         let mut end   = [0usize;N];
         izip!(begin.iter_mut(),end.iter_mut(),ranges.iter()).for_each(|(b,e,r)| { *b = r.start; *e = r.end; } );
 
-        println!("ExprTrait::slice()");
         ExprSlice{expr : self, begin, end} 
     }
     //fn slice(self,begin : &[usize; N], end : &[usize; N]) -> ExprSlice<N,Self> where Self:Sized {
@@ -406,6 +405,7 @@ impl<const N : usize> ExprTrait<N> for Expr<N> {
 }
 
 // An expression of any shape or size containing no non-zeros.
+#[derive(Clone)]
 pub struct ExprNil<const N : usize> { shape : [usize; N] }
 impl<const N : usize> ExprTrait<N> for ExprNil<N> {
     fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
@@ -425,6 +425,7 @@ pub fn nil<const N : usize>(shape : &[usize; N]) -> ExprNil<N> {
 /// Reduce (or increase) the number of dimensions in the shape from `N` to `M`. If `M<N`, the
 /// trailing `N-M` dimensions are flattened into one dimension. If `N<M` the shape is padded with
 /// ones.
+#[derive(Clone)]
 pub struct ExprReduceShape<const N : usize, const M : usize, E> where E : ExprTrait<N>+Sized { item : E }
 impl<const N : usize, const M : usize, E> ExprTrait<M> for ExprReduceShape<N,M,E> 
     where E : ExprTrait<N> 
@@ -828,7 +829,6 @@ impl<const N : usize, E> ExprTrait<N> for ExprSlice<N,E> where E : ExprTrait<N> 
             }
         } 
         else {
-            println!("ExprSlice::eval(), ptr = {:?}, subj = {:?}",ptr,subj);
             let rnelem : usize = self.begin.iter().zip(self.end.iter()).map(|(&a,&b)| b-a).product(); 
             let (upart,xcof) = xs.alloc(rnelem+1+nnz,nnz);
             let (xptr,xsubj) = upart.split_at_mut(rnelem+1);
@@ -948,7 +948,7 @@ impl<T:ExprTrait<2>> ExprTrait<2> for ExprTriangularPart<T> {
                 .filter(|&spi| { let (i,j) = (spi / d, spi % d); (self.upper && i < j) || (! self.upper && i > j) || (self.with_diag && i == j) })
                 .count(); 
             let rnnz = izip!(sp.iter().map(|i| (i/d,i%d)),ptr.iter(),ptr[1..].iter())
-                .filter(|((i,j),pb,pe)| (self.upper && i < j) || (! self.upper && i > j) || (self.with_diag && i == j) )
+                .filter(|((i,j),_,_)| (self.upper && i < j) || (! self.upper && i > j) || (self.with_diag && i == j) )
                 .map(|(_,pb,pe)| pe-pb)
                 .sum();
             let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
@@ -964,7 +964,7 @@ impl<T:ExprTrait<2>> ExprTrait<2> for ExprTriangularPart<T> {
             rptr[0] = 0;
             let rsp = rsp.unwrap();
             izip!(ptr.iter(),ptr[1..].iter(),sp.iter().map(|i| (i/d,i%d)))
-                .filter(|(&pb,&pe,(i,j))| (self.upper && i < j) || (! self.upper && i > j) || (self.with_diag && i == j))
+                .filter(|(_,_,(i,j))| (self.upper && i < j) || (! self.upper && i > j) || (self.with_diag && i == j))
                 .zip(rptr[1..].iter_mut().zip(rsp.iter_mut()))
                 .for_each(|((&pb,&pe,(i,j)),(rp,spi))|  { *rp = pe-pb; *spi = i * d + j } );
             rptr.iter_mut().fold(0,|v,p| { *p += v; *p });

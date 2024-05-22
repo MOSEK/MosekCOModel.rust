@@ -221,7 +221,7 @@ impl<const N : usize> IndexIterator<N> {
         IndexIterator{
             shape : *shape,
             cur   : [0; N],
-            done : false
+            done : shape.iter().any(|&v| v == 0)
         }
     }
 }

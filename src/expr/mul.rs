@@ -1,4 +1,4 @@
-use super::{ExprReshape, ExprReshapeOneRow, ExprTrait};
+use super::{ExprReshapeOneRow, ExprTrait};
 use super::workstack::WorkStack;
 use super::matrix::Matrix;
 use itertools::izip;
@@ -573,8 +573,8 @@ impl<const N : usize,E> ExprTrait<N> for ExprScalarMul<N,E> where E : ExprTrait<
         self.expr.eval(ws,rs,xs);
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
         assert_eq!(shape.len(), 0);
-        if let Some(sp) = sp {
-            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.datashape, 0, 0);
+        if let Some(_sp) = sp {
+            let (rptr,_rsp,_rsubj,_rcof) = rs.alloc_expr(&self.datashape, 0, 0);
             rptr[0] = 0;
         }
         else {
@@ -592,9 +592,6 @@ impl<const N : usize,E> ExprTrait<N> for ExprScalarMul<N,E> where E : ExprTrait<
                   self.data.iter().flat_map(|&v| repeat(v).take(nnz)),  
                   cof[0..nnz].iter().cycle())
                 .for_each(| (r,s0,&s1)| *r = s0 * s1);
-            println!("ExprScalarMul::eval() data = {:?}",self.data);
-            println!("ExprScalarMul::eval() rptr = {:?}, subj = {:?}, cof = {:?}, shape = {:?}",
-                     rptr, rsubj, rcof, self.datashape);
         }
     }
 }

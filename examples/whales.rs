@@ -28,12 +28,13 @@ impl<const N : usize> Ellipsoid<N> {
 /// - `es` List of ellipsoids
 ///
 /// # Returns
-/// The minimal bounding ellipsoid parameterized as `‖Px+q‖ ≤ 1`
-/// - `P` an `n x n` martrix in row major format,
-/// - `q` an `n` vector
+/// The minimal bounding ellipsoid is parameterized as `‖Px+q‖ ≤ 1`, and the returned values are
+/// - `P_sq` an `n x n` martrix in row major format, which is the square of `P`.
+/// - `Pq` an `n` vector, which is the product `P*q`
+/// The actual `P` and `q` can be obtained from these values.
 #[allow(non_snake_case)]
 fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [f64;N]) {
-    if es.len() < 2 { panic!("At least two ellipsoids required"); }
+    //if es.len() < 1 { panic!("At least two ellipsoids required"); }
     let n = N; 
     let datasize = n*(n+1)+1;
     let mut M = Model::new(Some("lownerjohn_outer"));
@@ -42,9 +43,24 @@ fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [f64;
     let m = es.len();
 
     let t = M.variable(Some("t"), unbounded());
+
+    //let vdet = M.variable(Some("vdet"), unbounded());
+
     let τ = M.variable(Some("τ"), nonnegative().with_shape(&[m]));
     let P_q = M.variable(Some("P_q"), unbounded().with_shape(&[n]));
     let P_sq = det_rootn(Some("Psq"), & mut M, t.clone(), n);
+
+    let X = M.variable(Some("X"), in_psd_cones(&[m,2*n+1,2*n+1], 1,2));
+
+    // 1/2 x0 ... xn > | x{n+1} |
+    //M.constraint(Some("vdet"),
+    //             vstack![
+    //                P_sq.clone().index(&[0,0])
+    //             ]
+    //             Expr.vstack([ Expr.mul(0.5, vA2.index([0,0])), vA2.index([1,1]), vA2.index([0,1]), vdet ]), Domain.inRotatedQCone());
+
+
+    //M.objective(None, Sense::Maximize, &t);
 
     for (i,e) in es.iter().enumerate() {
         let Adata : Vec<f64> = e.get_A().iter().map(|v| v.iter()).flatten().cloned().collect();
@@ -52,12 +68,15 @@ fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [f64;
         let b = e.get_b();
         let c = e.get_c();
 
+        // log(det(P²)) = log(det(P)det(P)) = log(det(P)²) = 2log(det(P))
+
         // Implement the constraint 
         // | P²-A*τ[i]     P_q-τ[i]*b  0    |
         // | (P_q-τ[i]*b)' (-1-τ[i]*c) P_q' | ∊ S^n_+
         // | 0             P_q         -P²  |
         let name = format!("EllipsoidBound[{}]",i+1);
-        let Xi = M.variable(Some(name.as_str()), in_psd_cone(n*2+1));
+        //let Xi = M.variable(Some(name.as_str()), in_psd_cone(n*2+1));
+        let Xi : Variable<2> = (&X).slice(&[i..i+1,0..2*n+1,0..2*n+1]).reshape(&[2*n+1,2*n+1]);
         // P²-A*τ[i] = Xi[0..n,0..n]
         _ = M.constraint(Some(format!("EllipsBound[{}][1,1]",i+1).as_str()), 
                          &Xi.clone().slice(&[0..n,0..n])
@@ -80,15 +99,14 @@ fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [f64;
         _ = M.constraint(Some(format!("EllipsBound[{}][3,2]",i+1).as_str()),
                          &Xi.clone().slice(&[n+1..2*n+1,n..n+1]).reshape(&[n]).sub(P_q.clone()),
                          zeros(&[n]));
-        // P`= Xi[n+1..2n+1,n+1..2n+1]
+        // P²= Xi[n+1..2n+1,n+1..2n+1]
         _ = M.constraint(Some(format!("EllipsBound[{}][3,3]",i+1).as_str()),
-                         &Xi.clone().slice(&[n+1..2*n+1, n+1..2*n+1]).sub(P_sq.clone()),
+                         &Xi.clone().slice(&[n+1..2*n+1, n+1..2*n+1]).add(P_sq.clone()),
                          zeros(&[n,n]));
     }
 
     M.solve();
     M.write_problem("whales.ptf");
-
 
     let Psol  = M.primal_solution(SolutionType::Default,&P_sq).unwrap();
     let Pqsol = M.primal_solution(SolutionType::Default,&P_q).unwrap();
@@ -132,7 +150,7 @@ fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) ->
     // Z is lower-triangular
     _ = M.constraint(Some("triu(Z)=0"), &Z.clone().triuvec(false), equal_to(vec![0.0; n*(n-1)/2].as_slice()));
     // DZ = Diag(Z)
-    _ = M.constraint(Some("DZ=Diag(Z)"), &DZ.clone().sub(Z.mul_elem(speye(n))).reshape(&[n*n]), equal_to(vec![0.0; n*n]));
+    _ = M.constraint(Some("DZ=Diag(Z)"), &DZ.clone().sub(Z.mul_elem(speye(n))), equal_to(dense(n,n,vec![0.0; n*n])));
     // (Z11*Z22*...*Znn) >= t^n
     _ = M.constraint(name,&vstack![DZ.clone().diag(),t.reshape(&[1])], in_geometric_mean_cone(n+1));
 
@@ -141,15 +159,17 @@ fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) ->
 }
 
 fn main() {
-    let ellipses = [
-        Ellipsoid{A : [[1.2576, -0.3873], [-0.3873,0.3467]], b : [ 0.2722,  0.1969], c : 0.1831},
-        Ellipsoid{A : [[1.4125, -2.1777], [-2.1777,6.7775]], b : [-1.228,  -0.0521], c : 0.3295},
-        Ellipsoid{A : [[1.7018,  0.8141], [ 0.8141,1.7538]], b : [-0.4049,  1.5713], c : 0.2077},
-        Ellipsoid{A : [[0.9742, -0.7202], [-0.7202,1.5444]], b : [ 0.0265,  0.5623], c : 0.2362},
-        Ellipsoid{A : [[0.6798, -0.1424], [-0.1424,0.6871]], b : [-0.4301, -1.0157], c : 0.3284},
-        Ellipsoid{A : [[0.1796, -0.1423], [-0.1423,2.6181]], b : [-0.3286,  0.557 ], c : 0.4931} ];
+    let ellipses : &[Ellipsoid<2>] = &[
+        Ellipsoid{A : [[1.0,0.0],[0.0,1.0]], b : [0.0,0.0], c : 0.0}
+//        Ellipsoid{A : [[1.2576, -0.3873], [-0.3873,0.3467]], b : [ 0.2722,  0.1969], c : 0.1831},
+//        Ellipsoid{A : [[1.4125, -2.1777], [-2.1777,6.7775]], b : [-1.228,  -0.0521], c : 0.3295},
+//        Ellipsoid{A : [[1.7018,  0.8141], [ 0.8141,1.7538]], b : [-0.4049,  1.5713], c : 0.2077},
+//        Ellipsoid{A : [[0.9742, -0.7202], [-0.7202,1.5444]], b : [ 0.0265,  0.5623], c : 0.2362},
+//        Ellipsoid{A : [[0.6798, -0.1424], [-0.1424,0.6871]], b : [-0.4301, -1.0157], c : 0.3284},
+//        Ellipsoid{A : [[0.1796, -0.1423], [-0.1423,2.6181]], b : [-0.3286,  0.557 ], c : 0.4931} 
+    ];
 
-    let (Psq_sol,Pq_sol) = outer_ellipsoid(&ellipses);
+    let (Psq_sol,Pq_sol) = outer_ellipsoid(ellipses);
 
     println!("P² = {:?}",Psq_sol);
     println!("Pq = {:?}",Pq_sol);

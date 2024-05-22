@@ -330,6 +330,17 @@ impl<const N : usize> Variable<N> {
         }
     }
 
+    pub fn reshape<const M : usize>(self,shape : &[usize; M]) -> Variable<M> {
+        if shape.iter().product::<usize>() != self.shape.iter().product::<usize>() {
+            panic!("Mismatching shapes: {:?} cannot be reshaped into {:?}",self.shape,shape);
+        }
+        Variable{
+            idxs : self.idxs,
+            sparsity : self.sparsity,
+            shape : *shape
+        }
+    }
+
     // // Other functions to be implemented:
     // ///// Take the diagonal element of a square, cube,... variable
     // //pub fn diag(&self) -> Variable
@@ -361,7 +372,6 @@ impl<const N : usize> Variable<N> {
                                              rstrides.iter()).map(|(&sh,&st,ra,&rst)| ((s / st) % sh - ra.start) * rst).sum());
                               ridxs.push(ix);
                           });
-            println!("Variable::slice({:?}): idxs={:?} -> {:?}, shape = {:?}",ranges,self.idxs,ridxs,rshape);
             Variable{idxs     : ridxs,
                      sparsity : Some(rsp),
                      shape    : rshape }
@@ -377,7 +387,6 @@ impl<const N : usize> Variable<N> {
                 .map(|i| self.idxs[i] /*TODO: unsafe get*/)
                 .collect();
 
-            println!("Variable::slice({:?}): idxs={:?} -> {:?}, shape = {:?}",ranges,self.idxs,ridxs,rshape);
             Variable{idxs : ridxs,
                      sparsity : None,
                      shape : rshape}
