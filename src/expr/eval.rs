@@ -1132,6 +1132,57 @@ pub(super) fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, 
     //println!("eval::sum_last: end");
 }
 
+
+pub(super) fn eval_into_symmetric(shape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+    let (srcshape,ptr,sp,subj,cof) = ws.pop_expr();
+    // check
+    if shape.len() < 2 { panic!("Target shape is not symmetric in the last two dimensions"); }
+    let (dim0,dim1) = (shape[shape.len()-2],shape[shape.len()-1]);
+    let srcsize : usize = shape.iter().product();
+    let n = shape.len();
+    let d = shape[dim0];
+    if shape[dim0] != shape[dim1] {
+        panic!("Target shape is not symmetric in the last two dimensions");
+    }
+
+    if srcsize != shape[0..shape.len()-2].iter().product::<usize>() * d * (d+1) / 2 {
+        panic!("Mismatching size for this shape");
+    }
+       
+
+    if let Some(sp) = sp {
+        panic!("TODO");
+    } 
+    else {
+        panic!("TODO");
+//        let d01 = d * (d+1) / 2;
+//        let num : usize = tshape[0..tshape.len()-2].product();
+//
+//        let rnelm = d01 * num;
+//        let rnnz = izip!(ptr.chunks(d01),
+//                         ptr[1..].chunks(d01))
+//            .map(|(pb,pe)| 
+//                 izip!((0..d).flat_map(|i| std::iter::repeat(i).zip(0..i+1)), 
+//                       pb.iter(),
+//                       pe.iter())
+//                    .map(|((i,j),&b,&e)| if i==j { e-b } else { 2*(e-b) }))
+//            .sum();
+//        let (rptr,rsp,rsubj,rval) = rs.alloc_expr(tshape,rnnz, rnelm);
+//        rptr[0] = 0;
+//        izip!(ptr.chunks(d01),
+//              ptr[1..].chunks(d01),
+//              rptr[1..].dchunks(d*d))
+//            .map(|(pb,pe)| 
+//                 izip!(pb.iter(),
+//                       pe.iter())
+//                    .map(|((i,j),&b,&e)| if i==j { e-b } else { 2*(e-b) }))
+//            .sum();
+//
+//        `
+    }
+
+
+}
 pub(super) fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 

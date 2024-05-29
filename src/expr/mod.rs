@@ -228,6 +228,21 @@ pub trait ExprTrait<const N : usize> {
     /// - `shape` The new shape.
     fn reshape<const M : usize>(self,shape : &[usize; M]) -> ExprReshape<N,M,Self>  where Self:Sized { ExprReshape{item:self,shape:*shape} }
 
+    fn into_symmetric<const M : usize>(self, shape : &[usize; M],dim0 : usize, dim1 : usize) -> ExprIntoSymmetric<M,Self> where Self : ExprTrait<1>+Sized {
+        // shallow check
+        if dim0 >= M || dim1 >= M || dim0 == dim1 || shape[dim0] != shape[dim1] {
+            panic!("Invalid symmetry dimensions");
+        }
+        let d = shape[dim0];
+        let originsize : usize = shape.iter().enumerate().filter(|(i,&d)| *i != dim0 && *i != dim1).map(|v| v.1).product::<usize>() * d * (d+1) / 2;
+        
+        ExprIntoSymmetric{
+            expr : self,
+            shape : *shape
+        }
+    }
+
+
     /// Flatten the expression into a vector. Preserve sparsity.
     fn flatten(self) -> ExprReshapeOneRow<N,1,Self> where Self:Sized { ExprReshapeOneRow { item:self, dim : 0 } }
 
@@ -1119,8 +1134,17 @@ impl<E:ExprTrait<2>> ExprTrait<1> for ExprDiag<E> {
     }
 }
 
+pub struct ExprIntoSymmetric<const M : usize, E : ExprTrait<1>> {
+    expr : E,
+    shape : [usize; M]
+}
 
-
+impl<const M : usize, E : ExprTrait<1>> ExprIntoSymmetric<M,E> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.expr.eval(ws,rs,xs);
+        eval::eval_into_symmetric(&self.shape,rs,ws,xs)
+    }
+}
 
 pub struct ExprPermuteAxes<const N : usize, E:ExprTrait<N>> {
     item : E,
@@ -1132,7 +1156,6 @@ impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprPermuteAxes<N,E> {
         self.item.eval(ws,rs,xs);
         eval::permute_axes(&self.perm,rs,ws,xs)
     }
-    
 }
 
 impl<const N : usize,E> IntoExpr<N> for E where E : ExprTrait<N> {

@@ -43,7 +43,7 @@ pub struct LinearDomain<const N : usize> {
     /// Sparsity - this is used to create sparsity for the model item
     pub(super) sp    : Option<Vec<usize>>,
     /// Indicates if the domain in integer or continuous.
-    pub(super) is_integer : bool
+    pub(super) is_integer : bool,
 }
 
 /// A Conic domain defines a conic domain, shape and cone dimension for a model item.
