@@ -5,5 +5,7 @@ edition = "2021"
 
 [dependencies]
 cairo-rs = "0.19.4"
+glam = "0.27.0"
 gtk = { version = "0.8.0", package = "gtk4", features = ["v4_6"] }
+itertools = "0.13.0"
 mosekmodel = { version = "0.1.0", path = "../.." }

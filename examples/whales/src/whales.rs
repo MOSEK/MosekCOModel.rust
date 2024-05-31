@@ -9,20 +9,60 @@
 
 use mosekmodel::matrix::{dense,speye};
 use mosekmodel::*;
+use itertools::izip;
 
 #[allow(non_snake_case)]
+#[derive(Clone)]
 pub struct Ellipsoid<const N : usize> {
-    A : [ [ f64; N ] ; N ],
-    b : [ f64; N ],
-    c : f64
+    P : [ [ f64; N ] ; N ],
+    q : [ f64; N ]
+    //c : f64
 }
 
 #[allow(non_snake_case)]
 impl<const N : usize> Ellipsoid<N> {
-    pub fn new(A : &[[f64;N];N], b : &[f64;N], c : f64) -> Ellipsoid<N> { Ellipsoid{A : *A, b : *b, c } }
-    pub fn get_A(&self) -> &[ [ f64; N ]; N ] { &self.A }
-    pub fn get_b(&self) -> &[f64; N] { &self.b }
-    pub fn get_c(&self) -> f64    { self.c }
+    pub fn new(P : &[[f64;N];N], q : &[f64;N]) -> Ellipsoid<N> { Ellipsoid{P : *P, q : *q } }
+    pub fn get_P(&self) -> &[ [ f64; N ]; N ] { &self.P }
+    pub fn get_q(&self) -> &[f64; N] { &self.q }
+
+    pub fn get_Abc(&self) -> ([[f64;N];N],[f64;N],f64) {
+        (self.get_A(),
+         self.get_b(),
+         self.get_c())
+    }
+
+    // A = P²
+    pub fn get_A(&self) -> [ [ f64; N ]; N ] { 
+        let mut Pt = [[0.0;N];N];
+        for i in 0..N {
+            for j in 0..N {
+                Pt[i][j] = self.P[j][i];
+            }
+        }
+        
+        let mut res = [[0.0; N]; N];
+       
+        for (res_row,P_row) in izip!(res.iter_mut(),self.P.iter()) {
+            for (r,P_col) in izip!(res_row.iter_mut(),Pt.iter()) {
+                *r = izip!(P_row.iter(),P_col.iter()).map(|(&a,&b)| a*b).sum();
+            }
+        }
+
+        res
+    }
+
+    // b = Pq
+    pub fn get_b(&self) -> [f64; N] { 
+        let mut res = [0.0;N];
+        self.P.iter()
+            .zip(std::iter::repeat(self.q))
+            .zip(res.iter_mut())
+            .for_each(|((Pi,q),r)| *r = Pi.iter().zip(q.iter()).map(|(&Pij,&qi)| Pij*qi).sum());
+        res
+    }
+
+    // c = q'q
+    pub fn get_c(&self) -> f64    { self.q.iter().map(|v| v*v).sum() }
 }
 
 /// # Arguments
@@ -47,7 +87,7 @@ pub fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [
 
     //let vdet = M.variable(Some("vdet"), unbounded());
 
-    let τ = M.variable(Some("τ"), unbounded().with_shape(&[m]));
+    let τ = M.variable(Some("tau"), unbounded().with_shape(&[m]));
     let P_q = M.variable(Some("P_q"), unbounded().with_shape(&[n]));
     //let P_sq = det_rootn(Some("Psq"), & mut M, t.clone(), n);
     let P_sq = M.variable(Some("Psq"), in_psd_cone(n));
@@ -61,23 +101,19 @@ pub fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [
     //             ]
     //             Expr.vstack([ Expr.mul(0.5, vA2.index([0,0])), vA2.index([1,1]), vA2.index([0,1]), vdet ]), Domain.inRotatedQCone());
 
-
-    //M.objective(None, Sense::Maximize, &t);
+    M.objective(None, Sense::Maximize, &t);
 
     for (i,e) in es.iter().enumerate() {
-        let Adata : Vec<f64> = e.get_A().iter().map(|v| v.iter()).flatten().cloned().collect();
-        let A = dense(n,n,Adata);
-        let b = e.get_b();
-        let c = e.get_c();
+        let (Adata,b,c) = e.get_Abc();
 
-        // log(det(P²)) = log(det(P)det(P)) = log(det(P)²) = 2log(det(P))
-
+        //let Adata : Vec<f64> = e.get_A().iter().flat_map(|v| v.iter()).cloned().collect();
+        let A = dense(n,n,Adata.iter().flat_map(|r| r.iter()).cloned().collect::<Vec<f64>>());
+            
         // Implement the constraint 
         // | P²-A*τ[i]     P_q-τ[i]*b  0    |
         // | (P_q-τ[i]*b)' (-1-τ[i]*c) P_q' | ∊ S^n_+
         // | 0             P_q         -P²  |
-        let name = format!("EllipsoidBound[{}]",i+1);
-
+        //let name = format!("EllipsoidBound[{}]",i+1);
 
         let Xi : Variable<2> = (&X).slice(&[i..i+1,0..2*n+1,0..2*n+1]).reshape(&[2*n+1,2*n+1]);
         // P²-A*τ[i] = Xi[0..n,0..n]
@@ -113,6 +149,11 @@ pub fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [
 
     M.solve();
     M.write_problem("whales.ptf");
+
+    match M.solution_status(SolutionType::Default) {
+        (SolutionStatus::Optimal,SolutionStatus::Optimal) => {},
+        _ => panic!("Solution not optimal")
+    }
 
     let Psol  = M.primal_solution(SolutionType::Default,&P_sq).unwrap();
     let Pqsol = M.primal_solution(SolutionType::Default,&P_q).unwrap();
@@ -168,15 +209,33 @@ fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) ->
 #[allow(non_snake_case)]
 mod test {
     use super::*;
+    use crate::utils2d::*;
+
+    fn ellipse_from_param(dx : f64, dy : f64, sx : f64, sy : f64, theta : f64) -> Ellipsoid<2> {
+        let A = [ [ sx*theta.cos(), sy*theta.sin()], [-sx*theta.sin(), sy*theta.cos() ] ];
+        let b = [ dx, dy ];
+
+        Ellipsoid::new(&A,&b)
+    }
+
+    //xA'Ax + 2Abx + b'b-1 = 0
+
     #[test]
     fn test() {
         let ellipses : &[Ellipsoid<2>] = &[
-            Ellipsoid{A : [[1.2576, -0.3873], [-0.3873,0.3467]], b : [ 0.2722,  0.1969], c : 0.1831},
-            Ellipsoid{A : [[1.4125, -2.1777], [-2.1777,6.7775]], b : [-1.228,  -0.0521], c : 0.3295},
-            Ellipsoid{A : [[1.7018,  0.8141], [ 0.8141,1.7538]], b : [-0.4049,  1.5713], c : 0.2077},
-            Ellipsoid{A : [[0.9742, -0.7202], [-0.7202,1.5444]], b : [ 0.0265,  0.5623], c : 0.2362},
-            Ellipsoid{A : [[0.6798, -0.1424], [-0.1424,0.6871]], b : [-0.4301, -1.0157], c : 0.3284},
-            Ellipsoid{A : [[0.1796, -0.1423], [-0.1423,2.6181]], b : [-0.3286,  0.557 ], c : 0.4931} 
+            Ellipsoid{P : [[1.09613, -0.236851], [-0.236851, 0.539075]], q : [ 0.596594, 1.23438] },
+            Ellipsoid{P : [[1.01769, -0.613843], [-0.613843, 2.52996 ]], q : [-1.74633, -0.568805] },
+            Ellipsoid{P : [[1.26487,  0.319239], [ 0.319239, 1.28526 ]], q : [-0.856775, 1.29365] },
+            Ellipsoid{P : [[0.926849,-0.339339], [-0.339339, 1.19551 ]], q : [ 0.452287, 0.575005] },
+            Ellipsoid{P : [[0.819939,-0.0866013],[-0.0866013,0.824379]], q : [-0.985105,-1.6824] },
+            Ellipsoid{P : [[0.417981,-0.0699427],[-0.0699427,1.61654 ]], q : [-1.73581,  0.118404] },
+
+            //Ellipsoid{A : [[1.2576, -0.3873], [-0.3873,0.3467]], b : [ 0.2722,  0.1969], c : 0.1831},
+            //Ellipsoid{A : [[1.4125, -2.1777], [-2.1777,6.7775]], b : [-1.228,  -0.0521], c : 0.3295},
+            //Ellipsoid{A : [[1.7018,  0.8141], [ 0.8141,1.7538]], b : [-0.4049,  1.5713], c : 0.2077},
+            //Ellipsoid{A : [[0.9742, -0.7202], [-0.7202,1.5444]], b : [ 0.0265,  0.5623], c : 0.2362},
+            //Ellipsoid{A : [[0.6798, -0.1424], [-0.1424,0.6871]], b : [-0.4301, -1.0157], c : 0.3284},
+            //Ellipsoid{A : [[0.1796, -0.1423], [-0.1423,2.6181]], b : [-0.3286,  0.557 ], c : 0.4931} 
         ];
 
         let (Psq,Pq) = outer_ellipsoid(ellipses);
@@ -191,21 +250,4 @@ mod test {
         println!("P = {:?}",P);
         println!("q = {:?}",q);
     }
-
-    fn matmul(A : &[[f64;2];2], b : &[f64;2]) -> [f64;2] { [A[0][0]*b[0]+A[0][1]*b[1], A[1][0]*b[0]+A[1][1]*b[1]] }
-    fn mat2mul(A : &[[f64;2];2], B : &[[f64;2];2])  -> [[f64;2];2] { [[A[0][0]*B[0][0]+A[0][1]*B[1][0], A[0][0]*B[0][1]+A[0][1]*B[1][1]], [A[1][0]*B[0][0]+A[1][1]*B[1][0], A[1][0]*B[0][1]+A[1][1]*B[1][1]]] }
-    fn det(A : &[[f64;2];2])  -> f64 { A[0][0]*A[1][1] - A[0][1]*A[1][0] }
-    fn trans(A : &[[f64;2];2]) -> [[f64;2];2] { [[A[0][0], A[1][0]], [A[0][1], A[1][1]]] }
-    fn inv(A : &[[f64;2];2])  -> [[f64;2];2] { 
-        let da = det(&A);
-        [[A[1][1]/da, -A[0][1]/da], [-A[1][0]/da, A[0][0]/da]]
-    }
-    fn scale(a : &[f64;2], c : f64) -> [f64;2] { [c*a[0], c*a[1]] }
-    fn matscale(A : &[ [f64;2];2], c : f64) -> [ [f64;2];2] { [[c*A[0][0], c*A[0][1]], [c*A[1][0], c*A[1][1]]] }
-    fn vecadd(a : &[f64;2], b : &[f64;2]) -> [f64;2] { [a[0]+b[0], a[1]+b[1]] }
-    fn vecsub(a : &[f64;2], b : &[f64;2]) -> [f64;2] { [a[0]-b[0], a[1]-b[1]] }
-    fn matadd(A : &[ [f64;2];2], B : &[ [f64;2];2]) -> [[f64;2];2] { [[A[0][0]+B[0][0], A[0][1]+B[0][1]],[A[1][0]+B[1][0], A[1][1]+B[1][1]]] }
-    fn matsub(A : &[ [f64;2];2], B : &[ [f64;2];2]) -> [[f64;2];2] { [[A[0][0]-B[0][0], A[0][1]-B[0][1]],[A[1][0]-B[1][0], A[1][1]-B[1][1]]] }
-    fn trace(A : &[ [f64;2];2]) -> f64 { A[0][0] + A[1][1] } 
-    fn rot(alpha : f64) -> [[f64;2];2] { [[alpha.cos(), -alpha.sin()], [alpha.sin(), alpha.cos()]] }
 }
