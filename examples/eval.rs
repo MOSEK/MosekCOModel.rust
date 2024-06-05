@@ -46,6 +46,50 @@ pub extern "C" fn expression
     }
 }
 
+#[no_mangle]
+pub fn scalar_expr_mul
+(   datand       : usize,
+    datashape    : * const usize,
+    datannz      : usize,
+    datasparsity : * const usize,
+    data         : * const f64,
+    rs           : * mut WorkStack, 
+    ws           : * mut WorkStack, 
+    xs           : * mut WorkStack) 
+{
+    unsafe {
+        let shape = std::slice::from_raw_parts(datashape, datand);
+        let totsize = shape.iter().product();
+        let sp = if totsize > datannz { Some(std::slice::from_raw_parts(datasparsity, datannz)) } else { None };
+
+        eval::scalar_expr_mul(
+            shape,
+            sp,
+            std::slice::from_raw_parts(data, datannz),
+            &mut *rs,
+            &mut *ws,
+            &mut *xs);
+    }
+    
+}
+
+#[no_mangle]
+pub extern "C" fn diag
+( anti : i32, 
+  index : i64, 
+  rs : * mut WorkStack, 
+  ws : * mut WorkStack, 
+  xs : * mut WorkStack) 
+{
+    unsafe {
+        eval::diag(
+            anti != 0,
+            index,
+            &mut *rs,
+            &mut *ws,
+            &mut *xs);
+    }
+}
 
 #[no_mangle]
 pub extern "C"  fn permute_axes
@@ -169,6 +213,31 @@ pub extern "C" fn mul_right_sparse
 }
 
 #[no_mangle]
+pub extern "C" fn mul_elem
+( datand       : usize,
+  datashape    : * const usize,
+  datannz      : usize,
+  datasparsity : * const usize,
+  data         : * const f64,
+  rs           : * mut WorkStack,
+  ws           : * mut WorkStack,
+  xs           : * mut WorkStack) 
+{
+    unsafe {
+        let shape = std::slice::from_raw_parts(datashape,datand);
+        let totsize = shape.iter().product();
+        
+        eval::mul_elem(
+            shape,
+            if totsize > datannz { Some(std::slice::from_raw_parts(datasparsity,datannz)) } else { None },
+            std::slice::from_raw_parts(f64,datannz),
+            & mut *rs,
+            & mut *ws,
+            & mut *xs);
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn dot_sparse
 ( sparsity : * const usize,
   data     : * const f64,
@@ -232,6 +301,92 @@ pub extern "C" fn sum_last
     unsafe {
         eval::sum_last(
             num,
+            & mut *rs,
+            & mut *ws,
+            & mut *xs);
+    }
+}
+
+
+#[no_mangle]
+pub extern "C" fn repeat
+( dim : usize,
+  num : usize,
+  rs : * mut WorkStack,
+  ws : * mut WorkStack,
+  xs : * mut WorkStack) 
+{
+    unsafe {
+        eval::repeat(
+            dim,
+            num,
+            & mut *rs,
+            & mut *ws,
+            & mut *xs);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn into_symmetric
+( dim : usize,
+  rs : * mut WorkStack,
+  ws : * mut WorkStack,
+  xs : * mut WorkStack) 
+{
+    unsafe {
+        eval::into_symmetric(
+            dim,
+            & mut *rs,
+            & mut *ws,
+            & mut *xs);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn triangular_part
+( upper : i32,
+  with_diag : i32,
+  rs : * mut WorkStack, 
+  ws : * mut WorkStack, 
+  xs : * mut WorkStack) 
+{ 
+    unsafe {
+        eval::triangular_part(
+            upper != 0,
+            with_diag != 0,
+            & mut *rs,
+            & mut *ws,
+            & mut *xs);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sum
+( rs : * mut WorkStack, 
+  ws : * mut WorkStack, 
+  xs : * mut WorkStack) 
+{
+    unsafe {
+        eval::sum(
+            & mut *rs,
+            & mut *ws,
+            & mut *xs);
+    }
+}
+
+#[no_mangle]
+pub fn slice
+( nd    : usize,
+  begin : *const usize, 
+  end   : *const usize,
+  rs    : * mut WorkStack, 
+  ws    : * mut WorkStack,
+  xs    : * mut WorkStack) 
+{
+    unsafe {
+        eval::slice(
+            std::slice::from_raw_parts(begin, nd),
+            std::slice::from_raw_parts(end, nd),
             & mut *rs,
             & mut *ws,
             & mut *xs);

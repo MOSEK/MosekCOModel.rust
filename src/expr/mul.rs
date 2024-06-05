@@ -1,4 +1,4 @@
-use super::{ExprReshapeOneRow, ExprTrait};
+use super::{eval, ExprReshapeOneRow, ExprTrait};
 use super::workstack::WorkStack;
 use super::matrix::Matrix;
 use itertools::izip;
@@ -575,28 +575,34 @@ impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprMulElm<N,E> {
 impl<const N : usize,E> ExprTrait<N> for ExprScalarMul<N,E> where E : ExprTrait<0> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.expr.eval(ws,rs,xs);
-        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-        assert_eq!(shape.len(), 0);
-        if let Some(_sp) = sp {
-            let (rptr,_rsp,_rsubj,_rcof) = rs.alloc_expr(&self.datashape, 0, 0);
-            rptr[0] = 0;
+        if let Some(ref sp) = self.datasparsity {
+            eval::scalar_expr_mul(self.datashape.as_slice(), Some(sp.as_slice()), self.data.as_slice(), rs, ws, xs);
         }
         else {
-            let nnz = *ptr.last().unwrap();
-            let rnelem = self.data.len();
-            let rnnz = nnz * rnelem;
-            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.datashape, rnnz, rnelem);
-            
-            rptr.iter_mut().fold(0,|c,r| { *r = c; c + nnz });
-            if let (Some(rsp),Some(dsp)) = (rsp,&self.datasparsity) {
-                rsp.copy_from_slice(dsp.as_slice());
-            }
-            rsubj.iter_mut().zip(subj[0..nnz].iter().cycle()).for_each(| (r,&s)| *r = s);
-            izip!(rcof.iter_mut(),
-                  self.data.iter().flat_map(|&v| repeat(v).take(nnz)),  
-                  cof[0..nnz].iter().cycle())
-                .for_each(| (r,s0,&s1)| *r = s0 * s1);
+            eval::scalar_expr_mul(self.datashape.as_slice(), None, self.data.as_slice(), rs, ws, xs);
         }
+//        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+//        assert_eq!(shape.len(), 0);
+//        if let Some(_sp) = sp {
+//            let (rptr,_rsp,_rsubj,_rcof) = rs.alloc_expr(&self.datashape, 0, 0);
+//            rptr[0] = 0;
+//        }
+//        else {
+//            let nnz = *ptr.last().unwrap();
+//            let rnelem = self.data.len();
+//            let rnnz = nnz * rnelem;
+//            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.datashape, rnnz, rnelem);
+//            
+//            rptr.iter_mut().fold(0,|c,r| { *r = c; c + nnz });
+//            if let (Some(rsp),Some(dsp)) = (rsp,&self.datasparsity) {
+//                rsp.copy_from_slice(dsp.as_slice());
+//            }
+//            rsubj.iter_mut().zip(subj[0..nnz].iter().cycle()).for_each(| (r,&s)| *r = s);
+//            izip!(rcof.iter_mut(),
+//                  self.data.iter().flat_map(|&v| repeat(v).take(nnz)),  
+//                  cof[0..nnz].iter().cycle())
+//                .for_each(| (r,s0,&s1)| *r = s0 * s1);
+//        }
     }
 }
 

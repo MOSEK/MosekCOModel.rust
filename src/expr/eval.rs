@@ -9,7 +9,7 @@ use super::workstack::WorkStack;
 
 use itertools::{izip,iproduct};
 
-pub(super) fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
+pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nd = shape.len();
@@ -18,11 +18,11 @@ pub(super) fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut Wo
         panic!("Diagonals can only be taken from square matrixes");
     }
     let d = shape[0];
-    if index.abs() as usize >= d {
+    if index.unsigned_abs() as usize >= d {
         panic!("Diagonal index out of bounds");
     }
 
-    let absidx = index.abs() as usize;
+    let absidx = index.unsigned_abs() as usize;
     if let Some(sp) = sp {
         let (first,num) = match (anti,index >= 0) {
             (false,true)  => (index as usize,       d - absidx),
@@ -110,7 +110,7 @@ pub(super) fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut Wo
 
 }
 
-pub(super) fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
+pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nd = shape.len();
@@ -186,7 +186,7 @@ pub(super) fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkSta
     }
 }
 
-pub(super) fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
+pub fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
     let (rptr,_rsp,rsubj,rcof)    = rs.alloc_expr(&[],*ptr.last().unwrap(),1);
     rptr[0] = 0;
@@ -196,7 +196,7 @@ pub(super) fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkSt
 }
 
 
-pub(super) fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) { 
+pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) { 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nnz = *ptr.last().unwrap();
     let nelem = ptr.len()-1;
@@ -286,7 +286,7 @@ pub(super) fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws :
 
 }
 
-pub(super) fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     if dim >= shape.len() {
         panic!("Invalid stacking dimension");
@@ -336,7 +336,7 @@ pub(super) fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut 
         _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
     } 
     else { // dense
-        let d0 : usize = num * shape[..dim].iter().product::<usize>();
+        let _d0 : usize = num * shape[..dim].iter().product::<usize>();
         let d1 : usize = shape[dim..].iter().product();
         rptr[0] = 0;
         let mut rptr_pos = 0usize;
@@ -1385,7 +1385,7 @@ pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : &
     }
 }
 
-pub (super) fn mul_elem(datashape : &[usize],
+pub fn mul_elem(datashape : &[usize],
                         datasparsity : Option<&[usize]>,
                         data : &[f64],
                         rs : & mut WorkStack,
@@ -1490,10 +1490,44 @@ pub (super) fn mul_elem(datashape : &[usize],
             }
         }
     } // match (sparsity,sp)
-
 }
 
-pub(super) fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub fn scalar_expr_mul
+(   datashape : &[usize],
+    datasparsity : Option<&[usize]>,
+    data : &[f64],
+    rs : & mut WorkStack, 
+    ws : & mut WorkStack, 
+    _xs : & mut WorkStack) 
+{
+    use std::iter::repeat;
+    let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+    assert_eq!(shape.len(), 0);
+    if let Some(_sp) = sp {
+        let (rptr,_rsp,_rsubj,_rcof) = rs.alloc_expr(&datashape, 0, 0);
+        rptr[0] = 0;
+    }
+    else {
+        let nnz = *ptr.last().unwrap();
+        let rnelem = data.len();
+        let rnnz = nnz * rnelem;
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&datashape, rnnz, rnelem);
+        
+        rptr.iter_mut().fold(0,|c,r| { *r = c; c + nnz });
+        if let (Some(rsp),Some(dsp)) = (rsp,datasparsity) {
+            rsp.copy_from_slice(dsp);
+        }
+        rsubj.iter_mut().zip(subj[0..nnz].iter().cycle()).for_each(| (r,&s)| *r = s);
+        izip!(rcof.iter_mut(),
+              data.iter().flat_map(|&v| repeat(v).take(nnz)),  
+              cof[0..nnz].iter().cycle())
+            .for_each(| (r,s0,&s1)| *r = s0 * s1);
+    }
+}
+
+
+
+pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
     use std::iter::repeat;
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     // check

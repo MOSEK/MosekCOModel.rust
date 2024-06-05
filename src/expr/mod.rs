@@ -12,7 +12,6 @@ use itertools::izip;
 
 use crate::matrix::Matrix;
 
-use super::utils::*;
 use workstack::WorkStack;
 use super::matrix;
 

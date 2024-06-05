@@ -2,8 +2,6 @@
 //! Utility module.
 //!
 
-use std::slice::SliceIndex;
-
 use itertools::izip;
 
 
