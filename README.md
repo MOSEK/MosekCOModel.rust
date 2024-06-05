@@ -20,8 +20,8 @@ Implementing the models
 ```
 minimize y1 + y2 + y3
 such that
-         x1 + x2 + 2.0 x3  = 1.0
-                 x1,x2,x3 >= 0.0
+         x1 + x2 + 2.0 x3 = 1.0
+                 x1,x2,x3 ≥ 0.0
 and
          (y1,x1,x2) in C₃,
          (y2,y3,x3) in K₃
@@ -30,8 +30,8 @@ and
 where `C₃` and `K₃` are respectively the quadratic and
 rotated quadratic cone of size 3 defined as
 ```
-    C₃ = { z1,z2,z3 :      z1 >= √(z2² + z3²) }
-    K₃ = { z1,z2,z3 : 2 z1 z2 >= z3²          }
+    C₃ = { z1,z2,z3 :      z1 ≥ √(z2² + z3²) }
+    K₃ = { z1,z2,z3 : 2 z1 z2 ≥ z3²          }
 ```
 
 This is the included model `cqo1.rs`:
