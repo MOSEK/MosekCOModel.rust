@@ -129,12 +129,6 @@ pub trait ExprTrait<const N : usize> {
         ExprAdd::new(self,rhs.into_expr(),1.0,1.0) 
     }
 
-    //fn add<RHS>(self, rhs : RHS) -> RHS::Result
-    //    where 
-    //        Self : Sized, 
-    //        RHS : ExprAddable<N,Self> 
-    //{ rhs.add_internal(self) }
-
     /// Subtract expression and an item that is addable to an expression, e.g. constants or other
     /// expressions.
     fn sub<RHS>(self, rhs : RHS) -> ExprAdd<N,Self,RHS::Result> 
@@ -144,11 +138,6 @@ pub trait ExprTrait<const N : usize> {
     {
         ExprAdd::new(self,rhs.into_expr(),1.0,-1.0) 
     }
-    //fn sub<RHS>(self, rhs : RHS) -> RHS::SubResult
-    //    where 
-    //        Self : Sized,
-    //        RHS : ExprAddable<N,Self> 
-    //{ rhs.sub_internal(self) }
 
     /// Element-wise multiplication of two operands. The operand shapes must be the same.
     fn mul_elm<RHS>(self, other : RHS) -> RHS::Result where Self : Sized, RHS : ExprRightElmMultipliable<N,Self> { other.mul_elem(self) }
@@ -175,8 +164,11 @@ pub trait ExprTrait<const N : usize> {
         }
     }
 
+    /// Stack two expression in dimension 0.
     fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }
+    /// Stack two expression in dimension 1.
     fn hstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,1) }
+    /// Stack two expression in the given dimension.
     fn stack<E:ExprTrait<N>>(self,dim : usize, other : E) -> ExprStack<N,Self,E> where Self:Sized { ExprStack::new(self,other,dim) }
 
     /// Take a slice of an expression
@@ -209,20 +201,41 @@ pub trait ExprTrait<const N : usize> {
         ExprReshapeOneRow{item:self, dim : i }
     }
 
-
     /// Reshape a sparse expression into a dense expression with the
     /// given shape. The shape must match the actual number of
     /// elements in the expression.
     fn gather(self) -> ExprGatherToVec<N,Self>  where Self:Sized { ExprGatherToVec{item:self} }
 
-
+    /// Multiply expression and other `expr * other`, where `other` is something that can be
+    /// right-multiplied by the expression.
     fn mul<RHS>(self,other : RHS) -> RHS::Result where Self: Sized, RHS : ExprRightMultipliable<N,Self> { other.mul_right(self) }
+    /// Multiply expression and other `other * expr`, where `other` is something that can be
+    /// left-multiplied by the expression.
     fn rev_mul<LHS>(self, lhs: LHS) -> LHS::Result where Self: Sized, LHS : ExprLeftMultipliable<N,Self> { lhs.mul(self) }
 
+    /// Transpose a two-dimensional expression.
     fn transpose(self) -> ExprPermuteAxes<2,Self> where Self:Sized+ExprTrait<2> { ExprPermuteAxes{ item : self, perm : [1,0]} }
+    /// An sparse expression containing only the lower triangular part of the original expression. 
+    ///
+    /// # Arguments
+    /// - `with_diag` Indicates if the diagonal should be included.
     fn tril(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized+ExprTrait<2> { ExprTriangularPart{item:self,upper:false,with_diag} }
+    /// An sparse expression containing only the upper triangular part of the original expression. 
+    ///
+    /// # Arguments
+    /// - `with_diag` Indicates if the diagonal should be included.
     fn triu(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized+ExprTrait<2> { ExprTriangularPart{item:self,upper:true,with_diag} }
+    /// An expression that gathers the lower triangular elements of the original expression into a
+    /// vector expression.
+    ///
+    /// # Arguments
+    /// - `with_diag` Indicates if the diagonal should be included.
     fn trilvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:false,with_diag} } } 
+    /// An expression that gathers the upper triangular elements of the original expression into a
+    /// vector expression.
+    ///
+    /// # Arguments
+    /// - `with_diag` Indicates if the diagonal should be included.
     fn triuvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
 }
 
@@ -245,30 +258,30 @@ pub struct Expr<const N : usize> {
 
 /// The Expr implementation
 impl<const N : usize> Expr<N> {
-    /// Create a new literal expression from data
+    /// Create a new literal expression from data.
     ///
     /// Arguments:
-    /// * [shape] Shape of the expression. If `sparsity` is `None`,
+    /// * `shape` Shape of the expression. If `sparsity` is `None`,
     ///   the product of the dimensions in the shape must be equal to
     ///   the number of elements in the expression (`ptr.len()-1`)
-    /// * [sparsity] If not `None`, this defines the sparsity
+    /// * `sparsity` If not `None`, this defines the sparsity
     ///   pattern. The pattern denotes the linear indexes if nonzeros in
     ///   the shape. It must be sorted, must contain no duplicates and
     ///   must fit within the `shape`.
-    /// * [aptr] The number if elements is `aptr.len()-1`. [aptr] must
+    /// * `aptr` The number if elements is `aptr.len()-1`. `aptr` must
     ///   be ascending, so `aptr[i] <= aptr[i+1]`. `aptr` is a vector
     ///   if indexes of the starting points of each element in [asubj]
     ///   and [acof], so element `i` consists of nonzeros defined by
-    ///   [asubj[aptr[i]..aptr[i+1]]], acof[aptr[i]..aptr[i+1]]`
-    /// * [asubj] Variable subscripts.
-    /// * [acof]  Coefficients.
+    ///   `[asubj[aptr[i]..aptr[i+1]]]`, `acof[aptr[i]..aptr[i+1]]`
+    /// * `asubj` Variable subscripts.
+    /// * `acof`  Coefficients.
     pub fn new(shape : &[usize;N],
                sparsity : Option<Vec<usize>>,
                aptr  : Vec<usize>,
                asubj : Vec<usize>,
                acof  : Vec<f64>) -> Expr<N> {
         let fullsize = shape.iter().product();
-        if aptr.len() == 0 { panic!("Invalid aptr"); }
+        if aptr.is_empty() { panic!("Invalid aptr"); }
         if ! aptr[0..aptr.len()-1].iter().zip(aptr[1..].iter()).all(|(a,b)| a <= b) {
             panic!("Invalid aptr: Not sorted");
         }
@@ -380,9 +393,9 @@ impl<const N : usize, const M : usize, E> ExprTrait<M> for ExprReduceShape<N,M,E
     }
 }
 
-// For internal use. Reshape an expression into an M-dimensional expression where all but one
-// dimensions are 1. Unlike Reshape we don't need to to know the actual dimensions of either the
-// original or the resulting expression.
+/// For internal use. Reshape an expression into an M-dimensional expression where all but one
+/// dimensions are 1. Unlike Reshape we don't need to to know the actual dimensions of either the
+/// original or the resulting expression.
 pub struct ExprReshapeOneRow<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, dim : usize } 
 impl<const N : usize,const M : usize,E> ExprReshapeOneRow<N,M,E> 
     where 
@@ -408,7 +421,8 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprResh
     }
 }
 
-
+/// Reshape expression. The number of elements in the original expression and in the resized
+/// expression must be the same.
 pub struct ExprReshape<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, shape : [usize; M] }
 impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprReshape<N,M,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
@@ -432,6 +446,7 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprResh
     }
 }
 
+/// A sparse expression where non-zeros are taken from a vector expression.
 pub struct ExprScatter<const M : usize, E:ExprTrait<1>> { item : E, shape : [usize; M], sparsity : Vec<usize> }
 
 impl<const M : usize, E:ExprTrait<1>> ExprScatter<M,E> {
@@ -480,6 +495,7 @@ impl<const M : usize, E:ExprTrait<1>> ExprTrait<M> for ExprScatter<M,E> {
     }
 }
 
+/// Pick nonzeros from a sparse expression to produce a dense expression with the given shape.
 pub struct ExprGather<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, shape : [usize; N] }
 impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprGather<N,M,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
@@ -498,6 +514,7 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprGath
     }
 }
 
+/// Pick nonzeros from a sparse expression to produce a dense vector expression.
 pub struct ExprGatherToVec<const N : usize, E:ExprTrait<N>> { item : E }
 impl<const N : usize, E:ExprTrait<N>> ExprTrait<1> for ExprGatherToVec<N,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
@@ -1007,11 +1024,11 @@ impl<E:ExprTrait<2>> ExprTrait<1> for ExprDiag<E> {
             panic!("Diagonals can only be taken from square matrixes");
         }
         let d = shape[0];
-        if self.index.abs() as usize >= d {
+        if self.index.unsigned_abs() as usize >= d {
             panic!("Diagonal index out of bounds");
         }
 
-        let absidx = self.index.abs() as usize;
+        let absidx = self.index.unsigned_abs() as usize;
         if let Some(sp) = sp {
             let (first,num) = match (self.anti,self.index >= 0) {
                 (false,true)  => (self.index as usize,       d - absidx),
