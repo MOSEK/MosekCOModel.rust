@@ -16,6 +16,26 @@ That is affine expressions and conic domains of constraints and variables.
 The `MosekModel` package provides functionality to build the linear expressions.
 
 # Simple conic example
+Implementing the models
+```
+minimize y1 + y2 + y3
+such that
+         x1 + x2 + 2.0 x3  = 1.0
+                 x1,x2,x3 >= 0.0
+and
+         (y1,x1,x2) in C₃,
+         (y2,y3,x3) in K₃
+```
+
+where `C₃` and `K₃` are respectively the quadratic and
+rotated quadratic cone of size 3 defined as
+```
+    C₃ = { z1,z2,z3 :      z1 >= √(z2² + z3²) }
+    K₃ = { z1,z2,z3 : 2 z1 z2 >= z3²          }
+```
+
+This is the included model `cqo1.rs`:
+
 ```rust
 extern crate mosekmodel;
 use mosekmodel::*;
@@ -52,18 +72,15 @@ fn main() {
     m.objective(Some("obj"), Sense::Minimize, &y.clone().sum());
 
     // Solve the problem
-    m.write_problem("cqo1.task");
     m.solve();
 
-
     // Get the linear solution values
-
     let solx = m.primal_solution(SolutionType::Default,&x);
     let soly = m.primal_solution(SolutionType::Default,&y);
     println!("x = {:?}", solx);
     println!("y = {:?}", soly);
 
-    // Get conic solution of qc1
+    // Get primal and dual solution of qc1
     let qc1lvl = m.primal_solution(SolutionType::Default,&qc1);
     let qc1sn  = m.dual_solution(SolutionType::Default,&qc1);
 
