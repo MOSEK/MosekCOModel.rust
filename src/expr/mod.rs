@@ -1,6 +1,6 @@
 extern crate itertools;
 
-mod eval;
+pub mod eval;
 pub mod workstack;
 mod dot;
 mod mul;

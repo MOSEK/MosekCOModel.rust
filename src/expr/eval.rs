@@ -9,7 +9,7 @@ use super::workstack::WorkStack;
 
 use itertools::izip;
 
-pub(super) fn permute_axes(perm : &[usize],
+pub fn permute_axes(perm : &[usize],
                            rs : & mut WorkStack,
                            ws : & mut WorkStack,
                            xs : & mut WorkStack) {
@@ -46,7 +46,6 @@ pub(super) fn permute_axes(perm : &[usize],
     prstrides.iter_mut().zip(perm.iter()).for_each(|(s,&p)| *s = rstrides[p] );
 
     if let Some(sp) = sp {
-        //println!("permute_axes: sparse, strides = {:?}, rstrides = {:?}, prstrides = {:?}",strides,rstrides,prstrides);
         spx.iter_mut().zip(sp.iter()).for_each(|(ix,&i)| {
             let (_,ri) = strides.iter().zip(prstrides.iter()).fold((i,0),|(v,r),(&s,&rs)| (v%s,r+(v/s)*rs));
             *ix = ri;
@@ -60,9 +59,7 @@ pub(super) fn permute_axes(perm : &[usize],
             for (t,&s) in rsp.iter_mut().zip(perm_iter(elmperm,sp)) {
                 (_,*t) = izip!(strides.iter(),prstrides.iter()).fold((s,0),|(sv,r),(&s,&ps)| (sv % s,r + (sv/s)*ps)  );
             }
-            //println!("\trsp = {:?}",rsp);
         };
-        //let _ = rptr.iter_mut().zip(perm_iter(ptr[0..nelem].iter()).zip(ptr[1..].iter())).fold(0,|c,(t,(&p0,&p1))| { *t = c+p1-p0; *t });
         rptr.iter_mut().for_each(|p| *p = 0);
 
         { 
@@ -73,11 +70,9 @@ pub(super) fn permute_axes(perm : &[usize],
                 rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
                 nzi += p1-p0;
             }
-            //println!("permute_axes: sparse\n\trsubj = {:?}\n\trcof = {:?}\n\trptr = {:?}",rsubj,rcof,rptr);
         }
     }
     else {
-        //println!("permute_axes: dense");
         for (si,n) in ptr.iter().zip(ptr[1..].iter()).map(|(&p0,&p1)| p1-p0).enumerate() {
             let (_,ti) = strides.iter().zip(prstrides.iter()).fold((si,0),|(v,r),(&s,&rs)| (v%s,r+(v/s)*rs));
             rptr[ti+1] = n
@@ -93,12 +88,11 @@ pub(super) fn permute_axes(perm : &[usize],
             rcof[nzi..nzi+n].clone_from_slice(scof);
         }
     }
-    //println!("eval::permute_axes: end");
 }
 
 
 /// Add `n` expression residing on `ws`. Result pushed to `rs`.
-pub(super) fn add(n  : usize,
+pub fn add(n  : usize,
                   rs : & mut WorkStack,
                   ws : & mut WorkStack,
                   xs : & mut WorkStack) {
@@ -244,7 +238,7 @@ pub(super) fn add(n  : usize,
 } // add
 
 /// Evaluates `lhs` * expr.
-pub(super) fn mul_left_dense(mdata : &[f64],
+pub fn mul_left_dense(mdata : &[f64],
                              mdimi : usize,
                              mdimj : usize,
                              rs    : & mut WorkStack,
@@ -317,7 +311,7 @@ pub(super) fn mul_left_dense(mdata : &[f64],
     }
 } // mul_left_dense
 
-pub(super) fn mul_right_dense(mdata : &[f64],
+pub fn mul_right_dense(mdata : &[f64],
                               mdimi : usize,
                               mdimj : usize,
                               rs    : & mut WorkStack,
@@ -392,7 +386,7 @@ pub(super) fn mul_right_dense(mdata : &[f64],
 } // mul_right_dense
 
 
-pub(super) fn mul_left_sparse(mheight : usize,
+pub fn mul_left_sparse(mheight : usize,
                               mwidth : usize,
                               msparsity : &[usize],
                               mdata : &[f64],
@@ -562,7 +556,7 @@ pub(super) fn mul_left_sparse(mheight : usize,
 }
 
 // expr x matrix
-pub(super) fn mul_right_sparse(mheight : usize,
+pub fn mul_right_sparse(mheight : usize,
                                mwidth : usize,
                                msparsity : &[usize],
                                mdata : &[f64],
@@ -746,7 +740,7 @@ pub(super) fn mul_right_sparse(mheight : usize,
     }
 }
 
-pub(super) fn dot_sparse(sparsity : &[usize],
+pub fn dot_sparse(sparsity : &[usize],
                          data     : &[f64],
                          rs : & mut WorkStack,
                          ws : & mut WorkStack,
@@ -756,7 +750,7 @@ pub(super) fn dot_sparse(sparsity : &[usize],
 
 }
 
-pub(super) fn dot_vec(data : &[f64],
+pub fn dot_vec(data : &[f64],
                       rs : & mut WorkStack,
                       ws : & mut WorkStack,
                       _xs : & mut WorkStack) {
@@ -802,7 +796,7 @@ pub(super) fn dot_vec(data : &[f64],
 
 
 
-pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
     // println!("{}:{}: eval::stack n={}, dim={}",file!(),line!(),n,dim);
     let exprs = ws.pop_exprs(n);
 
@@ -986,19 +980,12 @@ pub(super) fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut Wor
     }
 }
 
-pub(super) fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) {
+pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let d = shape[shape.len()-num..].iter().product();
     let mut rshape = shape.to_vec();
     rshape[shape.len()-num..].iter_mut().for_each(|s| *s = 1);
-
-//    println!("sum_last: shape = {:?}",shape);
-//    println!("sum_last: ptr = {:?}",ptr);
-//    println!("sum_last: sp = {:?}",sp);
-//    println!("sum_last: subj = {:?}",subj);
-//    println!("sum_last: cof = {:?}",cof);
-
 
     if let Some(sp) = sp {
         let rnelm =
@@ -1035,11 +1022,6 @@ pub(super) fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, 
         }
         rsubj.clone_from_slice(subj);
         rcof.clone_from_slice(cof);
-        //println!("sum_last sparse");
-        //println!("sum_last: rnelm = {:?}",rnelm);
-        //println!("sum_last: rsubj = {:?}",rsubj);
-        //println!("sum_last: rcof = {:?}",rcof);
-        //println!("sum_last: rptr = {:?}",rptr);
     } 
     else {
         let rnelm = shape.iter().product::<usize>()/d; 
@@ -1048,17 +1030,10 @@ pub(super) fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, 
         rsubj.clone_from_slice(subj);
         rcof.clone_from_slice(cof);
         rptr.iter_mut().zip(ptr.iter().step_by(d)).for_each(|(rp,&p)| *rp = p );
-        
-        //println!("sum_last dense");
-        //println!("sum_last: rnelm = {:?}",rnelm);
-        //println!("sum_last: rsubj = {:?}",rsubj);
-        //println!("sum_last: rcof = {:?}",rcof);
-        //println!("sum_last: rptr = {:?}",rptr);
     }
-    //println!("eval::sum_last: end");
 }
 
-pub(super) fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nnz  = subj.len();
@@ -1117,12 +1092,6 @@ pub(super) fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & m
     else {
         for (&p0,&p1,rp) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),rptr[1..].iter_mut()) {
 
-            // izip!(subj[p0..p1].iter().map(|&v| v)
-            //       cof[p0..p1].iter().map(|&v| v))
-            //     .partial_fold_map(|(j0,v0),(j,v)| if j0 == j { Some(v0+v) } else { None })
-            //     .for_each(|(j0,v0)| {
-            //         .....
-            //     });
             let mut rownzi : usize = 0;
 
             subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
