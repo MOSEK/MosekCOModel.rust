@@ -16,3 +16,8 @@ criterion = "0.3"
 [[bench]]
 name="performance"
 harness = false
+
+
+[[example]]
+name = "eval"
+crate-type = ["cdylib"]
