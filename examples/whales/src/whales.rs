@@ -4,6 +4,9 @@
 //  File: whales.rs
 //
 //  Computes the minimal ellipsoid containing a set of ellipsoids
+//  References:
+//    [1] "Lectures on Modern Optimization", Ben-Tal and Nemirovski, 2000.
+//    [2] "MOSEK modeling manual", 2013
 
 #[allow(mixed_script_confusables)]
 
@@ -87,10 +90,11 @@ pub fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [
 
     //let vdet = M.variable(Some("vdet"), unbounded());
 
+
     let τ = M.variable(Some("tau"), unbounded().with_shape(&[m]));
     let P_q = M.variable(Some("P_q"), unbounded().with_shape(&[n]));
-    //let P_sq = det_rootn(Some("Psq"), & mut M, t.clone(), n);
-    let P_sq = M.variable(Some("Psq"), in_psd_cone(n));
+    let P_sq = det_rootn(Some("X_Psq"), & mut M, t.clone(), n);
+    //let P_sq = M.variable(Some("Psq"), in_psd_cone(n));
 
     let X = M.variable(Some("X"), in_psd_cones(&[m,2*n+1,2*n+1], 1,2));
 
@@ -110,9 +114,9 @@ pub fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [
         let A = dense(n,n,Adata.iter().flat_map(|r| r.iter()).cloned().collect::<Vec<f64>>());
             
         // Implement the constraint 
-        // | P²-A*τ[i]     P_q-τ[i]*b  0    |
-        // | (P_q-τ[i]*b)' (-1-τ[i]*c) P_q' | ∊ S^n_+
-        // | 0             P_q         -P²  |
+        // | A*τ[i]-P²     τ[i]*b-P_q  0     |
+        // | (τ[i]*b-P_q)' (1+τ[i]*c)  -P_q' | ∊ S^n_+
+        // | 0             -P_q        P²    |
         //let name = format!("EllipsoidBound[{}]",i+1);
 
         let Xi : Variable<2> = (&X).slice(&[i..i+1,0..2*n+1,0..2*n+1]).reshape(&[2*n+1,2*n+1]);
