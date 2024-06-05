@@ -1,6 +1,6 @@
 extern crate itertools;
 
-mod eval;
+pub mod eval;
 pub mod workstack;
 mod dot;
 mod mul;
@@ -327,7 +327,7 @@ pub struct Expr<const N : usize> {
 
 /// The Expr implementation
 impl<const N : usize> Expr<N> {
-    /// Create a new literal expression from data
+    /// Create a new literal expression from data.
     ///
     /// Arguments:
     /// * `shape` Shape of the expression. If `sparsity` is `None`,
@@ -350,7 +350,7 @@ impl<const N : usize> Expr<N> {
                asubj : Vec<usize>,
                acof  : Vec<f64>) -> Expr<N> {
         let fullsize = shape.iter().product();
-        if aptr.len() == 0 { panic!("Invalid aptr"); }
+        if aptr.is_empty() { panic!("Invalid aptr"); }
         if ! aptr[0..aptr.len()-1].iter().zip(aptr[1..].iter()).all(|(a,b)| a <= b) {
             panic!("Invalid aptr: Not sorted");
         }
@@ -464,9 +464,9 @@ impl<const N : usize, const M : usize, E> ExprTrait<M> for ExprReduceShape<N,M,E
     }
 }
 
-// For internal use. Reshape an expression into an M-dimensional expression where all but one
-// dimensions are 1. Unlike Reshape we don't need to to know the actual dimensions of either the
-// original or the resulting expression.
+/// For internal use. Reshape an expression into an M-dimensional expression where all but one
+/// dimensions are 1. Unlike Reshape we don't need to to know the actual dimensions of either the
+/// original or the resulting expression.
 pub struct ExprReshapeOneRow<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, dim : usize } 
 impl<const N : usize,const M : usize,E> ExprReshapeOneRow<N,M,E> 
     where 
@@ -492,7 +492,8 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprResh
     }
 }
 
-
+/// Reshape expression. The number of elements in the original expression and in the resized
+/// expression must be the same.
 pub struct ExprReshape<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, shape : [usize; M] }
 impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprReshape<N,M,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
@@ -516,6 +517,7 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprResh
     }
 }
 
+/// A sparse expression where non-zeros are taken from a vector expression.
 pub struct ExprScatter<const M : usize, E:ExprTrait<1>> { item : E, shape : [usize; M], sparsity : Vec<usize> }
 
 impl<const M : usize, E:ExprTrait<1>> ExprScatter<M,E> {
@@ -564,6 +566,7 @@ impl<const M : usize, E:ExprTrait<1>> ExprTrait<M> for ExprScatter<M,E> {
     }
 }
 
+/// Pick nonzeros from a sparse expression to produce a dense expression with the given shape.
 pub struct ExprGather<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, shape : [usize; N] }
 impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprGather<N,M,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
@@ -582,6 +585,7 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprGath
     }
 }
 
+/// Pick nonzeros from a sparse expression to produce a dense vector expression.
 pub struct ExprGatherToVec<const N : usize, E:ExprTrait<N>> { item : E }
 impl<const N : usize, E:ExprTrait<N>> ExprTrait<1> for ExprGatherToVec<N,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
@@ -1042,11 +1046,11 @@ impl<E:ExprTrait<2>> ExprTrait<1> for ExprDiag<E> {
             panic!("Diagonals can only be taken from square matrixes");
         }
         let d = shape[0];
-        if self.index.abs() as usize >= d {
+        if self.index.unsigned_abs() as usize >= d {
             panic!("Diagonal index out of bounds");
         }
 
-        let absidx = self.index.abs() as usize;
+        let absidx = self.index.unsigned_abs() as usize;
         if let Some(sp) = sp {
             let (first,num) = match (self.anti,self.index >= 0) {
                 (false,true)  => (self.index as usize,       d - absidx),
