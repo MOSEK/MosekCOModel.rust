@@ -18,20 +18,20 @@ The `MosekModel` package provides functionality to build the linear expressions.
 # Simple conic example
 Implementing the models
 ```
-minimize y1 + y2 + y3
+minimize y₁ + y₂ + y₃
 such that
-         x1 + x2 + 2.0 x3 = 1.0
-                 x1,x2,x3 ≥ 0.0
+         x₁ + x₂2 + 2.0 x₃ = 1.0
+                  x₁,x₂,x₃ ≥ 0.0
 and
-         (y1,x1,x2) in C₃,
-         (y2,y3,x3) in K₃
+         (y₁,x₁,x₂) in C₃,
+         (y₂,y₃,x₃) in K₃
 ```
 
 where `C₃` and `K₃` are respectively the quadratic and
 rotated quadratic cone of size 3 defined as
 ```
-    C₃ = { z1,z2,z3 :      z1 ≥ √(z2² + z3²) }
-    K₃ = { z1,z2,z3 : 2 z1 z2 ≥ z3²          }
+    C₃ = { z₁,z₂,z₃ :      z₁ ≥ √(z₂² + z₃²) }
+    K₃ = { z₁,z₂,z₃ : 2 z1 z₂ ≥ z₃²          }
 ```
 
 This is the included model `cqo1.rs`:
