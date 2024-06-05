@@ -1,3 +1,5 @@
+/// This library provides a C-callable API for the expression evaluation functionality.
+
 extern crate mosekmodel;
 
 use mosekmodel::expr::workstack::WorkStack;
@@ -15,6 +17,35 @@ pub extern "C" fn workstack_delete(s : *mut WorkStack) {
         _ = Box::from_raw(s);
     }
 }
+
+
+pub extern "C" fn expression
+( nd : usize,
+  nelm : usize, 
+  nnz  : usize,
+  shape : * const usize,
+  aptr : * const usize,
+  asubj : * const usize,
+  acof : * const f64,
+  sparsity : * const usize) 
+{
+    unsafe {
+        let shape = std::slice::from_raw_parts(shape,nd);
+        let aptr  = std::slice::from_raw_parts(aptr,nelm+1);
+        let asubj = std::slice::from_raw_parts(asubj,nnz);
+        let acof  = std::slice::from_raw_parts(acof,nnz);
+        let sp    = if totsize > nelm { Some(std::slice::from_raw_parts(sparsity,nelm)) } else { None };
+
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,nnz,nelm);
+        rptr.copy_from_slice(aptr);
+        rsubj.copy_from_slice(asubj);
+        rcof.copy_from_slice(acof);
+        if let Some(sp) = sp {
+            sp.clone_from_slice(std::slice::from_raw_parts(sparsity, nelm));
+        }
+    }
+}
+
 
 #[no_mangle]
 pub extern "C"  fn permute_axes
