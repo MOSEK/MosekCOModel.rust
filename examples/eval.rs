@@ -20,23 +20,27 @@ pub extern "C" fn workstack_delete(s : *mut WorkStack) {
 
 
 pub extern "C" fn expression
-( nd : usize,
-  nelm : usize, 
-  nnz  : usize,
-  shape : * const usize,
-  aptr : * const usize,
-  asubj : * const usize,
-  acof : * const f64,
-  sparsity : * const usize) 
+(   nd : usize,
+    nelm : usize, 
+    nnz  : usize,
+    shape : * const usize,
+    aptr : * const usize,
+    asubj : * const usize,
+    acof : * const f64,
+    sparsity : * const usize,
+    rs : * mut WorkStack)
 {
     unsafe {
         let shape = std::slice::from_raw_parts(shape,nd);
         let aptr  = std::slice::from_raw_parts(aptr,nelm+1);
         let asubj = std::slice::from_raw_parts(asubj,nnz);
         let acof  = std::slice::from_raw_parts(acof,nnz);
+        let totsize = shape.iter().product();
+        let nnz   = *aptr.last().unwrap();
+        let nelm  = aptr.len()-1;
         let sp    = if totsize > nelm { Some(std::slice::from_raw_parts(sparsity,nelm)) } else { None };
 
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,nnz,nelm);
+        let (rptr,rsp,rsubj,rcof) = (*rs).alloc_expr(shape,nnz,nelm);
         rptr.copy_from_slice(aptr);
         rsubj.copy_from_slice(asubj);
         rcof.copy_from_slice(acof);
@@ -59,7 +63,7 @@ pub fn scalar_expr_mul
 {
     unsafe {
         let shape = std::slice::from_raw_parts(datashape, datand);
-        let totsize = shape.iter().product();
+        let totsize : usize = shape.iter().product();
         let sp = if totsize > datannz { Some(std::slice::from_raw_parts(datasparsity, datannz)) } else { None };
 
         eval::scalar_expr_mul(
