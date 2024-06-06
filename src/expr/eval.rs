@@ -1606,6 +1606,95 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
 }
 
 
+pub fn inplace_reduce_shape(m : usize,rs : & mut WorkStack, xs : & mut WorkStack) 
+{
+    rs.validate_top().unwrap();
+    let (rshape,_) = xs.alloc(m,0);
+    {
+        let (shape,_,_,_,_) = rs.peek_expr();
+        if m <= shape.len() {
+            rshape[..m-1].clone_from_slice(&shape[0..m-1]);
+            *rshape.last_mut().unwrap() = shape[m-1..].iter().product();
+        }
+        else {
+            rshape[0..shape.len()].clone_from_slice(shape);
+            rshape[shape.len()..].iter_mut().for_each(|s| *s = 1);
+        }
+    }
+    rs.inline_reshape_expr(rshape).unwrap()
+}
+
+pub fn inplace_reshape_one_row(m : usize, dim : usize, rs : & mut WorkStack, xs : & mut WorkStack) 
+{
+    if dim >= m { panic!("Invalid dimension given"); }
+        
+    let (newshape,_) = xs.alloc(m,0);
+    newshape.iter_mut().for_each(|s| *s = 1 );
+    newshape[dim] = {
+        let (shp,_,_,_,_) = rs.peek_expr();
+        shp.iter().product()
+    };
+    rs.inline_reshape_expr(newshape).unwrap();
+}
+
+pub fn inplace_reshape(rshape : &[usize],rs : & mut WorkStack, xs : & mut WorkStack) 
+{
+    rs.validate_top().unwrap();
+    {
+        let (shape,_,_,_,_) = rs.peek_expr();
+        if shape.iter().product::<usize>() != rshape.iter().product() {
+            panic!("Cannot reshape expression into given shape");
+        }
+    }
+    rs.inline_reshape_expr(rshape).unwrap();
+}
+
+pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) 
+{
+    let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
+
+    if ptr.len()-1 != sparsity.len() {
+        panic!("Sparsity pattern does not match number of elements in expression");
+    }
+
+    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape,ptr.len()-1,subj.len());
+
+    rptr.copy_from_slice(ptr);
+    rsubj.copy_from_slice(subj);
+    rcof.copy_from_slice(cof);
+
+    if let Some(rsp) = rsp {
+        rsp.copy_from_slice(sparsity);
+    }
+}
+
+pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) 
+{
+    let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
+
+    if ptr.len()-1 != rshape.iter().product::<usize>() {
+        panic!("Shape does not match number of elements in expression");
+    }
+
+    let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(rshape,ptr.len()-1,subj.len());
+
+    rptr.clone_from_slice(ptr);
+    rsubj.clone_from_slice(subj);
+    rcof.clone_from_slice(cof);
+}
+
+pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+    let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
+    let rnelm = ptr.len()-1;
+    let rnnz  = subj.len();        
+
+    let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr( &[rnelm],rnnz,rnelm);
+
+    rptr.clone_from_slice(ptr);
+    rsubj.clone_from_slice(subj);
+    rcof.clone_from_slice(cof);
+}
+
 pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 

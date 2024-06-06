@@ -437,7 +437,7 @@ pub fn nil<const N : usize>(shape : &[usize; N]) -> ExprNil<N> {
 
 
 /// Reduce (or increase) the number of dimensions in the shape from `N` to `M`. If `M<N`, the
-/// trailing `N-M` dimensions are flattened into one dimension. If `N<M` the shape is padded with
+/// trailing `N-M+1` dimensions are flattened into one dimension. If `N<M` the shape is padded with
 /// ones.
 #[derive(Clone)]
 pub struct ExprReduceShape<const N : usize, const M : usize, E> where E : ExprTrait<N>+Sized { item : E }
@@ -446,20 +446,21 @@ impl<const N : usize, const M : usize, E> ExprTrait<M> for ExprReduceShape<N,M,E
 {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(rs,ws,xs);
-        rs.validate_top().unwrap();
-        let (rshape,_) = xs.alloc(M,0);
-        {
-            let (shape,_,_,_,_) = rs.peek_expr();
-            if M <= N {
-                rshape[..M-1].clone_from_slice(&shape[0..M-1]);
-                *rshape.last_mut().unwrap() = shape[M-1..].iter().product();
-            }
-            else {
-                rshape[0..N].clone_from_slice(shape);
-                rshape[N..].iter_mut().for_each(|s| *s = 1);
-            }
-        }
-        rs.inline_reshape_expr(rshape).unwrap()
+        eval::inplace_reduce_shape(M, rs, xs);
+//        rs.validate_top().unwrap(); 
+//        let (rshape,_) = xs.alloc(M,0);
+//        {
+//            let (shape,_,_,_,_) = rs.peek_expr();
+//            if M <= N {
+//                rshape[..M-1].clone_from_slice(&shape[0..M-1]);
+//                *rshape.last_mut().unwrap() = shape[M-1..].iter().product();
+//            }
+//            else {
+//                rshape[0..N].clone_from_slice(shape);
+//                rshape[N..].iter_mut().for_each(|s| *s = 1);
+//            }
+//        }
+//        rs.inline_reshape_expr(rshape).unwrap()
     }
 }
 
@@ -480,14 +481,15 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprResh
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         if self.dim >= M { panic!("Invalid dimension given"); }
         self.item.eval(rs,ws,xs);
+        eval::inplace_reshape_one_row(M, self.dim, rs, xs)
             
-        let mut newshape = [ 0usize; M ]; newshape.iter_mut().for_each(|s| *s = 1 );
-        newshape[self.dim] = {
-            let (shp,_,_,_,_) = rs.peek_expr();
-            shp.iter().product()
-        };
-
-        rs.inline_reshape_expr(&newshape).unwrap();
+//        let mut newshape = [ 0usize; M ]; newshape.iter_mut().for_each(|s| *s = 1 );
+//        newshape[self.dim] = {
+//            let (shp,_,_,_,_) = rs.peek_expr();
+//            shp.iter().product()
+//        };
+//
+//        rs.inline_reshape_expr(&newshape).unwrap();
     }
 }
 
@@ -496,23 +498,25 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprResh
 pub struct ExprReshape<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, shape : [usize; M] }
 impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprReshape<N,M,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
-        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-
-        if self.shape.iter().product::<usize>() != shape.iter().product::<usize>() {
-            panic!("Cannot reshape expression into given shape");
-        }
-
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),subj.len(),ptr.len()-1);
-
-        rptr.clone_from_slice(ptr);
-        rsubj.clone_from_slice(subj);
-        rcof.clone_from_slice(cof);
-        if let Some(rsp) = rsp {
-            if let Some(sp) = sp {
-                rsp.clone_from_slice(sp)
-            }
-        }
+        self.item.eval(rs,ws,xs);
+        eval::inplace_reshape(self.shape.as_slice(), rs, xs);
+//        self.item.eval(ws,rs,xs);
+//        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+//
+//        if self.shape.iter().product::<usize>() != shape.iter().product::<usize>() {
+//            panic!("Cannot reshape expression into given shape");
+//        }
+//
+//        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),subj.len(),ptr.len()-1);
+//
+//        rptr.clone_from_slice(ptr);
+//        rsubj.clone_from_slice(subj);
+//        rcof.clone_from_slice(cof);
+//        if let Some(rsp) = rsp {
+//            if let Some(sp) = sp {
+//                rsp.clone_from_slice(sp)
+//            }
+//        }
     }
 }
 
@@ -547,21 +551,22 @@ impl<const M : usize, E:ExprTrait<1>> ExprScatter<M,E> {
 impl<const M : usize, E:ExprTrait<1>> ExprTrait<M> for ExprScatter<M,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
-        let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
-
-        if ptr.len()-1 != self.sparsity.len() {
-            panic!("Sparsity pattern does not match number of elements in expression");
-        }
-
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),ptr.len()-1,subj.len());
-
-        rptr.clone_from_slice(ptr);
-        rsubj.clone_from_slice(subj);
-        rcof.clone_from_slice(cof);
-
-        if let Some(rsp) = rsp {
-            rsp.clone_from_slice(self.sparsity.as_slice())
-        }
+        eval::scatter(self.shape.as_slice(),self.sparsity.as_slice(), rs, ws, xs);
+//        let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
+//
+//        if ptr.len()-1 != self.sparsity.len() {
+//            panic!("Sparsity pattern does not match number of elements in expression");
+//        }
+//
+//        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),ptr.len()-1,subj.len());
+//
+//        rptr.clone_from_slice(ptr);
+//        rsubj.clone_from_slice(subj);
+//        rcof.clone_from_slice(cof);
+//
+//        if let Some(rsp) = rsp {
+//            rsp.clone_from_slice(self.sparsity.as_slice())
+//        }
     }
 }
 
@@ -570,17 +575,18 @@ pub struct ExprGather<const N : usize, const M : usize, E:ExprTrait<N>> { item :
 impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprGather<N,M,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
-        let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
-
-        if ptr.len()-1 != self.shape.iter().product::<usize>() {
-            panic!("Shape does not match number of elements in expression");
-        }
-
-        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),ptr.len()-1,subj.len());
-
-        rptr.clone_from_slice(ptr);
-        rsubj.clone_from_slice(subj);
-        rcof.clone_from_slice(cof);
+        eval::gather(self.shape.as_slice(),rs,ws,xs);
+//        let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
+//
+//        if ptr.len()-1 != self.shape.iter().product::<usize>() {
+//            panic!("Shape does not match number of elements in expression");
+//        }
+//
+//        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),ptr.len()-1,subj.len());
+//
+//        rptr.clone_from_slice(ptr);
+//        rsubj.clone_from_slice(subj);
+//        rcof.clone_from_slice(cof);
     }
 }
 
@@ -589,15 +595,16 @@ pub struct ExprGatherToVec<const N : usize, E:ExprTrait<N>> { item : E }
 impl<const N : usize, E:ExprTrait<N>> ExprTrait<1> for ExprGatherToVec<N,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
-        let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
-        let rnelm = ptr.len()-1;
-        let rnnz  = subj.len();        
-
-        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr( &[rnelm],rnnz,rnelm);
-
-        rptr.clone_from_slice(ptr);
-        rsubj.clone_from_slice(subj);
-        rcof.clone_from_slice(cof);
+        eval::gather_to_vec(rs, ws, xs);
+//        let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
+//        let rnelm = ptr.len()-1;
+//        let rnnz  = subj.len();        
+//
+//        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr( &[rnelm],rnnz,rnelm);
+//
+//        rptr.clone_from_slice(ptr);
+//        rsubj.clone_from_slice(subj);
+//        rcof.clone_from_slice(cof);
     }
 }
 
