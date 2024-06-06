@@ -2,6 +2,8 @@
 
 extern crate mosekmodel;
 
+use std::ptr::null;
+
 use mosekmodel::expr::workstack::WorkStack;
 use mosekmodel::expr::eval;
 
@@ -16,6 +18,34 @@ pub extern "C" fn workstack_delete(s : *mut WorkStack) {
     unsafe {
         _ = Box::from_raw(s);
     }
+}
+
+#[no_mangle]
+pub extern "C" fn workstack_pop
+(   s     : *mut WorkStack,
+    nd    : *mut usize,
+    nelm  : *mut usize,
+    nnz   : *mut usize,
+    aptr  : *mut *const usize,
+    asubj : *mut *const usize,
+    acof  : *mut *const f64,
+    sparsity : *mut * const usize)
+{
+    unsafe {
+        let (shape,ptr,sp,subj,cof) = (*s).pop_expr();
+        (*nd)    = shape.len();
+        (*nelm)  = ptr.len()-1; 
+        (*nnz)   = *ptr.last().unwrap();
+        (*aptr)  = ptr.as_ptr();
+        (*asubj) = subj.as_ptr();
+        (*acof)  = cof.as_ptr();
+        if let Some(sp) = sp {
+            (*sparsity) = sp.as_ptr();
+        }
+        else {
+            (*sparsity) = null();
+        }
+    } 
 }
 
 
@@ -35,17 +65,15 @@ pub extern "C" fn expression
         let aptr  = std::slice::from_raw_parts(aptr,nelm+1);
         let asubj = std::slice::from_raw_parts(asubj,nnz);
         let acof  = std::slice::from_raw_parts(acof,nnz);
-        let totsize = shape.iter().product();
         let nnz   = *aptr.last().unwrap();
         let nelm  = aptr.len()-1;
-        let sp    = if totsize > nelm { Some(std::slice::from_raw_parts(sparsity,nelm)) } else { None };
 
         let (rptr,rsp,rsubj,rcof) = (*rs).alloc_expr(shape,nnz,nelm);
         rptr.copy_from_slice(aptr);
         rsubj.copy_from_slice(asubj);
         rcof.copy_from_slice(acof);
-        if let Some(sp) = sp {
-            sp.clone_from_slice(std::slice::from_raw_parts(sparsity, nelm));
+        if let Some(rsp) = rsp {
+            rsp.clone_from_slice(std::slice::from_raw_parts(sparsity, nelm));
         }
     }
 }
@@ -229,12 +257,12 @@ pub extern "C" fn mul_elem
 {
     unsafe {
         let shape = std::slice::from_raw_parts(datashape,datand);
-        let totsize = shape.iter().product();
+        let totsize : usize = shape.iter().product();
         
         eval::mul_elem(
             shape,
             if totsize > datannz { Some(std::slice::from_raw_parts(datasparsity,datannz)) } else { None },
-            std::slice::from_raw_parts(f64,datannz),
+            std::slice::from_raw_parts(data ,datannz),
             & mut *rs,
             & mut *ws,
             & mut *xs);
@@ -395,6 +423,57 @@ pub fn slice
             & mut *ws,
             & mut *xs);
     }
+}
+
+#[no_mangle]
+pub extern "C" fn inplace_reduce_shape
+(   m : usize,
+    rs : * mut WorkStack, 
+    xs : * mut WorkStack) 
+{
+    unsafe {
+        eval::inplace_reduce_shape(
+            m,
+            & mut *rs,
+            & mut *xs);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn inplace_reshape_one_row(m : usize, dim : usize, rs : * mut WorkStack, xs : * mut WorkStack) 
+{
+    unsafe { eval::inplace_reshape_one_row(m, dim, & mut *rs, &mut *xs) };
+}
+
+#[no_mangle]
+pub extern "C" fn inplace_reshape(nd : usize, rshape : *const usize,rs : * mut WorkStack, xs : * mut WorkStack) 
+{
+    unsafe { eval::inplace_reshape(std::slice::from_raw_parts(rshape, nd), & mut *rs, & mut *xs) };
+}
+
+#[no_mangle]
+pub extern "C" fn scatter(nd : usize, rshape : *const usize, nnz : usize, sparsity : *const usize, rs : * mut WorkStack, ws : * mut WorkStack, xs : * mut WorkStack)
+{
+    unsafe { 
+        eval::scatter(
+            std::slice::from_raw_parts(rshape, nd), 
+            std::slice::from_raw_parts(sparsity, nnz), 
+            & mut *rs,
+            & mut *ws,
+            & mut *xs);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn gather(nd : usize, rshape : * const usize, rs : * mut WorkStack, ws : * mut WorkStack, xs : * mut WorkStack)
+{
+    unsafe { eval::gather(std::slice::from_raw_parts(rshape, nd), & mut *rs, & mut *ws, & mut *xs); }
+}
+
+#[no_mangle]
+pub extern "C" fn gather_to_vec(rs : * mut WorkStack, ws : * mut WorkStack, xs : * mut WorkStack) 
+{
+    unsafe { eval::gather_to_vec(&mut *rs, &mut *ws, &mut *xs); }
 }
 
 #[no_mangle]

@@ -225,7 +225,7 @@ pub trait ExprTrait<const N : usize> {
 
     /// Create an expression that is symmetric in dimension `dim` and `dim+1`. The shape must
     /// satisfy the following:
-    /// ```
+    /// ```text
     /// shape[dim] * shape[dim+1] == n * (n+1) / 2
     /// ```
     /// for some integer `n.

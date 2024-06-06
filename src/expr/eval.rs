@@ -156,8 +156,6 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
             (false,false) => ptr[d..].iter().step_by(d).zip(ptr[d+1..].iter().step_by(d+1)).map(|(&p0,&p1)| p1-p0).sum::<usize>()
         };
 
-        //println!("======== upper = {}, ptr = {:?}, subj = {:?}",upper,ptr,subj);
-        //println!("  Alloc: shape = {:?}, rnnz = {}, rnelm = {}",shape,rnnz,rnelm);
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
 
         izip!(subj.chunks_by(ptr),
@@ -261,12 +259,9 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
         let mut rnnz = 0usize;
         {
             xptr[0] = 0;
-            //let mut idx : [usize; N] = begin;
             ix.iter_mut().for_each(|v| *v = 0);
 
-            //for (xp,ridx) in xptr[1..].iter_mut().zip(rshape.index_iterator()) {
             for xp in xptr[1..].iter_mut() {
-                ix.iter_mut().zip(rshape.iter()).rev().fold(1,|carry,(i,&d)| { *i += carry; if *i >= d { *i = 0; 1 } else { 0 } });
                 let sofs = izip!(ix.iter(), strides.iter(), begin.iter())
                     .fold(0,|v,(&i,&s,&b)| v+(i+b)*s);
 
@@ -276,9 +271,11 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
                 xcof[rnnz..rnnz+p1-p0].copy_from_slice(&cof[p0..p1]);
                 rnnz += p1-p0;
                 *xp = rnnz;
+
+                ix.iter_mut().zip(rshape.iter()).rev().fold(1,|carry,(i,&d)| { *i += carry; if *i >= d { *i = 0; 1 } else { 0 } });
             }
         }
-        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(rshape, rnnz, rnelem);
         rptr.clone_from_slice(xptr);
         rsubj.clone_from_slice(&xsubj[..rnnz]);
         rcof.clone_from_slice(&xcof[..rnnz]);
@@ -1694,6 +1691,10 @@ pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut Work
     rsubj.clone_from_slice(subj);
     rcof.clone_from_slice(cof);
 }
+
+
+
+
 
 pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
