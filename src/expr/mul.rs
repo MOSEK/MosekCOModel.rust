@@ -1,8 +1,6 @@
 use super::{eval, ExprReshapeOneRow, ExprTrait};
 use super::workstack::WorkStack;
 use super::matrix::Matrix;
-use itertools::izip;
-use std::iter::repeat;
 
 pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
     item : E,

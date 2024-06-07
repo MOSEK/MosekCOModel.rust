@@ -1221,6 +1221,64 @@ mod test {
                          vec![1.1,2.2,3.3,4.4,5.5])
     }
 
+
+    #[test]
+    fn into_symmetric() {
+        { // dense
+            let mut rs = WorkStack::new(512);
+            let mut ws = WorkStack::new(512);
+            let mut xs = WorkStack::new(512);
+            // 0 1 3
+            // 1 2 4
+            // 3 4 5
+            let e = Expr::new(&[6,1],
+                              None,
+                              vec![0,1,2,3,4,5,6],
+                              vec![0,1,2,3,4,5],
+                              vec![1.1,2.1,2.2,3.1,3.2,3.3]);
+            let es = e.into_symmetric(0);
+            es.eval(& mut rs,& mut ws,& mut xs);
+
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            assert!(sp.is_none());
+            assert!(shape.len() == 2);
+            assert!(shape[0] == 3 && shape[1] == 3);
+            assert_eq!(ptr,  &[0,1,2,3,4,5,6,7,8,9]);
+            assert_eq!(subj, &[0,1,3,1,2,4,3,4,5]);
+            assert!(ws.is_empty());
+            assert!(rs.is_empty());
+        }
+
+        { // sparse
+            let mut rs = WorkStack::new(512);
+            let mut ws = WorkStack::new(512);
+            let mut xs = WorkStack::new(512);
+
+            // 0 . 2 3 . 5
+            //
+            // | 0     |
+            // | . 2   |
+            // | 3 . 5 |
+            // 
+            let e = Expr::new(&[6,1],
+                              Some(vec![0,2,3,5]),
+                              vec![0,1,2,3,4],
+                              vec![0,2,3,5],
+                              vec![1.1,2.2,3.1,3.3]);
+            let es = e.into_symmetric(0);
+            es.eval(& mut rs,& mut ws,& mut xs);
+
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            assert_eq!(sp.unwrap(), &[0,2,4,6,8]);
+            assert!(shape.len() == 2);
+            assert!(shape[0] == 3 && shape[1] == 3);
+            assert_eq!(ptr,  &[0,1,2,3,4,5]);
+            assert_eq!(subj, &[0,3,2,3,5]);
+            assert!(ws.is_empty());
+            assert!(rs.is_empty());
+        }
+    }
+
     #[test]
     fn mul_left() {
         let mut rs = WorkStack::new(512);

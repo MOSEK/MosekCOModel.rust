@@ -104,10 +104,7 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
                 nzi += p1-p0;
             });
         let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p } );
-                    
-
     }
-
 }
 
 pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
@@ -280,7 +277,6 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
         rsubj.clone_from_slice(&xsubj[..rnnz]);
         rcof.clone_from_slice(&xcof[..rnnz]);
     }
-
 }
 
 pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
@@ -298,7 +294,7 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(), rnnz, rnelm);
 
     if let (Some(ref sp),Some(rsp)) = (sp,rsp) {
-        let d0 : usize = shape[..dim].iter().product();
+        let _d0 : usize = shape[..dim].iter().product();
         let d1 : usize = shape[dim];
         let d2 : usize = shape[dim+1..].iter().product();
         let rd1 = rshape[dim];
@@ -582,9 +578,7 @@ pub fn add(n  : usize,
         }
         // Recompute ptr
         _ = rptr.iter_mut().fold(0,|v,p| { let tmp = *p; *p = v; tmp } );
-        //println!("rptr = {:?}",rptr); 
     }
-    //println!("eval::add: end");
 } // add
 
 /// Evaluates `lhs` * expr.
@@ -615,8 +609,6 @@ pub fn mul_left_dense(mdata : &[f64],
     else {
         rs.alloc_expr(&[rdimi],rnnz,rnelm)
     };
-
-    //println!("{}:{}: rnelm = {}, rnnz = {}",file!(),line!(),rnelm,rnnz);
 
     // sparse expr
     if let Some(sp) = sp {
@@ -686,8 +678,6 @@ pub fn mul_right_dense(mdata : &[f64],
     let rdimj = mdimj;
     let rnnz = nnz * mdimj;
     let rnelm = rdimi * rdimj;
-
-    //println!("{}:{}: dimi = {}, dimj = {}",file!(),line!(),edimi,edimj);
 
     let (rptr,_rsp,rsubj,rcof) = if nd == 2 {
         rs.alloc_expr(&[rdimi,rdimj],rnnz,rnelm)
@@ -1090,20 +1080,21 @@ pub fn mul_right_sparse(mheight : usize,
     }
 }
 
-pub fn dot_sparse(sparsity : &[usize],
-                         data     : &[f64],
-                         rs : & mut WorkStack,
-                         ws : & mut WorkStack,
-                         _xs : & mut WorkStack) {
-    let (_shape,ptr,sp,subj,cof) = ws.pop_expr();
-    
+pub fn dot_sparse(_sparsity : &[usize],
+                  _data     : &[f64],
+                  _rs       : & mut WorkStack,
+                  ws       : & mut WorkStack,
+                  _xs      : & mut WorkStack) {
+    let (_shape,_ptr,_sp,_subj,_cof) = ws.pop_expr();
+   
+    panic!("TODO");
 
 }
 
 pub fn dot_vec(data : &[f64],
-                      rs : & mut WorkStack,
-                      ws : & mut WorkStack,
-                      _xs : & mut WorkStack) {
+               rs   : & mut WorkStack,
+               ws   : & mut WorkStack,
+               _xs  : & mut WorkStack) {
 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nd   = shape.len();
@@ -1147,10 +1138,6 @@ pub fn dot_vec(data : &[f64],
 pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
     // println!("{}:{}: eval::stack n={}, dim={}",file!(),line!(),n,dim);
     let exprs = ws.pop_exprs(n);
-
-    for (i,e)  in exprs.iter().enumerate() {
-        //println!("stack expr {}: shape = {:?}",i,e.0);
-    }
 
     // check shapes
     //println!("vec = {:?}",exprs.iter().map(|v| v.0).collect::<Vec<&[usize]>>());
@@ -1359,7 +1346,7 @@ pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : &
                 *rp = p
             }
         } else {
-            for (rp,(p,v)) in izip!(rptr[1..].iter_mut(),
+            for (rp,(p,_v)) in izip!(rptr[1..].iter_mut(),
                                     izip!(ptr[1..].iter(),
                                           sp.iter(),
                                           sp[1..].iter().chain(once(&usize::MAX)))
@@ -1553,10 +1540,68 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
     let d2 = shape[dim+2..].iter().product();
 
     if let Some(sp) = sp {
-        panic!("TODO");
-    } 
-    else {
+        // count rnnz,rnelm
+        let nelm = ptr.len()-1;
+        let mut rnnz = 0;
+        let mut rnelm = 0;
+        let (urest,_) = xs.alloc(6*nelm,0);
+        let (xsp,urest) = urest.split_at_mut(2*nelm);
+        let (xperm,urest) = urest.split_at_mut(2*nelm);
+        let (xsrc,_) = urest.split_at_mut(2*nelm);
 
+        izip!(sp.iter(),ptr.iter(),ptr[1..].iter()).enumerate().for_each(|(idx,(&i,pb,pe))| {
+            let i0 = i / (d1*d2);
+            let k  = (i / d2) % d1;
+            let i2 = i % d2;
+            let ii  = ((((1+8*k) as f64).sqrt()-1.0)/2.0).floor() as usize;
+            let jj  = k - ii*(ii+1)/2;
+            if ii == jj {
+                //xsp[rnelm] = i0*d1*d2 + (ii*(ii+1)/2+jj)*d2 + i2;
+                xsp[rnelm] = i0*d1*d2 + ii * n * d2 + jj * d2 + i2;
+                xsrc[rnelm]  = idx;
+
+                rnelm += 1;
+                rnnz  += pe-pb;
+            }
+            else {
+                //xsp[rnelm]   = i0*d1*d2 + (ii*(ii+1)/2+jj)*d2 + i2;
+                //xsp[rnelm+1] = i0*d1*d2 + (jj*(jj+1)/2+ii)*d2 + i2;
+                xsp[rnelm]   = i0*d1*d2 + ii * n * d2 + jj * d2 + i2;
+                xsp[rnelm+1] = i0*d1*d2 + jj * n * d2 + ii * d2 + i2;
+                xsrc[rnelm]    = idx;
+                xsrc[rnelm+1]  = idx;
+
+                rnelm += 2;
+                rnnz  += 2*(pe-pb);
+            }
+        });
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_ref(), rnnz, rnelm);
+
+        xperm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+        xperm[..rnelm].sort_by_key(|&i| xsp[i]);
+
+        if let Some(rsp) = rsp {
+            perm_iter(xperm,xsp).zip(rsp.iter_mut()).for_each(|(&i,spi)| *spi = i);            
+        }
+        let xperm2 = xsp; 
+        perm_iter(xperm,xsrc).zip(xperm2.iter_mut()).for_each(|(&si,i)| *i = si);
+
+        rptr[0] = 0;
+        for (&pb,&pe,p) in izip!(perm_iter(xperm2, ptr),
+                                 perm_iter(xperm2, &ptr[1..]),
+                                 rptr[1..].iter_mut()) {
+            *p = pe-pb;
+        }
+        rptr.iter_mut().fold(0,|c,p| { *p += c; *p });
+        for (&pb,&pe,&rpb,&rpe) in izip!(perm_iter(xperm2, ptr),
+                                         perm_iter(xperm2, &ptr[1..]),
+                                         rptr.iter(),
+                                         rptr[1..].iter()) {
+            rsubj[rpb..rpe].copy_from_slice(&subj[pb..pe]);
+            rcof[rpb..rpe].copy_from_slice(&cof[pb..pe]);
+        }
+    }
+    else {
         let rnelm : usize = rshape.iter().product();
         // count nnz
         let rnnz : usize = 
@@ -1566,15 +1611,30 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
                 .map(|((_,i1a,i1b),pb,pe)| if i1a == i1b { pe-pb } else { 2*(pe-pb) } )
                 .sum();
         
-                    
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(), rnnz, rnelm);
-    
+        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(), rnnz, rnelm);
+
+        rptr[0] = 0;
+        let mut nzi : usize = 0;
+        rptr[1..].iter_mut().enumerate().for_each(|(i,p)| { 
+            let i0  = i/(n*n*d2);
+            let i1a = (i / (d2*n)) % n;
+            let i1b = (i / d2) % n;
+            let i2  = i % d2;
+
+            let (i1a,i1b) = (i1a.max(i1b),i1a.min(i1b));
+            let si = i0 * d1 * d0 + (i1a*(i1a+1)/2 + i1b)*d2 + i2;
+
+            let p0 = ptr[si];
+            let p1 = ptr[si+1];
+            let rownzi = p1-p0;
+            
+            rsubj[nzi..nzi+rownzi].copy_from_slice(&subj[p0..p1]);
+            rcof[nzi..nzi+rownzi].copy_from_slice(&cof[p0..p1]);
         
+            nzi += rownzi;
+            *p = nzi;
+        });
 
-
-
-
-        panic!("TODO");
 //        let d01 = d * (d+1) / 2;
 //        let num : usize = tshape[0..tshape.len()-2].product();
 //
@@ -1646,7 +1706,7 @@ pub fn inplace_reshape(rshape : &[usize],rs : & mut WorkStack, xs : & mut WorkSt
     rs.inline_reshape_expr(rshape).unwrap();
 }
 
-pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) 
+pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) 
 {
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
 
@@ -1665,7 +1725,7 @@ pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws 
     }
 }
 
-pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) 
+pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) 
 {
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
 
@@ -1680,7 +1740,7 @@ pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs 
     rcof.clone_from_slice(cof);
 }
 
-pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) {
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
     let rnelm = ptr.len()-1;
     let rnnz  = subj.len();        
