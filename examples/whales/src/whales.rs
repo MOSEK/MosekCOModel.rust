@@ -1,12 +1,42 @@
-//
-//  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-// 
-//  File: whales.rs
-//
-//  Computes the minimal ellipsoid containing a set of ellipsoids
-//  References:
-//    [1] "Lectures on Modern Optimization", Ben-Tal and Nemirovski, 2000.
-//    [2] "MOSEK modeling manual", 2013
+//!
+//!  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//! 
+//!  File: whales.rs
+//!
+//!  # Purpose
+//!  Computes the minimal ellipsoid containing a set of ellipsoids
+//!  References:
+//!    [1] "Lectures on Modern Optimization", Ben-Tal and Nemirovski, 2000.    
+//!    [2] "MOSEK modeling manual", 2013
+//!    [3] "Convex Optimization" Boyd and Vandenberghe, 2004
+//!
+//!
+//!  # The Model
+//! 
+//!  We wish to find the minimal (by volume) ellipsoid containing a set of other ellipsoids.
+//!
+//!  
+//!
+//!
+//!  The containing ellipsoid is parameterized as 
+//!  ```math 
+//!  Eb = { ||Ax+b||₂ ≤ 1 }, A ∊ S^n_+
+//!  ```
+//!  and each of the `m` ellipsoids to be surrounded are parameteized as 
+//!  ```math
+//!  Ei = { x'Ai x + bi'x + ci ≤ 0 }, x ∊ R^n
+//!  ```
+//!  
+//!  From [3] we can formulate the model as 
+//!  ```math
+//!  min log det A^{-1}
+//!  such that 
+//!     t_i in R^m_+
+//!     | P             Ab-t_iA_i  0     |
+//!     | (Ab-t_iA_i)'  -1-t_ic_i  (Ab)' | in S^{2n+1}_+
+//!     | 0             Ab         -P    |
+//!  ```
+//!  Since `A²` is PSD, we can safely replace `A²` and `Ab` by a variables `P `
 
 #[allow(mixed_script_confusables)]
 
@@ -14,12 +44,35 @@ use mosekmodel::matrix::{dense,speye};
 use mosekmodel::*;
 use itertools::izip;
 
+
+/// Structure defining an ellipsoid as
+/// ```math 
+/// { x | ‖ Px+q ‖₂ ≤ 1 }
+/// ```
+/// It can be alternatively represented as 
+/// ```math 
+/// x'Ax + bx + c ≤ 0
+/// ```
+/// with
+/// ```math 
+/// A = P²
+/// b = 2Pqx
+/// c = q'q-1
+/// ```
+/// or, as a third alternative as 
+/// ```math
+/// { Zu+w | ‖ u ‖₂ ≤ 1 }
+/// ```
+/// where 
+/// ```math
+/// Z = P^{-1}
+/// w = -P^{-1}q
+/// ```
 #[allow(non_snake_case)]
 #[derive(Clone)]
 pub struct Ellipsoid<const N : usize> {
     P : [ [ f64; N ] ; N ],
     q : [ f64; N ]
-    //c : f64
 }
 
 #[allow(non_snake_case)]
@@ -28,6 +81,24 @@ impl<const N : usize> Ellipsoid<N> {
     pub fn get_P(&self) -> &[ [ f64; N ]; N ] { &self.P }
     pub fn get_q(&self) -> &[f64; N] { &self.q }
 
+    /// For alternative parameterization
+    /// ```math
+    /// { x'Ax + b'x + c ≤ 0 }
+    /// ```
+    /// get the values of `A`, `b` and `c`, which will given by expanding 
+    /// ```math 
+    /// ‖ Px+q ‖₂ ≤ 1
+    /// ```
+    /// into 
+    /// ```math 
+    /// x'P²x + 2Pqx + q'q-1 ≤ 0
+    /// ```
+    /// Implying that
+    /// ```math 
+    /// A = P²
+    /// b = 2Pqx
+    /// c = q'q-1
+    /// ```
     pub fn get_Abc(&self) -> ([[f64;N];N],[f64;N],f64) {
         (self.get_A(),
          self.get_b(),
@@ -87,8 +158,6 @@ pub fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [
     let m = es.len();
 
     let t = M.variable(Some("t"), unbounded());
-
-    //let vdet = M.variable(Some("vdet"), unbounded());
 
 
     let τ = M.variable(Some("tau"), unbounded().with_shape(&[m]));
@@ -172,22 +241,29 @@ pub fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [
 }
 
 
+
+
+
 /// Purpose: Models the hypograph of the n-th power of the
 /// determinant of a positive definite matrix. See [1,2] for more details.
 ///
 ///   The convex set (a hypograph)
-///
+///   ```math
 ///   C = { (X, t) ∈ S^n_+ x R |  t ≤ det(X)^{1/n} },
-///
+///   ```
 ///   can be modeled as the intersection of a semidefinite cone
 ///
+///   ```math
 ///   | X   Z       |
 ///   |             | ≽ 0
 ///   | Z^T Diag(Z) |  
+///   ```
 ///
 ///   and a geometric mean bound
 ///
+///   ```math
 ///   t <= (Z11*Z22*...*Znn)^{1/n} 
+///   ```
 #[allow(non_snake_case)]
 fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) -> Variable<2> {
     // Setup variables

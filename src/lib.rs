@@ -188,7 +188,7 @@ pub use domain::{LinearDomain,
 
 use utils::*;
 
-/////////////////////////////////////////////////////////////////////
+//======================================================
 // Model, constraint and variables
 
 /// Objective sense
@@ -273,9 +273,9 @@ impl Solution {
     fn new() -> Solution { Solution{primal : SolutionPart::new(0,0) , dual : SolutionPart::new(0,0)  } }
 }
 
-////////////////////////////////////////////////////////////
+//======================================================
 // Domain
-////////////////////////////////////////////////////////////
+//======================================================
 
 /// Represents something that can be used as a domain for a constraint.
 pub trait ConDomainTrait<const N : usize> {
@@ -367,9 +367,9 @@ impl<const N : usize> ConDomainTrait<N> for PSDDomain<N> {
     }
 }
 
-////////////////////////////////////////////////////////////
+//======================================================
 // Model
-////////////////////////////////////////////////////////////
+//======================================================
 
 /// The `Model` object encapsulates an optimization problem and a
 /// mapping from the structured API to the internal Task items.
@@ -379,11 +379,16 @@ impl<const N : usize> ConDomainTrait<N> for PSDDomain<N> {
 pub struct Model {
     /// The MOSEK task
     task : mosek::TaskCB,
+    /// Vector of scalar variable atoms
     vars : Vec<VarAtom>,
+    /// Vector of scalar constraint atoms
     cons : Vec<ConAtom>,
 
+    /// Basis solution
     sol_bas : Solution,
+    /// Interior solution
     sol_itr : Solution,
+    /// Integer solution
     sol_itg : Solution,
 
     /// Workstacks for evaluating expressions
@@ -392,9 +397,9 @@ pub struct Model {
     xs : WorkStack
 }
 
-////////////////////////////////////////////////////////////
+//======================================================
 // ModelItem
-////////////////////////////////////////////////////////////
+//======================================================
 
 /// The `ModelItem` represents either a variable or a constraint belonging to a [Model]. It is used
 /// by the [Model] object when accessing solution assist overloading and determine which solution part to access.
@@ -427,9 +432,9 @@ pub trait ModelItem<const N : usize> {
     fn dual_into(&self,m : &Model,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String>;
 }
 
-////////////////////////////////////////////////////////////
+//======================================================
 // Variable and Constraint
-////////////////////////////////////////////////////////////
+//======================================================
 
 pub trait ModelItemIndex<I> {
     type Output;
@@ -488,9 +493,9 @@ impl SolverParameterValue for &str {
 }
 
 
-////////////////////////////////////////////////////////////
+//======================================================
 // Model
-////////////////////////////////////////////////////////////
+//======================================================
 
 impl Model {
     /// Create new Model object
@@ -501,10 +506,7 @@ impl Model {
     /// An empty model.
     pub fn new(name : Option<&str>) -> Model {
         let mut task = mosek::Task::new().unwrap().with_callbacks();
-        match name {
-            Some(name) => task.put_task_name(name).unwrap(),
-            None => {}
-        }
+        if let Some(name) = name { task.put_task_name(name).unwrap() };
         Model{
             task,
             vars    : vec![VarAtom::Linear(-1)],
@@ -535,7 +537,7 @@ impl Model {
         self.task.write_data(path.to_str().unwrap()).unwrap();
     }
 
-    ////////////////////////////////////////////////////////////
+    //======================================================
     // Variable interface
 
     /// Add a Variable
@@ -836,7 +838,7 @@ impl Model {
     //     (firstidx..firstidx+size).collect()
     // }
 
-    ////////////////////////////////////////////////////////////
+    //======================================================
     // Constraint interface
 
 
@@ -1133,7 +1135,7 @@ impl Model {
         }
     }
 
-    ////////////////////////////////////////////////////////////
+    //======================================================
     // Objective
 
 
@@ -1190,7 +1192,7 @@ impl Model {
         self.set_objective(name,sense);
     }
 
-    ////////////////////////////////////////////////////////////
+    //======================================================
     // Optimize
 
 
@@ -1324,7 +1326,7 @@ impl Model {
             }
         }
     }
-    ////////////////////////////////////////////////////////////
+    //======================================================
     // Solutions
 
     fn select_sol(&self, solid : SolutionType) -> Option<&Solution> {
@@ -1558,7 +1560,7 @@ fn row_major_offset_to_col_major(ofs : usize, dim : usize) -> usize {
     ((2*dim-1)*j - j*j)/2 + i
 }
 
-/////////////////////////////////////////////////////////////////////
+//======================================================
 // TEST
 
 #[cfg(test)]

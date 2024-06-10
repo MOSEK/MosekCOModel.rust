@@ -1088,7 +1088,6 @@ pub fn dot_sparse(_sparsity : &[usize],
     let (_shape,_ptr,_sp,_subj,_cof) = ws.pop_expr();
    
     panic!("TODO");
-
 }
 
 pub fn dot_vec(data : &[f64],

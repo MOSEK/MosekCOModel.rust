@@ -6,8 +6,8 @@ rust-version = "1.69.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-mosek = "10.2"
 itertools = "0.10"
+mosek = "10.2"
 
 [dev-dependencies]
 criterion = "0.3"
@@ -21,4 +21,7 @@ harness = false
 name = "eval"
 crate-type = ["cdylib"]
 
+[[example]]
+name = "nearestcorr"
+crate-type = ["cdylib"]
 
