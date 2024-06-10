@@ -191,18 +191,18 @@ pub fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [
         let Xi : Variable<2> = (&X).slice(&[i..i+1,0..2*n+1,0..2*n+1]).reshape(&[2*n+1,2*n+1]);
         // P²-A*τ[i] = Xi[0..n,0..n]
         _ = M.constraint(Some(format!("EllipsBound[{}][1,1]",i+1).as_str()), 
-                         &Xi.clone().slice(&[0..n,0..n])
-                            .sub(P_sq.clone().add(τ.clone().index(i).mul(&A))),
+                         &P_sq.clone().add(τ.clone().index(i).mul(&A))
+                            .sub(Xi.clone().slice(&[0..n,0..n])),
                          zeros(&[n,n]));
         // P_q-τ[i]*b = Xi[n..n+1,0..n]]
         _ = M.constraint(Some(format!("EllipsBound[{}][2,1]",i+1).as_str()), 
-                         &Xi.clone().slice(&[n..n+1,0..n]).reshape(&[n])
-                            .add(P_q.clone().sub(b.mul_right(τ.index(i)))),
+                         & b.mul_right(τ.index(i)).sub(P_q.clone())
+                            .sub(Xi.clone().slice(&[n..n+1,0..n]).reshape(&[n])),
                          zeros(&[n]));
         // -(1+τ[i]*c) = Xi[n,n]
         _ = M.constraint(Some(format!("EllipsBound[{}][2,2]",i+1).as_str()), 
-                         &Xi.clone().index(&[n,n])
-                            .sub(τ.index(i).mul(c).add(1.0)),
+                         &τ.index(i).mul(c).add(1.0)
+                            .sub(Xi.clone().index(&[n,n])),
                          zero());
         // 0 = Xi[n+1..2n+1,0..n]
         _ = M.constraint(Some(format!("EllipsBound[{}][3,1]",i+1).as_str()),
@@ -210,13 +210,13 @@ pub fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [
                          zero().with_shape(&[n,n]));
         // P_q = Xi[n+1..2n+1,n..n+1]
         _ = M.constraint(Some(format!("EllipsBound[{}][3,2]",i+1).as_str()),
-                         &Xi.clone().slice(&[n+1..2*n+1,n..n+1]).reshape(&[n])
-                            .add(P_q.clone()),
+                         &P_q.clone().neg()
+                             .sub(Xi.clone().slice(&[n+1..2*n+1,n..n+1]).reshape(&[n])),
                          zeros(&[n]));
         // P²= Xi[n+1..2n+1,n+1..2n+1]
         _ = M.constraint(Some(format!("EllipsBound[{}][3,3]",i+1).as_str()),
-                         &Xi.clone().slice(&[n+1..2*n+1, n+1..2*n+1])
-                            .sub(P_sq.clone()),
+                         &P_sq.clone()
+                            .sub(Xi.clone().slice(&[n+1..2*n+1, n+1..2*n+1])),
                          zeros(&[n,n]));
     }
 
@@ -282,7 +282,10 @@ fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) ->
     _ = M.constraint(name,&vstack![DZ.clone().diag(),t.reshape(&[1])], in_geometric_mean_cone(n+1));
 
     // Return an n x n PSD variable which satisfies t <= det(X)^(1/n)
-    X
+    let Psq = M.variable(Some("Psq"), unbounded().with_shape(&[2,2]));
+    _ = M.constraint(None, & Psq.clone().sub(X), zero().with_shape(&[2,2]));
+
+    Psq
 }
 
 #[cfg(test)]

@@ -73,6 +73,10 @@ pub trait ExprTrait<const N : usize> {
     /// Sum all elements in an expression producing a scalar expression.
     fn sum(self) -> ExprSum<N,Self> where Self:Sized { ExprSum{item:self} }
 
+    fn neg(self) -> ExprMulScalar<N,Self> where Self:Sized {
+        self.mul(-1.0)
+    }
+
     /// Sum over a number of axes.
     ///
     /// # Arguments

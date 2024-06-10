@@ -29,13 +29,11 @@ fn main() {
     let mut drawdata = DrawData {
         ellipses : vec![
             Ellipsoid::new(&[[1.09613, -0.236851], [-0.236851, 0.539075]], &[ 0.596594, 1.23438] ),
-            Ellipsoid::new(&[[1.01769, -0.613843], [-0.613843, 2.52996 ]], &[-1.74633, -0.568805]),
-            Ellipsoid::new(&[[1.26487,  0.319239], [ 0.319239, 1.28526 ]], &[-0.856775, 1.29365] ),
-            Ellipsoid::new(&[[0.926849,-0.339339], [-0.339339, 1.19551 ]], &[ 0.452287, 0.575005]),
-            Ellipsoid::new(&[[0.819939,-0.0866013],[-0.0866013,0.824379]], &[-0.985105,-1.6824]  ),
-            Ellipsoid::new(&[[0.417981,-0.0699427],[-0.0699427,1.61654 ]], &[-1.73581,  0.118404]),
-
-
+            //Ellipsoid::new(&[[1.01769, -0.613843], [-0.613843, 2.52996 ]], &[-1.74633, -0.568805]),
+            //Ellipsoid::new(&[[1.26487,  0.319239], [ 0.319239, 1.28526 ]], &[-0.856775, 1.29365] ),
+            //Ellipsoid::new(&[[0.926849,-0.339339], [-0.339339, 1.19551 ]], &[ 0.452287, 0.575005]),
+            //Ellipsoid::new(&[[0.819939,-0.0866013],[-0.0866013,0.824379]], &[-0.985105,-1.6824]  ),
+            //Ellipsoid::new(&[[0.417981,-0.0699427],[-0.0699427,1.61654 ]], &[-1.73581,  0.118404]),
 
             //Ellipsoid::new(&[[1.2576, -0.3873], [-0.3873,0.3467]], &[ 0.2722,  0.1969], 0.1831),
             //Ellipsoid::new(&[[1.4125, -2.1777], [-2.1777,6.7775]], &[-1.228,  -0.0521], 0.3295),
@@ -58,12 +56,12 @@ fn main() {
         drawdata.q = q;
     }
 
-    let app = Application::builder()
-        .application_id(APP_ID)
-        .build();
-
-    app.connect_activate(move | app : &Application | build_ui(app,&drawdata));
-    let _r = app.run_with_args::<&str>(&[]);
+    //let app = Application::builder()
+    //    .application_id(APP_ID)
+    //    .build();
+    //
+    //app.connect_activate(move | app : &Application | build_ui(app,&drawdata));
+    //let _r = app.run_with_args::<&str>(&[]);
 }
 
 fn build_ui(app : &Application, drawdata : & DrawData) {

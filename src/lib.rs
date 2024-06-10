@@ -507,6 +507,7 @@ impl Model {
     pub fn new(name : Option<&str>) -> Model {
         let mut task = mosek::Task::new().unwrap().with_callbacks();
         if let Some(name) = name { task.put_task_name(name).unwrap() };
+        task.put_int_param(mosek::Iparam::PTF_WRITE_SOLUTIONS, 1).unwrap();
         Model{
             task,
             vars    : vec![VarAtom::Linear(-1)],
@@ -698,9 +699,9 @@ impl Model {
                 //xstrides.iter_mut().zip(xshape[0..N-2].iter()).rev().fold(1|v,(t,*s)| { *t = v; s * v});
                 let mut idx = [1usize; N];
                 for barj in barvar0..barvar0+numcone as i32 {
-                    idx[0..N-2].iter_mut().zip(xshape).rev().fold(1,|carry,(i,d)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
                     let name = format!("{}{:?}",name,&idx[0..N-2]);
                     self.task.put_barvar_name(barj, name.as_str()).unwrap();
+                    idx[0..N-2].iter_mut().zip(xshape).rev().fold(1,|carry,(i,d)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
                 }
             }
         }
