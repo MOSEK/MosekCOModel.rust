@@ -20,54 +20,65 @@
 //!
 //!  The containing ellipsoid is parameterized as 
 //!  ```math 
-//!  Eb = { ||Ax+b||₂ ≤ 1 }, A ∊ S^n_+
+//!  Eb = { x: ‖Ax+b‖₂ ≤ 1 }, A ∊ S^n_+
 //!  ```
 //!  and each of the `m` ellipsoids to be surrounded are parameteized as 
 //!  ```math
-//!  Ei = { x'Ai x + bi'x + ci ≤ 0 }, x ∊ R^n
+//!  Ei = { x'A_i x + b_i'x + c_i ≤ 0 }, x ∊ R^n
 //!  ```
 //!  
 //!  From [3] we can formulate the model as 
 //!  ```math
 //!  min log det A^{-1}
 //!  such that 
-//!     t_i in R^m_+
-//!     | P             Ab-t_iA_i  0     |
-//!     | (Ab-t_iA_i)'  -1-t_ic_i  (Ab)' | in S^{2n+1}_+
-//!     | 0             Ab         -P    |
+//!     t_i ∊ n R^m_+
+//!     A ∊ S^n_+
+//!     b ∊ R^n
+//!     | A²-t_i A_i     Ab-t_i b_i  0     |
+//!     | (Ab-t_i b_i)'  -1-t_i c_i  (Ab)' | ∊ S^{2n+1}_-
+//!     | 0              Ab          -A²   |
 //!  ```
-//!  Since `A²` is PSD, we can safely replace `A²` and `Ab` by a variables `P `
+//!  Since `A²` is PSD, we can safely replace `A²` and `Ab` by a variables `P` and `q` to get
+//!  ```math
+//!  min log det A^{-1}
+//!  such that 
+//!     t_i ∊ R^m_+
+//!     P ∊ S^n_+
+//!     q ∊ R^n
+//!     | P-t_i A_i      q-t_i b_i  0   |
+//!     | (q-t_i b_i)'  -1-t_i c_i  q'  | ∊ S^{2n+1}_-
+//!     | 0              q          -P  |
+//!  ```
 
-#[allow(mixed_script_confusables)]
 
 use mosekmodel::matrix::{dense,speye};
 use mosekmodel::*;
 use itertools::izip;
 
-
 /// Structure defining an ellipsoid as
-/// ```math 
-/// { x | ‖ Px+q ‖₂ ≤ 1 }
-/// ```
-/// It can be alternatively represented as 
-/// ```math 
-/// x'Ax + bx + c ≤ 0
-/// ```
-/// with
-/// ```math 
-/// A = P²
-/// b = 2Pqx
-/// c = q'q-1
-/// ```
-/// or, as a third alternative as 
-/// ```math
-/// { Zu+w | ‖ u ‖₂ ≤ 1 }
-/// ```
-/// where 
-/// ```math
-/// Z = P^{-1}
-/// w = -P^{-1}q
-/// ```
+/// 1.
+///     ```math 
+///     { x | ‖ Px+q ‖₂ ≤ 1 }
+///     ```
+/// 2. It can be alternatively represented as 
+///     ```math 
+///     x'Ax + bx + c ≤ 0
+///     ```
+///     with
+///     ```math 
+///     A = P²
+///     b = 2Pqx
+///     c = q'q-1
+///   ```
+/// 3. or, as a third alternative as 
+///     ```math
+///     { Zu+w | ‖ u ‖₂ ≤ 1 }
+///     ```
+///     where 
+///     ```math
+///     Z = P^{-1}
+///     w = -P^{-1}q
+///     ```
 #[allow(non_snake_case)]
 #[derive(Clone)]
 pub struct Ellipsoid<const N : usize> {
@@ -80,6 +91,20 @@ impl<const N : usize> Ellipsoid<N> {
     pub fn new(P : &[[f64;N];N], q : &[f64;N]) -> Ellipsoid<N> { Ellipsoid{P : *P, q : *q } }
     pub fn get_P(&self) -> &[ [ f64; N ]; N ] { &self.P }
     pub fn get_q(&self) -> &[f64; N] { &self.q }
+
+//    /// Get `Z`,`w`  representation of the ellipsis, where
+//    /// ```math 
+//    /// { Zx+w : ‖ x ‖₂ ≤ 1 }
+//    /// ```
+//    pub fn get_Zw(&self) -> ( [[f64;N];N],[f64;N] ) {
+//        let Z = [[0.0; N];N];
+//        let w = [0.0;N];
+//
+//        
+//
+//
+//        (Z,w)
+//    }
 
     /// For alternative parameterization
     /// ```math
@@ -96,7 +121,7 @@ impl<const N : usize> Ellipsoid<N> {
     /// Implying that
     /// ```math 
     /// A = P²
-    /// b = 2Pqx
+    /// b = 2Pq
     /// c = q'q-1
     /// ```
     pub fn get_Abc(&self) -> ([[f64;N];N],[f64;N],f64) {
@@ -125,19 +150,90 @@ impl<const N : usize> Ellipsoid<N> {
         res
     }
 
-    // b = Pq
+    // b = 2Pq
     pub fn get_b(&self) -> [f64; N] { 
         let mut res = [0.0;N];
         self.P.iter()
             .zip(std::iter::repeat(self.q))
             .zip(res.iter_mut())
-            .for_each(|((Pi,q),r)| *r = Pi.iter().zip(q.iter()).map(|(&Pij,&qi)| Pij*qi).sum());
+            .for_each(|((Pi,q),r)| *r = Pi.iter().zip(q.iter()).map(|(&Pij,&qi)| 2.0*Pij*qi).sum());
         res
     }
 
-    // c = q'q
-    pub fn get_c(&self) -> f64    { self.q.iter().map(|v| v*v).sum() }
+    // c = q'q-1
+    pub fn get_c(&self) -> f64    { self.q.iter().map(|v| v*v).sum::<f64>() - 1.0}
 }
+
+#[allow(non_snake_case)]
+pub fn ellipsoid_contains<const N : usize>
+(   M : & mut Model,
+    P : &Variable<2>, 
+    q : &Variable<1>, 
+    e : &Ellipsoid<N>) {
+
+    let (A,b,c) = e.get_Abc();
+
+    let Pshp = P.shape();
+    let qshp = q.shape();
+    if Pshp[0] != Pshp[1] || qshp[0] != Pshp[0] {
+        panic!("Invalid or mismatching P and/or q");
+    }
+    let n = qshp[0];
+   
+    let S = M.variable(Some("S"), in_psd_cone(2*n+1));
+    let S11 = (&S).slice(&[0..n,0..n]);
+    let S21 = (&S).slice(&[n..n+1,0..n]).reshape(&[n]);
+    let S22 = (&S).slice(&[n..n+1,n..n+1]).reshape(&[]);
+    let S31 = (&S).slice(&[n+1..2*n+1,0..n]);
+    let S32 = (&S).slice(&[n+1..2*n+1,n..n+1]).reshape(&[n]);
+    let S33 = (&S).slice(&[n+1..2*n+1,n+1..2*n+1]);
+    let tau = M.variable(Some("tau"), nonnegative());
+
+    let A = dense(N,N,A.iter().flat_map(|arow| arow.iter()).cloned().collect::<Vec<f64>>());
+
+    _ = M.constraint(None, &P.clone().sub(tau.clone().mul(&A))           .add(S11), zero().with_shape(&[n,n]));
+    _ = M.constraint(None, &q.clone().sub(tau.clone().mul(b.as_slice())) .add(S21), zero().with_shape(&[n]));
+    _ = M.constraint(None, &tau.clone().mul(c).add(1.0).neg()            .add(S22), zero());
+    _ = M.constraint(None, &q.clone()                                    .add(S32), zero().with_shape(&[n]));
+    _ = M.constraint(None, &P.clone().neg()                              .add(S33), zero().with_shape(&[n,n]));
+    _ = M.constraint(None,                                                   &S31,  zero().with_shape(&[N,N]));
+}
+
+#[allow(non_snake_case)]
+pub fn minimal_bounding_ellipsoid<const N : usize>(data : &[Ellipsoid<N>]) -> Result<([[f64;N];N],[f64;N]),String> {
+    let n = N;
+
+    let mut M = Model::new(Some("lownerjohn-outer"));
+    M.set_log_handler(|msg| print!("{}",msg));
+
+    let m = data.len();
+
+    // Maximize log(det(P))
+    let t = M.variable(Some("t"), unbounded());
+    
+    //let P = M.variable(Some("P"),in_psd_cone(n));
+    let P = det_rootn(Some("P"), & mut M, t.clone(), n);
+    let q = M.variable(Some("q"), unbounded().with_shape(&[n]));
+    M.objective(None, Sense::Maximize, &t);
+
+
+    for e in data.iter() {
+       ellipsoid_contains(&mut M,&P,&q,e);
+    }
+
+    M.solve();
+
+    M.write_problem("whales.ptf");
+
+    let Psol = M.primal_solution(SolutionType::Default, &P)?;
+    let qsol = M.primal_solution(SolutionType::Default, &q)?;
+
+    let mut rP = [[0.0;N];N]; rP.iter_mut().flat_map(|row| row.iter_mut()).zip(Psol.iter()).for_each(|(t,&s)| *t = s);
+    let mut rq = [0.0;N]; rq.clone_from_slice(qsol.as_slice());
+
+    Ok( (rP,rq) )
+}
+
 
 /// # Arguments
 /// - `es` List of ellipsoids
@@ -281,11 +377,7 @@ fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) ->
     // (Z11*Z22*...*Znn) >= t^n
     _ = M.constraint(name,&vstack![DZ.clone().diag(),t.reshape(&[1])], in_geometric_mean_cone(n+1));
 
-    // Return an n x n PSD variable which satisfies t <= det(X)^(1/n)
-    let Psq = M.variable(Some("Psq"), unbounded().with_shape(&[2,2]));
-    _ = M.constraint(None, & Psq.clone().sub(X), zero().with_shape(&[2,2]));
-
-    Psq
+    X
 }
 
 #[cfg(test)]
@@ -321,16 +413,15 @@ mod test {
             //Ellipsoid{A : [[0.1796, -0.1423], [-0.1423,2.6181]], b : [-0.3286,  0.557 ], c : 0.4931} 
         ];
 
-        let (Psq,Pq) = outer_ellipsoid(ellipses);
-
-        println!("P² = {:?}",Psq);
-        println!("Pq = {:?}",Pq);
-        
-        let s = det(&Psq).sqrt();
-        let P = matscale(&matadd(&Psq,&[[s,0.0],[0.0,s]]), 1.0/(trace(&Psq) + 2.0*s).sqrt());
-        let q = matmul(&inv(&P),&Pq);
+        let (P,q) = minimal_bounding_ellipsoid(ellipses);
 
         println!("P = {:?}",P);
         println!("q = {:?}",q);
+
+        // Now, bonud ellipsoid is defined by A,b, with
+        // A² = P => P = sqrt(A)
+        // Ab = q => A\q
+    
+        
     }
 }

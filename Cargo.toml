@@ -21,7 +21,7 @@ harness = false
 name = "eval"
 crate-type = ["cdylib"]
 
-[[example]]
-name = "nearestcorr"
-crate-type = ["cdylib"]
+#[[example]]
+#name = "nearestcorr"
+#crate-type = ["cdylib"]
 

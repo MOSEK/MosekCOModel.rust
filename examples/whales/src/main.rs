@@ -3,7 +3,7 @@ extern crate cairo;
 mod whales;
 mod utils2d;
 
-use whales::{Ellipsoid,outer_ellipsoid};
+use whales::{Ellipsoid,minimal_bounding_ellipsoid};
 use utils2d::{det,matscale,matmul,matadd,trace,inv};
 
 use cairo::Context;
@@ -25,15 +25,15 @@ struct DrawData {
 
 
 #[allow(non_snake_case)]
-fn main() {
+fn main() -> Result<(),String> {
     let mut drawdata = DrawData {
         ellipses : vec![
             Ellipsoid::new(&[[1.09613, -0.236851], [-0.236851, 0.539075]], &[ 0.596594, 1.23438] ),
-            //Ellipsoid::new(&[[1.01769, -0.613843], [-0.613843, 2.52996 ]], &[-1.74633, -0.568805]),
-            //Ellipsoid::new(&[[1.26487,  0.319239], [ 0.319239, 1.28526 ]], &[-0.856775, 1.29365] ),
-            //Ellipsoid::new(&[[0.926849,-0.339339], [-0.339339, 1.19551 ]], &[ 0.452287, 0.575005]),
-            //Ellipsoid::new(&[[0.819939,-0.0866013],[-0.0866013,0.824379]], &[-0.985105,-1.6824]  ),
-            //Ellipsoid::new(&[[0.417981,-0.0699427],[-0.0699427,1.61654 ]], &[-1.73581,  0.118404]),
+            Ellipsoid::new(&[[1.01769, -0.613843], [-0.613843, 2.52996 ]], &[-1.74633, -0.568805]),
+            Ellipsoid::new(&[[1.26487,  0.319239], [ 0.319239, 1.28526 ]], &[-0.856775, 1.29365] ),
+            Ellipsoid::new(&[[0.926849,-0.339339], [-0.339339, 1.19551 ]], &[ 0.452287, 0.575005]),
+            Ellipsoid::new(&[[0.819939,-0.0866013],[-0.0866013,0.824379]], &[-0.985105,-1.6824]  ),
+            Ellipsoid::new(&[[0.417981,-0.0699427],[-0.0699427,1.61654 ]], &[-1.73581,  0.118404]),
 
             //Ellipsoid::new(&[[1.2576, -0.3873], [-0.3873,0.3467]], &[ 0.2722,  0.1969], 0.1831),
             //Ellipsoid::new(&[[1.4125, -2.1777], [-2.1777,6.7775]], &[-1.228,  -0.0521], 0.3295),
@@ -47,21 +47,27 @@ fn main() {
     };
 
     if true {
-        let (Psq,Pq) = outer_ellipsoid(drawdata.ellipses.as_slice());
-        let s = det(&Psq).sqrt();
-        let P = matscale(&matadd(&Psq,&[[s,0.0],[0.0,s]]), 1.0/(trace(&Psq) + 2.0*s).sqrt());
-        let q = matmul(&inv(&P),&Pq);
+        let (P,q) = minimal_bounding_ellipsoid(drawdata.ellipses.as_slice())?;
+        // A² = P => A = sqrt(P)
+        // Ab = q => A\q
+        let s = det(&P).sqrt();
+        let A = matscale(&matadd(&P,&[[s,0.0],[0.0,s]]), 1.0/(trace(&P) + 2.0*s).sqrt());
+        let b = matmul(&inv(&A),&q);
 
-        drawdata.P = P;
-        drawdata.q = q;
+        drawdata.P = A;
+        drawdata.q = b;
+
+
+
     }
 
-    //let app = Application::builder()
-    //    .application_id(APP_ID)
-    //    .build();
-    //
-    //app.connect_activate(move | app : &Application | build_ui(app,&drawdata));
-    //let _r = app.run_with_args::<&str>(&[]);
+    let app = Application::builder()
+        .application_id(APP_ID)
+        .build();
+    
+    app.connect_activate(move | app : &Application | build_ui(app,&drawdata));
+    let _r = app.run_with_args::<&str>(&[]);
+    Ok(())
 }
 
 fn build_ui(app : &Application, drawdata : & DrawData) {
@@ -90,8 +96,9 @@ fn context_ellipsis(context : &Context, s : f64, A : &[[f64;2];2], b : &[f64;2])
     context.scale(s,s);
     context.translate(1.0,1.0);
     context.translate(-b[0],-b[1]);
-    context.transform(cairo::Matrix::new(Ainv[0][0],Ainv[0][1],Ainv[1][0],Ainv[1][1],0.0,0.0));
+    context.transform(cairo::Matrix::new(A[0][0],A[0][1],A[1][0],A[1][1],0.0,0.0));
 
+    println!("b = {:?}, A = {:?}",A,b);
     //context.arc(-b[0],-b[1],1.0,0.0,std::f64::consts::PI*2.0);
     context.arc(0.0,0.0,1.0,0.0,std::f64::consts::PI*2.0);
     context.set_matrix(old_mx);
@@ -105,44 +112,51 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
 
     let w : f64 = w.into();
     let h : f64 = h.into();
-    let s = w.min(h)/2.0;
+    let s = w.min(h)/50.0;
+    
+    context.translate(300.0,300.0);
 
+    context.set_source_rgb(1.0, 0.0, 0.0);
     {
-        context.set_source_rgb(0.0, 0.0, 0.0);
         let A = data.P;
         //let Ainv = inv(&data.P);
         let b = data.q;
+        let Z = inv(&A);
+        let w = [ Z[0][0] * b[0] + Z[0][1] * b[1], 
+                  Z[1][0] * b[0] + Z[1][1] * b[1] ];
 
+        context_ellipsis(context,s,&Z,&w);
+    }
+    //let old_mx = context.matrix();
+    //context.scale(s,s);
+    //context.translate(1.0,1.0);
+    //context.translate(-b[0],-b[1]);
+    //context.transform(cairo::Matrix::new(Ainv[0][0],Ainv[0][1],Ainv[1][0],Ainv[1][1],0.0,0.0));
 
-        context_ellipsis(context,s,&A,&b);
-        //let old_mx = context.matrix();
-        //context.scale(s,s);
-        //context.translate(1.0,1.0);
-        //context.translate(-b[0],-b[1]);
-        //context.transform(cairo::Matrix::new(Ainv[0][0],Ainv[0][1],Ainv[1][0],Ainv[1][1],0.0,0.0));
+    //context.arc(-b[0],-b[1],1.0,0.0,std::f64::consts::PI*2.0);
+    //context.arc(0.0,0.0,1.0,0.0,std::f64::consts::PI*2.0);
+    //context.set_matrix(old_mx);
+    //_ = context.stroke();
 
-        //context.arc(-b[0],-b[1],1.0,0.0,std::f64::consts::PI*2.0);
-        //context.arc(0.0,0.0,1.0,0.0,std::f64::consts::PI*2.0);
-        //context.set_matrix(old_mx);
-        //_ = context.stroke();
+    context.set_source_rgb(0.0, 0.0, 0.0);
 
+    if true {
+        for e in data.ellipses.iter() {
+            let A = e.get_P();
+            let b = e.get_q();
+            let Z = inv(&A);
+            let w = [ Z[0][0] * b[0] + Z[0][1] * b[1], 
+                      Z[1][0] * b[0] + Z[1][1] * b[1] ];
 
-        if false {
-            for e in data.ellipses.iter() {
-                let A = e.get_P();
-                let Ainv = inv(&A);
-                let b = e.get_q();
-
-                context_ellipsis(context,s,A,b);
-                
-                //let old_mx = context.matrix();            
-                //context.transform(cairo::Matrix::new(Ainv[0][0],Ainv[0][1],Ainv[1][0],Ainv[1][1],0.0,0.0));
-                //context.scale(0.1,0.1);
-                ////context.arc((1.0-b[0])*s, (1.0-b[1])*s,s,0.0,std::f64::consts::PI*2.0);
-                //context.arc((2.0-b[0])*s, (2.0-b[1])*s,s,0.0,std::f64::consts::PI*2.0);
-                //context.set_matrix(old_mx);
-                //_ = context.stroke();
-            }
+            context_ellipsis(context,s,&Z,&w);
+            
+            //let old_mx = context.matrix();            
+            //context.transform(cairo::Matrix::new(Ainv[0][0],Ainv[0][1],Ainv[1][0],Ainv[1][1],0.0,0.0));
+            //context.scale(0.1,0.1);
+            ////context.arc((1.0-b[0])*s, (1.0-b[1])*s,s,0.0,std::f64::consts::PI*2.0);
+            //context.arc((2.0-b[0])*s, (2.0-b[1])*s,s,0.0,std::f64::consts::PI*2.0);
+            //context.set_matrix(old_mx);
+            //_ = context.stroke();
         }
     }
 }

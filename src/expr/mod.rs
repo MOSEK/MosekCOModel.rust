@@ -432,6 +432,29 @@ impl<const N : usize> ExprTrait<N> for ExprNil<N> {
     }
 }
 
+pub fn zeros<const N : usize>(shape : &[usize;N]) -> Expr<N> {
+    Expr{
+        shape : *shape,
+        aptr : vec![0],
+        asubj : vec![],
+        acof : vec![],
+        sparsity : Some(vec![]),
+    }
+}
+
+pub fn constants<const N : usize>(shape : &[usize;N], values : &[f64]) -> Expr<N> {
+    if shape.iter().product::<usize>() != values.len() {
+        panic!("Data and shape do not match");
+    }
+    Expr{
+        shape : *shape,
+        aptr : (0..values.len()+1).collect(),
+        asubj : vec![0; values.len()], 
+        acof : values.to_vec(),
+        sparsity : None
+    }
+}
+
 pub fn nil<const N : usize>(shape : &[usize; N]) -> ExprNil<N> {
     if shape.iter().product::<usize>() != 0 {
         panic!("Shape must have at least one zero-dimension");
