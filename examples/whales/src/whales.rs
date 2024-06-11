@@ -88,9 +88,12 @@ pub struct Ellipsoid<const N : usize> {
 
 #[allow(non_snake_case)]
 impl<const N : usize> Ellipsoid<N> {
+    /// Specify ellipsoid by `P` and `q` as
+    /// ```math 
+    /// { x | ‖ Px+q ‖₂ ≤ 1 }
+    /// ```
     pub fn new(P : &[[f64;N];N], q : &[f64;N]) -> Ellipsoid<N> { Ellipsoid{P : *P, q : *q } }
-    pub fn get_P(&self) -> &[ [ f64; N ]; N ] { &self.P }
-    pub fn get_q(&self) -> &[f64; N] { &self.q }
+    pub fn get_Pq(&self) -> ([ [ f64; N ]; N ],[f64;N]) { (self.P,self.q) }
 
 //    /// Get `Z`,`w`  representation of the ellipsis, where
 //    /// ```math 
@@ -131,7 +134,7 @@ impl<const N : usize> Ellipsoid<N> {
     }
 
     // A = P²
-    pub fn get_A(&self) -> [ [ f64; N ]; N ] { 
+    fn get_A(&self) -> [ [ f64; N ]; N ] { 
         let mut Pt = [[0.0;N];N];
         for i in 0..N {
             for j in 0..N {
@@ -151,7 +154,7 @@ impl<const N : usize> Ellipsoid<N> {
     }
 
     // b = 2Pq
-    pub fn get_b(&self) -> [f64; N] { 
+    fn get_b(&self) -> [f64; N] { 
         let mut res = [0.0;N];
         self.P.iter()
             .zip(std::iter::repeat(self.q))
@@ -161,7 +164,7 @@ impl<const N : usize> Ellipsoid<N> {
     }
 
     // c = q'q-1
-    pub fn get_c(&self) -> f64    { self.q.iter().map(|v| v*v).sum::<f64>() - 1.0}
+    fn get_c(&self) -> f64 { self.q.iter().map(|v| v*v).sum::<f64>() - 1.0}
 }
 
 #[allow(non_snake_case)]
@@ -235,117 +238,13 @@ pub fn minimal_bounding_ellipsoid<const N : usize>(data : &[Ellipsoid<N>]) -> Re
 }
 
 
-/// # Arguments
-/// - `es` List of ellipsoids
-///
-/// # Returns
-/// The minimal bounding ellipsoid is parameterized as `‖Px+q‖ ≤ 1`, and the returned values are
-/// - `P_sq` an `n x n` martrix in row major format, which is the square of `P`.
-/// - `Pq` an `n` vector, which is the product `P*q`
-/// The actual `P` and `q` can be obtained from these values.
-#[allow(non_snake_case)]
-pub fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [f64;N]) {
-    //if es.len() < 1 { panic!("At least two ellipsoids required"); }
-    let n = N; 
-    let datasize = n*(n+1)+1;
-    let mut M = Model::new(Some("lownerjohn_outer"));
-    M.set_log_handler(|msg| print!("{}",msg)); 
-
-    let m = es.len();
-
-    let t = M.variable(Some("t"), unbounded());
-
-
-    let τ = M.variable(Some("tau"), unbounded().with_shape(&[m]));
-    let P_q = M.variable(Some("P_q"), unbounded().with_shape(&[n]));
-    let P_sq = det_rootn(Some("X_Psq"), & mut M, t.clone(), n);
-    //let P_sq = M.variable(Some("Psq"), in_psd_cone(n));
-
-    let X = M.variable(Some("X"), in_psd_cones(&[m,2*n+1,2*n+1], 1,2));
-
-    // 1/2 x0 ... xn > | x{n+1} |
-    //M.constraint(Some("vdet"),
-    //             vstack![
-    //                P_sq.clone().index(&[0,0])
-    //             ]
-    //             Expr.vstack([ Expr.mul(0.5, vA2.index([0,0])), vA2.index([1,1]), vA2.index([0,1]), vdet ]), Domain.inRotatedQCone());
-
-    M.objective(None, Sense::Maximize, &t);
-
-    for (i,e) in es.iter().enumerate() {
-        let (Adata,b,c) = e.get_Abc();
-
-        //let Adata : Vec<f64> = e.get_A().iter().flat_map(|v| v.iter()).cloned().collect();
-        let A = dense(n,n,Adata.iter().flat_map(|r| r.iter()).cloned().collect::<Vec<f64>>());
-            
-        // Implement the constraint 
-        // | A*τ[i]-P²     τ[i]*b-P_q  0     |
-        // | (τ[i]*b-P_q)' (1+τ[i]*c)  -P_q' | ∊ S^n_+
-        // | 0             -P_q        P²    |
-        //let name = format!("EllipsoidBound[{}]",i+1);
-
-        let Xi : Variable<2> = (&X).slice(&[i..i+1,0..2*n+1,0..2*n+1]).reshape(&[2*n+1,2*n+1]);
-        // P²-A*τ[i] = Xi[0..n,0..n]
-        _ = M.constraint(Some(format!("EllipsBound[{}][1,1]",i+1).as_str()), 
-                         &P_sq.clone().add(τ.clone().index(i).mul(&A))
-                            .sub(Xi.clone().slice(&[0..n,0..n])),
-                         zeros(&[n,n]));
-        // P_q-τ[i]*b = Xi[n..n+1,0..n]]
-        _ = M.constraint(Some(format!("EllipsBound[{}][2,1]",i+1).as_str()), 
-                         & b.mul_right(τ.index(i)).sub(P_q.clone())
-                            .sub(Xi.clone().slice(&[n..n+1,0..n]).reshape(&[n])),
-                         zeros(&[n]));
-        // -(1+τ[i]*c) = Xi[n,n]
-        _ = M.constraint(Some(format!("EllipsBound[{}][2,2]",i+1).as_str()), 
-                         &τ.index(i).mul(c).add(1.0)
-                            .sub(Xi.clone().index(&[n,n])),
-                         zero());
-        // 0 = Xi[n+1..2n+1,0..n]
-        _ = M.constraint(Some(format!("EllipsBound[{}][3,1]",i+1).as_str()),
-                         &Xi.clone().slice(&[n+1..2*n+1,0..n]),
-                         zero().with_shape(&[n,n]));
-        // P_q = Xi[n+1..2n+1,n..n+1]
-        _ = M.constraint(Some(format!("EllipsBound[{}][3,2]",i+1).as_str()),
-                         &P_q.clone().neg()
-                             .sub(Xi.clone().slice(&[n+1..2*n+1,n..n+1]).reshape(&[n])),
-                         zeros(&[n]));
-        // P²= Xi[n+1..2n+1,n+1..2n+1]
-        _ = M.constraint(Some(format!("EllipsBound[{}][3,3]",i+1).as_str()),
-                         &P_sq.clone()
-                            .sub(Xi.clone().slice(&[n+1..2*n+1, n+1..2*n+1])),
-                         zeros(&[n,n]));
-    }
-
-    M.solve();
-    M.write_problem("whales.ptf");
-
-    match M.solution_status(SolutionType::Default) {
-        (SolutionStatus::Optimal,SolutionStatus::Optimal) => {},
-        _ => panic!("Solution not optimal")
-    }
-
-    let Psol  = M.primal_solution(SolutionType::Default,&P_sq).unwrap();
-    let Pqsol = M.primal_solution(SolutionType::Default,&P_q).unwrap();
-
-    let mut Psq_res = [[0.0;N];N];
-    let mut Pq_res  = [0.0;N];
-
-    Psol.iter().zip(Psq_res.iter_mut().map(|item| item.iter_mut()).flatten()).for_each(|(&s,t)| *t = s);
-    Pqsol.iter().zip(Pq_res.iter_mut()).for_each(|(&s,t)| *t = s);
-
-    (Psq_res,Pq_res)
-}
-
-
-
-
 
 /// Purpose: Models the hypograph of the n-th power of the
 /// determinant of a positive definite matrix. See [1,2] for more details.
 ///
 ///   The convex set (a hypograph)
 ///   ```math
-///   C = { (X, t) ∈ S^n_+ x R |  t ≤ det(X)^{1/n} },
+///   C = { (X, t) ∊ S^n_+ x R |  t ≤ det(X)^{1/n} },
 ///   ```
 ///   can be modeled as the intersection of a semidefinite cone
 ///
@@ -354,6 +253,7 @@ pub fn outer_ellipsoid<const N : usize>(es : &[Ellipsoid<N>]) -> ([[f64;N];N], [
 ///   |             | ≽ 0
 ///   | Z^T Diag(Z) |  
 ///   ```
+///   and `Z` lower triangular.
 ///
 ///   and a geometric mean bound
 ///
