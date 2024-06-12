@@ -680,19 +680,10 @@ macro_rules! stack {
 
 #[macro_export]
 macro_rules! exprcat {
-    [ [ $x0:expr , $( $x:expr ),* ] , $( $rows:expr ),* ] => { 
-        {
-            hstack![$x0 $( , $x )*] .vstack( exprcat![ $( $rows ),*] ) 
-        }
-    };
-    [ [ $x0:expr ] ] => { $x0 };
-    [ [ $x0:expr , $( $x:expr ),* ] ] => { hstack![$x0 $( , $x )*] };
-    [ $x0:expr , $( $rows:expr ),* ] => { 
-        {
-            $x0 .vstack( exprcat![ $( rows ),*] ) 
-        }
-    };
-    [ $x0:expr ] => { $x0 }
+    [ $e0:expr ] => { $e0 };
+    [ $e0:expr , $( $es:expr ),+ ] => { hstack![ $e0 $( , $es )* ] };
+    [ $e0:expr ; $( $rest:tt )+ ] => { $e0 . vstack( exprcat![ $( $rest )* ]) };
+    [ $e0:expr , $( $es:expr ),+ ; $( $rest:tt )+ ] => { hstack![ $e0 $( , $es )* ].vstack( exprcat![ $( $rest )*] ) };
 }
 
 pub struct ExprStack<const N : usize,E1:ExprTrait<N>,E2:ExprTrait<N>> {
@@ -1666,15 +1657,15 @@ mod test {
             let es = Expr::new(&[2,2],Some(vec![]), vec![0], vec![], vec![]);
 
             exprcat![
-                [ ed.clone(), es.clone() ],
-                [ es.clone(), ed.clone() ] ].eval(& mut rs,& mut ws,& mut xs);
+                ed.clone(), es.clone() ;
+                es.clone(), ed.clone() ].eval(& mut rs,& mut ws,& mut xs);
 
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
             assert_eq!(shape,&[4,4]);
             assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8]);
             assert!(sp.is_some());
             assert_eq!(sp.unwrap(),&[0,1,4,5,10,11,14,15]);
-            assert_eq!(subj,&[1,2,3,4,1,2,3,4]);
+            assert_eq!(subj,&[1,2,3,4,1,2,3,4]);                        
         }
     }
 
