@@ -6,6 +6,7 @@ mod dot;
 mod mul;
 mod add;
 
+
 use std::ops::Range;
 
 use itertools::izip;
@@ -18,7 +19,7 @@ use super::matrix;
 pub use dot::{Dot,ExprDot};
 pub use mul::*;
 pub use add::*;
-
+pub use super::domain;
 
 pub trait IntoExpr<const N : usize> {
     type Result : ExprTrait<N>;
@@ -369,7 +370,7 @@ impl<const N : usize> Expr<N> {
                 panic!("Sparsity pattern out of bounds");
             }
 
-            if ! sp.iter().zip(sp[1..].iter()).all(|(&i0,&i1)| i0 < i1) {
+            if ! sp.is_empty() && ! sp.iter().zip(sp[1..].iter()).all(|(&i0,&i1)| i0 < i1) {
                 panic!("Sparsity is not sorted or contains duplicates");
             }
         }
@@ -677,6 +678,22 @@ macro_rules! stack {
     }
 }
 
+#[macro_export]
+macro_rules! exprcat {
+    [ [ $x0:expr , $( $x:expr ),* ] , $( $rows:expr ),* ] => { 
+        {
+            hstack![$x0 $( , $x )*] .vstack( exprcat![ $( $rows ),*] ) 
+        }
+    };
+    [ [ $x0:expr ] ] => { $x0 };
+    [ [ $x0:expr , $( $x:expr ),* ] ] => { hstack![$x0 $( , $x )*] };
+    [ $x0:expr , $( $rows:expr ),* ] => { 
+        {
+            $x0 .vstack( exprcat![ $( rows ),*] ) 
+        }
+    };
+    [ $x0:expr ] => { $x0 }
+}
 
 pub struct ExprStack<const N : usize,E1:ExprTrait<N>,E2:ExprTrait<N>> {
     item1 : E1,
@@ -797,6 +814,7 @@ impl<const N : usize> ExprTrait<N> for ExprDynStack<N> {
         eval::stack(self.dim,n,rs,ws,xs);
     }
 }
+
 /// Stack a list of expressions. Since the exact types of the array
 /// elements ay differ, we have to get the expressions as a dynamic
 /// objects.
@@ -1621,6 +1639,43 @@ mod test {
                           5,11,5]));
         assert!(rs.is_empty());
         assert!(ws.is_empty());
+
+
+
+        {
+            let mut rs = WorkStack::new(512);
+            let mut ws = WorkStack::new(512);
+            let mut xs = WorkStack::new(512);
+            let ed = Expr::new(&[2,2],None,vec![0,1,2,3,4],vec![1,2,3,4],vec![1.1,1.2,2.1,2.2]);
+            let es = Expr::new(&[2,2],Some(vec![]), vec![0], vec![], vec![]);
+
+            vstack![hstack![ed.clone(),es.clone()], hstack![es,ed]].eval(& mut rs,& mut ws,& mut xs);
+
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            assert_eq!(shape,&[4,4]);
+            assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8]);
+            assert!(sp.is_some());
+            assert_eq!(sp.unwrap(),&[0,1,4,5,10,11,14,15]);
+            assert_eq!(subj,&[1,2,3,4,1,2,3,4]);
+        }
+        {
+            let mut rs = WorkStack::new(512);
+            let mut ws = WorkStack::new(512);
+            let mut xs = WorkStack::new(512);
+            let ed = Expr::new(&[2,2],None,vec![0,1,2,3,4],vec![1,2,3,4],vec![1.1,1.2,2.1,2.2]);
+            let es = Expr::new(&[2,2],Some(vec![]), vec![0], vec![], vec![]);
+
+            exprcat![
+                [ ed.clone(), es.clone() ],
+                [ es.clone(), ed.clone() ] ].eval(& mut rs,& mut ws,& mut xs);
+
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            assert_eq!(shape,&[4,4]);
+            assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8]);
+            assert!(sp.is_some());
+            assert_eq!(sp.unwrap(),&[0,1,4,5,10,11,14,15]);
+            assert_eq!(subj,&[1,2,3,4,1,2,3,4]);
+        }
     }
 
     #[allow(non_snake_case)]
@@ -1636,7 +1691,7 @@ mod test {
         let Y = m.variable(Some("Y"), in_psd_cone(2)); // 13,14,15
         let mx = dense(2, 2, vec![1.1,2.2,3.3,4.4]);
 
-        m.constraint(Some("X-Y"), &X.clone().slice(&[0..2,0..2]).sub(Y.clone().sub((&mx).mul_right(t.clone().clone().index(0)))), zeros(&[2,2]));
+        m.constraint(Some("X-Y"), &X.clone().slice(&[0..2,0..2]).sub(Y.clone().sub((&mx).mul_right(t.clone().clone().index(0)))), domain::zeros(&[2,2]));
         m.write_problem("X_minus_Y.ptf");
 
         let mut rs = WorkStack::new(512);
@@ -1670,4 +1725,7 @@ mod test {
             println!("subj = {:?}",subj);
         }
     }
+
+
+
 }

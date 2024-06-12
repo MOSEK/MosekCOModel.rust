@@ -2,6 +2,8 @@ extern crate mosekmodel;
 extern crate cairo;
 mod whales;
 mod utils2d;
+mod matrix;
+mod ellipsoids;
 
 use whales::{Ellipsoid,minimal_bounding_ellipsoid};
 use utils2d::{det,matscale,matmul,matadd,trace,inv};
@@ -41,8 +43,9 @@ fn main() -> Result<(),String> {
             //Ellipsoid::new(&[[0.819939,-0.0866013],[-0.0866013,0.824379]], &[-0.985105,-1.6824]  ),
             //Ellipsoid::new(&[[0.417981,-0.0699427],[-0.0699427,1.61654 ]], &[-1.73581,  0.118404]),
 
-            ellipse_from_stheta([10.0,1.0], [0.0,1.0], 0.0/*std::f64::consts::PI / 10.0*/),
+            ellipse_from_stheta([10.0,1.0], [0.0,3.0], 0.0/*std::f64::consts::PI / 10.0*/),
             ellipse_from_stheta([ 2.0,5.0], [0.0,0.0], 0.0/*std::f64::consts::PI / 10.0*/),
+            ellipse_from_stheta([ 1.0,4.0], [-4.0,-2.0], 6.0/*std::f64::consts::PI / 10.0*/),
 
             //Ellipsoid::new(&[[1.2576, -0.3873], [-0.3873,0.3467]], &[ 0.2722,  0.1969], 0.1831),
             //Ellipsoid::new(&[[1.4125, -2.1777], [-2.1777,6.7775]], &[-1.228,  -0.0521], 0.3295),
@@ -71,6 +74,17 @@ fn main() -> Result<(),String> {
     let _r = app.run_with_args::<&str>(&[]);
     Ok(())
 }
+
+
+
+
+
+
+
+
+
+
+
 
 fn build_ui(app : &Application, drawdata : & DrawData) {
     let darea = DrawingArea::builder()

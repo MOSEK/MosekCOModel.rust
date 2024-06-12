@@ -159,7 +159,7 @@ impl<const N : usize> Ellipsoid<N> {
         self.P.iter()
             .zip(std::iter::repeat(self.q))
             .zip(res.iter_mut())
-            .for_each(|((Pi,q),r)| *r = Pi.iter().zip(q.iter()).map(|(&Pij,&qi)| 2.0*Pij*qi).sum());
+            .for_each(|((Pi,q),r)| *r = Pi.iter().zip(q.iter()).map(|(&Pij,&qi)| Pij*qi).sum());
         res
     }
 
