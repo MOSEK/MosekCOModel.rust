@@ -103,47 +103,6 @@ impl<const N : usize> Ellipsoid<N> {
 }
 
 
-/// Create a semidefinite variable `X` such that
-/// ```math
-/// t ≤ det(X)^{1/n}
-/// ```
-/// This is modeled as
-/// ```math
-/// | X   Z       |
-/// |             | ≽ 0
-/// | Z^T Diag(Z) |  
-/// t <= (Z11*Z22*...*Znn)^{1/n} 
-/// ```
-/// and `Z` lower triangular.
-/// # Arguments
-/// - `name` Optional name to use to created model items.
-/// - `M` Model.
-/// - `t` Scalar variable.
-/// - `n` Dimension of the returned semidefinite variable.
-/// # Returns
-/// A symmetric positive `X` semidefinite variable such that 
-/// ```math
-/// t ≤ det(X)^{1/n}
-/// ```
-#[allow(non_snake_case)]
-pub fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) -> Variable<2> {
-    // Setup variables
-    let Y = M.variable(name, in_psd_cone(2*n));
-
-    // Setup Y = [X, Z; Z^T , diag(Z)]
-    let X  = (&Y).slice(&[0..n, 0..n]);
-    let Z  = (&Y).slice(&[0..n,   n..2*n]);
-    let DZ = (&Y).slice(&[n..2*n, n..2*n]);
-
-    // Z is lower-triangular
-    _ = M.constraint(None, &Z.clone().triuvec(false), equal_to(vec![0.0; n*(n-1)/2].as_slice()));
-    // DZ = Diag(Z)
-    _ = M.constraint(None, &DZ.clone().sub(Z.mul_elem(speye(n))), equal_to(dense(n,n,vec![0.0; n*n])));
-    // (Z11*Z22*...*Znn) >= t^n
-    _ = M.constraint(name,&vstack![DZ.clone().diag(),t.reshape(&[1])], in_geometric_mean_cone(n+1));
-
-    X
-}
 
 /// Adds a constraint to the effect that 
 /// ```math
@@ -249,14 +208,55 @@ pub fn ellipsoid_contained<const N : usize>
     _ = M.constraint(None, &lambda.clone().mul(matrix::speye(N)).sub(S33),zero().with_shape(&[N,N]));
 }
 
+/// Create a semidefinite variable `X` such that
+/// ```math
+/// t ≤ det(X)^{1/n}
+/// ```
+/// This is modeled as
+/// ```math
+/// | X   Z       |
+/// |             | ≽ 0
+/// | Z^T Diag(Z) |  
+/// t <= (Z11*Z22*...*Znn)^{1/n} 
+/// ```
+/// and `Z` lower triangular.
+/// # Arguments
+/// - `name` Optional name to use to created model items.
+/// - `M` Model.
+/// - `t` Scalar variable.
+/// - `n` Dimension of the returned semidefinite variable.
+/// # Returns
+/// A symmetric positive `X` semidefinite variable such that 
+/// ```math
+/// t ≤ det(X)^{1/n}
+/// ```
+#[allow(non_snake_case)]
+pub fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) -> Variable<2> {
+    // Setup variables
+    let Y = M.variable(name, in_psd_cone(2*n));
+
+    // Setup Y = [X, Z; Z^T , diag(Z)]
+    let X  = (&Y).slice(&[0..n, 0..n]);
+    let Z  = (&Y).slice(&[0..n,   n..2*n]);
+    let DZ = (&Y).slice(&[n..2*n, n..2*n]);
+
+    // Z is lower-triangular
+    _ = M.constraint(None, &Z.clone().triuvec(false), equal_to(vec![0.0; n*(n-1)/2].as_slice()));
+    // DZ = Diag(Z)
+    _ = M.constraint(None, &DZ.clone().sub(Z.mul_elem(speye(n))), equal_to(dense(n,n,vec![0.0; n*n])));
+    // (Z11*Z22*...*Znn) >= t^n
+    _ = M.constraint(name,&vstack![DZ.clone().diag(),t.reshape(&[1])], in_geometric_mean_cone(n+1));
+
+    X
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    fn test_contained() {
+        
+
     }
 }
