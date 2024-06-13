@@ -1,7 +1,7 @@
 extern crate mosekmodel;
 extern crate itertools;
 
-use mosekmodel::{Model,equal_to,in_geometric_mean_cone,in_psd_cone,zero,nonnegative,Variable,ExprTrait,vstack};
+use mosekmodel::{equal_to, expr, in_geometric_mean_cone, in_psd_cone, in_quadratic_cones, matrix, nonnegative, vstack, zero, ExprTrait, Model, Variable};
 use mosekmodel::matrix::{dense,speye};
 use itertools::izip;
 
@@ -147,12 +147,13 @@ pub fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize
 
 /// Adds a constraint to the effect that 
 /// ```math
-/// e ⊂ { x: || Px+1 || ≤ 1 }
+/// e ⊂ { x: || Px+q || ≤ 1 }
 /// ```
 ///
 /// # Arguments
 /// - `M` Model
-/// - `P`,'q' Define the ellipsis `{ x : || Px+q || ≤ 1 }`
+/// - `P`,'q' Define the ellipsis `{ x : || Px+q || ≤ 1 }`. `P` must be `NxN`, and `q` must be `N`
+///   long.
 /// - `e` The contained ellipsis.
 #[allow(non_snake_case)]
 pub fn ellipsoid_contains<const N : usize>
@@ -189,7 +190,64 @@ pub fn ellipsoid_contains<const N : usize>
     _ = M.constraint(None,                                                   &S31,  zero().with_shape(&[N,N]));
 }
 
+/// Adds a constraint
+/// ```math 
+/// p_i ∊ { x: || Px+q || ≤ 1 }, i ∊ 1..m
+/// ```
+///
+/// # Arguments
+/// - `M` the Model
+/// - `P` 
+/// - `q`
+/// - `points`
+#[allow(non_snake_case)]
+pub fn ellipsoid_contains_points<const N : usize>
+(   M : & mut Model,
+    P : &Variable<2>,
+    q : &Variable<1>,
+    points : &[ [f64;N] ]) {
 
+    let mx = dense(points.len(), N, points.iter().flat_map(|p| p.iter()).collect());
+    let m = points.len();
+    // 1 >=||P p_i + q||^2
+    _ = M.constraint(None, &hstack![ expr::ones(&[m,1]) , mx.mul(P.clone()).add( q.reshape(&[1,N]).repeat(0, m))], in_quadratic_cones(&[m,N+1], 1));
+}
+
+
+/// Adds a constraint
+/// { Zx+w : || x || ≤ 1 } ⊂ e
+///
+/// #Arguments
+/// - `M` Model
+/// - `Z`, `w` define the contained ellipsoid 
+/// - `e` is the containing ellipsoid
+#[allow(non_snake_case)]
+pub fn ellipsoid_contained<const N : usize> 
+(   M : &mut Model,
+    Z : &Variable<2>,
+    w : &Variable<1>,
+    e : &Ellipsoid<N>) {
+  
+    let S = M.variable(None, in_psd_cone(2*N+1));
+    let S11 = (&S).slice(&[0..N,0..N]);
+    let S21 = (&S).slice(&[N..N+1,0..N]).reshape(&[N]);
+    let S22 = (&S).slice(&[N..N+1,N..N+1]).reshape(&[]);
+    let S31 = (&S).slice(&[N+1..2*N+1,0..N]);
+    let S32 = (&S).slice(&[N+1..2*N+1,N..N+1]).reshape(&[N]);
+    let S33 = (&S).slice(&[N+1..2*N+1,N+1..2*N+1]);
+    let lambda = M.variable(None, nonnegative());
+
+    let (B,c) = e.get_Pq();
+    let B = dense(N,N,B.iter().flat_map(|arow| arow.iter()).cloned().collect::<Vec<f64>>());
+    let c = dense(1,N,&c);
+    
+    _ = M.constraint(None, &expr::eye(N).sub(S11),zero().with_shape(&[N,N]));
+    _ = M.constraint(None, &w.clone().reshape(&[1,N]).mul(B.clone()).add(c).sub(S21),zero().with_shape(&[1,N]));
+    _ = M.constraint(None, &B.mul(Z.clone()).sub(S31), zero().with_shape(&[N,N]));
+    _ = M.constraint(None, &lambda.clone().neg().add(1.0).sub(S22), zero());
+    _ = M.constraint(None, &S32, zero());
+    _ = M.constraint(None, &lambda.clone().mul(matrix::speye(N)).sub(S33),zero().with_shape(&[N,N]));
+}
 
 
 #[cfg(test)]

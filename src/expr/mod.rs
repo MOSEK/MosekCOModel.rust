@@ -443,6 +443,34 @@ pub fn zeros<const N : usize>(shape : &[usize;N]) -> Expr<N> {
     }
 }
 
+pub fn const_expr<const N : usize>(shape : &[usize;N], value : f64) -> Expr<N> {
+    let nelm : usize = shape.iter().product();
+    Expr{
+        shape : *shape,
+        aptr : (0..(nelm+1)).collect(),
+        asubj : vec![0usize; nelm],
+        acof : vec![value; nelm],
+        sparsity : None
+    }
+}
+
+pub fn ones<const N : usize>(shape : &[usize;N]) -> Expr<N> {
+    const_expr(shape,1.0)
+}
+
+pub fn const_diag(n : usize,value:f64) -> Expr<2> {
+    Expr{
+        shape : [n,n],
+        aptr : (0..n+1).collect(),
+        asubj : vec![0usize; n],
+        acof : vec![value; n],
+        sparsity : Some((0..n*n).step_by(n+1).collect())
+    }
+}
+pub fn eye(n : usize) -> Expr<2> {
+    const_diag(m,1.0)
+}
+
 pub fn constants<const N : usize>(shape : &[usize;N], values : &[f64]) -> Expr<N> {
     if shape.iter().product::<usize>() != values.len() {
         panic!("Data and shape do not match");
