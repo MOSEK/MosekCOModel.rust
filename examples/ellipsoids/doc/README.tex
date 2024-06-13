@@ -1,0 +1,225 @@
+\documentclass{article}
+
+\RequirePackage{mathtools}
+\RequirePackage{amsfonts}
+
+\begin{document}
+
+
+
+
+\section{Maximizing and minimizing ellipsoid volume}
+
+An ellipse given by
+\begin{eqnarray}
+    E_{A,b} &=& \{ Ax+b | \  || x ||^2 \leq 1\},\  A\in\mathcal{S}^n_+
+\end{eqnarray}
+has a volume that is proportional to
+\[
+    \det(A)
+\]
+This is not convex in $A$, but $\det(A)^{1/n}$ is, and the inequality
+\begin{eqnarray}
+    t\leq \det(A)^{1/n}
+\end{eqnarray}
+can be modelled by a semidefinite cone and a primal geometric mean cone.
+\begin{eqnarray}
+    t &\leq& 
+    \left[
+        \begin{array}{cc}
+            X & Z \\
+            Z^T & \mathrm{Diag}(Z)
+        \end{array}
+    \right]
+    \in\mathcal{S}^{2n}_+ \\
+    Z & \in & \mathrm{Tril}^n \\
+    t & \leq & \left( \prod^n_{i=1} Z_{ii}\right)^{1/n}
+\end{eqnarray}
+See Nemirovski and Ben-Tal, 4.2.1. Lemma on Schur complement. 
+
+Maximizing $t$ will now maximize the volume. Conversely, maximizing $t$ in 
+\begin{eqnarray}
+    t &\leq& \det(A^{-1})^{1/n}
+\end{eqnarray}
+will minimize the volume.
+
+Note that if we use the squared representation $A^2$, then
+\begin{eqnarray}
+    t &\leq& \det(A^{2})^{1/n} = \det(A)^{2/n}
+\end{eqnarray}
+to maximizing $t$ will still maximize the volume of $A$.
+
+
+\section{Contained and containing ellipses}
+
+See Nemirovski and Ben-Tal.
+
+Given an ellipse 
+\[
+  C = \{ x\in\mathbb{R}^n : ||A(x-b)||^2 \leq 1 \}
+\]
+and an ellipse
+\[
+  E = \{ Zx+w : ||x||_2 \leq 1 \}
+\]
+We will assume that $A,Z \in\mathcal{S}^n_+$ (symmetric, positive semidefinite matrix of dimension $n$).
+Now, 
+\begin{eqnarray}
+    E \subset C 
+    & \Leftrightarrow & ||x||_2^2 \leq 1 \Rightarrow || A((Zx+w)-b) ||_2^2 \leq 1 \\
+    & \Leftrightarrow & ||x||_2^2 < t^2 \Rightarrow ||A(Zx+t(w-b))||_2^2 \leq t^2 
+%   & \Leftrightarrow & ||x||_2^2 < t^2 \Rightarrow (Zx+t(w-b))^TA^TA(Zx+t(w-b)) \leq t^2 
+\end{eqnarray}
+By the $\mathcal{S}$-lemma:
+\begin{eqnarray}
+    & \Leftrightarrow & \exists\lambda\geq 0: \left( t^2 - || (Zx+t(w-b))^TA ||_2^2 -\lambda(t^2 - ||x||_2^2) \right) \geq 0 \\
+    &\Leftrightarrow & 
+    \left[
+        \begin{array}{cc}
+            1-\lambda-|| A(w-b) ||^2 & -(w-b)A^TAZ) \\
+            -Z^TY^TY(w-b)            & \lambda I_n - Z^TA^TAZ
+        \end{array}
+    \right] \in\mathcal{S}^{n+1}_+\\
+    &\Leftrightarrow & 
+    \left[
+        \begin{array}{cc}
+            1-\lambda & . \\
+            . & \lambda I_n 
+        \end{array}
+    \right]
+    -
+    \left[
+        \begin{array}{c}
+            (A(w-b))^T \\
+            (AZ)^T
+        \end{array}
+    \right]
+    \left[
+        \begin{array}{cc}
+            A(w-b) & AZ
+        \end{array}
+    \right]\in\mathcal{S}^{n+1}_+
+\end{eqnarray}
+By lemma on Schurs complement
+\begin{eqnarray}
+& \Leftrightarrow & 
+    P(\lambda) := \left[
+        \begin{array}{ccc}
+            I_n & A(w-b) & AZ \\
+            (A(w-b))^T & 1-\lambda & . \\
+            (AZ)^T & . & \lambda I_n
+        \end{array}
+    \right]\in\mathcal{S}^{2n+1}_+
+\end{eqnarray}
+Furthermore, since $A\in\mathcal{S}^n_+$
+\begin{eqnarray}
+S := \left[
+    \begin{array}{ccc}
+     A^{-1} \\
+     & 1 \\
+     && I_n
+    \end{array}
+\right]\in\mathcal{S}^{2n+1}_+
+\end{eqnarray}
+we have 
+\begin{eqnarray}
+    P(\lambda) \in \mathcal{S}^{2n+1}_+ 
+    & \Leftrightarrow &
+    S^T P(\lambda) S \in\mathcal{S}^{2n+1}_+ \\
+    & \Leftrightarrow &
+    \left[
+        \begin{array}{ccc}
+            A^{-2}  & w-b        & Z \\
+            (w-b)^T & 1-\lambda  & . \\
+            Z^T     & .          & \lambda I_n
+        \end{array}
+    \right]\in\mathcal{S}^{2n+1}_+
+\end{eqnarray}
+Since $A$ is semidefinite, we can everywhere replace $A$ by $A^{-1}$, so 
+\begin{eqnarray}
+C &=& \{ x\in\mathbb{R}^n : ||A^{-1}(x-b)||^2 \leq 1 \} \\
+  &=& \{ Au+b: ||u||^2\leq 1 \} 
+\end{eqnarray}
+and 
+\begin{eqnarray}
+E \subset C &\Leftrightarrow& 
+    \left[
+        \begin{array}{ccc}
+            A^2  & w-b           & Z \\
+            (w-b)^T & 1-\lambda  & . \\
+            Z^T     & .          & \lambda I_n
+        \end{array}
+    \right]\in\mathcal{S}^{2n+1}_+
+\end{eqnarray}
+
+
+
+%\subsection{Alternate form}
+%If we instead define the ellipsis as 
+%\[
+%  C = \{ x\in\mathbb{R}^n : ||Ax+b||^2 \leq 1 \}
+%\]
+%we get
+%\begin{eqnarray}
+%E \subset C &\Leftrightarrow& 
+%    \left[
+%        \begin{array}{ccc}
+%            \lambda Z-A^2      & \lambda w - Ab & 0       \\
+%            (\lambda w - Ab)^T & 1+\lambda      & -(Ab)^T \\
+%            0                  & -Ab            & A^2
+%        \end{array}
+%
+%
+%        \begin{array}{ccc}
+%            1+\lambda      & (\lambda w - Ab)^T & -(Ab)^T \\
+%            \lambda w - Ab & \lambda Z-A^2      & 0       \\
+%            -Ab            & 0                  & A^2
+%        \end{array}
+%    \right]\in\mathcal{S}^{2n+1}_+
+%\end{eqnarray}
+
+
+
+
+\section{$\mathcal{S}$-lemma}
+
+For $A,B\in\mathcal{S}^n$, 
+\begin{eqnarray}
+    x^tAx\geq 0 & \Leftrightarrow & x^tBx\geq 0
+\end{eqnarray}
+if and only if
+\begin{eqnarray}
+    &&\exists \lambda\geq 0: B-\lambda A \in \mathcal{S}^n_+ \\
+    &\Leftrightarrow & \exists \lambda\geq 0, \forall x : x^T Bx-\lambda x^TAx \geq 0
+\end{eqnarray}
+
+See Nemirovski and Ben-Tal for proof.
+
+Also, from Boyd and Vandenberghe, The S-procedure:
+
+For symmetric $A_1,A_2\in\mathcal{S}^n$, $b_1,b_2\in\mathbb{R}^n$, $c_1,c_2\in\mathbb{R}$, if
+\begin{eqnarray}
+    \exists \hat{x}: \hat{x}^TA_2\hat{x} + 2b_2^T\hat{x} + c_2 < 0
+\end{eqnarray}
+then 
+\begin{eqnarray}
+    x^T A_1x + 2b_1^Tx + c_1 < 0 &,&  x^T A_2x + 2b_2^Tx + c_2 < 0 \\
+    &\Updownarrow& \\
+    \not\exists \lambda\geq 0:
+\end{eqnarray}
+
+
+
+
+\section{Lemma on Schur complement}
+\begin{eqnarray}
+    A & = & \left[\begin{array}{cc} B & C^T \\ C & D\end{array}\right],\ B\in\mathcal{S}^k_+,\ D\in\mathbb{R}^{l\times l}
+\end{eqnarray}
+Then 
+\begin{eqnarray}
+    A\in\mathcal{S}^{k+l} & \Leftrightarrow & D-CB^{-1}C^T \mathcal{S}^{l}
+\end{eqnarray}
+
+See Nemirovski and Ben-Tal for proof.
+
+\end{document}

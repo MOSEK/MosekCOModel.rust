@@ -2,8 +2,8 @@ extern crate mosekmodel;
 extern crate cairo;
 mod whales;
 mod utils2d;
-mod matrix;
-mod ellipsoids;
+//mod matrix;
+//mod ellipsoids;
 
 use whales::{Ellipsoid,minimal_bounding_ellipsoid};
 use utils2d::{det,matscale,matmul,matadd,trace,inv};
@@ -36,23 +36,12 @@ fn ellipse_from_stheta(s : [f64;2], d : [f64;2], theta : f64) -> Ellipsoid<2> {
 fn main() -> Result<(),String> {
     let mut drawdata = DrawData {
         ellipses : vec![
-            //Ellipsoid::new(&[[1.09613, -0.236851], [-0.236851, 0.539075]], &[ 0.596594, 1.23438] ),
-            //Ellipsoid::new(&[[1.01769, -0.613843], [-0.613843, 2.52996 ]], &[-1.74633, -0.568805]),
-            //Ellipsoid::new(&[[1.26487,  0.319239], [ 0.319239, 1.28526 ]], &[-0.856775, 1.29365] ),
-            //Ellipsoid::new(&[[0.926849,-0.339339], [-0.339339, 1.19551 ]], &[ 0.452287, 0.575005]),
-            //Ellipsoid::new(&[[0.819939,-0.0866013],[-0.0866013,0.824379]], &[-0.985105,-1.6824]  ),
-            //Ellipsoid::new(&[[0.417981,-0.0699427],[-0.0699427,1.61654 ]], &[-1.73581,  0.118404]),
-
-            ellipse_from_stheta([10.0,1.0], [0.0,3.0], 0.0/*std::f64::consts::PI / 10.0*/),
-            ellipse_from_stheta([ 2.0,5.0], [0.0,0.0], 0.0/*std::f64::consts::PI / 10.0*/),
-            ellipse_from_stheta([ 1.0,4.0], [-4.0,-2.0], 6.0/*std::f64::consts::PI / 10.0*/),
-
-            //Ellipsoid::new(&[[1.2576, -0.3873], [-0.3873,0.3467]], &[ 0.2722,  0.1969], 0.1831),
-            //Ellipsoid::new(&[[1.4125, -2.1777], [-2.1777,6.7775]], &[-1.228,  -0.0521], 0.3295),
-            //Ellipsoid::new(&[[1.7018,  0.8141], [ 0.8141,1.7538]], &[-0.4049,  1.5713], 0.2077),
-            //Ellipsoid::new(&[[0.9742, -0.7202], [-0.7202,1.5444]], &[ 0.0265,  0.5623], 0.2362),
-            //Ellipsoid::new(&[[0.6798, -0.1424], [-0.1424,0.6871]], &[-0.4301, -1.0157], 0.3284),
-            //Ellipsoid::new(&[[0.1796, -0.1423], [-0.1423,2.6181]], &[-0.3286,  0.557 ], 0.4931) 
+            Ellipsoid::new(&[[2.3246108597249653, -0.5023002219069703],  [-0.5023002219069703, 1.143239126869145]], &[ 1.6262243355626635,   2.3572628105100137]),
+            Ellipsoid::new(&[[0.7493116238095875, -0.4519632176898713],  [-0.4519632176898713, 1.8627720007697564]],&[-0.7741774083306816,  -0.19900209213742667]),
+            Ellipsoid::new(&[[0.8582679328352112,  0.21661818880463501], [ 0.21661818880463501,0.8721042500171801]],&[-0.30881539733571506,  0.6395981801584628]),
+            Ellipsoid::new(&[[2.9440718650596165, -1.0778871720849044],  [-1.0778871720849044, 3.797461570034363]], &[ 2.2609091903635528,   5.387366401851428]),
+            Ellipsoid::new(&[[0.6104500401008942, -0.06447520306755025], [-0.06447520306755025,0.6137552998087111]],&[-0.36695528785675785, -0.7214779986292089]),
+            Ellipsoid::new(&[[1.1044036516422946, -0.18480500741119338], [-0.18480500741119338,4.271283557279645]], &[-5.123066175367,       2.1838724317503617]),
             ],
         bnd : Ellipsoid::new(&[[1.0,0.0],[0.0,1.0]],&[0.0, 0.0])
     };
@@ -127,9 +116,9 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
 
     let w : f64 = w.into();
     let h : f64 = h.into();
-    let s = w.min(h)/50.0;
+    let s = w.min(h) / 20.0;
     
-    context.translate(300.0,300.0);
+    context.translate(400.0,400.0);
     context.scale(s,s);
 
     context.set_source_rgb(1.0, 0.0, 0.0);
@@ -140,21 +129,8 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
         let w = [ -Z[0][0] * b[0] - Z[0][1] * b[1], 
                   -Z[1][0] * b[0] - Z[1][1] * b[1] ];
 
-        println!("A,b = ({:?},{:?}) -> ({:?},{:?})",A,b,Z,w);
-
         context_ellipsis(context,&Z,&w);
     }
-    //let old_mx = context.matrix();
-    //context.scale(s,s);
-    //context.translate(1.0,1.0);
-    //context.translate(-b[0],-b[1]);
-    //context.transform(cairo::Matrix::new(Ainv[0][0],Ainv[0][1],Ainv[1][0],Ainv[1][1],0.0,0.0));
-
-    //context.arc(-b[0],-b[1],1.0,0.0,std::f64::consts::PI*2.0);
-    //context.arc(0.0,0.0,1.0,0.0,std::f64::consts::PI*2.0);
-    //context.set_matrix(old_mx);
-    //_ = context.stroke();
-
     context.set_source_rgb(0.0, 0.0, 0.0);
 
     if true {
@@ -164,16 +140,7 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
             let w = [ -Z[0][0] * b[0] - Z[0][1] * b[1], 
                       -Z[1][0] * b[0] - Z[1][1] * b[1] ];
 
-            println!("A,b = ({:?},{:?}) -> ({:?},{:?})",A,b,Z,w);
             context_ellipsis(context,&Z,&w);
-            
-            //let old_mx = context.matrix();            
-            //context.transform(cairo::Matrix::new(Ainv[0][0],Ainv[0][1],Ainv[1][0],Ainv[1][1],0.0,0.0));
-            //context.scale(0.1,0.1);
-            ////context.arc((1.0-b[0])*s, (1.0-b[1])*s,s,0.0,std::f64::consts::PI*2.0);
-            //context.arc((2.0-b[0])*s, (2.0-b[1])*s,s,0.0,std::f64::consts::PI*2.0);
-            //context.set_matrix(old_mx);
-            //_ = context.stroke();
         }
     }
 }
