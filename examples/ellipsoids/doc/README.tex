@@ -155,29 +155,27 @@ E \subset C &\Leftrightarrow&
 
 
 
-%\subsection{Alternate form}
-%If we instead define the ellipsis as 
-%\[
-%  C = \{ x\in\mathbb{R}^n : ||Ax+b||^2 \leq 1 \}
-%\]
-%we get
-%\begin{eqnarray}
-%E \subset C &\Leftrightarrow& 
-%    \left[
-%        \begin{array}{ccc}
-%            \lambda Z-A^2      & \lambda w - Ab & 0       \\
-%            (\lambda w - Ab)^T & 1+\lambda      & -(Ab)^T \\
-%            0                  & -Ab            & A^2
-%        \end{array}
-%
-%
-%        \begin{array}{ccc}
-%            1+\lambda      & (\lambda w - Ab)^T & -(Ab)^T \\
-%            \lambda w - Ab & \lambda Z-A^2      & 0       \\
-%            -Ab            & 0                  & A^2
-%        \end{array}
-%    \right]\in\mathcal{S}^{2n+1}_+
-%\end{eqnarray}
+\subsection{Alternate form (Boyd and Vandenberghe)}
+If we instead define the ellipsoid as 
+\[
+    C(P,q) = \{ x\in\mathbb{R}^n : ||Px+q|| \leq 1 \}
+\]
+and the contained ellipsoid as 
+\[
+    \mathcal{E} (A,b,c) = \{ x : x^TAx + 2b^Tb + c \leq 0\}
+\]
+we get
+\begin{eqnarray}
+    && \mathcal{E} (Z,w) \subset C(A,b) \\
+    &\Leftrightarrow& 
+    \left[
+        \begin{array}{ccc}
+            \lambda A -P^2 & \lambda b-Pq& 0 \\
+            (\lambda b-Pq)^T & (1+\lambda c) & -(Ab)^T \\
+            0 & -Ab & A^2
+        \end{array}
+    \right]\in\mathcal{S}^{2n+1}_+
+\end{eqnarray}
 
 \subsection{Bound: Ellipsoid containing point}
 For an ellipsoid 

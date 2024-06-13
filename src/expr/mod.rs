@@ -468,7 +468,7 @@ pub fn const_diag(n : usize,value:f64) -> Expr<2> {
     }
 }
 pub fn eye(n : usize) -> Expr<2> {
-    const_diag(m,1.0)
+    const_diag(n,1.0)
 }
 
 pub fn constants<const N : usize>(shape : &[usize;N], values : &[f64]) -> Expr<N> {

@@ -1,8 +1,8 @@
 extern crate mosekmodel;
 extern crate itertools;
 
-use mosekmodel::{equal_to, expr, in_geometric_mean_cone, in_psd_cone, in_quadratic_cones, matrix, nonnegative, vstack, zero, ExprTrait, Model, Variable};
-use mosekmodel::matrix::{dense,speye};
+use mosekmodel::{equal_to, expr, in_geometric_mean_cone, in_psd_cone, in_quadratic_cones, matrix, nonnegative, vstack, zero, ExprTrait, Model, Variable,hstack};
+use mosekmodel::matrix::{dense,speye,Matrix};
 use itertools::izip;
 
 /// Structure defining an ellipsoid as
@@ -166,10 +166,10 @@ pub fn ellipsoid_contains_points<const N : usize>
     q : &Variable<1>,
     points : &[ [f64;N] ]) {
 
-    let mx = dense(points.len(), N, points.iter().flat_map(|p| p.iter()).collect());
+    let mx = dense(points.len(), N, points.iter().flat_map(|p| p.iter()).cloned().collect::<Vec<f64>>());
     let m = points.len();
     // 1 >=||P p_i + q||^2
-    _ = M.constraint(None, &hstack![ expr::ones(&[m,1]) , mx.mul(P.clone()).add( q.reshape(&[1,N]).repeat(0, m))], in_quadratic_cones(&[m,N+1], 1));
+    _ = M.constraint(None, &hstack![ expr::ones(&[m,1]) , P.clone().rev_mul(mx).add( q.clone().reshape(&[1,N]).repeat(0, m))], in_quadratic_cones(&[m,N+1], 1));
 }
 
 
@@ -189,7 +189,7 @@ pub fn ellipsoid_contained<const N : usize>
   
     let S = M.variable(None, in_psd_cone(2*N+1));
     let S11 = (&S).slice(&[0..N,0..N]);
-    let S21 = (&S).slice(&[N..N+1,0..N]).reshape(&[N]);
+    let S21 = (&S).slice(&[N..N+1,0..N]);
     let S22 = (&S).slice(&[N..N+1,N..N+1]).reshape(&[]);
     let S31 = (&S).slice(&[N+1..2*N+1,0..N]);
     let S32 = (&S).slice(&[N+1..2*N+1,N..N+1]).reshape(&[N]);
@@ -198,14 +198,14 @@ pub fn ellipsoid_contained<const N : usize>
 
     let (B,c) = e.get_Pq();
     let B = dense(N,N,B.iter().flat_map(|arow| arow.iter()).cloned().collect::<Vec<f64>>());
-    let c = dense(1,N,&c);
+    let c = dense(1,N,&c[..]);
     
     _ = M.constraint(None, &expr::eye(N).sub(S11),zero().with_shape(&[N,N]));
     _ = M.constraint(None, &w.clone().reshape(&[1,N]).mul(B.clone()).add(c).sub(S21),zero().with_shape(&[1,N]));
-    _ = M.constraint(None, &B.mul(Z.clone()).sub(S31), zero().with_shape(&[N,N]));
+    _ = M.constraint(None, &Z.clone().rev_mul(B).sub(S31), zero().with_shape(&[N,N]));
     _ = M.constraint(None, &lambda.clone().neg().add(1.0).sub(S22), zero());
-    _ = M.constraint(None, &S32, zero());
-    _ = M.constraint(None, &lambda.clone().mul(matrix::speye(N)).sub(S33),zero().with_shape(&[N,N]));
+    _ = M.constraint(None, &S32, zero().with_shape(&[N]));
+    _ = M.constraint(None, &lambda.clone().mul(&matrix::speye(N)).sub(S33),zero().with_shape(&[N,N]));
 }
 
 /// Create a semidefinite variable `X` such that
@@ -256,7 +256,7 @@ mod tests {
 
     #[test]
     fn test_contained() {
-        
+                
 
     }
 }

@@ -1,11 +1,13 @@
 extern crate mosekmodel;
+extern crate ellipsoids;
 extern crate cairo;
 mod whales;
 mod utils2d;
 //mod matrix;
 //mod ellipsoids;
 
-use whales::{Ellipsoid,minimal_bounding_ellipsoid};
+use ellipsoids::*;
+use whales::{minimal_bounding_ellipsoid,maximal_contained_ellipsoid};
 use utils2d::{det,matscale,matmul,matadd,trace,inv};
 
 use cairo::Context;
@@ -21,9 +23,9 @@ const APP_ID : &str = "com.mosek.whales";
 #[derive(Clone)]
 struct DrawData {
     ellipses : Vec<Ellipsoid<2>>,
-    bnd : Ellipsoid<2>,
+    outer : Ellipsoid<2>,
+    inner : Ellipsoid<2>,
 }
-
 
 fn ellipse_from_stheta(s : [f64;2], d : [f64;2], theta : f64) -> Ellipsoid<2> {
     let Rinv = [[  theta.cos()/s[0], - theta.sin()/s[1] ],
@@ -36,6 +38,11 @@ fn ellipse_from_stheta(s : [f64;2], d : [f64;2], theta : f64) -> Ellipsoid<2> {
 fn main() -> Result<(),String> {
     let mut drawdata = DrawData {
         ellipses : vec![
+
+            Ellipsoid::new(&[[0.21957739348193858, 0.12360679774997899], [0.12360679774997899,0.9804226065180615]],&[0.0, 0.0]),
+            Ellipsoid::new(&[[0.21957739348193858, -0.12360679774997899],[ -0.12360679774997899,0.9804226065180615]],&[0.5627615847138562, -1.2276362020180194]),
+
+
             //Ellipsoid::new(&[[2.3246108597249653, -0.5023002219069703],  [-0.5023002219069703, 1.143239126869145]], &[ 1.6262243355626635,   2.3572628105100137]),
             //Ellipsoid::new(&[[0.7493116238095875, -0.4519632176898713],  [-0.4519632176898713, 1.8627720007697564]],&[-0.7741774083306816,  -0.19900209213742667]),
             //Ellipsoid::new(&[[0.8582679328352112,  0.21661818880463501], [ 0.21661818880463501,0.8721042500171801]],&[-0.30881539733571506,  0.6395981801584628]),
@@ -43,7 +50,8 @@ fn main() -> Result<(),String> {
             //Ellipsoid::new(&[[0.6104500401008942, -0.06447520306755025], [-0.06447520306755025,0.6137552998087111]],&[-0.36695528785675785, -0.7214779986292089]),
             //Ellipsoid::new(&[[1.1044036516422946, -0.18480500741119338], [-0.18480500741119338,4.271283557279645]], &[-5.123066175367,       2.1838724317503617]),
             ],
-        bnd : Ellipsoid::new(&[[1.0,0.0],[0.0,1.0]],&[0.0, 0.0])
+        outer : Ellipsoid::new(&[[1.0,0.0],[0.0,1.0]],&[0.0, 0.0]),
+        inner : Ellipsoid::new(&[[1.0,0.0],[0.0,1.0]],&[0.0, 0.0]),
     };
 
     let (P,q) = minimal_bounding_ellipsoid(drawdata.ellipses.as_slice())?;
@@ -53,7 +61,17 @@ fn main() -> Result<(),String> {
     let A = matscale(&matadd(&P,&[[s,0.0],[0.0,s]]), 1.0/(trace(&P) + 2.0*s).sqrt());
     let b = matmul(&inv(&A),&q);
 
-    drawdata.bnd = Ellipsoid::new(&A,&b);
+    
+
+    // u = Zx+w, ||u||<1 
+    // Z^{-1}(u-w), ||u||<1
+    let (Z,w) = maximal_contained_ellipsoid(drawdata.ellipses.as_slice())?;
+    let Zinv = inv(&Z);
+    let winv = matmul(&Zinv,&w);
+    let winv = [ -winv[0], -winv[1]];
+        
+    drawdata.outer = Ellipsoid::new(&A,&b);
+    drawdata.inner  = Ellipsoid::new(&Zinv,&winv);
 
     let app = Application::builder()
         .application_id(APP_ID)
@@ -63,9 +81,6 @@ fn main() -> Result<(),String> {
     let _r = app.run_with_args::<&str>(&[]);
     Ok(())
 }
-
-
-
 
 
 
@@ -117,7 +132,17 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
 
     context.set_source_rgb(1.0, 0.0, 0.0);
     {
-        let (A,b) = data.bnd.get_Pq();        
+        let (A,b) = data.outer.get_Pq();        
+        //let Ainv = inv(&data.P);
+        let Z = inv(&A);
+        let w = [ -Z[0][0] * b[0] - Z[0][1] * b[1], 
+                  -Z[1][0] * b[0] - Z[1][1] * b[1] ];
+
+        context_ellipsis(context,&Z,&w);
+    }
+    context.set_source_rgb(0.0, 1.0, 0.0);
+    {
+        let (A,b) = data.inner.get_Pq();        
         //let Ainv = inv(&data.P);
         let Z = inv(&A);
         let w = [ -Z[0][0] * b[0] - Z[0][1] * b[1], 
