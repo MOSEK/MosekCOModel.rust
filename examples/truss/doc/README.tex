@@ -1,0 +1,47 @@
+\documentclass{article}
+
+\RequirePackage{mathtools}
+\RequirePackage{amsfonts}
+
+\begin{document}
+
+\section{Truss design problem definition}
+
+The problem data:
+\begin{itemize}
+\item Number of nodes: $n$
+\item $N = \{ 1\ldots n\}$, $N_f\subset N$ set of fixed nodes
+\item $L_i$ is the location of node $i$
+\item $D_{ij} = L_j-L_i$
+\item Arc (truss) $(i,j)$, $A\subseteq N\times N$ are the non-zero arcs
+\item $\kappa$ material constant (in theory this could probably be per arc)
+\end{itemize}
+
+Variational items:
+\begin{itemize}
+\item $d_i$ is the virtual displacement if node $i$ (caused by force acting on node $i$)
+\item $d_{ij}=<d_j-d_i,D_{ij}>/||D_{ij}||$ displacement of arc $(i,j)$ 
+\item $S_{ij}$ cross section of bar $(i,j)$
+\item $t_{ij}$ volume of bar $(i,j)$
+\item Tension related to bar $(i,j)$:
+\begin{eqnarray*}
+    \tau 
+    & = & \kappa \frac{d_{ij} S_{ij}}{||D_{ij}||} \\
+    & = & \kappa \frac{d_{ij} t_{ij}}{||D_{ij}||^2} \\
+    & = & \kappa t_{ij} \frac{<d_j-d_i; D_{ij}>}{||D_{ij}||^3}
+\end{eqnarray*}
+\item Reaction force at $j$ caused by $(i,j)$
+\begin{eqnarray*}
+    f_{ij}
+    & = & -tau_{ij} \frac{D_{ij}}{||D_{ij}||} \\
+    & = & \kappa t_{ij} \frac{<d_j-d_i; D_{ij}>}{||D_{ij}||^3}\cdot \frac{D_{ij}}{||D_{ij}||} 
+    & = & \kappa t_{ij} <d_j-d_i; \beta_{ij}>\beta_{ij} \\
+    \beta_{ij} & = & \sqrt{kappa}\frac{D_{ij}}{||D_{ij}||}
+\end{eqnarray*}
+
+\end{itemize}
+
+
+
+\end{document}
+
