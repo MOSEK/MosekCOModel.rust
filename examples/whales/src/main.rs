@@ -28,10 +28,20 @@ struct DrawData {
 }
 
 fn ellipse_from_stheta(s : [f64;2], d : [f64;2], theta : f64) -> Ellipsoid<2> {
-    let Rinv = [[  theta.cos()/s[0], - theta.sin()/s[1] ],
-                [  theta.sin()/s[0],   theta.cos()/s[1] ]];
-    Ellipsoid::new( &Rinv,
-                    &[ - (d[0]*Rinv[0][0]+d[1]*Rinv[0][1]), -(d[0]*Rinv[1][0]) + d[1]*Rinv[1][1]])
+    let scl = DMat2::from_cols_array(&[1.0/s[0], 0.0,  0.0, 1.0/s[1]]);
+    let rot = DMat2::from_cols_array(&[(theta/2.0).cos(), (theta/2.0).sin(), -(theta/2.0).sin(), (theta/2.0).cos() ]);
+    let d   = DVec2::from_array(d);
+
+    let mx = rot.mul_mat2(&scl).mul_mat2(&scl.transpose());
+    let dx = mx.mul_vec2(d);
+       
+    let mxdata = mx.to_cols_array();
+    let dxdata = dx.to_array();
+
+    let mut aa = [[0.0f64;2];2];
+    aa.iter_mut().flat_map(|r| r.iter_mut()).zip(mxdata.iter()).for_each(|(t,&s)| *t = s);
+
+    Ellipsoid::new( &aa, &dxdata)
 }
 
 #[allow(non_snake_case)]
@@ -39,7 +49,7 @@ fn main() -> Result<(),String> {
     let mut drawdata = DrawData {
         ellipses : vec![
 
-            Ellipsoid::new(&[[0.21957739348193858, 0.12360679774997899], [0.12360679774997899,0.9804226065180615]],&[0.0, 0.0]),
+            Ellipsoid::new(&[[0.21957739348193858, 0.12360679774997899], [ 0.12360679774997899,0.9804226065180615]],&[0.0, 0.0]),
             Ellipsoid::new(&[[0.21957739348193858, -0.12360679774997899],[ -0.12360679774997899,0.9804226065180615]],&[0.5627615847138562, -1.2276362020180194]),
 
 
