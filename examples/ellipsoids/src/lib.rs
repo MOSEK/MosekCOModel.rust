@@ -42,6 +42,12 @@ impl<const N : usize> Ellipsoid<N> {
     /// { x | ‖ Px+q ‖² ≤ 1 }
     /// ```
     pub fn new(P : &[[f64;N];N], q : &[f64;N]) -> Ellipsoid<N> { Ellipsoid{P : *P, q : *q } }
+    pub fn from_arrays(P : &[f64], q : &[f64]) -> Ellipsoid<N> {
+        let mut e = Ellipsoid{ P : [[0.0;N];N], q : [0.0;N] };
+        e.q.copy_from_slice(q);
+        e.P.iter_mut().flat_map(|row| row.iter_mut()).zip(P.iter()).for_each(|(t,&s)| *t = s);
+        e
+    }
     pub fn get_Pq(&self) -> ([ [ f64; N ]; N ],[f64;N]) { (self.P,self.q) }
 
     /// For alternative parameterization
@@ -113,7 +119,7 @@ impl<const N : usize> Ellipsoid<N> {
 /// - `M` Model
 /// - `P`,'q' Define the ellipsis `{ x : || Px+q || ≤ 1 }`. `P` must be `NxN`, and `q` must be `N`
 ///   long.
-/// - `e` The contained ellipsis.
+/// - `e` The contained ellipsoid.
 #[allow(non_snake_case)]
 pub fn ellipsoid_contains<const N : usize>
 (   M : & mut Model,

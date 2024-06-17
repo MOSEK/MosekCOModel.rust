@@ -5,6 +5,7 @@ extern crate mosekmodel;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, SystemTime};
+use ellipsoids::Ellipsoid;
 use glam::{DMat2,DVec2};
 use gtk::glib::ControlFlow;
 use gtk::prelude::*;
@@ -15,6 +16,7 @@ use gtk::{glib,Application, DrawingArea, ApplicationWindow};
 use mosekmodel::{unbounded, Model};
 
 const APP_ID : &str = "com.mosek.lowner-john";
+const SPEED_SCALE : f64 = 0.1;
 
 #[allow(non_snake_case)]
 #[derive(Clone)]
@@ -35,10 +37,11 @@ struct DrawData {
 
 pub fn main() -> glib::ExitCode {
     //let mut drawdata = Rc::new(RefCell::new(DrawData{
+    #[allow(non_snake_case)]
     let drawdata = DrawData{
-        radius : vec![[0.2,0.15],[0.3,0.2],[0.4,0.2]],
+        radius : vec![[0.2,0.15],[0.3,0.2],[0.4, 0.2]],
         center : vec![[0.2,0.2],[-0.2,0.1],[0.2,-0.2]],
-        speed  : vec![[0.1,0.3],[-0.3,0.5],[0.4,-0.1]],
+        speed  : vec![[0.1,0.3],[-0.3,0.5],[0.4,-0.3]],
 
         t0 : SystemTime::now(),
 
@@ -58,7 +61,7 @@ pub fn main() -> glib::ExitCode {
     r
 }
 
-
+#[allow(non_snake_case)]
 fn build_ui(app   : &Application,
             ddata : &DrawData)
 {    
@@ -94,21 +97,15 @@ fn build_ui(app   : &Application,
 
                 data.Abs = izip!(data.radius.iter(),data.center.iter(),data.speed.iter())
                     .map(|(&r,&c,&v)| {
-                        let theta_g = (2.0 * std::f64::consts::PI * v[0] * dt) % (2.0 * std::f64::consts::PI);
-                        let theta_l = (2.0 * std::f64::consts::PI * v[1] * dt) % (2.0 * std::f64::consts::PI);
+                        let theta_g = (2.0 * std::f64::consts::PI * v[0] * dt * SPEED_SCALE) % (2.0 * std::f64::consts::PI);
+                        let theta_l = (2.0 * std::f64::consts::PI * v[1] * dt * SPEED_SCALE) % (2.0 * std::f64::consts::PI);
 
-                        let rmxg = DMat2::from_cols_array( &[theta_g.cos(), theta_g.sin(), -theta_g.sin(), theta_g.cos()]);
-
-                        let rmxl = DMat2::from_cols_array( &[(theta_l/2.0).cos(), -(theta_l/2.0).sin(), (theta_l/2.0).sin(), (theta_l/2.0).cos()]);
-
-                        let A = rmxl.mul_mat2(&DMat2::from_cols_array(&[r[0],0.0,0.0,r[1]])).mul_mat2(&rmxl.transpose());
-                        let b = rmxg.mul_vec2(DVec2::from_array(c));
-
-                        println!("A = {:?}",A);
-
-                        assert!((A.col(0)[0] - A.col(1)[1]).abs() < 1.0e-10);
-
-                        (A.to_cols_array(),b.to_array())
+                        let (cost,sint) = ((theta_l/2.0).cos() , (theta_l/2.0).sin());
+                        let A = [ cost.powi(2)*r[0]+sint.powi(2)*r[1], cost*sint*(r[1]-r[0]),
+                                  cost*sint*(r[1]-r[0]), sint.powi(2) * r[0] + cost.powi(2) * r[1] ];                            
+                        let b = [ theta_g.cos()*c[0] - theta_g.sin()*c[1],
+                                  theta_g.sin()*c[0] + theta_g.cos()*c[1]];
+                        (A,b)
                     }).collect();
 
                       
@@ -122,12 +119,10 @@ fn build_ui(app   : &Application,
                    
                     for (A,b) in data.Abs.iter() {
                         let A = DMat2::from_cols_array(A).inverse();
-                        let b = A.mul_vec2(DVec2{ x : -b[0], y : -b[1]});
-                        let mut Adata = [[0.0;2];2]; 
-                        Adata.iter_mut().flat_map(|v| v.iter_mut()).zip(A.transpose().to_cols_array().iter())
-                            .for_each(|(t,&s)| *t = s);
+                        let b = A.mul_vec2(DVec2{x:b[0], y:b[1]}).to_array();
 
-                        let e = ellipsoids::Ellipsoid::new(&Adata, &b.to_array()); 
+                        let e : Ellipsoid<2> = ellipsoids::Ellipsoid::from_arrays(&A.to_cols_array(), &[-b[0],-b[1]]);
+
                         ellipsoids::ellipsoid_contains(&mut m,&p,&q,&e);
                     }
 
@@ -135,8 +130,16 @@ fn build_ui(app   : &Application,
   
                     if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&p),
                                                   m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
-                        data.Pc = Some(([psol[0],psol[1],psol[2],psol[3]],[qsol[0],qsol[1]]));
-                     }
+                        
+                        // A² = P => A = sqrt(P)
+                        // Ab = q => A\q
+                        let s = (psol[0]*psol[3]-psol[1]*psol[2]).sqrt();
+
+                        let A = DMat2::from_cols_array(&[psol[0],psol[1],psol[2],psol[3]]).add_mat2(&DMat2::from_cols_array(&[s,0.0,0.0,s])).mul_scalar(1.0/(psol[0]+psol[3] + 2.0*s).sqrt());
+                        let b = A.inverse().mul_vec2(DVec2::from_array([qsol[0],qsol[1]]));
+
+                        data.Pc = Some((A.to_cols_array(),b.to_array()));
+                    }
                 }
 
                 darea.queue_draw();
@@ -147,8 +150,16 @@ fn build_ui(app   : &Application,
     window.present();
 }
 
+mod mx {
+    #[allow(non_snake_case)]
+    pub fn det(A : &[f64;4])  -> f64 { A[0]*A[3] - A[1]*A[2] }
+    #[allow(non_snake_case)]
+    pub fn matscale(A : &[f64;4], c : f64) -> [f64;4] { [c*A[0], c*A[0], c*A[2], c*A[3]] }
+
+}
 
 
+#[allow(non_snake_case)]
 fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, data : &DrawData) {
     context.set_source_rgb(1.0, 1.0, 1.0);
     _ = context.paint();
@@ -160,10 +171,11 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
     context.translate(s/2.0, s/2.0);
     context.scale(0.8*s, 0.8*s);
-    context.set_source_rgb(0.0, 0.0, 0.0);
+    let mx = context.matrix();
 
+
+    context.set_source_rgb(0.0, 0.0, 0.0);
     for (A,b) in data.Abs.iter() {
-        let mx = context.matrix();
         context.transform(cairo::Matrix::new(A[0],A[1],A[2],A[3],b[0],b[1]));
         context.arc(0.0,0.0,1.0,0.0,std::f64::consts::PI*2.0);
         context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
@@ -171,20 +183,16 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
         context.set_matrix(mx);
     }
 
-
     if let Some((p,q)) = data.Pc {
         context.set_source_rgb(1.0, 0.0, 0.0);
-        let mx = context.matrix();
-        let a = DMat2::from_cols_array(&p).transpose().inverse();
-        let b = a.mul_vec2(q.into());
-   
-        let adata = a.to_cols_array();
-        //context.transform(cairo::Matrix::new(adata[0], adata[1], adata[2], adata[3], b.x,b.y));
-        context.transform(cairo::Matrix::new(adata[0], adata[1], adata[2], adata[3], -b.x,-b.y));
-   
+
+        let Z = DMat2::from_cols_array(&p).inverse().to_cols_array();
+        let w = [ -Z[0] * q[0] - Z[2] * q[1],
+                  -Z[1] * q[0] - Z[3] * q[1]];
+
+        context.transform(cairo::Matrix::new(Z[0], Z[1], Z[2], Z[3],w[0],w[1]));
         context.arc(0.0, 0.0, 1.0, 0.0, std::f64::consts::PI*2.0);
-   
-        context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
+        context.set_matrix(cairo::Matrix::new(2.0,0.0,0.0,2.0,0.0,0.0));
         _ = context.stroke();
    
         context.set_matrix(mx);
