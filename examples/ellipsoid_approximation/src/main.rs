@@ -31,6 +31,7 @@ struct DrawData {
     Abs : Vec<([f64;4],[f64;2])>,
     // Bounding ellipsoid as { x : || Px+q || < 1 } 
     Pc : Option<([f64;4],[f64;2])>,
+    Qd : Option<([f64;4],[f64;2])>,
 }
 
 
@@ -47,6 +48,7 @@ pub fn main() -> glib::ExitCode {
 
         Abs : vec![],
         Pc : None,
+        Qd : None,
     };
 
     let app = Application::builder()
@@ -110,6 +112,7 @@ fn build_ui(app   : &Application,
 
                       
                 {
+                    // outer ellipsoid
                     let mut m = Model::new(None);
                     let t = m.variable(None, unbounded());
                     let p = ellipsoids::det_rootn(None, & mut m, t.clone(), 2);
@@ -140,6 +143,43 @@ fn build_ui(app   : &Application,
 
                         data.Pc = Some((A.to_cols_array(),b.to_array()));
                     }
+                    else {
+                        data.Pc = None;
+                    }
+                }
+
+
+                {
+                    // inner ellipsoid
+                    let mut m = Model::new(None);
+
+                    let t = m.variable(None, unbounded());
+                    let p = ellipsoids::det_rootn(None, & mut m, t.clone(), 2);
+                    let q = m.variable(None, unbounded().with_shape(&[2]));
+
+                    m.objective(None, mosekmodel::Sense::Maximize, &t);
+
+                    for (A,b) in data.Abs.iter() {
+                        let A = DMat2::from_cols_array(A).inverse();
+                        let b = A.mul_vec2(DVec2{x:b[0], y:b[1]}).to_array();
+
+                        let e : Ellipsoid<2> = ellipsoids::Ellipsoid::from_arrays(&A.to_cols_array(), &[-b[0],-b[1]]);
+
+                        ellipsoids::ellipsoid_contained(&mut m,&p,&q,&e);
+                    }
+
+                    m.solve();
+
+                    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&p),
+                                                  m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
+                        let A = DMat2::from_cols_array(&[psol[0],psol[1],psol[2],psol[3]]).inverse();
+                        let b = A.mul_vec2(DVec2::from_array([qsol[0],qsol[1]])).to_array();
+
+                        data.Qd = Some((A.to_cols_array(),[-b[0],-b[1]]));
+                    }
+                    else {
+                        data.Qd = None;
+                    }
                 }
 
                 darea.queue_draw();
@@ -149,15 +189,6 @@ fn build_ui(app   : &Application,
 
     window.present();
 }
-
-mod mx {
-    #[allow(non_snake_case)]
-    pub fn det(A : &[f64;4])  -> f64 { A[0]*A[3] - A[1]*A[2] }
-    #[allow(non_snake_case)]
-    pub fn matscale(A : &[f64;4], c : f64) -> [f64;4] { [c*A[0], c*A[0], c*A[2], c*A[3]] }
-
-}
-
 
 #[allow(non_snake_case)]
 fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, data : &DrawData) {
@@ -185,6 +216,21 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
 
     if let Some((p,q)) = data.Pc {
         context.set_source_rgb(1.0, 0.0, 0.0);
+
+        let Z = DMat2::from_cols_array(&p).inverse().to_cols_array();
+        let w = [ -Z[0] * q[0] - Z[2] * q[1],
+                  -Z[1] * q[0] - Z[3] * q[1]];
+
+        context.transform(cairo::Matrix::new(Z[0], Z[1], Z[2], Z[3],w[0],w[1]));
+        context.arc(0.0, 0.0, 1.0, 0.0, std::f64::consts::PI*2.0);
+        context.set_matrix(cairo::Matrix::new(2.0,0.0,0.0,2.0,0.0,0.0));
+        _ = context.stroke();
+   
+        context.set_matrix(mx);
+    }
+
+    if let Some((p,q)) = data.Qd {
+        context.set_source_rgb(0.0, 1.0, 0.0);
 
         let Z = DMat2::from_cols_array(&p).inverse().to_cols_array();
         let w = [ -Z[0] * q[0] - Z[2] * q[1],
