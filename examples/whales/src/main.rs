@@ -11,62 +11,46 @@ use whales::{minimal_bounding_ellipsoid,maximal_contained_ellipsoid};
 use utils2d::{det,matscale,matmul,matadd,trace,inv};
 
 use cairo::Context;
-//use cairo::glib::ControlFlow;
-use gtk::{Application, DrawingArea, ApplicationWindow};
+use cairo::glib::ControlFlow;
+use gtk::{glib,Application, DrawingArea, ApplicationWindow, GestureClick,Orientation};
 use gtk::prelude::*;
 use glam::{DMat2,DVec2};
+//use rand::random;
 
 const APP_ID : &str = "com.mosek.whales";
 
 #[allow(non_snake_case)]
 #[derive(Clone)]
 struct DrawData {
-    ellipses : Vec<(DMat2,DVec2)>,
-    ellipses_rot : Vec<(f64,f64)>,
-
-    outer : Option<Ellipsoid<2>>,
-    inner : Option<Ellipsoid<2>>,
-
-    t0 : std::time::SystemTime
+    ellipses : Vec<Ellipsoid<2>>,
+    outer : Ellipsoid<2>,
+    inner : Ellipsoid<2>,
 }
 
-/// Create ellipsoid from scale `s`, offset `d` and rotation `theta`.
-fn inv_ellipse_from_stheta(s : [f64;2], d : [f64;2], theta : f64) -> (DMat2,DVec2) {
+fn ellipse_from_stheta(s : [f64;2], d : [f64;2], theta : f64) -> Ellipsoid<2> {
     let scl = DMat2::from_cols_array(&[1.0/s[0], 0.0,  0.0, 1.0/s[1]]);
     let rot = DMat2::from_cols_array(&[(theta/2.0).cos(), (theta/2.0).sin(), -(theta/2.0).sin(), (theta/2.0).cos() ]);
     let d   = DVec2::from_array(d);
 
     let mx = rot.mul_mat2(&scl).mul_mat2(&scl.transpose());
     let dx = mx.mul_vec2(d);
+       
+    let mxdata = mx.to_cols_array();
+    let dxdata = dx.to_array();
 
-    (mx,dx)
+    let mut aa = [[0.0f64;2];2];
+    aa.iter_mut().flat_map(|r| r.iter_mut()).zip(mxdata.iter()).for_each(|(t,&s)| *t = s);
+
+    Ellipsoid::new( &aa, &dxdata)
 }
-
-// Create an ellipse as `{ Ax+d : ||x|| < 1 }`, where A is symmetric scale-and-rotate matrix and
-// `d` is the offset.
-fn ellipse_from_stheta(s : &[f64;2], d : &[f64;2], theta : f64) -> (DMat2,DVec2) {
-    let scl = DMat2::from_cols_array(&[s[0], 0.0,  0.0, s[1]]);
-    let rot = DMat2::from_cols_array(&[(theta/2.0).cos(), -(theta/2.0).sin(), 
-                                       (theta/2.0).sin(), (theta/2.0).cos() ]);
-    let d   = DVec2::from_array(d);
-
-    let mx = rot.mul_mat2(&scl).mul_mat2(&scl.transpose());
-    let dx = mx.mul_vec2(d);
-
-    (mx,dx)
-}
-
 
 #[allow(non_snake_case)]
 fn main() -> Result<(),String> {
     let mut drawdata = DrawData {
         ellipses : vec![
-            ellipse_from_stheta(&[5.0,1.0], &[0.0,0.0], std::f64::consts::PI/10.0),
-            ellipse_from_stheta(&[3.0,2.0], &[2.0,-1.0], -std::f64::consts::PI/8.0),
 
-
-            //Ellipsoid::new(&[[0.21957739348193858, 0.12360679774997899], [ 0.12360679774997899,0.9804226065180615]],&[0.0, 0.0]),
-            //Ellipsoid::new(&[[0.21957739348193858, -0.12360679774997899],[ -0.12360679774997899,0.9804226065180615]],&[0.5627615847138562, -1.2276362020180194]),
+            Ellipsoid::new(&[[0.21957739348193858, 0.12360679774997899], [ 0.12360679774997899,0.9804226065180615]],&[0.0, 0.0]),
+            Ellipsoid::new(&[[0.21957739348193858, -0.12360679774997899],[ -0.12360679774997899,0.9804226065180615]],&[0.5627615847138562, -1.2276362020180194]),
 
 
             //Ellipsoid::new(&[[2.3246108597249653, -0.5023002219069703],  [-0.5023002219069703, 1.143239126869145]], &[ 1.6262243355626635,   2.3572628105100137]),
@@ -76,28 +60,9 @@ fn main() -> Result<(),String> {
             //Ellipsoid::new(&[[0.6104500401008942, -0.06447520306755025], [-0.06447520306755025,0.6137552998087111]],&[-0.36695528785675785, -0.7214779986292089]),
             //Ellipsoid::new(&[[1.1044036516422946, -0.18480500741119338], [-0.18480500741119338,4.271283557279645]], &[-5.123066175367,       2.1838724317503617]),
             ],
-        ellipses_rot : vec![
-            (std::f64::consts::PI/20.0, std::f64::consts::PI/5.0),
-            (std::f64::consts::PI/13.0, std::f64::consts::PI/7.0),
-        ],
-        outer : None,
-        inner : None,
-
-        t0 : std::time::SystemTime::now()
+        outer : Ellipsoid::new(&[[1.0,0.0],[0.0,1.0]],&[0.0, 0.0]),
+        inner : Ellipsoid::new(&[[1.0,0.0],[0.0,1.0]],&[0.0, 0.0]),
     };
-
-    
-
-    let dt = std::time::SystemTime::now().duration_since(drawdata.t0).unwrap().as_millis();
-
-    let es = drawdata.ellipses.iter().zip(drawdata.ellipses_rot.iter())
-        .map(|((mx,d),(rotg,rotl))| {
-            let rotgmx = DMat2::from_cols_array(&[ cos(rotg) ]);
-            let res_mx = ;
-            let res_d  = rotl * d; 
-        })
-
-
 
     let (P,q) = minimal_bounding_ellipsoid(drawdata.ellipses.as_slice())?;
     // A² = P => A = sqrt(P)
@@ -115,8 +80,8 @@ fn main() -> Result<(),String> {
     let winv = matmul(&Zinv,&w);
     let winv = [ -winv[0], -winv[1]];
         
-    drawdata.outer = Some(Ellipsoid::new(&A,&b));
-    drawdata.inner = Some(Ellipsoid::new(&Zinv,&winv));
+    drawdata.outer = Ellipsoid::new(&A,&b);
+    drawdata.inner  = Ellipsoid::new(&Zinv,&winv);
 
     let app = Application::builder()
         .application_id(APP_ID)
@@ -176,8 +141,8 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     context.scale(s,s);
 
     context.set_source_rgb(1.0, 0.0, 0.0);
-    if let Some(ref e) = data.outer {
-        let (A,b) = e.get_Pq();        
+    {
+        let (A,b) = data.outer.get_Pq();        
         //let Ainv = inv(&data.P);
         let Z = inv(&A);
         let w = [ -Z[0][0] * b[0] - Z[0][1] * b[1], 
@@ -186,8 +151,8 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
         context_ellipsis(context,&Z,&w);
     }
     context.set_source_rgb(0.0, 1.0, 0.0);
-    if let Some(ref e) = data.inner {
-        let (A,b) = e.get_Pq();        
+    {
+        let (A,b) = data.inner.get_Pq();        
         //let Ainv = inv(&data.P);
         let Z = inv(&A);
         let w = [ -Z[0][0] * b[0] - Z[0][1] * b[1], 
