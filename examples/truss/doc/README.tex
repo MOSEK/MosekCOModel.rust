@@ -7,40 +7,44 @@
 
 \section{Truss design problem definition}
 
-The problem data:
+The linear truss problem as defined by Nemirovski and Ben-Tal,
+Lectures on Modern Convex Optimization, Problem 3.4.1). A truss consists of a
+set of nodes (with geometric positions), a subset of which are fixed, a set of bars (arcs) that connect
+the nodes and an external load applied to a subset of nodes. The problem is
+then to assign sizes to arcs to minimize "compliancy", basically stress on the
+structure.
+
+We have the following parameters for the problem
 \begin{itemize}
-\item Number of nodes: $n$
-\item $N = \{ 1\ldots n\}$, $N_f\subset N$ set of fixed nodes
-\item $L_i$ is the location of node $i$
-\item $D_{ij} = L_j-L_i$
-\item Arc (truss) $(i,j)$, $A\subseteq N\times N$ are the non-zero arcs
-\item $\kappa$ material constant (in theory this could probably be per arc)
+\item $N$ set of nodes, with $p_i$ being the position of node $i\in N$, with $N_f\subset N$ being the set of fixed nodes.
+\item $A\subseteq N\times N$. We are using the convention that if $(i,j)\in A$
+    then $(j,i)\not\in A$ (i.e only one bar per two nodes). 
+\item $w$ is the total available volume available of material for bars.
+\item $\kappa$ matreial constant
+\item $b_{ij}\in\mathbb{R}^{|N|}$ for $(i,j)\in A$ is a value that is computed from $\kappa$, $p_i$ and $p_j$. $b_{ij}$ is defined as 
+    \[
+        b_{ijk} = \left\{ 
+            \begin{array}{l}
+                \beta_{ij} \mathrm{ if } j = k\hat j\not\in N_f \\
+                -\beta_{ij} \mathrm{ if } i = k\hat j\not\in N_f \\
+                0 \mathrm{ otherwise}
+            \end{array}
+        \right.
+    \]
 \end{itemize}
-
-Variational items:
-\begin{itemize}
-\item $d_i$ is the virtual displacement if node $i$ (caused by force acting on node $i$)
-\item $d_{ij}=<d_j-d_i,D_{ij}>/||D_{ij}||$ displacement of arc $(i,j)$ 
-\item $S_{ij}$ cross section of bar $(i,j)$
-\item $t_{ij}$ volume of bar $(i,j)$
-\item Tension related to bar $(i,j)$:
-\begin{eqnarray*}
-    \tau 
-    & = & \kappa \frac{d_{ij} S_{ij}}{||D_{ij}||} \\
-    & = & \kappa \frac{d_{ij} t_{ij}}{||D_{ij}||^2} \\
-    & = & \kappa t_{ij} \frac{<d_j-d_i; D_{ij}>}{||D_{ij}||^3}
-\end{eqnarray*}
-\item Reaction force at $j$ caused by $(i,j)$
-\begin{eqnarray*}
-    f_{ij}
-    & = & -tau_{ij} \frac{D_{ij}}{||D_{ij}||} \\
-    & = & \kappa t_{ij} \frac{<d_j-d_i; D_{ij}>}{||D_{ij}||^3}\cdot \frac{D_{ij}}{||D_{ij}||} 
-    & = & \kappa t_{ij} <d_j-d_i; \beta_{ij}>\beta_{ij} \\
-    \beta_{ij} & = & \sqrt{kappa}\frac{D_{ij}}{||D_{ij}||}
-\end{eqnarray*}
-
-\end{itemize}
-
+Then we define the problem as 
+\begin{eqnarray}
+    \mathrm{minimize} &&  \tau \\
+    \mathrm{such that} 
+    && (t_a,\sigma_a,s_a)\in\mathcal{Q}^3_r,\ a\in A\\
+    && \tau \geq \sum_{a\in A} \sigma_a \\
+    && \sum_{a\in A} t_a \leq w \\
+    && \sum_{a\in A} s_a b_a = f \\
+    && t\in\mathbb{R}^{|A|}\\
+    && \sigma\in\mathbb{R}^{|A|} \\
+    && \tau\in\mathbb{R}\\
+    && s\in\mathbb{R}^{|A|} 
+\end{eqnarray}
 
 
 \end{document}
