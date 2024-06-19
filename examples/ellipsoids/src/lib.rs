@@ -112,13 +112,16 @@ impl<const N : usize> Ellipsoid<N> {
 
 /// Adds a constraint to the effect that 
 /// ```math
-/// e ⊂ { x: || Px+q || ≤ 1 }
+/// e ⊂ { x: || Qx+q || ≤ 1 }
 /// ```
+///
+/// The result
 ///
 /// # Arguments
 /// - `M` Model
-/// - `P`,'q' Define the ellipsis `{ x : || Px+q || ≤ 1 }`. `P` must be `NxN`, and `q` must be `N`
-///   long.
+/// - `P`,'q' Define the ellipsis `{ x : || Qx+q || ≤ 1 }` with `P=Q*Q`. `P` must be `NxN`, and `q`
+///   must be `N` long. This means that `P` in the optimal solution is the square of the ellipsoid
+///   matrix `Q`.
 /// - `e` The contained ellipsoid.
 #[allow(non_snake_case)]
 pub fn ellipsoid_contains<const N : usize>
