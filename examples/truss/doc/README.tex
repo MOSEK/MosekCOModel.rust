@@ -23,7 +23,7 @@ We have the following parameters for the problem
     then $(j,i)\not\in A$ (i.e only one bar per two nodes). 
 \item $w$ is the total available volume available of material for bars.
 \item $\kappa\in\mathbb{R}$ material constant defining elasticity
-\item $f\in\mathbb{R}^{|N|\times\mathrm{d}}$ is the vector of external forces on each node.
+\item $F$ is set of forces, $f\in F: f\in\mathbb{R}^{|N|\times\mathrm{d}}$ is the vector of external forces on each node.
 \item $b_{ij}\in\mathbb{R}^{|N|\times\mathrm{d}}$ for $(i,j)\in A$ is a value that is computed from $\kappa$, $p_i$ and $p_j$. $b_{ij}$ is defined as 
     \[
         b_{(ij),k} = \left\{ 
@@ -41,19 +41,24 @@ We have the following parameters for the problem
 \end{itemize}
 
 Then we define the problem as 
+
 \begin{eqnarray}
     \mathrm{minimize} &&  \tau \\
-    \mathrm{such\ that} 
-    && (t_a,\sigma_a,s_a)\in\mathcal{Q}^3_r,\ a\in A\\
-    && \tau \geq \sum_{a\in A} \sigma_a \\
-    && \sum_{a\in A} t_a \leq w \\
-    && \sum_{a\in A} s_a b_a = f \\
-    && t\in\mathbb{R}^{|A|}\\
-    && \sigma\in\mathbb{R}^{|A|} \\
+    \mathrm{such\ that} \\
+    && \left[
+        \begin{array}{l}
+            (t_a,\sigma_a,s_a)\in\mathcal{Q}^3_r,\ a\in A\\
+            \displaystyle \tau \geq \sum_{a\in A} \sigma_a \\
+            \displaystyle \sum_{a\in A} t_a \leq w \\
+            \displaystyle \sum_{a\in A} s_a b_a = f \\
+            t\in\mathbb{R}^{|A|}\\
+            \sigma\in\mathbb{R}^{|A|} \\
+            s\in\mathbb{R}^{|A|} 
+        \end{array}
+    \right]_{f\in F} \\
     && \tau\in\mathbb{R}\\
-    && s\in\mathbb{R}^{|A|} 
 \end{eqnarray}
-
+The block is repeated for each force vector in $F$.
 
 \end{document}
 

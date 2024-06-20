@@ -14,7 +14,7 @@ use itertools::izip;
 
 use cairo::Context;
 use gtk::{glib,Application, DrawingArea, ApplicationWindow};
-use mosekmodel::expr::*;
+use mosekmodel::{expr::*, nonpositive};
 use mosekmodel::matrix::SparseMatrix;
 use mosekmodel::{hstack, in_rotated_quadratic_cones, unbounded, nonnegative,equal_to,zero, Model, Sense, SolutionType};
 
@@ -122,7 +122,7 @@ pub fn main() {
     // (3)
     m.constraint(Some("sum_sigma"),
                  &tau.clone().sub(sigma.clone().sum()),
-                 zero());
+                 nonnegative());
         
     // (4) 
     m.constraint(Some("total_volume"),
