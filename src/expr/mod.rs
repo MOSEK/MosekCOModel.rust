@@ -6,7 +6,6 @@ mod dot;
 mod mul;
 mod add;
 
-
 use std::ops::Range;
 
 use itertools::izip;
@@ -309,6 +308,13 @@ pub trait ExprTrait<const N : usize> {
     /// # Arguments
     /// - `with_diag` Indicating if the diagonal is included in the triangular non-zeros.
     fn triuvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
+
+
+    /// Take the diagonal elements if a square matrix and return it as a new vector expression.
+    fn diag(self) -> ExprDiag<Self> where Self:Sized+ExprTrait<2> { ExprDiag{ item : self, anti : false, index : 0 } }
+
+    /// Create a sparse square matrix with the vector expression elements as diagonal.
+    fn square_diag(self) -> ExprSquareDiag<Self> where Self:Sized+ExprTrait<1> { ExprSquareDiag{ item : self }}
 }
 
 ////////////////////////////////////////////////////////////
@@ -1095,7 +1101,7 @@ impl<T:ExprTrait<2>> ExprTrait<2> for ExprTriangularPart<T> {
     }
 }
 
-struct ExprDiag<E:ExprTrait<2>> {
+pub struct ExprDiag<E:ExprTrait<2>> {
     item : E,
     anti : bool,
     index : i64
@@ -1106,104 +1112,83 @@ impl<E:ExprTrait<2>> ExprTrait<1> for ExprDiag<E> {
         self.item.eval(ws,rs,xs);
 
         eval::diag(self.anti, self.index, rs, ws, xs);
-
-//        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-//
-//        let nd = shape.len();
-//
-//        if nd != 2 || shape[0] != shape[1] {
-//            panic!("Diagonals can only be taken from square matrixes");
-//        }
-//        let d = shape[0];
-//        if self.index.unsigned_abs() as usize >= d {
-//            panic!("Diagonal index out of bounds");
-//        }
-//
-//        let absidx = self.index.unsigned_abs() as usize;
-//        if let Some(sp) = sp {
-//            let (first,num) = match (self.anti,self.index >= 0) {
-//                (false,true)  => (self.index as usize,       d - absidx),
-//                (false,false) => (d*(-self.index) as usize,  d - absidx),
-//                (true,true)   => (d-self.index as usize,     d - absidx),
-//                (true,false)  => (d*(-self.index) as usize-1,d - absidx)
-//            };
-//            let last = num*d;
-//            // Count elements and nonzeros
-//            let (rnnz,rnelm) = izip!(sp.iter(),
-//                                   ptr.iter(),
-//                                   ptr[1..].iter())
-//                .filter(|(&i,_,_)| (i < last && 
-//                                    (((!self.anti) && self.index >= 0 && i%d == i/d + absidx) ||
-//                                     ((!self.anti) && self.index <  0 && i%d - absidx == i/d) || 
-//                                     ( self.anti && self.index >= 0 && d-i%d - absidx == i/d) || 
-//                                     ( self.anti && self.index <  0 && d-i%d + absidx == i/d))))
-//                .fold((0,0),|(nzi,elmi),(_,&p0,&p1)| (nzi+p1-p0,elmi+1));
-//
-//            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[d],rnnz,rnelm);
-//
-//            let mut nzi = 0;
-//            rptr[0] = 0;
-//            if let Some(rsp) = rsp {
-//                izip!(sp.iter(),ptr.iter(),ptr[1..].iter())
-//                    .filter(|(&i,_,_)| (i < last && 
-//                                        ((!self.anti && self.index >= 0 && i%d == i/d + absidx) ||
-//                                         (!self.anti && self.index <  0 && i%d - absidx == i/d) || 
-//                                         ( self.anti && self.index >= 0 && d-i%d - absidx == i/d) || 
-//                                         ( self.anti && self.index <  0 && d-i%d + absidx == i/d))))
-//                    .zip(rptr[1..].iter_mut().zip(rsp.iter_mut()))
-//                    .for_each(|((&i,&p0,&p1),(rp,ri))| {
-//                        *rp = p1-p0;
-//                        *ri = (i-first)/d;
-//                        rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
-//                        rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
-//                        nzi += p1-p0;
-//                    })
-//            }
-//            else {
-//                izip!(sp.iter(),ptr.iter(),ptr[1..].iter())
-//                    .filter(|(&i,_,_)| (i < last && 
-//                                        ((!self.anti && self.index >= 0 && i%d == i/d + absidx) ||
-//                                         (!self.anti && self.index <  0 && i%d - absidx == i/d) || 
-//                                         ( self.anti && self.index >= 0 && d-i%d - absidx == i/d) || 
-//                                         ( self.anti && self.index <  0 && d-i%d + absidx == i/d))))
-//                    .zip(rptr[1..].iter_mut())
-//                    .for_each(|((_,&p0,&p1),rp)| {
-//                        *rp = p1-p0;
-//                        rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
-//                        rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
-//                        nzi += p1-p0;
-//                    })
-//            }   
-//        } 
-//        else {
-//            let (first,num,step) = match (self.anti,self.index >= 0) {
-//                (false,true)  => (absidx,    d-absidx, d+1),
-//                (false,false) => (d*absidx,  d-absidx, d+1),
-//                (true,true)   => (d-absidx,  d-absidx, d-1),
-//                (true,false)  => (d*absidx-1,d-absidx, d-1)
-//            };
-//            
-//            let rnnz = izip!(0..num,
-//                             ptr[first..].iter().step_by(step),
-//                             ptr[first+1..].iter().step_by(step))
-//                           .map(|(_,&p0,&p1)| p1-p0).sum();
-//            let rnelm = num;
-//            let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[num],rnnz,rnelm);
-//            rptr[0] = 0;
-//            let mut nzi = 0;
-//            izip!(rptr[1..].iter_mut(),
-//                 ptr[first..].iter().step_by(step),
-//                 ptr[first+1..].iter().step_by(step))
-//                .for_each(|(rp,&p0,&p1)| {
-//                    rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
-//                    rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
-//                    *rp = p1-p0;
-//                    nzi += p1-p0;
-//                });
-//            let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p } );
-//        }
     }
 }
+
+pub struct ExprSquareDiag<E : ExprTrait<1>> {
+    item : E
+}
+
+impl<E:ExprTrait<1>> ExprTrait<2> for ExprSquareDiag<E> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+        self.item.eval(ws,rs,xs);
+
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+        if shape.len() != 1 { panic!("Operand has invalid shape"); }
+        let n = shape.len();
+
+        let rshape = [n,n];
+        let rnnz =
+            if let Some(sp) = sp {
+                izip!(ptr.iter(),
+                      ptr[1..].iter(),
+                      sp.iter())
+                    .fold(0,|nnz,(&pb,&pe,&i)| if i / n == i % n { nnz + pe-pb } else { nnz } )
+            }
+            else {
+                ptr.iter().step_by(n+1).zip(ptr[1..].iter().step_by(n+1)).map(|(&pb,&pe)| pe - pb).sum()
+            };
+
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, n);
+        
+        if let Some(sp) = sp {
+            rptr.iter_mut().for_each(|p| *p = 0);
+
+            izip!(ptr.iter(),
+                  ptr[1..].iter(),
+                  sp.iter())
+                .filter(|(_,_,&i)| i / n == i % n)
+                .for_each(|(&pb,&pe,&i)| rptr[i+1] = pe-pb );
+            rptr.iter_mut().fold(0,|p,rp| { *rp += p; *rp } );
+
+            izip!(ptr.iter(),
+                  ptr[1..].iter(),
+                  sp.iter())
+                .filter(|(_,_,&i)| i / n == i % n)
+                .flat_map(|(&pb,&pe,_)| subj[pb..pe].iter())
+                .zip(rsubj.iter_mut())
+                .for_each(|(&sj,tj)| *tj = sj);
+
+            izip!(ptr.iter(),
+                  ptr[1..].iter(),
+                  sp.iter())
+                .filter(|(_,_,&i)| i / n == i % n)
+                .flat_map(|(&pb,&pe,_)| cof[pb..pe].iter())
+                .zip(rcof.iter_mut())
+                .for_each(|(&sc,tc)| *tc = sc);
+        }
+        else {
+            rptr[0] = 0;
+            izip!(ptr.iter().step_by(n+1),
+                  ptr[1..].iter().step_by(n+1),
+                  rptr[1..].iter_mut())
+                .fold(0,|p,(&pb,&pe,rp)| { *rp = p+pe-pb; *rp } );
+
+            izip!(ptr.iter().step_by(n+1),
+                  ptr[1..].iter().step_by(n+1))
+                .flat_map(|(&pb,&pe)| subj[pb..pe].iter())
+                .zip(rsubj.iter_mut())
+                .for_each(|(&sj,tj)| *tj = sj);
+            
+            izip!(ptr.iter().step_by(n+1),
+                  ptr[1..].iter().step_by(n+1))
+                .flat_map(|(&pb,&pe)| cof[pb..pe].iter())
+                .zip(rcof.iter_mut())
+                .for_each(|(&sc,tc)| *tc = sc);
+        }
+    }
+}
+
 
 pub struct ExprIntoSymmetric<const N : usize, E : ExprTrait<N>> {
     dim : usize,
@@ -1250,6 +1235,8 @@ impl IntoExpr<1> for Vec<f64> {
     type Result = Expr<1>;
     fn into_expr(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.clone()) }
 }
+
+
 
 
 
