@@ -349,9 +349,9 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
 
 
 pub fn permute_axes(perm : &[usize],
-                           rs : & mut WorkStack,
-                           ws : & mut WorkStack,
-                           xs : & mut WorkStack) {
+                    rs : & mut WorkStack,
+                    ws : & mut WorkStack,
+                    xs : & mut WorkStack) {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nelem = ptr.len()-1;
     let nd = shape.len();
@@ -360,14 +360,18 @@ pub fn permute_axes(perm : &[usize],
         panic!("Mismatching permutation and shape");
     }
     let mut rshape = vec![usize::MAX; shape.len()];
-    perm.iter().for_each(|&i| {
-        unsafe {
-            if i >= shape.len() || *rshape.get_unchecked(i) < usize::MAX  {
-                panic!("Invalid permutation");
+    {
+        perm.iter().zip(rshape.iter_mut()).for_each(|(&i,d)| {
+            unsafe {
+                if i >= shape.len() || *d < usize::MAX  {
+                    panic!("Invalid permutation {:?}",perm);
+                }
+
+                *d = *shape.get_unchecked(i);
             }
-            *rshape.get_unchecked_mut(i) = *shape.get_unchecked(i);
-        }
-    });
+        });
+    }
+    println!("permute_axes: perm = {:?}, shape = {:?}, rshape = {:?}",perm,shape,rshape);
 
     let nd = shape.len();
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),subj.len(),*ptr.last().unwrap());
@@ -913,8 +917,9 @@ pub fn mul_right_sparse(mheight : usize,
         else { (1,shape[0]) };
 
     if ewidth != mheight {
-        panic!("Incompatible operand shapes");
+        panic!("Incompatible operand shapes: {:?} * {:?}",shape,&[mheight,mwidth]);
     }
+    println!("Operand shapes: {:?} * {:?}",shape,&[mheight,mwidth]);
 
     // tranpose matrix
     let (us,mcof) = xs.alloc(eheight+1 // erowptr

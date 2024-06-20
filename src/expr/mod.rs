@@ -82,6 +82,10 @@ pub trait ExprTrait<const N : usize> {
     /// # Arguments
     /// - `axes` - list of axes to preserve; all other dimensions are summed. The list must be
     ///   sorted and not contain duplicates.
+    ///
+    /// NOTE: The construction may seem a  but backward, but it s because we need to explicitly
+    /// specify the dimensionality of the output. Rust does not support aritmetic with generic
+    /// constants.
     fn sum_on<const K : usize>(self, axes : &[usize; K]) -> ExprReduceShape<N,K,ExprSumLastDims<N,ExprPermuteAxes<N,Self>>> where Self:Sized { 
         if K > N {
             panic!("Invalid axis specification")
@@ -118,7 +122,8 @@ pub trait ExprTrait<const N : usize> {
                 num : N-K,
                 item : ExprPermuteAxes{ 
                     item : self, 
-                    perm }
+                    perm 
+                }
             }
         }
     }
@@ -1124,67 +1129,24 @@ impl<E:ExprTrait<1>> ExprTrait<2> for ExprSquareDiag<E> {
         self.item.eval(ws,rs,xs);
 
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-        if shape.len() != 1 { panic!("Operand has invalid shape"); }
-        let n = shape.len();
+        if shape.len() != 1 { panic!("Operand has invalid shape {:?}, expected a vector", shape); }
+        let n = shape[0];
 
         let rshape = [n,n];
-        let rnnz =
-            if let Some(sp) = sp {
-                izip!(ptr.iter(),
-                      ptr[1..].iter(),
-                      sp.iter())
-                    .fold(0,|nnz,(&pb,&pe,&i)| if i / n == i % n { nnz + pe-pb } else { nnz } )
-            }
-            else {
-                ptr.iter().step_by(n+1).zip(ptr[1..].iter().step_by(n+1)).map(|(&pb,&pe)| pe - pb).sum()
-            };
+        let rnnz = *ptr.last().unwrap();
+        let rnelm = n;
 
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, n);
         
+        rptr.copy_from_slice(ptr);
+        rsubj.copy_from_slice(subj);
+        rcof.copy_from_slice(cof);
+
         if let Some(sp) = sp {
-            rptr.iter_mut().for_each(|p| *p = 0);
-
-            izip!(ptr.iter(),
-                  ptr[1..].iter(),
-                  sp.iter())
-                .filter(|(_,_,&i)| i / n == i % n)
-                .for_each(|(&pb,&pe,&i)| rptr[i+1] = pe-pb );
-            rptr.iter_mut().fold(0,|p,rp| { *rp += p; *rp } );
-
-            izip!(ptr.iter(),
-                  ptr[1..].iter(),
-                  sp.iter())
-                .filter(|(_,_,&i)| i / n == i % n)
-                .flat_map(|(&pb,&pe,_)| subj[pb..pe].iter())
-                .zip(rsubj.iter_mut())
-                .for_each(|(&sj,tj)| *tj = sj);
-
-            izip!(ptr.iter(),
-                  ptr[1..].iter(),
-                  sp.iter())
-                .filter(|(_,_,&i)| i / n == i % n)
-                .flat_map(|(&pb,&pe,_)| cof[pb..pe].iter())
-                .zip(rcof.iter_mut())
-                .for_each(|(&sc,tc)| *tc = sc);
+            rsp.unwrap().iter_mut().zip(sp.iter()).for_each(|(ri,&i)| *ri = i * (n+1));
         }
         else {
-            rptr[0] = 0;
-            izip!(ptr.iter().step_by(n+1),
-                  ptr[1..].iter().step_by(n+1),
-                  rptr[1..].iter_mut())
-                .fold(0,|p,(&pb,&pe,rp)| { *rp = p+pe-pb; *rp } );
-
-            izip!(ptr.iter().step_by(n+1),
-                  ptr[1..].iter().step_by(n+1))
-                .flat_map(|(&pb,&pe)| subj[pb..pe].iter())
-                .zip(rsubj.iter_mut())
-                .for_each(|(&sj,tj)| *tj = sj);
-            
-            izip!(ptr.iter().step_by(n+1),
-                  ptr[1..].iter().step_by(n+1))
-                .flat_map(|(&pb,&pe)| cof[pb..pe].iter())
-                .zip(rcof.iter_mut())
-                .for_each(|(&sc,tc)| *tc = sc);
+            rsp.unwrap().iter_mut().enumerate().for_each(|(i,ri)| *ri = i * (n+1));
         }
     }
 }

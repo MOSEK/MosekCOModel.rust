@@ -14,7 +14,8 @@ use itertools::izip;
 use cairo::Context;
 use gtk::{glib,Application, DrawingArea, ApplicationWindow};
 use mosekmodel::expr::*;
-use mosekmodel::{hstack, in_rotated_quadratic_cones, unbounded, nonnegative,equal_to,Model, Sense};
+use mosekmodel::matrix::SparseMatrix;
+use mosekmodel::{hstack, in_rotated_quadratic_cones, unbounded, nonnegative,equal_to,zero, Model, Sense, SolutionType};
 
 const APP_ID : &str = "com.mosek.truss-linear";
 
@@ -22,22 +23,28 @@ const APP_ID : &str = "com.mosek.truss-linear";
 #[derive(Clone)]
 struct DrawData {
     points       : Vec<[f64;2]>,
+    node_type    : Vec<bool>,
     arcs         : Vec<(usize,usize)>,
-    fixed_points : Vec<usize>,
     external_force : Vec<[f64;2]>,
     total_material_volume : f64,
     kappa        : f64,
+    arc_volume   : Option<Vec<f64>>,
 }
+const D : usize = 2;
 
-pub fn main() -> glib::ExitCode {
+pub fn main() {
     #[allow(non_snake_case)]
-    let drawdata = DrawData{
+    let mut drawdata = DrawData{
         points : vec![
             [0.0, 3.0], [0.0,1.0], [0.0,-1.0],[0.0,-3.0],
             [2.0, 2.0], [2.0, 0.0], [2.0, -2.0],
             [4.0,1.0],[4.0,-1.0],
             [7.0,0.0] ],
-        fixed_points : vec![0,1,2,3],
+        node_type : vec![
+            true,true,true,true,
+            false,false,false,
+            false,false,
+            false],
         arcs : vec![
             (0,4),(0,5),
             (1,4),(1,5),(1,6),
@@ -60,67 +67,83 @@ pub fn main() -> glib::ExitCode {
                                [0.0,0.0], 
                                [0.0,-2.0] ],
         total_material_volume : 20.0,
-        kappa : 1.0
-    };
+        kappa : 1.0,
 
-    // b is a (numnodes x numarcs) matrix. Rows are indexes by nodes, colunms are indexed by arcs,
+        arc_volume : None,
+    };
+    let numnodes = drawdata.points.len();
+    let numarcs  = drawdata.arcs.len();
+
+    // b is a parameter such that 
+    // b is a (numarcs x (D*numnodes)) matrix. Rows are indexes by nodes, colunms are indexed by arcs,
     // so each column has an associated (i,j) ∊ A. The element b_{k,(i,j)} means row k, column
     // associated with (i,j). The matrix is build as
     //    b_{j,(ij)} = κ(p_j-p_i)/||p_j-p_i||^2  for (i,j) ∊ A
     //    b_{i,(ij)} = -κ(p_j-p_i)/||p_j-p_i||^2  for (i,j) ∊ A
     //    0 everywhere else.
-    //
-    .................
     let sqrtkappa = drawdata.kappa.sqrt();
-    let b = drawdata.arcs.iter().map(|&(i,j)| {
-        let pi = drawdata.points[i];
-        let pj = drawdata.points[j];
+    let b = SparseMatrix::from_iterator(
+        numarcs, 
+        numnodes*D, 
+        drawdata.arcs.iter().enumerate().flat_map(|(arci,&(i,j))| {
+            let pi = drawdata.points[i];
+            let pj = drawdata.points[j];
+            let ti = drawdata.node_type[i];
+            let tj = drawdata.node_type[j];
 
-        let d = (pj[0]-pi[0], pj[1]-pi[1]);
-        let sqrnormd = d.0.powi(2) + d.1.powi(2);
-        
-        (pi,pj,[sqrtkappa * d.0 / sqrnormd, sqrtkappa * d.1 / sqrnormd])
-    }).collect();
-
-    let numnodes = drawdata.points.len();
-    let numarcs  = drawdata.arcs.len();
+            
+            let d = (pj[0]-pi[0], pj[1]-pi[1]);
+            let sqrnormd = d.0.powi(2) + d.1.powi(2);
+            
+            std::iter::once(           (arci, j*D,   if !tj { sqrtkappa * d.0 / sqrnormd } else { 0.0 }))
+                .chain(std::iter::once((arci, j*D+1, if !tj { sqrtkappa * d.1 / sqrnormd } else { 0.0 })))
+                .chain(std::iter::once((arci, i*D,   if !ti { -sqrtkappa * d.0 / sqrnormd } else { 0.0 })))
+                .chain(std::iter::once((arci, i*D+1, if !ti { -sqrtkappa * d.1 / sqrnormd } else { 0.0 })))
+        }));
 
     let mut m = Model::new(Some("Truss"));
-    let tau = m.variable(Some("τ"), unbounded());
-    let sigma = m.variable(Some("σ"), unbounded().with_shape(&[numarcs]));
+    let tau = m.variable(Some("tau"), unbounded());
+    //let tau = m.variable(Some("tau"), equal_to(20.0));
+    let sigma = m.variable(Some("sigma"), unbounded().with_shape(&[numarcs]));
     let t = m.variable(Some("t"),unbounded().with_shape(&[numarcs]));
     let s = m.variable(Some("s"),unbounded().with_shape(&[numarcs]));
+    let w = m.variable(Some("w"),equal_to(drawdata.total_material_volume));
 
     // (1)
     m.objective(None, Sense::Minimize, &tau);
+    //m.objective(None, Sense::Minimize, &w);
 
     // (2)
-    m.constraint(None, 
-                 &hstack![t.clone().reshape(&[numnodes,1]),
-                          sigma.clone().reshape(&[numnodes,1]),
-                          s.clone().reshape(&[numnodes,1])],
-                 in_rotated_quadratic_cones(&[numnodes,3], 1));
+    m.constraint(Some("t_sigma_s"),
+                 &hstack![t.clone().reshape(&[numarcs,1]),
+                          sigma.clone().reshape(&[numarcs,1]),
+                          s.clone().reshape(&[numarcs,1])],
+                 in_rotated_quadratic_cones(&[numarcs,3], 1));
     // (3)
-    m.constraint(None,
+    m.constraint(Some("sum_sigma"),
                  &tau.clone().sub(sigma.clone().sum()),
-                 nonnegative());
+                 zero());
         
     // (4) 
-    m.constraint(None,
-                 &t.clone().sum().sub(drawdata.total_material_volume),
-                 nonnegative());
+    m.constraint(Some("total_volume"),
+                 &t.clone().sum().sub(w),
+                 zero());
     // (5)
-    let f = drawdata.external_force.iter().flat_map(|row| row.iter()).collect();
-    m.constraint(None, 
-                 &s.clone().reshape(&[1,numarcs]).repeat(0, numnodes).dot_rows(b), 
+    let f : Vec<f64> = drawdata.external_force.iter().flat_map(|row| row.iter()).cloned().collect();
+    m.constraint(Some("force_balance"), 
+                 &s.clone().square_diag().mul(b).sum_on(&[1]),
                  equal_to(f));
 
-    
+    m.solve();
 
+    m.write_problem("truss.ptf");
 
+    let tsol = m.primal_solution(SolutionType::Default,&t).expect("No solution available");
+    for (t,(i,j)) in tsol.iter().zip(drawdata.arcs.iter()) {
+        println!("Arg ({},{}): volume = {:.3}",i,j,t);
+    }
 
-
-
+    drawdata.arc_volume = Some(tsol.to_vec());
 
 
 
@@ -133,8 +156,6 @@ pub fn main() -> glib::ExitCode {
 
     let r = app.run_with_args::<&str>(&[]);
     println!("Main loop exit!");
-
-    r
 }
 
 
@@ -267,6 +288,10 @@ fn build_ui(app   : &Application,
     window.present();
 }
 
+fn norm<const N : usize>(p : &[f64;N]) -> f64 {
+    p.iter().cloned().map(f64::abs).sum::<f64>().sqrt()
+}
+
 #[allow(non_snake_case)]
 fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, data : &DrawData) {
     context.set_source_rgb(1.0, 1.0, 1.0);
@@ -281,19 +306,28 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     context.scale(s/10.0, -s/10.0);
     let mx = context.matrix();
 
-    context.set_source_rgb(0.0, 0.0, 0.0);
-    for ab in data.arcs.iter() {
-        let pa = &data.points[ab[0]];
-        let pb = &data.points[ab[1]];
+    // ARCS
+    context.set_source_rgb(0.0, 0.0, 0.0);    
+    if let Some(ref volume) = data.arc_volume {
+        for (&(i,j),&v) in data.arcs.iter().zip(volume.iter()) {
+            let pi = data.points[i];
+            let pj = data.points[j];
+        
+            println!("Arc volume = {:?}",volume);
 
-        context.move_to(pa[0], pa[1]);
-        context.line_to(pb[0], pb[1]);
+            if v > 1.0e-4 {
+                let w = v / norm(&[ pj[0]-pi[0], pj[1]-pi[1] ]);
+                context.set_line_width(w*2.0);
+                context.move_to(pi[0], pi[1]);
+                context.line_to(pj[0], pj[1]);
 
-        context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
-        _ = context.stroke();
-        context.set_matrix(mx);
+                context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
+                _ = context.stroke();
+                context.set_matrix(mx);
+            }
+        }
     }
-
+    // NODES
     context.set_source_rgb(0.0, 0.0, 0.5);
     for p in data.points.iter() {
         context.arc(p[0],p[1],0.1,0.0,std::f64::consts::PI*2.0);
@@ -304,28 +338,29 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     }
 
     context.set_source_rgb(0.0, 0.0, 0.0);
-    for &f in data.fixed_points.iter() {
-        let p = &data.points[f];
-        context.arc(p[0],p[1],0.1,0.0,std::f64::consts::PI*2.0);
-        context.set_matrix(cairo::Matrix::new(3.0,0.0,0.0,3.0,0.0,0.0));
-        _ = context.stroke();
-        context.set_matrix(mx);
+    for (&f,p) in data.node_type.iter().zip(data.points.iter()) {
+        if f {
+            context.arc(p[0],p[1],0.1,0.0,std::f64::consts::PI*2.0);
+            context.set_matrix(cairo::Matrix::new(3.0,0.0,0.0,3.0,0.0,0.0));
+            _ = context.stroke();
+            context.set_matrix(mx);
+        }
     }
 
     context.set_source_rgb(1.0, 0.0, 0.0);
-    for &(i,f) in data.applied_force.iter() {
-        let p = &data.points[i];
+    for (f,p) in data.external_force.iter().zip(data.points.iter()) {
+        if norm(f) > 0.0 {
+            context.move_to(p[0],p[1]);
+            context.line_to(p[0]+f[0],p[1]+f[1]);
 
-        context.move_to(p[0],p[1]);
-        context.line_to(p[0]+f[0],p[1]+f[1]);
+            context.move_to(p[0]+f[0]-0.1,p[1]+f[1]+0.1);
+            context.line_to(p[0]+f[0],p[1]+f[1]);
+            context.line_to(p[0]+f[0]+0.1,p[1]+f[1]+0.1);
 
-        context.move_to(p[0]+f[0]-0.1,p[1]+f[1]+0.1);
-        context.line_to(p[0]+f[0],p[1]+f[1]);
-        context.line_to(p[0]+f[0]+0.1,p[1]+f[1]+0.1);
-
-        context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
-        _ = context.stroke();
-        context.set_matrix(mx);
+            context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
+            _ = context.stroke();
+            context.set_matrix(mx);
+        }
     }
 
 

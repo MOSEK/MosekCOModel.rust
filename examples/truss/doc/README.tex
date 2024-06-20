@@ -17,14 +17,16 @@ structure.
 
 We have the following parameters for the problem
 \begin{itemize}
+\item $\mathrm{d}$ is the number if dimensions (2 or 3).
 \item $N$ set of nodes, with $p_i$ being the position of node $i\in N$, with $N_f\subset N$ being the set of fixed nodes.
 \item $A\subseteq N\times N$. We are using the convention that if $(i,j)\in A$
     then $(j,i)\not\in A$ (i.e only one bar per two nodes). 
 \item $w$ is the total available volume available of material for bars.
-\item $\kappa$ matreial constant
-\item $b_{ij}\in\mathbb{R}^{|N|}$ for $(i,j)\in A$ is a value that is computed from $\kappa$, $p_i$ and $p_j$. $b_{ij}$ is defined as 
+\item $\kappa\in\mathbb{R}$ material constant defining elasticity
+\item $f\in\mathbb{R}^{|N|\times\mathrm{d}}$ is the vector of external forces on each node.
+\item $b_{ij}\in\mathbb{R}^{|N|\times\mathrm{d}}$ for $(i,j)\in A$ is a value that is computed from $\kappa$, $p_i$ and $p_j$. $b_{ij}$ is defined as 
     \[
-        b_{ijk} = \left\{ 
+        b_{(ij),k} = \left\{ 
             \begin{array}{l}
                 \beta_{ij}\ \mathrm{ if }\ j = k\hat j\not\in N_f \\
                 -\beta_{ij}\ \mathrm{ if }\ i = k\hat j\not\in N_f \\
@@ -32,7 +34,12 @@ We have the following parameters for the problem
             \end{array}
         \right.
     \]
+\item $\beta_{ij}\in\mathbb{R}^{|N|\times\mathrm{d}}$ defined assign
+    \[
+        \beta_{ij} = \sqrt\kappa \frac{p_j-p_i}{||p_j-p_i||^2}
+    \]
 \end{itemize}
+
 Then we define the problem as 
 \begin{eqnarray}
     \mathrm{minimize} &&  \tau \\
