@@ -7,6 +7,7 @@ use std::rc::Rc;
 use std::time::{Duration, SystemTime};
 use ellipsoids::Ellipsoid;
 use glam::{DMat2,DVec2};
+use gtk::ffi::gtk_scale_get_value_pos;
 use gtk::glib::ControlFlow;
 use gtk::prelude::*;
 use itertools::izip;
@@ -63,10 +64,10 @@ pub fn main() {
                                [0.0,0.0], 
                                [0.0,0.0], 
                                [0.0,0.0], 
-                               [0.0,0.0], 
+                               [1.5,1.5], 
                                [0.0,0.0], 
                                [0.0,-2.0] ],
-        total_material_volume : 20.0,
+        total_material_volume : 30.0,
         kappa : 1.0,
 
         arc_volume : None,
@@ -111,7 +112,6 @@ pub fn main() {
 
     // (1)
     m.objective(None, Sense::Minimize, &tau);
-    //m.objective(None, Sense::Minimize, &w);
 
     // (2)
     m.constraint(Some("t_sigma_s"),
@@ -288,8 +288,31 @@ fn build_ui(app   : &Application,
     window.present();
 }
 
-fn norm<const N : usize>(p : &[f64;N]) -> f64 {
-    p.iter().cloned().map(f64::abs).sum::<f64>().sqrt()
+fn norm<const N : usize>(p : &[f64;N]) -> f64 { p.iter().cloned().map(f64::abs).sum::<f64>().sqrt() }
+fn vecsub<const N : usize>(lhs : &[f64;N], rhs : &[f64;N]) -> [f64;N] { 
+    let mut r = [0.0;N];
+    for (res,&l,&r) in izip!(r.iter_mut(),lhs.iter(),rhs.iter()) {
+        *res = l-r;
+    }
+    r
+}
+
+fn vecscale<const N : usize>(s : f64, v : &[f64;N]) -> [f64;N] { 
+    let mut r = [0.0;N];
+    for (r,&v) in r.iter_mut().zip(v.iter()) { *r = s * v; }
+    r
+}
+
+fn vecnormalize<const N : usize>(v : &[f64;N]) -> [f64;N] { 
+    vecscale(1.0/norm(v),v)
+}
+
+fn vecadd<const N : usize>(lhs : &[f64;N], rhs : &[f64;N]) -> [f64;N] { 
+    let mut r = [0.0;N];
+    for (res,&l,&r) in izip!(r.iter_mut(),lhs.iter(),rhs.iter()) {
+        *res = l+r;
+    }
+    r
 }
 
 #[allow(non_snake_case)]
@@ -347,15 +370,24 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
         }
     }
 
+    context.set_line_width(2.0);
     context.set_source_rgb(1.0, 0.0, 0.0);
     for (f,p) in data.external_force.iter().zip(data.points.iter()) {
         if norm(f) > 0.0 {
             context.move_to(p[0],p[1]);
             context.line_to(p[0]+f[0],p[1]+f[1]);
 
-            context.move_to(p[0]+f[0]-0.1,p[1]+f[1]+0.1);
+            // arrow head
+            let v = [ f[1]-f[0], -f[0]-f[1] ];
+            let v = vecscale(0.1 / norm(&v),&v);
+
+            context.move_to(p[0]+f[0]+v[0],p[1]+f[1]+v[1]);
             context.line_to(p[0]+f[0],p[1]+f[1]);
-            context.line_to(p[0]+f[0]+0.1,p[1]+f[1]+0.1);
+            context.line_to(p[0]+f[0]+v[1],p[1]+f[1]-v[0]);
+
+            //context.move_to(p[0]+f[0]-0.1,p[1]+f[1]+0.1);
+            //context.line_to(p[0]+f[0],p[1]+f[1]);
+            //context.line_to(p[0]+f[0]+0.1,p[1]+f[1]+0.1);
 
             context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
             _ = context.stroke();
