@@ -26,7 +26,7 @@ struct DrawData {
     points         : Vec<[f64;2]>,
     node_type      : Vec<bool>,
     arcs           : Vec<(usize,usize)>,
-    external_force : Vec<[f64;2]>,
+    external_force : Vec<Vec<[f64;2]>>,
     total_material_volume : f64,
     kappa          : f64,
     arc_vol_stress : Option<(Vec<f64>,Vec<f64>)>,
@@ -59,7 +59,8 @@ impl DrawData {
         let f = File::open(filename).unwrap();
         let br = BufReader::new(f);
         let mut state = State::Base;
-        let mut forces : Vec<(usize,[f64;2])> = Vec::new();
+        let mut forces : Vec<Vec<(usize,[f64;2])>> = Vec::new();
+
         for (lineno,l) in br.lines().enumerate() {
             let l = l.unwrap();
             //println!("{}> {}",lineno+1,l.trim_end());
@@ -68,7 +69,7 @@ impl DrawData {
             else if let Some(rest) = l.strip_prefix("w")      { dd.total_material_volume = rest.trim().parse().unwrap(); state = State::Base; }
             else if l.starts_with("nodes")  { state = State::Nodes; }
             else if l.starts_with("arcs")   { state = State::Arcs; }
-            else if l.starts_with("forces") { state = State::Forces; }
+            else if l.starts_with("forces") { forces.push(Vec::new()); state = State::Forces; }
             else {
                 let llstrip = l.trim_start();
                 if llstrip.is_empty() || llstrip.starts_with('#') {
@@ -99,7 +100,7 @@ impl DrawData {
                             let a : usize = it.next().unwrap_or_else(|| panic!("Missing data at line {}",lineno)).parse().expect("Invalid data");
                             let x : f64 = it.next().unwrap_or_else(|| panic!("Missing data at line {}",lineno)).parse().expect("Invalid data");
                             let y : f64 = it.next().unwrap_or_else(|| panic!("Missing data at line {}",lineno)).parse().expect("Invalid data");
-                            forces.push((a,[x,y]));
+                            forces.last_mut().unwrap().push((a,[x,y]));
                         }
                     }
                 }
@@ -108,21 +109,24 @@ impl DrawData {
         
         // check
 
+        if forces.is_empty() {
+            panic!("Missing forces section");
+        }
         if *dd.arcs.iter().map(|(i,j)| i.max(j)).max().unwrap() >= dd.points.len() {
             panic!("Arc end-point index out of bounds");
         }
 
-        dd.external_force = vec![[0.0,0.0]; dd.points.len()];
-        if forces.iter().map(|v| v.0).max().unwrap() >= dd.points.len() {
-            panic!("Force node index out of bounds");
-        }
+        for ff in forces.iter() {
+            if ff.iter().map(|v| v.0).max().unwrap() >= dd.points.len() {
+                panic!("Force node index out of bounds");
+            }
 
-        let nforces = forces.len();
-        for (i,f) in forces {
-            dd.external_force[i] = f;
-        }
+            let mut forcevec = vec![[0.0,0.0]; dd.points.len()];
+            for &(i,f) in ff { forcevec[i] = f; }
 
-        println!("Truss:\n\t#nodes: {}\n\t#arcs: {}\n\t#forced nodes: {}",dd.points.len(),dd.arcs.len(),nforces);
+            dd.external_force.push(forcevec);
+        }
+        println!("Truss:\n\t#nodes: {}\n\t#arcs: {}",dd.points.len(),dd.arcs.len());
 
         dd 
     }
@@ -203,7 +207,7 @@ pub fn main() {
                      &t.clone().sum().sub(w),
                      zero());
         // (5)
-        let f : Vec<f64> = drawdata.external_force.iter().flat_map(|row| row.iter()).cloned().collect();
+        let f : Vec<f64> = drawdata.external_force[0].iter().flat_map(|row| row.iter()).cloned().collect();
         m.constraint(Some("force_balance"), 
                      &s.clone().square_diag().mul(b).sum_on(&[1]),
                      equal_to(f));
@@ -303,7 +307,6 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     let boxmax = (crop.2-crop.0).abs().max( (crop.3-crop.1).abs());
     let scale = s / boxmax;
 
-
     //println!("scale = {}",scale);
     context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
     //context.translate(0,-h as f64);
@@ -314,7 +317,7 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     // Forces
     context.set_line_width(3.0);
     context.set_source_rgb(1.0, 0.0, 0.0);
-    for (f,p) in data.external_force.iter().zip(data.points.iter()) {
+    for (f,p) in data.external_force[0].iter().zip(data.points.iter()) {
         if norm(f) > 0.0 {
             context.move_to(p[0],p[1]);
             context.line_to(p[0]+f[0],p[1]+f[1]);
