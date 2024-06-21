@@ -18,7 +18,9 @@ structure.
 We have the following parameters for the problem
 \begin{itemize}
 \item $\mathrm{d}$ is the number if dimensions (2 or 3).
-\item $N$ set of nodes, with $p_i$ being the position of node $i\in N$, with $N_f\subset N$ being the set of fixed nodes.
+\item $N$ set of nodes, with $p_i$ being the position of node $i\in N$, with
+    $N_f\subset N$ being the set of fixed nodes, and $N_u=N\backslash N_f$ the
+        set of free nodes.
 \item $A\subseteq N\times N$. We are using the convention that if $(i,j)\in A$
     then $(j,i)\not\in A$ (i.e only one bar per two nodes). 
 \item $w$ is the total available volume available of material for bars.
@@ -59,6 +61,16 @@ Then we define the problem as
     && \tau\in\mathbb{R}\\
 \end{eqnarray}
 The block is repeated for each force vector in $F$.
+
+Note that the constraint on $f$ can amounts to for each node $i\in N_u$
+\begin{eqnarray}
+    f_i & = & \sum_{a\in A} s_{a} b_{a,i} \\
+        & = & \sum_{j\in N_u:(i,j)\in A} s_{ij} \beta_{ij} 
+            - \sum_{j\in N_u:(j,i)\in A} s_{ij} \beta_{ij}
+\end{eqnarray}
+Basically, the force applied at node $i$ must be equal to the weighted sum of
+stresses on all bars connected to node $i$. Note entirely unlike a flow
+conservation constraint in a non-directed graph.
 
 \end{document}
 

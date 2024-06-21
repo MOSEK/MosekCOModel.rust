@@ -2,6 +2,8 @@ extern crate cairo;
 extern crate glam;
 extern crate mosekmodel;
 
+pub mod truss;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, SystemTime};
@@ -29,7 +31,7 @@ struct DrawData {
     external_force : Vec<[f64;2]>,
     total_material_volume : f64,
     kappa        : f64,
-    arc_volume   : Option<Vec<f64>>,
+    arc_vol_stress   : Option<(Vec<f64>,Vec<f64>)>,
 }
 const D : usize = 2;
 
@@ -70,7 +72,7 @@ pub fn main() {
         total_material_volume : 30.0,
         kappa : 1.0,
 
-        arc_volume : None,
+        arc_vol_stress : None,
     };
     let numnodes = drawdata.points.len();
     let numarcs  = drawdata.arcs.len();
@@ -139,14 +141,12 @@ pub fn main() {
     m.write_problem("truss.ptf");
 
     let tsol = m.primal_solution(SolutionType::Default,&t).expect("No solution available");
+    let ssol = m.primal_solution(SolutionType::Default,&s).expect("No solution available");
     for (t,(i,j)) in tsol.iter().zip(drawdata.arcs.iter()) {
         println!("Arg ({},{}): volume = {:.3}",i,j,t);
     }
 
-    drawdata.arc_volume = Some(tsol.to_vec());
-
-
-
+    drawdata.arc_vol_stress = Some((tsol.to_vec(),ssol.to_vec()));
 
     let app = Application::builder()
         .application_id(APP_ID)
@@ -331,7 +331,7 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
 
     // ARCS
     context.set_source_rgb(0.0, 0.0, 0.0);    
-    if let Some(ref volume) = data.arc_volume {
+    if let Some((ref volume,ref stress)) = data.arc_vol_stress {
         for (&(i,j),&v) in data.arcs.iter().zip(volume.iter()) {
             let pi = data.points[i];
             let pj = data.points[j];
@@ -340,6 +340,8 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
 
             if v > 1.0e-4 {
                 let w = v / norm(&[ pj[0]-pi[0], pj[1]-pi[1] ]);
+                if 
+                context.set_source_rgb(0.0, 0.0, 0.0);    
                 context.set_line_width(w*2.0);
                 context.move_to(pi[0], pi[1]);
                 context.line_to(pj[0], pj[1]);
