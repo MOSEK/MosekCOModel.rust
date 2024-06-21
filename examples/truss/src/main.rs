@@ -2,78 +2,177 @@ extern crate cairo;
 extern crate glam;
 extern crate mosekmodel;
 
-pub mod truss;
+//pub mod truss;
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::{Duration, SystemTime};
-use ellipsoids::Ellipsoid;
-use glam::{DMat2,DVec2};
-use gtk::ffi::gtk_scale_get_value_pos;
-use gtk::glib::ControlFlow;
 use gtk::prelude::*;
 use itertools::izip;
 
 use cairo::Context;
-use gtk::{glib,Application, DrawingArea, ApplicationWindow};
-use mosekmodel::{expr::*, nonpositive};
+use gtk::{Application, DrawingArea, ApplicationWindow};
+use mosekmodel::expr::*;
 use mosekmodel::matrix::SparseMatrix;
 use mosekmodel::{hstack, in_rotated_quadratic_cones, unbounded, nonnegative,equal_to,zero, Model, Sense, SolutionType};
+
+use std::fs::File;
+use std::io::{BufRead,BufReader};
 
 const APP_ID : &str = "com.mosek.truss-linear";
 
 #[allow(non_snake_case)]
-#[derive(Clone)]
+#[derive(Clone,Default)]
 struct DrawData {
-    points       : Vec<[f64;2]>,
-    node_type    : Vec<bool>,
-    arcs         : Vec<(usize,usize)>,
+    points         : Vec<[f64;2]>,
+    node_type      : Vec<bool>,
+    arcs           : Vec<(usize,usize)>,
     external_force : Vec<[f64;2]>,
     total_material_volume : f64,
-    kappa        : f64,
-    arc_vol_stress   : Option<(Vec<f64>,Vec<f64>)>,
+    kappa          : f64,
+    arc_vol_stress : Option<(Vec<f64>,Vec<f64>)>,
 }
+
+impl DrawData {
+    /// Read file. File format:
+    /// ```
+    /// kappa FLOAT
+    /// w     FLOAT
+    /// nodes
+    ///     FLOAT FLOAT "X"?
+    ///     ...
+    /// arcs
+    ///     INT INT
+    ///     ...
+    /// forces
+    ///     INT FLOAT FLOAT
+    ///     ...
+    /// ```
+    fn from_file(filename : &str) -> DrawData {
+        enum State {
+            Base,
+            Nodes,
+            Arcs,
+            Forces,
+        }
+        let mut dd = DrawData::default();
+
+        let f = File::open(filename).unwrap();
+        let mut br = BufReader::new(f);
+        let mut state = State::Base;
+        let mut forces : Vec<(usize,[f64;2])> = Vec::new();
+        for (lineno,l) in br.lines().enumerate() {
+            let l = l.unwrap();
+            //println!("{}> {}",lineno+1,l.trim_end());
+
+            if      let Some(rest) = l.strip_prefix("kappa")  { dd.kappa = rest.trim().parse().unwrap(); state = State::Base; }
+            else if let Some(rest) = l.strip_prefix("w")      { dd.total_material_volume = rest.trim().parse().unwrap(); state = State::Base; }
+            else if l.starts_with("nodes")  { state = State::Nodes; }
+            else if l.starts_with("arcs")   { state = State::Arcs; }
+            else if l.starts_with("forces") { state = State::Forces; }
+            else {
+                let llstrip = l.trim_start();
+                if llstrip.is_empty() || llstrip.starts_with('#') {
+                    // comment
+                }
+                else if ! l.starts_with(' ') {
+                    panic!("Invalid data at line {}: '{}'",lineno+1,l.trim_end());
+                }
+                else {
+                    match state {
+                        State::Base   => {},
+                        State::Nodes  => {
+                            let mut it = l.trim().split(' ').filter(|v| v.len() > 0);
+                            let x : f64 = it.next().expect("Missing data").parse().expect("Invalid data");
+                            let y : f64 = it.next().expect("Missing data").parse().expect("Invalid data");
+                            if let Some("X") = it.next() { dd.node_type.push(true); }
+                            else { dd.node_type.push(false); }
+                            dd.points.push([x,y]);
+                        },
+                        State::Arcs   => {
+                            let mut it = l.trim().split(' ').filter(|v| v.len() > 0);
+                            let i : usize = it.next().expect("Missing data").parse().expect("Invalid data");
+                            let j : usize = it.next().expect("Missing data").parse().expect("Invalid data");
+                            dd.arcs.push((i,j));
+                        },
+                        State::Forces => {
+                            let mut it = l.trim().split(' ').filter(|v| v.len() > 0);
+                            let a : usize = it.next().expect("Missing data").parse().expect("Invalid data");
+                            let x : f64 = it.next().expect("Missing data").parse().expect("Invalid data");
+                            let y : f64 = it.next().expect("Missing data").parse().expect("Invalid data");
+                            forces.push((a,[x,y]));
+                        }
+                    }
+                }
+            }
+        }
+        
+        // check
+
+        if *dd.arcs.iter().map(|(i,j)| i.max(j)).max().unwrap() >= dd.points.len() {
+            panic!("Arc end-point index out of bounds");
+        }
+
+        dd.external_force = vec![[0.0,0.0]; dd.points.len()];
+        if forces.iter().map(|v| v.0).max().unwrap() >= dd.points.len() {
+            panic!("Force node index out of bounds");
+        }
+
+        for (i,f) in forces {
+            dd.external_force[i] = f;
+        }
+
+        dd 
+    }
+}
+
 const D : usize = 2;
 
 pub fn main() {
-    #[allow(non_snake_case)]
-    let mut drawdata = DrawData{
-        points : vec![
-            [0.0, 3.0], [0.0,1.0], [0.0,-1.0],[0.0,-3.0],
-            [2.0, 2.0], [2.0, 0.0], [2.0, -2.0],
-            [4.0,1.0],[4.0,-1.0],
-            [7.0,0.0] ],
-        node_type : vec![
-            true,true,true,true,
-            false,false,false,
-            false,false,
-            false],
-        arcs : vec![
-            (0,4),(0,5),
-            (1,4),(1,5),(1,6),
-            (2,4),(2,5),(2,6),
-            (3,5),(3,6),
-            (4,5),(4,7),(4,8),
-            (5,6),(5,7),(5,8),
-            (6,7),(6,8),
-            (7,8),(7,9),
-            (8,9)],
-
-        external_force : vec![ [0.0,0.0], 
-                               [0.0,0.0], 
-                               [0.0,0.0], 
-                               [0.0,0.0], 
-                               [0.0,0.0], 
-                               [0.0,0.0], 
-                               [0.0,0.0], 
-                               [1.5,1.5], 
-                               [0.0,0.0], 
-                               [0.0,-2.0] ],
-        total_material_volume : 30.0,
-        kappa : 1.0,
-
-        arc_vol_stress : None,
+//    let mut drawdata = DrawData{
+//        points : vec![
+//            [0.0, 3.0], [0.0,1.0], [0.0,-1.0],[0.0,-3.0],
+//            [2.0, 2.0], [2.0, 0.0], [2.0, -2.0],
+//            [4.0,1.0],[4.0,-1.0],
+//            [7.0,0.0] ],
+//        node_type : vec![
+//            true,true,true,true,
+//            false,false,false,
+//            false,false,
+//            false],
+//        arcs : vec![
+//            (0,4),(0,5),
+//            (1,4),(1,5),(1,6),
+//            (2,4),(2,5),(2,6),
+//            (3,5),(3,6),
+//            (4,5),(4,7),(4,8),
+//            (5,6),(5,7),(5,8),
+//            (6,7),(6,8),
+//            (7,8),(7,9),
+//            (8,9)],
+//
+//        external_force : vec![ [0.0,0.0], 
+//                               [0.0,0.0], 
+//                               [0.0,0.0], 
+//                               [0.0,0.0], 
+//                               [0.0,0.0], 
+//                               [0.0,0.0], 
+//                               [0.0,0.0], 
+//                               [1.5,1.5], 
+//                               [0.0,0.0], 
+//                               [0.0,-2.0] ],
+//        total_material_volume : 30.0,
+//        kappa : 1.0,
+//
+//        arc_vol_stress : None,
+//    };
+    let argv : Vec<String> = std::env::args().collect();
+   
+    let filename = if argv.len() > 1 { argv[1].as_str() } else {
+        println!("Syntax: truss filename");
+        return;
     };
+
+    let mut drawdata = DrawData::from_file(filename);
     let numnodes = drawdata.points.len();
     let numarcs  = drawdata.arcs.len();
 
@@ -142,9 +241,9 @@ pub fn main() {
 
     let tsol = m.primal_solution(SolutionType::Default,&t).expect("No solution available");
     let ssol = m.primal_solution(SolutionType::Default,&s).expect("No solution available");
-    for (t,(i,j)) in tsol.iter().zip(drawdata.arcs.iter()) {
-        println!("Arg ({},{}): volume = {:.3}",i,j,t);
-    }
+    //for (t,(i,j)) in tsol.iter().zip(drawdata.arcs.iter()) {
+    //    println!("Arg ({},{}): volume = {:.3}",i,j,t);
+    //}
 
     drawdata.arc_vol_stress = Some((tsol.to_vec(),ssol.to_vec()));
 
@@ -332,7 +431,7 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     // ARCS
     context.set_source_rgb(0.0, 0.0, 0.0);    
     if let Some((ref volume,ref stress)) = data.arc_vol_stress {
-        let smax = *stress.iter().max().unwrap_or(&1.0);
+        let smax = stress.iter().fold(1.0e-3, |m,v| if v.abs() > m { v.abs() } else { m });
         for (&(i,j),&v,&s) in izip!(data.arcs.iter(),volume.iter(),stress.iter()) {
             let pi = data.points[i];
             let pj = data.points[j];
@@ -341,9 +440,12 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
 
             if v > 1.0e-4 {
                 let w = v / norm(&[ pj[0]-pi[0], pj[1]-pi[1] ]);
-                if s < 0.0 { 
-                context.set_source_rgb(0.0, 0.0, 0.0);    
-                else 
+                if s < 0.0 {
+                    context.set_source_rgb(0.5, 0.0, 0.0);    
+                } 
+                else {
+                    context.set_source_rgb(0.0, 0.5, 0.0);    
+                }
                 context.set_line_width(w*2.0);
                 context.move_to(pi[0], pi[1]);
                 context.line_to(pj[0], pj[1]);
@@ -388,10 +490,6 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
             context.move_to(p[0]+f[0]+v[0],p[1]+f[1]+v[1]);
             context.line_to(p[0]+f[0],p[1]+f[1]);
             context.line_to(p[0]+f[0]+v[1],p[1]+f[1]-v[0]);
-
-            //context.move_to(p[0]+f[0]-0.1,p[1]+f[1]+0.1);
-            //context.line_to(p[0]+f[0],p[1]+f[1]);
-            //context.line_to(p[0]+f[0]+0.1,p[1]+f[1]+0.1);
 
             context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
             _ = context.stroke();
