@@ -1490,7 +1490,7 @@ fn split_expr(eptr    : &[usize],
             if idx == 0 {
                 cfix += c;
             }
-            else {
+            else if c < 0.0 || c > 0.0 {
                 match *unsafe{ vars.get_unchecked(idx) } {
                     VarAtom::Linear(j) => {
                         subj.push(j);

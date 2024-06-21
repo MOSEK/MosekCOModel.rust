@@ -57,7 +57,7 @@ impl DrawData {
         let mut dd = DrawData::default();
 
         let f = File::open(filename).unwrap();
-        let mut br = BufReader::new(f);
+        let br = BufReader::new(f);
         let mut state = State::Base;
         let mut forces : Vec<(usize,[f64;2])> = Vec::new();
         for (lineno,l) in br.lines().enumerate() {
@@ -82,23 +82,23 @@ impl DrawData {
                         State::Base   => {},
                         State::Nodes  => {
                             let mut it = l.trim().split(' ').filter(|v| v.len() > 0);
-                            let x : f64 = it.next().expect("Missing data").parse().expect("Invalid data");
-                            let y : f64 = it.next().expect("Missing data").parse().expect("Invalid data");
+                            let x : f64 = it.next().unwrap_or_else(|| panic!("Missing data at line {}",lineno)).parse().expect("Invalid data");
+                            let y : f64 = it.next().unwrap_or_else(|| panic!("Missing data at line {}",lineno)).parse().expect("Invalid data");
                             if let Some("X") = it.next() { dd.node_type.push(true); }
                             else { dd.node_type.push(false); }
                             dd.points.push([x,y]);
                         },
                         State::Arcs   => {
                             let mut it = l.trim().split(' ').filter(|v| v.len() > 0);
-                            let i : usize = it.next().expect("Missing data").parse().expect("Invalid data");
-                            let j : usize = it.next().expect("Missing data").parse().expect("Invalid data");
+                            let i : usize = it.next().unwrap_or_else(|| panic!("Missing data at line {}",lineno)).parse().expect("Invalid data");
+                            let j : usize = it.next().unwrap_or_else(|| panic!("Missing data at line {}",lineno)).parse().expect("Invalid data");
                             dd.arcs.push((i,j));
                         },
                         State::Forces => {
                             let mut it = l.trim().split(' ').filter(|v| v.len() > 0);
-                            let a : usize = it.next().expect("Missing data").parse().expect("Invalid data");
-                            let x : f64 = it.next().expect("Missing data").parse().expect("Invalid data");
-                            let y : f64 = it.next().expect("Missing data").parse().expect("Invalid data");
+                            let a : usize = it.next().unwrap_or_else(|| panic!("Missing data at line {}",lineno)).parse().expect("Invalid data");
+                            let x : f64 = it.next().unwrap_or_else(|| panic!("Missing data at line {}",lineno)).parse().expect("Invalid data");
+                            let y : f64 = it.next().unwrap_or_else(|| panic!("Missing data at line {}",lineno)).parse().expect("Invalid data");
                             forces.push((a,[x,y]));
                         }
                     }
@@ -117,11 +117,12 @@ impl DrawData {
             panic!("Force node index out of bounds");
         }
 
+        let nforces = forces.len();
         for (i,f) in forces {
             dd.external_force[i] = f;
         }
 
-        println!("Truss:\n\t#nodes: {}\n\t#arcs: {}\n\t#forced nodes: {}",dd.points.len(),dd.arcs.len(),forces.len());
+        println!("Truss:\n\t#nodes: {}\n\t#arcs: {}\n\t#forced nodes: {}",dd.points.len(),dd.arcs.len(),nforces);
 
         dd 
     }
@@ -130,14 +131,20 @@ impl DrawData {
 const D : usize = 2;
 
 pub fn main() {
-    let argv : Vec<String> = std::env::args().collect();
-   
-    let filename = if argv.len() > 1 { argv[1].as_str() } else {
+    let mut args = std::env::args();
+
+    if let None = args.next() {  
+        println!("Syntax: truss filename");
+    }
+    let filename = if let Some (filename) = args.next() { filename } 
+    else {
         println!("Syntax: truss filename");
         return;
     };
 
-    let mut drawdata = DrawData::from_file(filename);
+    let dosolve = if let Some(arg) = args.next() { println!("arg = '{}'",arg); arg != "-x" } else { true };
+
+    let mut drawdata = DrawData::from_file(&filename);
     let numnodes = drawdata.points.len();
     let numarcs  = drawdata.arcs.len();
 
@@ -148,70 +155,72 @@ pub fn main() {
     //    b_{j,(ij)} = κ(p_j-p_i)/||p_j-p_i||^2  for (i,j) ∊ A
     //    b_{i,(ij)} = -κ(p_j-p_i)/||p_j-p_i||^2  for (i,j) ∊ A
     //    0 everywhere else.
-    let sqrtkappa = drawdata.kappa.sqrt();
-    let b = SparseMatrix::from_iterator(
-        numarcs, 
-        numnodes*D, 
-        drawdata.arcs.iter().enumerate().flat_map(|(arci,&(i,j))| {
-            let pi = drawdata.points[i];
-            let pj = drawdata.points[j];
-            let ti = drawdata.node_type[i];
-            let tj = drawdata.node_type[j];
+    if dosolve {
+        let sqrtkappa = drawdata.kappa.sqrt();
+        let b = SparseMatrix::from_iterator(
+            numarcs, 
+            numnodes*D, 
+            drawdata.arcs.iter().enumerate().flat_map(|(arci,&(i,j))| {
+                let pi = drawdata.points[i];
+                let pj = drawdata.points[j];
+                let ti = drawdata.node_type[i];
+                let tj = drawdata.node_type[j];
 
+                
+                let d = (pj[0]-pi[0], pj[1]-pi[1]);
+                let sqrnormd = d.0.powi(2) + d.1.powi(2);
+                
+                std::iter::once(           (arci, j*D,   if !tj { sqrtkappa * d.0 / sqrnormd } else { 0.0 }))
+                    .chain(std::iter::once((arci, j*D+1, if !tj { sqrtkappa * d.1 / sqrnormd } else { 0.0 })))
+                    .chain(std::iter::once((arci, i*D,   if !ti { -sqrtkappa * d.0 / sqrnormd } else { 0.0 })))
+                    .chain(std::iter::once((arci, i*D+1, if !ti { -sqrtkappa * d.1 / sqrnormd } else { 0.0 })))
+            }));
+
+        let mut m = Model::new(Some("Truss"));
+        let tau = m.variable(Some("tau"), unbounded());
+        //let tau = m.variable(Some("tau"), equal_to(20.0));
+        let sigma = m.variable(Some("sigma"), unbounded().with_shape(&[numarcs]));
+        let t = m.variable(Some("t"),unbounded().with_shape(&[numarcs]));
+        let s = m.variable(Some("s"),unbounded().with_shape(&[numarcs]));
+        let w = m.variable(Some("w"),equal_to(drawdata.total_material_volume));
+
+        // (1)
+        m.objective(None, Sense::Minimize, &tau);
+
+        // (2)
+        m.constraint(Some("t_sigma_s"),
+                     &hstack![t.clone().reshape(&[numarcs,1]),
+                              sigma.clone().reshape(&[numarcs,1]),
+                              s.clone().reshape(&[numarcs,1])],
+                     in_rotated_quadratic_cones(&[numarcs,3], 1));
+        // (3)
+        m.constraint(Some("sum_sigma"),
+                     &tau.clone().sub(sigma.clone().sum()),
+                     nonnegative());
             
-            let d = (pj[0]-pi[0], pj[1]-pi[1]);
-            let sqrnormd = d.0.powi(2) + d.1.powi(2);
-            
-            std::iter::once(           (arci, j*D,   if !tj { sqrtkappa * d.0 / sqrnormd } else { 0.0 }))
-                .chain(std::iter::once((arci, j*D+1, if !tj { sqrtkappa * d.1 / sqrnormd } else { 0.0 })))
-                .chain(std::iter::once((arci, i*D,   if !ti { -sqrtkappa * d.0 / sqrnormd } else { 0.0 })))
-                .chain(std::iter::once((arci, i*D+1, if !ti { -sqrtkappa * d.1 / sqrnormd } else { 0.0 })))
-        }));
+        // (4) 
+        m.constraint(Some("total_volume"),
+                     &t.clone().sum().sub(w),
+                     zero());
+        // (5)
+        let f : Vec<f64> = drawdata.external_force.iter().flat_map(|row| row.iter()).cloned().collect();
+        m.constraint(Some("force_balance"), 
+                     &s.clone().square_diag().mul(b).sum_on(&[1]),
+                     equal_to(f));
 
-    let mut m = Model::new(Some("Truss"));
-    let tau = m.variable(Some("tau"), unbounded());
-    //let tau = m.variable(Some("tau"), equal_to(20.0));
-    let sigma = m.variable(Some("sigma"), unbounded().with_shape(&[numarcs]));
-    let t = m.variable(Some("t"),unbounded().with_shape(&[numarcs]));
-    let s = m.variable(Some("s"),unbounded().with_shape(&[numarcs]));
-    let w = m.variable(Some("w"),equal_to(drawdata.total_material_volume));
+        m.solve();
 
-    // (1)
-    m.objective(None, Sense::Minimize, &tau);
+        m.write_problem("truss.ptf");
 
-    // (2)
-    m.constraint(Some("t_sigma_s"),
-                 &hstack![t.clone().reshape(&[numarcs,1]),
-                          sigma.clone().reshape(&[numarcs,1]),
-                          s.clone().reshape(&[numarcs,1])],
-                 in_rotated_quadratic_cones(&[numarcs,3], 1));
-    // (3)
-    m.constraint(Some("sum_sigma"),
-                 &tau.clone().sub(sigma.clone().sum()),
-                 nonnegative());
-        
-    // (4) 
-    m.constraint(Some("total_volume"),
-                 &t.clone().sum().sub(w),
-                 zero());
-    // (5)
-    let f : Vec<f64> = drawdata.external_force.iter().flat_map(|row| row.iter()).cloned().collect();
-    m.constraint(Some("force_balance"), 
-                 &s.clone().square_diag().mul(b).sum_on(&[1]),
-                 equal_to(f));
 
-    m.solve();
-
-    m.write_problem("truss.ptf");
-
-    let tsol = m.primal_solution(SolutionType::Default,&t).expect("No solution available");
-    let ssol = m.primal_solution(SolutionType::Default,&s).expect("No solution available");
-    //for (t,(i,j)) in tsol.iter().zip(drawdata.arcs.iter()) {
-    //    println!("Arg ({},{}): volume = {:.3}",i,j,t);
-    //}
-
-    drawdata.arc_vol_stress = Some((tsol.to_vec(),ssol.to_vec()));
-
+        if let (Ok(tsol),Ok(ssol)) = (m.primal_solution(SolutionType::Default,&t),
+                                      m.primal_solution(SolutionType::Default,&s)) {
+            drawdata.arc_vol_stress = Some((tsol.to_vec(),ssol.to_vec()));
+        }
+        else {
+            println!("ERROR: No solution!");
+        }
+    }
     let app = Application::builder()
         .application_id(APP_ID)
         .build();
@@ -285,61 +294,25 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     let w : f64 = w.into();
     let h : f64 = h.into();
     let s = w.min(h);
+   
+    let crop = data.points.iter().fold((0.0,0.0,0.0,0.0), |b,p| ( p[0].min(b.0),p[1].min(b.1),p[0].max(b.0),p[1].max(b.1)));
+    let crop = (crop.0 - (crop.2-crop.0)*0.1,
+                crop.1 - (crop.3-crop.1)*0.1,
+                crop.2 + (crop.2-crop.0)*0.1,
+                crop.3 + (crop.3-crop.1)*0.1);
+    let boxmax = (crop.2-crop.0).abs().max( (crop.3-crop.1).abs());
+    let scale = s / boxmax;
 
+
+    //println!("scale = {}",scale);
     context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
-    context.translate(0.0,h/2.0);
-    context.scale(s/10.0, -s/10.0);
+    //context.translate(0,-h as f64);
+    context.scale(scale, -scale);
+    context.translate(boxmax*0.1,-boxmax*0.9);
     let mx = context.matrix();
 
-    // ARCS
-    context.set_source_rgb(0.0, 0.0, 0.0);    
-    if let Some((ref volume,ref stress)) = data.arc_vol_stress {
-        let smax = stress.iter().fold(1.0e-3, |m,v| if v.abs() > m { v.abs() } else { m });
-        for (&(i,j),&v,&s) in izip!(data.arcs.iter(),volume.iter(),stress.iter()) {
-            let pi = data.points[i];
-            let pj = data.points[j];
-        
-            println!("Arc volume = {:?}",volume);
-
-            if v > 1.0e-4 {
-                let w = v / norm(&[ pj[0]-pi[0], pj[1]-pi[1] ]);
-                if s < 0.0 {
-                    context.set_source_rgb(0.5, 0.0, 0.0);    
-                } 
-                else {
-                    context.set_source_rgb(0.0, 0.5, 0.0);    
-                }
-                context.set_line_width(w*2.0);
-                context.move_to(pi[0], pi[1]);
-                context.line_to(pj[0], pj[1]);
-
-                context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
-                _ = context.stroke();
-                context.set_matrix(mx);
-            }
-        }
-    }
-    // NODES
-    context.set_source_rgb(0.0, 0.0, 0.5);
-    for p in data.points.iter() {
-        context.arc(p[0],p[1],0.1,0.0,std::f64::consts::PI*2.0);
-
-        context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
-        _ = context.fill();
-        context.set_matrix(mx);
-    }
-
-    context.set_source_rgb(0.0, 0.0, 0.0);
-    for (&f,p) in data.node_type.iter().zip(data.points.iter()) {
-        if f {
-            context.arc(p[0],p[1],0.1,0.0,std::f64::consts::PI*2.0);
-            context.set_matrix(cairo::Matrix::new(3.0,0.0,0.0,3.0,0.0,0.0));
-            _ = context.stroke();
-            context.set_matrix(mx);
-        }
-    }
-
-    context.set_line_width(2.0);
+    // Forces
+    context.set_line_width(3.0);
     context.set_source_rgb(1.0, 0.0, 0.0);
     for (f,p) in data.external_force.iter().zip(data.points.iter()) {
         if norm(f) > 0.0 {
@@ -359,5 +332,71 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
             context.set_matrix(mx);
         }
     }
+    // ARCS
+    context.set_source_rgb(0.0, 0.0, 0.0);    
+    if let Some((ref volume,ref stress)) = data.arc_vol_stress {
+        let smax = stress.iter().fold(1.0e-3, |m,v| if v.abs() > m { v.abs() } else { m });
+        for (&(i,j),&v,&s) in izip!(data.arcs.iter(),volume.iter(),stress.iter()) {
+            let pi = data.points[i];
+            let pj = data.points[j];
+        
+            //println!("Arc volume = {:?}",volume);
+
+            if v > 1.0e-4 {
+                let w = v / norm(&[ pj[0]-pi[0], pj[1]-pi[1] ]);
+                if s < 0.0 {
+                    context.set_source_rgb(0.7, 0.0, 0.0);    
+                } 
+                else {
+                    context.set_source_rgb(0.0, 0.7, 0.0);    
+                }
+                context.set_line_width(w*2.0);
+                context.move_to(pi[0], pi[1]);
+                context.line_to(pj[0], pj[1]);
+
+                context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
+                _ = context.stroke();
+                context.set_matrix(mx);
+            }
+        }
+    }
+    else {
+        context.set_source_rgb(0.0, 0.0, 0.0);    
+        context.set_line_width(1.0);
+        for &(i,j) in data.arcs.iter() {
+            let pi = data.points[i];
+            let pj = data.points[j];
+        
+            context.move_to(pi[0], pi[1]);
+            context.line_to(pj[0], pj[1]);
+
+            context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
+            _ = context.stroke();
+            context.set_matrix(mx);
+        }
+    }
+
+    // NODES
+    context.set_source_rgb(0.0, 0.0, 0.5);
+    context.set_line_width(1.0);
+    for p in data.points.iter() {
+        context.arc(p[0],p[1],5.0/scale,0.0,std::f64::consts::PI*2.0);
+
+        context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
+        _ = context.fill();
+        context.set_matrix(mx);
+    }
+
+    context.set_source_rgb(0.0, 0.0, 0.0);
+    context.set_line_width(1.0);
+    for (&f,p) in data.node_type.iter().zip(data.points.iter()) {
+        if f {
+            context.arc(p[0],p[1],15.0/scale,0.0,std::f64::consts::PI*2.0);
+            context.set_matrix(cairo::Matrix::new(3.0,0.0,0.0,3.0,0.0,0.0));
+            _ = context.stroke();
+            context.set_matrix(mx);
+        }
+    }
+    
 }
 
