@@ -4,8 +4,92 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy = { version = "0.13.2", default_features = false, features = ["bevy_core_pipeline","bevy_render","x11","bevy_ui","bevy_scene", "bevy_gizmos","bevy_pbr"]  }
+#bevy = { version = "0.13.2", default_features = false, features = ["bevy_core_pipeline","bevy_render","x11","bevy_ui","bevy_scene", "bevy_gizmos","bevy_pbr"]  }
 ellipsoids = { version = "0.1.0", path = "../ellipsoids" }
 glam = "0.28.0"
 itertools = "0.13.0"
 mosekmodel = { version = "0.1.0", path = "../.." }
+
+[dependencies.bevy]
+version = "0.13.2"
+default_features = false
+features = [
+    ## DEFAULT FEATURES
+    #"android_shared_stdcxx",
+    "animation",
+    "bevy_animation",
+    #"bevy_asset",
+    "bevy_audio",
+    "bevy_core_pipeline",
+    #"bevy_debug_stepping",
+    "bevy_gilrs",
+    "bevy_gizmos",
+    "bevy_gltf",
+    "bevy_pbr",
+    "bevy_render",
+    "bevy_scene",
+    #"bevy_sprite",
+    "bevy_text",
+    "bevy_ui",
+    "bevy_winit",
+    "default_font",
+    "hdr",
+    "ktx2",
+    #"multi-threaded",
+    #"png",
+    #"tonemapping_luts",
+    #"vorbis",
+    #"webgl2",
+    "x11",
+    #"zstd"
+
+    ## NON-DEFAULT FEATURES
+        
+    #"accesskit_unixg",
+    #"asset_processorg",
+    #"async-iog",
+    #"basis-universalg",
+    #"bevy_ci_testingg",
+    #"bevy_dynamic_pluging",
+    #"bmpg",
+    #"ddsg",
+    #"debug_glam_assertg",
+    #"detailed_traceg",
+    #"dynamic_linkingg",
+    #"embedded_watcherg",
+    #"exrg",
+    #"file_watcherg",
+    #"flacg",
+    #"glam_assertg",
+    #"jpegg",
+    #"minimp3g",
+    #"mp3g",
+    #"pbr_transmission_texturesg",
+    #"pnmg",
+    #"serializeg",
+    #"shader_format_glslg",
+    #"shader_format_spirvg",
+    #"subpixel_glyph_atlasg",
+    #"symphonia-aacg",
+    #"symphonia-allg",
+    #"symphonia-flacg",
+    #"symphonia-isomp4g",
+    #"symphonia-vorbisg",
+    #"symphonia-wavg",
+    #"tgag",
+    #"traceg",
+    #"trace_chromeg",
+    #"trace_tracyg",
+    #"trace_tracy_memoryg",
+    #"wavg",
+    #"waylandg",
+    #"webgpug",
+    #"webpg",
+    #"wgpu_traceg",
+    #"zlibg",
+    ]
+
+
+
+
+

@@ -30,7 +30,6 @@ struct RotatingSphere<const N : usize> {
 #[allow(non_snake_case)]
 #[derive(Default,Reflect,GizmoConfigGroup)]
 struct DrawData {
-    spheres : Vec<
 
     radius : Vec<[f64;3]>,
     center : Vec<[f64;3]>,
@@ -40,50 +39,113 @@ struct DrawData {
     Abs : Vec<([f64;4],[f64;3])>,
     // Bounding ellipsoid as { x : || Px+q || < 1 } 
     Pc : Option<([f64;4],[f64;3])>,
-    Qd : Option<([f64;4],[f64;3])>,
+    Qd : Option<([f64;4],[f64;3])>
 }
 
 
-pub fn main() {
-    let drawdata = DrawData{
-        radius : vec![[0.2,0.15],[0.3,0.2],[0.4, 0.2]],
-        center : vec![[0.2,0.2],[-0.2,0.1],[0.2,-0.2]],
-        speed  : vec![[0.1,0.3],[-0.3,0.5],[0.4,-0.3]],
-
-        ..default()
-    };
-
+fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .init_gizmo_group::<DrawData>()
         .add_systems(Startup, setup)
-        .add_systems(Update, ( draw, update ))
-        .run()
-        ;
-
-    println!("Main loop exit!");
+        .run();
 }
 
 
+/// set up a simple 3D scene
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>)
-{
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    // circular base
+    commands.spawn(PbrBundle {
+        mesh: meshes.add(Circle::new(4.0)),
+        material: materials.add(Color::WHITE),
+        transform: Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+        ..default()
+    });
+    // cube
+    commands.spawn(PbrBundle {
+        mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+        material: materials.add(Color::rgb_u8(124, 144, 255)),
+        transform: Transform::from_xyz(0.0, 0.5, 0.0),
+        ..default()
+    });
+
+    // cube
+    commands.spawn(PbrBundle {
+        mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+        material: materials.add(Color::rgb_u8(124, 144, 255)),
+        transform: Transform::from_xyz(0.0, 0.5, 0.0),
+        ..default()
+    });
+
+    // light
+    commands.spawn(PointLightBundle {
+        point_light: PointLight {
+            shadows_enabled: true,
+            ..default()
+        },
+        transform: Transform::from_xyz(4.0, 8.0, 4.0),
+        ..default()
+    });
+    // camera
+    commands.spawn(Camera3dBundle {
+        transform: Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
+        ..default()
+    });
 }
 
-fn draw(
-    mut gizmos: Gizmos,
-    mut my_gizmos: Gizmos<DrawData>,
-    time: Res<Time>) 
-{
-}
-fn update(
-    mut config_store: ResMut<GizmoConfigStore>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    time: Res<Time>)
-{
-}
+
+
+
+
+
+
+
+
+
+
+//     pub fn main() {
+//         let drawdata = DrawData{
+//             radius : vec![[0.2,0.15],[0.3,0.2],[0.4, 0.2]],
+//             center : vec![[0.2,0.2],[-0.2,0.1],[0.2,-0.2]],
+//             speed  : vec![[0.1,0.3],[-0.3,0.5],[0.4,-0.3]],
+//     
+//             ..default()
+//         };
+//     
+//         App::new()
+//             .add_plugins(DefaultPlugins)
+//             .init_gizmo_group::<DrawData>()
+//             .add_systems(Startup, setup)
+//             .add_systems(Update, ( draw, update ))
+//             .run()
+//             ;
+//     
+//         println!("Main loop exit!");
+//     }
+//     
+//     
+//     fn setup(
+//         mut commands: Commands,
+//         mut meshes: ResMut<Assets<Mesh>>,
+//         mut materials: ResMut<Assets<StandardMaterial>>)
+//     {
+//     }
+//     
+//     fn draw(
+//         mut gizmos: Gizmos,
+//         mut my_gizmos: Gizmos<DrawData>,
+//         time: Res<Time>) 
+//     {
+//     }
+//     fn update(
+//         mut config_store: ResMut<GizmoConfigStore>,
+//         keyboard: Res<ButtonInput<KeyCode>>,
+//         time: Res<Time>)
+//     {
+//     }
 
 //#[allow(non_snake_case)]
 //fn build_ui(app   : &Application,
