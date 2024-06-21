@@ -332,7 +332,8 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     // ARCS
     context.set_source_rgb(0.0, 0.0, 0.0);    
     if let Some((ref volume,ref stress)) = data.arc_vol_stress {
-        for (&(i,j),&v) in data.arcs.iter().zip(volume.iter()) {
+        let smax = *stress.iter().max().unwrap_or(&1.0);
+        for (&(i,j),&v,&s) in izip!(data.arcs.iter(),volume.iter(),stress.iter()) {
             let pi = data.points[i];
             let pj = data.points[j];
         
@@ -340,8 +341,9 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
 
             if v > 1.0e-4 {
                 let w = v / norm(&[ pj[0]-pi[0], pj[1]-pi[1] ]);
-                if 
+                if s < 0.0 { 
                 context.set_source_rgb(0.0, 0.0, 0.0);    
+                else 
                 context.set_line_width(w*2.0);
                 context.move_to(pi[0], pi[1]);
                 context.line_to(pj[0], pj[1]);
