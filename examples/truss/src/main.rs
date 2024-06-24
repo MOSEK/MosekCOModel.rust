@@ -1,12 +1,8 @@
 extern crate cairo;
-extern crate glam;
 extern crate mosekmodel;
-
-//pub mod truss;
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
 use gtk::prelude::*;
 use itertools::izip;
 
