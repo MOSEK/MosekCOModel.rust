@@ -371,7 +371,7 @@ pub fn permute_axes(perm : &[usize],
             }
         });
     }
-    println!("permute_axes: perm = {:?}, shape = {:?}, rshape = {:?}",perm,shape,rshape);
+    //println!("permute_axes: perm = {:?}, shape = {:?}, rshape = {:?}",perm,shape,rshape);
 
     let nd = shape.len();
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),subj.len(),*ptr.last().unwrap());
@@ -919,7 +919,7 @@ pub fn mul_right_sparse(mheight : usize,
     if ewidth != mheight {
         panic!("Incompatible operand shapes: {:?} * {:?}",shape,&[mheight,mwidth]);
     }
-    println!("Operand shapes: {:?} * {:?}",shape,&[mheight,mwidth]);
+    //println!("Operand shapes: {:?} * {:?}",shape,&[mheight,mwidth]);
 
     // tranpose matrix
     let (us,mcof) = xs.alloc(eheight+1 // erowptr

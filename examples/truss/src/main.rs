@@ -6,6 +6,7 @@ extern crate mosekmodel;
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 use gtk::prelude::*;
 use itertools::izip;
 
@@ -45,6 +46,8 @@ impl DrawData {
     ///     ...
     /// forces
     ///     INT FLOAT FLOAT
+    ///     ...
+    /// forces ...
     ///     ...
     /// ```
     fn from_file(filename : &str) -> DrawData {
@@ -180,42 +183,51 @@ pub fn main() {
                     .chain(std::iter::once((arci, i*D+1, if !ti { -sqrtkappa * d.1 / sqrnormd } else { 0.0 })))
             }));
 
+        let numforceset = drawdata.external_force.len();
         let mut m = Model::new(Some("Truss"));
         let tau = m.variable(Some("tau"), unbounded());
         //let tau = m.variable(Some("tau"), equal_to(20.0));
-        let sigma = m.variable(Some("sigma"), unbounded().with_shape(&[numarcs]));
-        let t = m.variable(Some("t"),unbounded().with_shape(&[numarcs]));
-        let s = m.variable(Some("s"),unbounded().with_shape(&[numarcs]));
+        
+        
+
+        let sigma = m.variable(Some("sigma"), unbounded().with_shape(&[numforceset,numarcs]));
+        let t = m.variable(Some("t"),unbounded().with_shape(&[numforceset,numarcs]));
+        let s = m.variable(Some("s"),unbounded().with_shape(&[numforceset,numarcs]));
         let w = m.variable(Some("w"),equal_to(drawdata.total_material_volume));
 
         // (1)
         m.objective(None, Sense::Minimize, &tau);
 
-        // (2)
-        m.constraint(Some("t_sigma_s"),
-                     &hstack![t.clone().reshape(&[numarcs,1]),
-                              sigma.clone().reshape(&[numarcs,1]),
-                              s.clone().reshape(&[numarcs,1])],
-                     in_rotated_quadratic_cones(&[numarcs,3], 1));
-        // (3)
-        m.constraint(Some("sum_sigma"),
-                     &tau.clone().sub(sigma.clone().sum()),
-                     nonnegative());
-            
-        // (4) 
-        m.constraint(Some("total_volume"),
-                     &t.clone().sum().sub(w),
-                     zero());
-        // (5)
-        let f : Vec<f64> = drawdata.external_force[0].iter().flat_map(|row| row.iter()).cloned().collect();
-        m.constraint(Some("force_balance"), 
-                     &s.clone().square_diag().mul(b).sum_on(&[1]),
-                     equal_to(f));
+        for (fi,forces) in drawdata.external_force.iter().enumerate() {
+            let t     = (&t).slice(&[fi..fi+1,0..numarcs]).reshape(&[numarcs]);
+            let s     = (&s).slice(&[fi..fi+1,0..numarcs]).reshape(&[numarcs]);
+            let sigma = (&sigma).slice(&[fi..fi+1,0..numarcs]).reshape(&[numarcs]);
+
+            // (2)
+            m.constraint(Some("t_sigma_s"),
+                         &hstack![t.clone().reshape(&[numarcs,1]),
+                                  sigma.clone().reshape(&[numarcs,1]),
+                                  s.clone().reshape(&[numarcs,1])],
+                         in_rotated_quadratic_cones(&[numarcs,3], 1));
+            // (3)
+            m.constraint(Some("sum_sigma"),
+                         &tau.clone().sub(sigma.clone().sum()),
+                         nonnegative());
+                
+            // (4) 
+            m.constraint(Some("total_volume"),
+                         &t.clone().sum().sub(w.clone()),
+                         zero());
+            // (5)
+            let f : Vec<f64> = forces.iter().flat_map(|row| row.iter()).cloned().collect();
+            m.constraint(Some("force_balance"), 
+                         &s.clone().square_diag().mul(b.clone()).sum_on(&[1]),
+                         equal_to(f));
+        }
 
         m.solve();
 
         m.write_problem("truss.ptf");
-
 
         if let (Ok(tsol),Ok(ssol)) = (m.primal_solution(SolutionType::Default,&t),
                                       m.primal_solution(SolutionType::Default,&s)) {
@@ -300,66 +312,74 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     let s = w.min(h);
    
     let crop = data.points.iter().fold((0.0,0.0,0.0,0.0), |b,p| ( p[0].min(b.0),p[1].min(b.1),p[0].max(b.0),p[1].max(b.1)));
+    println!("box   = {:?}",crop);
     let crop = (crop.0 - (crop.2-crop.0)*0.1,
                 crop.1 - (crop.3-crop.1)*0.1,
                 crop.2 + (crop.2-crop.0)*0.1,
                 crop.3 + (crop.3-crop.1)*0.1);
+    println!("  -> box {:?}",crop);
     let boxmax = (crop.2-crop.0).abs().max( (crop.3-crop.1).abs());
     let scale = s / boxmax;
 
-    //println!("scale = {}",scale);
+    println!("boxmax = {}",boxmax);
+    println!("scale = {}",scale);
     context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
     //context.translate(0,-h as f64);
     context.scale(scale, -scale);
-    context.translate(boxmax*0.1,-boxmax*0.9);
+    context.translate(-crop.0,-boxmax-crop.1);
     let mx = context.matrix();
 
     // Forces
     context.set_line_width(3.0);
-    context.set_source_rgb(1.0, 0.0, 0.0);
-    for (f,p) in data.external_force[0].iter().zip(data.points.iter()) {
-        if norm(f) > 0.0 {
-            context.move_to(p[0],p[1]);
-            context.line_to(p[0]+f[0],p[1]+f[1]);
+    context.set_source_rgb(1.0, 0.8, 0.8);
+    for forces in data.external_force.iter() {
+        for (f,p) in forces.iter().zip(data.points.iter()) {
+            if norm(f) > 0.0 {
+                context.move_to(p[0],p[1]);
+                context.line_to(p[0]+f[0],p[1]+f[1]);
 
-            // arrow head
-            let v = [ f[1]-f[0], -f[0]-f[1] ];
-            let v = vecscale(0.1 / norm(&v),&v);
+                // arrow head
+                let v = [ f[1]-f[0], -f[0]-f[1] ];
+                let v = vecscale(0.1 / norm(&v),&v);
 
-            context.move_to(p[0]+f[0]+v[0],p[1]+f[1]+v[1]);
-            context.line_to(p[0]+f[0],p[1]+f[1]);
-            context.line_to(p[0]+f[0]+v[1],p[1]+f[1]-v[0]);
-
-            context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
-            _ = context.stroke();
-            context.set_matrix(mx);
-        }
-    }
-    // ARCS
-    context.set_source_rgb(0.0, 0.0, 0.0);    
-    if let Some((ref volume,ref stress)) = data.arc_vol_stress {
-        let smax = stress.iter().fold(1.0e-3, |m,v| if v.abs() > m { v.abs() } else { m });
-        for (&(i,j),&v,&s) in izip!(data.arcs.iter(),volume.iter(),stress.iter()) {
-            let pi = data.points[i];
-            let pj = data.points[j];
-        
-            //println!("Arc volume = {:?}",volume);
-
-            if v > 1.0e-4 {
-                let w = v / norm(&[ pj[0]-pi[0], pj[1]-pi[1] ]);
-                if s < 0.0 {
-                    context.set_source_rgb(0.7, 0.0, 0.0);    
-                } 
-                else {
-                    context.set_source_rgb(0.0, 0.7, 0.0);    
-                }
-                context.set_line_width(w*2.0);
-                context.move_to(pi[0], pi[1]);
-                context.line_to(pj[0], pj[1]);
+                context.move_to(p[0]+f[0]+v[0],p[1]+f[1]+v[1]);
+                context.line_to(p[0]+f[0],p[1]+f[1]);
+                context.line_to(p[0]+f[0]+v[1],p[1]+f[1]-v[0]);
 
                 context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
                 _ = context.stroke();
                 context.set_matrix(mx);
+            }
+        }
+    }
+    // ARCS
+    let numarcs = data.arcs.len();
+
+    context.set_source_rgb(0.0, 0.0, 0.0);    
+    if let Some((ref volume,ref stress)) = data.arc_vol_stress {
+        for (volume,stress) in volume.chunks(numarcs).zip(stress.chunks(numarcs)) {
+            for (&(i,j),&v,&s) in izip!(data.arcs.iter(),volume.iter(),stress.iter()) {
+                let pi = data.points[i];
+                let pj = data.points[j];
+            
+                //println!("Arc volume = {:?}",volume);
+
+                if v > 1.0e-4 {
+                    let w = v / norm(&[ pj[0]-pi[0], pj[1]-pi[1] ]);
+                    if s < 0.0 {
+                        context.set_source_rgb(0.7, 0.0, 0.0);    
+                    } 
+                    else {
+                        context.set_source_rgb(0.0, 0.7, 0.0);    
+                    }
+                    context.set_line_width(w*2.0);
+                    context.move_to(pi[0], pi[1]);
+                    context.line_to(pj[0], pj[1]);
+
+                    context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
+                    _ = context.stroke();
+                    context.set_matrix(mx);
+                }
             }
         }
     }
