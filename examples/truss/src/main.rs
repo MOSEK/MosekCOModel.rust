@@ -1,13 +1,14 @@
 extern crate cairo;
 extern crate mosekmodel;
+extern crate mosek;
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use gtk::prelude::*;
+use gtk::{prelude::*, Orientation};
 use itertools::izip;
 
 use cairo::Context;
-use gtk::{Application, DrawingArea, ApplicationWindow};
+use gtk::{Application, DrawingArea, ApplicationWindow,Box,BoxExt};
 use mosekmodel::expr::*;
 use mosekmodel::matrix::SparseMatrix;
 use mosekmodel::{hstack, in_rotated_quadratic_cones, unbounded, nonnegative,equal_to,zero, Model, Sense, SolutionType};
@@ -125,7 +126,7 @@ impl DrawData {
 
             dd.external_force.push(forcevec);
         }
-        println!("Truss:\n\t#nodes: {}\n\t#arcs: {}",dd.points.len(),dd.arcs.len());
+        println!("Truss:\n\t#nodes: {}\n\t#arcs: {}\n\t#force sets: {}",dd.points.len(),dd.arcs.len(),forces.len());
 
         dd 
     }
@@ -186,16 +187,16 @@ pub fn main() {
         
         
 
+        let t     = m.variable(Some("t"),unbounded().with_shape(&[numarcs]));
         let sigma = m.variable(Some("sigma"), unbounded().with_shape(&[numforceset,numarcs]));
-        let t = m.variable(Some("t"),unbounded().with_shape(&[numforceset,numarcs]));
-        let s = m.variable(Some("s"),unbounded().with_shape(&[numforceset,numarcs]));
-        let w = m.variable(Some("w"),equal_to(drawdata.total_material_volume));
+        let s     = m.variable(Some("s"),unbounded().with_shape(&[numforceset,numarcs]));
+        let w     = m.variable(Some("w"),equal_to(drawdata.total_material_volume));
 
         // (1)
         m.objective(None, Sense::Minimize, &tau);
 
         for (fi,forces) in drawdata.external_force.iter().enumerate() {
-            let t     = (&t).slice(&[fi..fi+1,0..numarcs]).reshape(&[numarcs]);
+            println!("Force set #{}",fi);
             let s     = (&s).slice(&[fi..fi+1,0..numarcs]).reshape(&[numarcs]);
             let sigma = (&sigma).slice(&[fi..fi+1,0..numarcs]).reshape(&[numarcs]);
 
@@ -227,7 +228,59 @@ pub fn main() {
 
         if let (Ok(tsol),Ok(ssol)) = (m.primal_solution(SolutionType::Default,&t),
                                       m.primal_solution(SolutionType::Default,&s)) {
+
+            let mut v = vec![0.0; D*numnodes*drawdata.external_force.len()];
             drawdata.arc_vol_stress = Some((tsol.to_vec(),ssol.to_vec()));
+
+            for (t,forces,v) in izip!(tsol.chunks(numarcs),drawdata.external_force.iter(), v.chunks_mut(D*numnodes)) {
+                // For each set of forces, compute stiffness matrix and displacements
+                let mut a = vec![0.0;numnodes*D*numnodes*D];
+                for (&(i,j),t_ij) in drawdata.arcs.iter().zip(t.iter()) {
+                    let pi = drawdata.points[i];
+                    let pj = drawdata.points[j];
+                    let ifix = drawdata.node_type[i];
+                    let jfix = drawdata.node_type[j];
+                    let n = numnodes*D;
+
+                    let sqnormij : f64 = pi.iter().zip(pj.iter()).map(|(vi,vj)| (vj-vi).powi(2)).sum(); 
+
+                    let beta_ijx : f64 = if !jfix { (pj[0]-pi[0])/sqnormij } else { 0.0 };
+                    let beta_ijy : f64 = if !jfix { (pj[1]-pi[1])/sqnormij } else { 0.0 };
+                    let beta_jix : f64 = if !ifix { -(pj[0]-pi[0])/sqnormij } else { 0.0 };
+                    let beta_jiy : f64 = if !ifix { -(pj[1]-pi[1])/sqnormij } else { 0.0 };
+                    let c = drawdata.kappa * t_ij;
+
+                    // ix,(ix, iy,jx,jy)
+                    a[i*n+i*D]       += c*beta_ijx.powi(2);
+                    a[i*n+i*D+1]     += c*beta_ijx*beta_ijy;
+                    a[i*n+j*D]       += c*beta_ijx*beta_jix;
+                    a[i*n+j*D+1]     += c*beta_ijx*beta_jiy;
+                    // iy,(ix,iy,jx,jy)
+                    a[(i+1)*n+i*D]   += c*beta_ijy*beta_ijx;
+                    a[(i+1)*n+i*D+1] += c*beta_ijy.powi(2);
+                    a[(i+1)*n+j*D]   += c*beta_ijy*beta_jix;
+                    a[(i+1)*n+j*D+1] += c*beta_ijy*beta_jiy;
+                    // jx,(ix,iy,jx,jy)
+                    a[j*n+i*D]       += c*beta_jix*beta_ijx;
+                    a[j*n+i*D+1]     += c*beta_jix*beta_ijy;
+                    a[j*n+j*D]       += c*beta_jix.powi(2);
+                    a[j*n+j*D+1]     += c*beta_jix*beta_jiy;
+                    // jy,(ix,iy,jx,jy)
+                    a[(j+1)*n+i*D]   += c*beta_jiy*beta_ijx;
+                    a[(j+1)*n+i*D+1] += c*beta_jiy*beta_ijy;
+                    a[(j+1)*n+j*D]   += c*beta_jiy*beta_jix;
+                    a[(j+1)*n+j*D+1] += c*beta_jiy.powi(2);
+                }
+                let forcevec : Vec<f64> = forces.iter().flat_map(|v| v.iter()).cloned().collect();
+                if let Err(msg) = linalg::solveaxb(numnodes*D, a.as_slice(), forcevec.as_slice(), v) {
+                    println!("Failed to objtain displacement: {}",msg);
+                }
+                else {
+                    println!("v = {:?}",v);
+
+                }
+            }
+
         }
         else {
             println!("ERROR: No solution!");
@@ -261,10 +314,21 @@ fn build_ui(app   : &Application,
         darea.set_draw_func(move |widget,context,w,h| redraw_window(widget,context,w,h,&data.borrow()));
     }
 
+
+    let vbox = gtk::Box::builder() 
+        .orientation(Orientation::Vertical)
+        .build();
+
+    let hbox = gtk::Box::builder()
+        .orientation(Orientation::Horizontal)
+        .child(&darea)
+        .child(&vbox)
+        .build();
+
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Hello Löwner-John")
-        .child(&darea)
+        .child(&hbox)
         .build();
 
 
@@ -353,15 +417,13 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
 
     context.set_source_rgb(0.0, 0.0, 0.0);    
     if let Some((ref volume,ref stress)) = data.arc_vol_stress {
-        for (volume,stress) in volume.chunks(numarcs).zip(stress.chunks(numarcs)) {
+        for stress in stress.chunks(numarcs) {
             for (&(i,j),&v,&s) in izip!(data.arcs.iter(),volume.iter(),stress.iter()) {
                 let pi = data.points[i];
                 let pj = data.points[j];
             
-                //println!("Arc volume = {:?}",volume);
-
                 if v > 1.0e-4 {
-                    let w = v / norm(&[ pj[0]-pi[0], pj[1]-pi[1] ]);
+                    let w = (v / norm(&[ pj[0]-pi[0], pj[1]-pi[1] ])).sqrt() * 5.0;
                     if s < 0.0 {
                         context.set_source_rgb(0.7, 0.0, 0.0);    
                     } 
@@ -417,5 +479,52 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
         }
     }
     
+}
+
+mod linalg {
+    use itertools::izip;
+    /// Solve Ax=b, where A is symmetric positive semidefinite.
+    ///
+    /// # Arguments
+    /// - `dim`
+    /// - `A` Symmetric positive semidefinite column-major matrix. It is assumed that A is
+    ///   symmetric, not checked, and only the lower triangular elements are considered.
+    /// - `b`
+    /// - `x`
+    #[allow(non_snake_case)]
+    pub fn solveaxb(dim : usize, A : &[f64], b : &[f64], x : &mut [f64]) -> Result<(),String> {
+        println!("A = ");
+        for acol in A.chunks(dim) { println!("  {:?}",acol); }
+
+        if A.len() != dim*dim { return Err("Invalid A size".to_string()); }
+        if b.len() != dim { return Err("Invalid b size".to_string()); }
+        if x.len() != dim { return Err("Invalid x size".to_string()); }
+        let n : i32 = dim.try_into().unwrap();
+
+        // Compute L such that LL' = A
+        let mut L = A.to_vec();
+        mosek::potrf(mosek::Uplo::LO, n, L.as_mut_slice())?;
+
+        let diag : Vec<f64> = (0..dim).rev().scan(0,|s,i| { let r = *s; *s += i; Some(r) }).map(|pb| L[pb]).collect();
+        x.copy_from_slice(b);
+
+        // Solve LL'x=v -> L'x=L\b
+        for (i,pb) in (0..dim).zip((0..dim).rev().scan(0,|s,i| { let r = *s; *s += i; Some(r) })) {
+            let xi = x[i]/diag[i];
+            for (xj,&lj) in izip!(x[i+1..].iter_mut(), L[pb..].iter()) { *xj -= xi * lj; }            
+            x[i] = xi;
+        }
+        // Solve L'x=L\b -> x=L'\L\b
+        for (i,pb) in (0..dim).zip((0..dim).rev().scan(0,|s,i| { let r = *s; *s += i; Some(r) })) {
+            let mut xi = x[i];
+            for (&xj,&dj,&lj) in izip!(x[i+1..].iter(),diag[i+1..].iter(),L[pb+1..].iter()) {
+                xi -= xj/dj*lj;
+            }
+            x[i] = xi/diag[i];
+        }
+        
+        Ok(())
+    }
+
 }
 

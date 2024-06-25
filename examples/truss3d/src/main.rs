@@ -1,4 +1,5 @@
 extern crate mosekmodel;
+extern crate bevy;
 
 mod truss;
 
@@ -7,17 +8,33 @@ use mosekmodel::matrix::SparseMatrix;
 use mosekmodel::{hstack, in_rotated_quadratic_cones, unbounded, nonnegative,equal_to,zero, Model, Sense, SolutionType};
 use truss::Truss;
 
-#[derive(Clone,Default)]
+use bevy::{pbr, prelude::*};
+
+
+#[derive(Clone,Default,)]
 struct DrawData {
     data           : Truss,
     /// solution
     arc_vol_stress : Option<(Vec<f64>,Vec<f64>)>,
 }
 
-
 const D : usize = 3;
 
 pub fn main() {
+    
+    App::new()
+        .add_plugins(DefaultPlugins)
+        //.add_systems(Startup,|commands,meshes,materials| setup(commands,meshes,materials,&drawdata))
+        .add_systems(Startup,setup)
+    ;
+
+    println!("Main loop exit!");
+}
+
+fn setup(mut commands  : Commands,
+         mut meshes    : ResMut<Assets<Mesh>>,
+         mut materials : ResMut<Assets<StandardMaterial>>)
+{
     let mut args = std::env::args();
 
     if let None = args.next() {  
@@ -68,7 +85,7 @@ pub fn main() {
         let tau = m.variable(Some("tau"), unbounded());
         
         let sigma = m.variable(Some("sigma"), unbounded().with_shape(&[numforceset,numarcs]));
-        let t = m.variable(Some("t"),unbounded().with_shape(&[numforceset,numarcs]));
+        let t = m.variable(Some("t"),unbounded().with_shape(&[numarcs]));
         let s = m.variable(Some("s"),unbounded().with_shape(&[numforceset,numarcs]));
         let w = m.variable(Some("w"),equal_to(drawdata.data.total_material_volume));
 
@@ -76,7 +93,6 @@ pub fn main() {
         m.objective(None, Sense::Minimize, &tau);
 
         for (fi,forces) in drawdata.data.external_force.iter().enumerate() {
-            let t     = (&t).slice(&[fi..fi+1,0..numarcs]).reshape(&[numarcs]);
             let s     = (&s).slice(&[fi..fi+1,0..numarcs]).reshape(&[numarcs]);
             let sigma = (&sigma).slice(&[fi..fi+1,0..numarcs]).reshape(&[numarcs]);
 
@@ -114,14 +130,23 @@ pub fn main() {
             println!("ERROR: No solution!");
         }
     }
+   
+
+    for ((i,j),&t) in izip!(drawdata.data.arcs.iter(),t.iter()) {
+        let pi = drawdata.data.points[i];
+        let pj = drawdata.data.points[i];
+        let lenij = pj.iter().zip(pi.iter()).map(|i| (i.1-i.0).powi(2)).sum().sqrt();
+        let r = (t/lenij).sqrt()/std::f64::consts::PI;
+
+        commands.spawn(PbrBundle{
+            mesh : meshes.add(Cylinder::new(r,lenij)),
+            transform : Transform::from_xyz((pi[0]+pj[0])/2.0, (pi[1]+pj[1])/2.0, (pi[2]+pj[2])/2.0),
+
+            ..default()
+        });
+    }
+
     
-
-
-
-
-    println!("Main loop exit!");
 }
-
-
 
 

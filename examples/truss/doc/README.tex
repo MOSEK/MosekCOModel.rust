@@ -72,5 +72,37 @@ Basically, the force applied at node $i$ must be equal to the weighted sum of
 stresses on all bars connected to node $i$. Note entirely unlike a flow
 conservation constraint in a non-directed graph.
 
+
+\subsection{Computing displacements}
+The compliance for force $f$ and material volume $t$ is defined as 
+\[
+    \mathrm{Compl}_f(t) = \max_t \left(f^Tv  - \frac{1}{2} v^TAv\right)
+\]
+For an optimal $t$, we have 
+\begin{eqnarray}
+    \nabla (v^TAv-f^Tv) = 0 & \Rightarrow & Av=f
+\end{eqnarray}
+If $A$ is positive definite, we can obtain $v$ from $f$.
+
+Here, the matrix $A=\sum_{a\in A} B_a^TB_a$, where $B_a$ is the $|A| \times
+d|N|$ matrix we built earlier from $b_{ij,k}$ (each $beta_{ij,k}$ is a
+$d$-vector, so to get a single vector for $b_{ij}$ we flatten this into
+$b_{ij}\in\mathbb{R}^{d|A|}$). In other words each
+$B_a\in\mathbb{R}^{d|N|\times d|N|}$ with $(2D)^2$ (symmetric) entries. For $a=(i,j)$ and $D=2$ we get 
+\[
+    B_{ij} = t_{ij}\kappa\left[
+        \begin{array}{ccccccc}
+            \ddots  & 0_{*ix}           & 0_{*iy}           & \cdots & 0_{*jx}           & 0_{*jy}           & \cdots \\
+            0_{i*x} & b_{ij,x}^2        & b_{ij,x}b_{ij,y}  & \cdots & -b_{ij,x}^2       & -b_{ij,x}b_{ij,y} & \cdots \\
+            0_{i*y} & b_{ij,x}b_{ij,y}  & b_{ij,y}^2        & \cdots & -b_{ij,x}b_{ij,y} & - b_{ij,y}^2      & \cdots \\
+            \vdots  & \vdots            & \vdots            & \ddots & \vdots            & \vdots            & \cdots \\
+            0_{j*x} & -b_{ij,x}^2       & -b_{ij,x}b_{ij,y} & .      & b_{ij,x}^2        & b_{ij,x}b_{ij,y}  & \cdots \\
+            0_{j*y} & -b_{ij,x}b_{ij,y} & -b_{ij,y}^2       & .      & b_{ij,x}b_{ij,y}  & b_{ij,y}^2        & \cdots \\
+            \vdots  & \vdots            & \vdots            & \vdots & \vdots            & \vdots            & \ddots 
+        \end{array}
+    \right]
+\]
+If $|A| =\geq D|N|$ (and all arcs are linearly independant), this should be positive definite, and we can obtain the 
+
 \end{document}
 
