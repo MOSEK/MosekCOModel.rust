@@ -4,11 +4,11 @@ extern crate mosek;
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use gtk::{prelude::*, Orientation};
+use gtk::{prelude::*, Button, CheckButton, Orientation};
 use itertools::izip;
 
 use cairo::Context;
-use gtk::{Application, DrawingArea, ApplicationWindow,Box,BoxExt};
+use gtk::{Application, DrawingArea, ApplicationWindow,Box};
 use mosekmodel::expr::*;
 use mosekmodel::matrix::SparseMatrix;
 use mosekmodel::{hstack, in_rotated_quadratic_cones, unbounded, nonnegative,equal_to,zero, Model, Sense, SolutionType};
@@ -308,22 +308,47 @@ fn build_ui(app   : &Application,
         .height_request(800)
         .build();
 
-    // Redraw callback
-    {
-        let data = data.clone();
-        darea.set_draw_func(move |widget,context,w,h| redraw_window(widget,context,w,h,&data.borrow()));
-    }
-
-
     let vbox = gtk::Box::builder() 
         .orientation(Orientation::Vertical)
+        .margin_start(10)
+        .margin_end(10)
+        .margin_top(10)
+        .margin_bottom(10)
         .build();
+    {
+        let da0 = darea.clone();
+        let btn0 = CheckButton::builder()
+            .label("Show no forces")
+            .build();
+        btn0.connect_toggled(|_widget| da0.queue_draw());
+        btn0.set_active(true);
+        vbox.append(&btn0);
+
+        let mut btns = Vec::with_capacity(ddata.external_force.len()+1);
+        btns.push(btn0.clone());
+        for i in 0..ddata.external_force.len() {
+            let da = darea.clone();
+            let btn = CheckButton::builder()
+                .label(format!("Force set #{}",i+1).as_str())
+                .group(&btn0)
+                .build();
+            btn.connect_toggled(|_widget| da.queue_draw());
+            vbox.append(&btn);
+            btns.push(btn);
+        }
+    }
 
     let hbox = gtk::Box::builder()
         .orientation(Orientation::Horizontal)
-        .child(&darea)
-        .child(&vbox)
         .build();
+    hbox.append(&darea);
+    hbox.append(&vbox);
+
+    // Redraw callback
+    {
+        let data = data.clone();
+        darea.set_draw_func(move |widget,context,w,h| redraw_window(widget,context,w,h,&data.borrow(),btns.as_slice()));
+    }
 
     let window = ApplicationWindow::builder()
         .application(app)
@@ -363,14 +388,23 @@ fn vecadd<const N : usize>(lhs : &[f64;N], rhs : &[f64;N]) -> [f64;N] {
 }
 
 #[allow(non_snake_case)]
-fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, data : &DrawData) {
+fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, data : &DrawData, btns : &[CheckButton]) {
     context.set_source_rgb(1.0, 1.0, 1.0);
     _ = context.paint();
+
+    let selbtn_i = if let Some((i,btn)) = btns.iter().enumerate().find(|(i,btn)| btn.is_active()) {
+        if i == 0 { None } else { Some(i-1) }
+    }
+    else {
+        None
+    };
 
     let w : f64 = w.into();
     let h : f64 = h.into();
     let s = w.min(h);
-   
+
+
+
     let crop = data.points.iter().fold((0.0,0.0,0.0,0.0), |b,p| ( p[0].min(b.0),p[1].min(b.1),p[0].max(b.0),p[1].max(b.1)));
     println!("box   = {:?}",crop);
     let crop = (crop.0 - (crop.2-crop.0)*0.1,
@@ -392,7 +426,9 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     // Forces
     context.set_line_width(3.0);
     context.set_source_rgb(1.0, 0.8, 0.8);
-    for forces in data.external_force.iter() {
+
+    if let Some(force_i) = selbtn_i {
+        let forces = &data.external_force[force_i];
         for (f,p) in forces.iter().zip(data.points.iter()) {
             if norm(f) > 0.0 {
                 context.move_to(p[0],p[1]);
@@ -416,30 +452,48 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     let numarcs = data.arcs.len();
 
     context.set_source_rgb(0.0, 0.0, 0.0);    
-    if let Some((ref volume,ref stress)) = data.arc_vol_stress {
-        for stress in stress.chunks(numarcs) {
-            for (&(i,j),&v,&s) in izip!(data.arcs.iter(),volume.iter(),stress.iter()) {
-                let pi = data.points[i];
-                let pj = data.points[j];
-            
-                if v > 1.0e-4 {
-                    let w = (v / norm(&[ pj[0]-pi[0], pj[1]-pi[1] ])).sqrt() * 5.0;
-                    if s < 0.0 {
-                        context.set_source_rgb(0.7, 0.0, 0.0);    
-                    } 
-                    else {
-                        context.set_source_rgb(0.0, 0.7, 0.0);    
-                    }
-                    context.set_line_width(w*2.0);
-                    context.move_to(pi[0], pi[1]);
-                    context.line_to(pj[0], pj[1]);
+    if let (Some(force_i),Some((ref volume,ref stress))) = (selbtn_i,&data.arc_vol_stress) {
+        let stress = &stress[force_i*numarcs..(force_i+1)*numarcs];
 
-                    context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
-                    _ = context.stroke();
-                    context.set_matrix(mx);
+        for (&(i,j),&v,&s) in izip!(data.arcs.iter(),volume.iter(),stress.iter()) {
+            let pi = data.points[i];
+            let pj = data.points[j];
+        
+            if v > 1.0e-4 {
+                let w = (v / norm(&[ pj[0]-pi[0], pj[1]-pi[1] ])).sqrt() * 5.0;
+                if s < 0.0 {
+                    context.set_source_rgb(0.7, 0.0, 0.0);    
+                } 
+                else {
+                    context.set_source_rgb(0.0, 0.7, 0.0);    
                 }
+                context.set_line_width(w*2.0);
+                context.move_to(pi[0], pi[1]);
+                context.line_to(pj[0], pj[1]);
+
+                context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
+                _ = context.stroke();
+                context.set_matrix(mx);
             }
         }
+    }
+    else if let Some((ref volume,_)) = data.arc_vol_stress {
+        for (&(i,j),&v) in izip!(data.arcs.iter(),volume.iter()) {
+            let pi = data.points[i];
+            let pj = data.points[j];
+        
+            if v > 1.0e-4 {
+                let w = (v / norm(&[ pj[0]-pi[0], pj[1]-pi[1] ])).sqrt() * 5.0;
+               context.set_line_width(w*2.0);
+                context.move_to(pi[0], pi[1]);
+                context.line_to(pj[0], pj[1]);
+
+                context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
+                _ = context.stroke();
+                context.set_matrix(mx);
+            }
+        }
+        
     }
     else {
         context.set_source_rgb(0.0, 0.0, 0.0);    
