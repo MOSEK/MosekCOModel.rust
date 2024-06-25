@@ -10,6 +10,9 @@ glam = "0.28.0"
 itertools = "0.13.0"
 mosekmodel = { version = "0.1.0", path = "../.." }
 
+[profile.dev.package."*"]
+opt-level = 3
+
 [dependencies.bevy]
 version = "0.13.2"
 default_features = false
@@ -18,10 +21,10 @@ features = [
     #"android_shared_stdcxx",
     "animation",
     "bevy_animation",
-    #"bevy_asset",
+    "bevy_asset",
     "bevy_audio",
     "bevy_core_pipeline",
-    #"bevy_debug_stepping",
+    "bevy_debug_stepping",
     "bevy_gilrs",
     "bevy_gizmos",
     "bevy_gltf",
@@ -37,7 +40,7 @@ features = [
     "ktx2",
     #"multi-threaded",
     #"png",
-    #"tonemapping_luts",
+    "tonemapping_luts",
     #"vorbis",
     #"webgl2",
     "x11",

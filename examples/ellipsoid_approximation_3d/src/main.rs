@@ -13,6 +13,7 @@ use glam::{DMat2,DVec2};
 use itertools::izip;
 use mosekmodel::{unbounded, Model};
 
+use std::f32::consts::PI;
 
 
 const APP_ID : &str = "com.mosek.lowner-john-3d";
@@ -28,28 +29,32 @@ struct RotatingSphere<const N : usize> {
 }
 
 #[allow(non_snake_case)]
-#[derive(Default,Reflect,GizmoConfigGroup)]
-struct DrawData {
+#[derive(Default,Component)]
+struct EllipseTransform {
+    center : Vec3,
 
-    radius : Vec<[f64;3]>,
-    center : Vec<[f64;3]>,
-    speed  : Vec<[f64;2]>,
+    radii : Vec3,
 
-    // Fixed ellipsoids
-    Abs : Vec<([f64;4],[f64;3])>,
-    // Bounding ellipsoid as { x : || Px+q || < 1 } 
-    Pc : Option<([f64;4],[f64;3])>,
-    Qd : Option<([f64;4],[f64;3])>
+    global_axis : Vec3,
+    global_speed : f32,
+
+    local_axis : Vec3,
+    local_speed : f32,
 }
 
+#[derive(Default,Component)]
+struct CameraTransform{
+    rps : f32
+}
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_systems(Startup, setup)
+        .add_systems(Update, update)
+        .add_systems(Update, update_camera)
         .run();
 }
-
 
 /// set up a simple 3D scene
 fn setup(
@@ -58,27 +63,86 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // circular base
+    /*
     commands.spawn(PbrBundle {
         mesh: meshes.add(Circle::new(4.0)),
         material: materials.add(Color::WHITE),
         transform: Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
         ..default()
     });
+    */
     // cube
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-        material: materials.add(Color::rgb_u8(124, 144, 255)),
-        transform: Transform::from_xyz(0.0, 0.5, 0.0),
-        ..default()
-    });
+//    commands.spawn(PbrBundle {
+//        mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+//        //material: materials.add(Color::rgb_u8(124, 144, 255)),
+//        material: materials.add(Color::rgb_u8(192,0,0)),
+//        transform: Transform::from_xyz(0.0, 0.5, 0.0),
+//        ..default()
+//    });
 
     // cube
+/*
     commands.spawn(PbrBundle {
         mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-        material: materials.add(Color::rgb_u8(124, 144, 255)),
+        material: materials.add(Color::rgba_u8(124, 144, 255,92)),
         transform: Transform::from_xyz(0.0, 0.5, 0.0),
         ..default()
     });
+*/
+
+    let color = Color::rgba_u8(192,128,0,255);
+    commands.spawn((PbrBundle{
+        mesh : meshes.add(Sphere::new(1.0)),
+        material : materials.add(color),
+        ..default()},
+
+        EllipseTransform{ 
+            center : Vec3::new(0.0,1.5,1.0),
+            radii  : Vec3::new(0.4, 0.6, 1.2),
+            global_axis : Vec3::new(1.0,1.0,1.0).normalize(),
+            global_speed : 2.0*PI/10.0,
+            local_axis : Vec3::new(1.0,1.0,0.0).normalize(),
+            local_speed : 2.0*PI/15.0 }
+        ));
+    commands.spawn((PbrBundle{
+        mesh : meshes.add(Sphere::new(1.0)),
+        material : materials.add(color),
+        ..default()},
+
+        EllipseTransform{ 
+            center : Vec3::new(0.0,0.0,-2.0),
+            radii  : Vec3::new(1.2, 1.5, 1.0),
+            global_axis : Vec3::new(1.0,-1.0,0.8).normalize(),
+            global_speed : 2.0*PI/15.0,
+            local_axis : Vec3::new(1.0,-1.0,-0.5).normalize(),
+            local_speed : 2.0*PI/10.0 }
+        ));
+    commands.spawn((PbrBundle{
+        mesh : meshes.add(Sphere::new(1.0)),
+        material : materials.add(color),
+        ..default()},
+
+        EllipseTransform{ 
+            center : Vec3::new(-1.0,-0.5,-0.5),
+            radii  : Vec3::new(1.3, 1.2, 0.8),
+            global_axis : Vec3::new(-1.0,1.0,0.8).normalize(),
+            global_speed : 2.0*PI/13.0,
+            local_axis : Vec3::new(1.0,0.0,1.0).normalize(),
+            local_speed : 2.0*PI/11.0 }
+        ));
+    commands.spawn((PbrBundle{
+        mesh : meshes.add(Sphere::new(1.0)),
+        material : materials.add(color),
+        ..default()},
+
+        EllipseTransform{ 
+            center : Vec3::new(1.0,0.0,0.0),
+            radii  : Vec3::new(1.0, 1.5, 0.8),
+            global_axis : Vec3::new(0.0,1.0,0.2).normalize(),
+            global_speed : 2.0*PI/12.5,
+            local_axis : Vec3::new(0.0,1.0,1.0).normalize(),
+            local_speed : 2.0*PI/17.0 }
+        ));
 
     // light
     commands.spawn(PointLightBundle {
@@ -90,16 +154,43 @@ fn setup(
         ..default()
     });
     // camera
-    commands.spawn(Camera3dBundle {
+    commands.spawn((Camera3dBundle {
         transform: Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..default()
-    });
+        ..default() },
+        CameraTransform{ rps:1.0/30.0 }));
 }
 
 
 
-
-
+fn update_camera(time: Res<Time>, mut query: Query<(&mut Transform,&CameraTransform)>) {
+    let t = time.elapsed_seconds();
+    for (mut transform, c) in &mut query {
+        let camloc = Quat::from_rotation_y(2.0*PI*c.rps*t).mul_vec3(Vec3::new(-2.5, 4.5, 9.0)) ;
+        let tf = Transform::from_xyz(camloc.x,camloc.y,camloc.z).looking_at(Vec3::ZERO, Vec3::Y);
+        transform.clone_from(&tf);
+    }
+    
+}
+fn update(time: Res<Time>, mut query: Query<(&mut Transform, &EllipseTransform)>, mut gizmos: Gizmos) {
+    //let t = (time.elapsed_seconds().sin() + 1.) / 2.;
+    let t = time.elapsed_seconds();
+/*
+    gizmos.line(Vec3::new(0.0,0.0,0.0), 
+                Vec3::new(5.0,0.0,0.0),
+                Color::rgb_u8(255,255,255));
+    gizmos.line(Vec3::new(0.0,0.0,0.0), 
+                Vec3::new(0.0,5.0,0.0),
+                Color::rgb_u8(255,255,255));
+    gizmos.line(Vec3::new(0.0,0.0,0.0), 
+                Vec3::new(0.0,0.0,5.0),
+                Color::rgb_u8(255,255,255));
+*/
+    for (mut transform, e) in &mut query {
+        transform.scale = e.radii;
+        transform.rotation = Quat::from_axis_angle(e.local_axis, e.local_speed * t);
+        transform.translation = Quat::from_axis_angle(e.global_axis, (e.global_speed*t) % (2.0*PI)).mul_vec3(e.center);
+    }
+}
 
 
 

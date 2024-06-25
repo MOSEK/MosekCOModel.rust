@@ -185,8 +185,6 @@ pub fn main() {
         let tau = m.variable(Some("tau"), unbounded());
         //let tau = m.variable(Some("tau"), equal_to(20.0));
         
-        
-
         let t     = m.variable(Some("t"),unbounded().with_shape(&[numarcs]));
         let sigma = m.variable(Some("sigma"), unbounded().with_shape(&[numforceset,numarcs]));
         let s     = m.variable(Some("s"),unbounded().with_shape(&[numforceset,numarcs]));
@@ -277,10 +275,8 @@ pub fn main() {
                 }
                 else {
                     println!("v = {:?}",v);
-
                 }
             }
-
         }
         else {
             println!("ERROR: No solution!");
@@ -353,10 +349,9 @@ fn build_ui(app   : &Application,
 
     let window = ApplicationWindow::builder()
         .application(app)
-        .title("Hello Löwner-John")
+        .title("2D Truss Design")
         .child(&hbox)
         .build();
-
 
     window.present();
 }
@@ -407,17 +402,13 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
 
 
     let crop = data.points.iter().fold((0.0,0.0,0.0,0.0), |b,p| ( p[0].min(b.0),p[1].min(b.1),p[0].max(b.0),p[1].max(b.1)));
-    println!("box   = {:?}",crop);
     let crop = (crop.0 - (crop.2-crop.0)*0.1,
                 crop.1 - (crop.3-crop.1)*0.1,
                 crop.2 + (crop.2-crop.0)*0.1,
                 crop.3 + (crop.3-crop.1)*0.1);
-    println!("  -> box {:?}",crop);
     let boxmax = (crop.2-crop.0).abs().max( (crop.3-crop.1).abs());
     let scale = s / boxmax;
 
-    println!("boxmax = {}",boxmax);
-    println!("scale = {}",scale);
     context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
     //context.translate(0,-h as f64);
     context.scale(scale, -scale);
@@ -548,8 +539,6 @@ mod linalg {
     /// - `x`
     #[allow(non_snake_case)]
     pub fn solveaxb(dim : usize, A : &[f64], b : &[f64], x : &mut [f64]) -> Result<(),String> {
-        println!("A = ");
-        for acol in A.chunks(dim) { println!("  {:?}",acol); }
 
         if A.len() != dim*dim { return Err("Invalid A size".to_string()); }
         if b.len() != dim { return Err("Invalid b size".to_string()); }
