@@ -315,16 +315,17 @@ fn build_ui(app   : &Application,
         .margin_top(10)
         .margin_bottom(10)
         .build();
+    
+    let mut btns = Vec::with_capacity(ddata.external_force.len()+1);
     {
         let da0 = darea.clone();
         let btn0 = CheckButton::builder()
             .label("Show no forces")
             .build();
-        btn0.connect_toggled(|_widget| da0.queue_draw());
+        btn0.connect_toggled(move |_widget| da0.queue_draw());
         btn0.set_active(true);
         vbox.append(&btn0);
 
-        let mut btns = Vec::with_capacity(ddata.external_force.len()+1);
         btns.push(btn0.clone());
         for i in 0..ddata.external_force.len() {
             let da = darea.clone();
@@ -332,7 +333,7 @@ fn build_ui(app   : &Application,
                 .label(format!("Force set #{}",i+1).as_str())
                 .group(&btn0)
                 .build();
-            btn.connect_toggled(|_widget| da.queue_draw());
+            btn.connect_toggled(move |_widget| da.queue_draw());
             vbox.append(&btn);
             btns.push(btn);
         }
