@@ -21,7 +21,7 @@ features = [
     "animation",
     "bevy_animation",
     "bevy_asset",
-    "bevy_audio",
+    #"bevy_audio",
     "bevy_core_pipeline",
     "bevy_debug_stepping",
     "bevy_gilrs",
