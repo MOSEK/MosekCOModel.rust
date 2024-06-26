@@ -8,6 +8,7 @@ ellipsoids = { version = "0.1.0", path = "../ellipsoids" }
 glam = "0.28.0"
 itertools = "0.13.0"
 mosekmodel = { version = "0.1.0", path = "../.." }
+rand = "0.8.5"
 
 [profile.dev.package."*"]
 opt-level = 3

@@ -1,9 +1,14 @@
 extern crate glam;
 extern crate mosekmodel;
 extern crate bevy;
+extern crate rand;
+extern crate ellipsoids;
 
+use bevy::math::{DMat3, DVec3};
 use bevy::prelude::*;
 use bevy::reflect::Reflect;
+use bevy::render::mesh::PrimitiveTopology;
+use bevy::render::render_asset::RenderAssetUsages;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -21,6 +26,7 @@ const SPEED_SCALE : f64 = 0.1;
 #[derive(Default,Component)]
 struct MyObject {
     center : Vec3,
+    scale  : Vec3,
 
     global_axis : Vec3,
     global_rps  : f32,
@@ -30,15 +36,52 @@ struct MyObject {
 }
 
 #[derive(Default,Component)]
+struct BoundingEllipsoid;
+
+
+impl MyObject {
+    pub fn random(center_sphere : f32, local_rps_bracket : (f32,f32), global_rps_bracket : (f32,f32), scale_bracket : (f32,f32)) -> MyObject {
+        let g = ((global_rps_bracket.1-global_rps_bracket.0).abs(),global_rps_bracket.0.min(global_rps_bracket.1));
+        let l = ((local_rps_bracket.1-local_rps_bracket.0).abs(),  local_rps_bracket.0.min(local_rps_bracket.1));
+        let s = ((scale_bracket.0-scale_bracket.1).abs(),          scale_bracket.0.min(scale_bracket.1).max(0.1));
+
+        let grps = rand::random::<f32>() * g.0 + g.1;
+        let lrps = rand::random::<f32>() * l.0 + l.1;
+        MyObject{
+            center : center_sphere.max(0.0) * rand_vec3(),
+            scale : Vec3::new(s.1+rand::random::<f32>()*s.0,
+                              s.1+rand::random::<f32>()*s.0,
+                              s.1+rand::random::<f32>()*s.0),
+            global_axis : rand_vec3(),
+            global_rps : grps,
+            local_axis : rand_vec3(),
+            local_rps : lrps
+        }
+    }
+}
+
+#[derive(Default,Component)]
 struct CameraTransform{
     rps : f32
+}
+
+fn rand_vec3() -> Vec3 {
+    while true {
+        let r = Vec3::new(rand::random::<f32>()*2.0-1.0,
+                          rand::random::<f32>()*2.0-1.0,
+                          rand::random::<f32>()*2.0-1.0);
+        if r.length() <= 1.0 {
+            return r.normalize();
+        }
+    }
+    Vec3::X
 }
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_systems(Startup, setup)
-        //.add_systems(Update, update)
+        .add_systems(Update, update)
         .add_systems(Update, update_camera)
         .run();
 }
@@ -59,81 +102,30 @@ fn setup(
     });
     */
     // cube
-    commands.spawn((PbrBundle {
-        //mesh: meshes.add(Cuboid::new(1.5, 1.5, 1.5)),
-        mesh : meshes.add(Polyline3d::new(&[Vec3::new(-0.5,-0.5,-0.5),
-                                            Vec3::new( 0.5,-0.5,-0.5),
-                                            Vec3::new( 0.5, 0.5,-0.5),
-                                            Vec3::new(-0.5, 0.5,-0.5),
-                                            Vec3::new(-0.5,-0.5,-0.5),
-                                            Vec3::new(-0.5,-0.5, 0.5),
-                                            Vec3::new( 0.5,-0.5, 0.5),
-                                            Vec3::new( 0.5, 0.5, 0.5),
-                                            Vec3::new(-0.5, 0.5, 0.5),
-                                            Vec3::new(-0.5,-0.5, 0.5)
-
-        ])),
-        material: materials.add(Color::rgb_u8(192,0,0)),
-        transform: Transform::from_xyz(0.0, 0.0, 0.0),
-        ..default()},
-        MyObject{
-            center : Vec3::new(2.0,1.0,0.0),
-            global_axis : Vec3::new(0.0,0.2,-1.0),
-            global_rps : 1.0/15.0,
-            local_axis : Vec3::new(-0.1,1.0,0.4),
-            local_rps : 1.0 / 4.0,
-        }));
-
-    // pyramid
-    commands.spawn((
-            PbrBundle{
-                mesh : meshes.add(Polyline3d::new(&[Vec3::new(-0.5,0.0,-0.5),
-                                                    Vec3::new(0.0,1.5,0.0),
-                                                    Vec3::new(0.5,0.0,-0.5),
-                                                    Vec3::new(0.5,0.0,0.5),
-                                                    Vec3::new(0.0,1.5,0.0),
-                                                    Vec3::new(-0.5,0.0,0.5),
-                                                    Vec3::new(0.5,0.0,0.5),
-                                                    Vec3::new(-0.5,0.0,-0.5),
-                                                    Vec3::new(0.5,0.0,-0.5)])),
-                material: materials.add(Color::rgb_u8(192,0,0)),
-                ..default() }, 
-            MyObject{
-                center : Vec3::new(0.0,-1.0,0.5),,
-                global_axis : Vec3::new(0.0,0.2,-1.0),
-                global_rps : 1.0/13.0,
-                local_axis : Vec3::new(0.2,0.5,1.0),
-                local_rps : 1.0 / 3.0 }));
     
-    // bar
-    //   __
-    //  /  \
-    //  \__/
-    //
-    commands.spawn((
-            PbrBundle{  
-                mesh : meshes.add(Polyline3d::new(&[Vec3::new(-2.0,0.0,-0.4),
-                                                    Vec3::new(2.0,0.0,-0.4),
-                                                    Vec3::new(2.0,0.3,-0.2),
-                                                    Vec3::new(-2.0,0.3,-0.2),
-                                                    Vec3::new(-2.0,0.3,0.2),
-                                                    Vec3::new(2.0,0.3,0.2),
-                                                    Vec3::new(2.0,0.0,0.4),
-                                                    Vec3::new(-2.0,0.0,0.4),
-                                                    Vec3::new(-2.0,-0.3,0.2),
-                                                    Vec3::new(2.0,-0.3,0.2),
-                                                    Vec3::new(2.0,-0.3,-0.2),
-                                                    Vec3::new(-2.0,-0.3,-0.2),
-                                                    Vec3::new(-2.0,0.0,-0.4) ])),
-                material: materials.add(Color::rgb_u8(192,0,0)),
-                ..default() }, 
-            MyObject{
-                center : Vec3::new(0.0,-1.0,0.5),,
-                global_axis : Vec3::new(0.0,0.2,-1.0),
-                global_rps : 1.0/13.0,
-                local_axis : Vec3::new(0.2,0.5,1.0),
-                local_rps : 1.0 / 3.0 }));
+    for _ in 0..5 {
+        commands.spawn((PbrBundle {
+            mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+            material: materials.add(Color::rgb_u8(rand::random::<u8>()/2,rand::random::<u8>()/2,rand::random::<u8>()/2)),
+            ..default()},
+            MyObject::random(2.0, (-1.0,1.0),(-1.0,1.0),(0.5,2.5))
+            ));
+    }
 
+
+    let boundmat = materials.add(StandardMaterial{
+        base_color : Color::rgba_u8(192,192,255,64),
+        //metallic : 0.9,
+        //reflectance : 0.9, 
+        ..default()
+    });
+    commands.spawn((
+        PbrBundle{
+            mesh: meshes.add(Sphere::new(1.0)),
+            material: materials.add(Color::rgba_u8(192,192,255,64)),
+            ..default() },
+        BoundingEllipsoid{}
+        ));
 
     // light
     commands.spawn(PointLightBundle {
@@ -162,7 +154,10 @@ fn update_camera(time: Res<Time>, mut query: Query<(&mut Transform,&CameraTransf
     }
     
 }
-fn update(time: Res<Time>, mut query: Query<(&mut Transform, &MyObject)>, mut gizmos: Gizmos) {
+fn update(time: Res<Time>, 
+          mut query: Query<(&mut Transform, &MyObject)>, 
+          mut qbound: Query<(&mut Transform, &BoundingEllipsoid), Without<MyObject>>, 
+          mut gizmos: Gizmos) {
     //let t = (time.elapsed_seconds().sin() + 1.) / 2.;
     let t = time.elapsed_seconds();
 /*
@@ -176,10 +171,64 @@ fn update(time: Res<Time>, mut query: Query<(&mut Transform, &MyObject)>, mut gi
                 Vec3::new(0.0,0.0,5.0),
                 Color::rgb_u8(255,255,255));
 */
+    println!("transform :");
+
+    let cube_points = [ Vec3::new(-0.5,-0.5,-0.5),
+                        Vec3::new( 0.5,-0.5, 0.5),
+                        Vec3::new( 0.5, 0.5,-0.5),
+                        Vec3::new(-0.5, 0.5, 0.5),
+                        Vec3::new(-0.5,-0.5,-0.5),
+                        Vec3::new( 0.5,-0.5, 0.5),
+                        Vec3::new( 0.5, 0.5,-0.5),
+                        Vec3::new(-0.5, 0.5, 0.5) ];
+    let mut points = Vec::new();
     for (mut transform, e) in &mut query {
+        transform.scale = e.scale;
         transform.rotation = Quat::from_axis_angle(e.local_axis, e.local_rps * t);
+        println!("\tcenter : {}, scale : {}",e.center,e.scale);
+
         transform.translation = Quat::from_axis_angle(e.global_axis, (e.global_rps*t) % (2.0*PI)).mul_vec3(e.center);
+        for p in cube_points.iter() {
+            let p = transform.rotation.mul_vec3(Mat3::from_diagonal(e.scale).mul_vec3(*p)) + transform.translation;
+            points.push([p.x as f64,p.y as f64,p.z as f64]);
+        }
     }
+
+    {
+        // outer ellipsoid
+        let mut m = Model::new(None);
+        let t = m.variable(None, unbounded());
+        let p = ellipsoids::det_rootn(None, & mut m, t.clone(), 3);
+        let q = m.variable(None, unbounded().with_shape(&[3]));
+  
+        m.objective(None, mosekmodel::Sense::Maximize, &t);
+       
+
+
+        ellipsoids::ellipsoid_contains_points(& mut m, &p, &q, points.as_slice());
+
+        m.solve();
+  
+        if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&p),
+                                      m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
+            
+            let A = DMat3::from_cols_array(&[psol[0],psol[1],psol[2],psol[3],psol[4],psol[5],psol[6],psol[7],psol[8]]).inverse();
+            let b = A.mul_vec3(DVec3::new(qsol[0],qsol[1],qsol[2]));
+            
+            for (mut transform,_) in & mut qbound {
+                let mut tf = Transform::from_matrix(Mat4::from_mat3(A.as_mat3()));
+                tf.translation = b.as_vec3();
+                transform.clone_from(&tf);
+            }
+        }
+        else {
+            for (mut transform,_) in & mut qbound {
+                transform.scale = Vec3::ZERO;
+            }
+        }
+    }
+
+
 }
 
 
