@@ -110,6 +110,8 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
 pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
+    //println!("triangular_part(upper:{}, with_diag:{},...)",upper,with_diag);
+
     let nd = shape.len();
 
     if nd != 2 || shape[0] != shape[1] {
@@ -166,7 +168,7 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
             .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
             .for_each(|((&sj,&sc),(tj,tc))| { *tj = sj; *tc = sc; });
 
-        rptr[0] = 0;
+        rptr[0] = 0; rptr.iter_mut().for_each(|v| *v = 0);
         let rsp = rsp.unwrap();
         izip!(ptr.iter(),ptr[1..].iter(),iproduct!(0..d,0..d))
             .filter(|(_,_,(i,j))| 
@@ -174,11 +176,13 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
                 (! upper   && i  > j) ||
                 (with_diag && i == j))
             .zip(rptr[1..].iter_mut().zip(rsp.iter_mut()))
-            .for_each(|((&pb,&pe,(i,j)),(rp,spi))|  { *rp = pe-pb; *spi = i * d + j } );
+            .for_each(|((&pb,&pe,(i,j)),(rp,spi))| { 
+                *rp = pe-pb; 
+                *spi = i * d + j;
+            });
         rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
-
-        let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
     }
+    rs.validate_top().unwrap();
 }
 
 pub fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 

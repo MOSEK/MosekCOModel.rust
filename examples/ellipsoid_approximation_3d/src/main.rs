@@ -178,7 +178,6 @@ fn update_camera(time: Res<Time>, mut query: Query<(&mut Transform,&CameraTransf
         let tf = Transform::from_xyz(camloc.x,camloc.y,camloc.z).looking_at(Vec3::ZERO, Vec3::Y);
         transform.clone_from(&tf);
     }
-    
 }
 
 #[allow(non_snake_case)]
@@ -215,7 +214,7 @@ fn update(time       : Res<Time>,
     m.objective(None, mosekmodel::Sense::Maximize, &t);
    
     for (A,b) in matrixes.iter() {
-        let Ainv = A.inverse();
+        let Ainv = A.transpose().inverse();
         let b = -Ainv.mul_vec3(b.as_dvec3());
 
         let e : Ellipsoid<3> = ellipsoids::Ellipsoid::from_arrays(&Ainv.to_cols_array(), &b.to_array());
@@ -240,10 +239,14 @@ fn update(time       : Res<Time>,
 
         for mut transform in & mut qbound {
             transform.clone_from(&Transform::from_matrix(A));
+            transform.scale *= 6.0;
             transform.translation = b.as_vec3();
         }
     } 
     else {
+        for mut transform in & mut qbound {
+            transform.scale = Vec3::new(0.001,0.001,0.001);
+        }
         
     }
 
