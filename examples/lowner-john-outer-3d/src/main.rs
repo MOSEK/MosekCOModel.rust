@@ -92,37 +92,33 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // circular base
-    /*
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Circle::new(4.0)),
-        material: materials.add(Color::WHITE),
-        transform: Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
-        ..default()
-    });
-    */
-    // cube
-    
-    for _ in 0..5 {
+
+    // cubes providing a point cloud
+    for _ in 0..8 {
         commands.spawn((PbrBundle {
             mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-            material: materials.add(Color::rgb_u8(rand::random::<u8>()/2,rand::random::<u8>()/2,rand::random::<u8>()/2)),
+            material: materials.add(Color::rgb_u8(rand::random::<u8>()/2+128,rand::random::<u8>()/2+128,rand::random::<u8>()/2+128)),
             ..default()},
             MyObject::random(2.0, (-1.0,1.0),(-1.0,1.0),(0.5,2.5))
             ));
     }
 
 
-    let boundmat = materials.add(StandardMaterial{
-        base_color : Color::rgba_u8(192,192,255,64),
-        //metallic : 0.9,
-        //reflectance : 0.9, 
-        ..default()
-    });
+    /*
+    commands.spawn((
+        PbrBundle{
+            //mesh: meshes.add(Sphere::new(1.0)),
+            mesh: meshes.add(Cuboid::new(2.0,2.0,2.0)),
+            material: materials.add(Color::rgba_u8(192,192,255,64)),
+            ..default() },
+        BoundingEllipsoid{}
+        ));
+    */
     commands.spawn((
         PbrBundle{
             mesh: meshes.add(Sphere::new(1.0)),
-            material: materials.add(Color::rgba_u8(192,192,255,64)),
+            //mesh: meshes.add(Cuboid::new(2.0,2.0,2.0)),
+            material: materials.add(Color::rgba_u8(255,255,255,32)),
             ..default() },
         BoundingEllipsoid{}
         ));
@@ -154,44 +150,34 @@ fn update_camera(time: Res<Time>, mut query: Query<(&mut Transform,&CameraTransf
     }
     
 }
+#[allow(non_snake_case)]
 fn update(time: Res<Time>, 
           mut query: Query<(&mut Transform, &MyObject)>, 
           mut qbound: Query<(&mut Transform, &BoundingEllipsoid), Without<MyObject>>, 
           mut gizmos: Gizmos) {
     //let t = (time.elapsed_seconds().sin() + 1.) / 2.;
     let t = time.elapsed_seconds();
-/*
-    gizmos.line(Vec3::new(0.0,0.0,0.0), 
-                Vec3::new(5.0,0.0,0.0),
-                Color::rgb_u8(255,255,255));
-    gizmos.line(Vec3::new(0.0,0.0,0.0), 
-                Vec3::new(0.0,5.0,0.0),
-                Color::rgb_u8(255,255,255));
-    gizmos.line(Vec3::new(0.0,0.0,0.0), 
-                Vec3::new(0.0,0.0,5.0),
-                Color::rgb_u8(255,255,255));
-*/
-    println!("transform :");
 
     let cube_points = [ Vec3::new(-0.5,-0.5,-0.5),
-                        Vec3::new( 0.5,-0.5, 0.5),
+                        Vec3::new( 0.5,-0.5,-0.5),
                         Vec3::new( 0.5, 0.5,-0.5),
-                        Vec3::new(-0.5, 0.5, 0.5),
-                        Vec3::new(-0.5,-0.5,-0.5),
+                        Vec3::new(-0.5, 0.5,-0.5),
+                        Vec3::new(-0.5,-0.5, 0.5),
                         Vec3::new( 0.5,-0.5, 0.5),
-                        Vec3::new( 0.5, 0.5,-0.5),
+                        Vec3::new( 0.5, 0.5, 0.5),
                         Vec3::new(-0.5, 0.5, 0.5) ];
     let mut points = Vec::new();
     for (mut transform, e) in &mut query {
-        transform.scale = e.scale;
+        transform.scale = e.scale*0.95;
         transform.rotation = Quat::from_axis_angle(e.local_axis, e.local_rps * t);
-        println!("\tcenter : {}, scale : {}",e.center,e.scale);
-
         transform.translation = Quat::from_axis_angle(e.global_axis, (e.global_rps*t) % (2.0*PI)).mul_vec3(e.center);
         for p in cube_points.iter() {
-            let p = transform.rotation.mul_vec3(Mat3::from_diagonal(e.scale).mul_vec3(*p)) + transform.translation;
+            let p = transform.rotation.mul_vec3(Mat3::from_diagonal(transform.scale).mul_vec3(*p)) + transform.translation;
             points.push([p.x as f64,p.y as f64,p.z as f64]);
         }
+
+        //let pts : Vec<Vec3> = points.iter().map(|v| DVec3::new(v[0],v[1],v[2]).as_vec3()).collect();
+        //gizmos.linestrip(pts,Color::rgb_u8(255,0,0));
     }
 
     {
@@ -202,8 +188,6 @@ fn update(time: Res<Time>,
         let q = m.variable(None, unbounded().with_shape(&[3]));
   
         m.objective(None, mosekmodel::Sense::Maximize, &t);
-       
-
 
         ellipsoids::ellipsoid_contains_points(& mut m, &p, &q, points.as_slice());
 
@@ -213,13 +197,31 @@ fn update(time: Res<Time>,
                                       m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
             
             let A = DMat3::from_cols_array(&[psol[0],psol[1],psol[2],psol[3],psol[4],psol[5],psol[6],psol[7],psol[8]]).inverse();
-            let b = A.mul_vec3(DVec3::new(qsol[0],qsol[1],qsol[2]));
-            
+            let b = -A.mul_vec3(DVec3::new(qsol[0],qsol[1],qsol[2]));
+
+            let (scale,rotation,translation) = linalg::axb_to_srt(&A,&b);
+
+            let tf = Transform{scale:scale.as_vec3(),rotation:rotation.as_quat(),translation:translation.as_vec3()};
+            //let mut tf = Transform::from_matrix(Mat4::from_mat3(A.as_mat3()));
+            //tf.translation = b.as_vec3();
+
+            let testv = DVec3::new(1.0,0.5,-0.3);
+            let rv1 = A.mul_vec3(testv).as_vec3();
+            let rv2 = tf.rotation.mul_vec3(Mat3::from_diagonal(tf.scale).mul_vec3(testv.as_vec3()));
+
+
             for (mut transform,_) in & mut qbound {
-                let mut tf = Transform::from_matrix(Mat4::from_mat3(A.as_mat3()));
-                tf.translation = b.as_vec3();
                 transform.clone_from(&tf);
             }
+
+            let maxlen = points.iter().map(|p| Mat3::from_diagonal(tf.scale).inverse().mul_vec3(tf.rotation.inverse().mul_vec3(DVec3::new(p[0],p[1],p[2]).as_vec3()-tf.translation)).length()).fold(0.0,|m,l| if l > m { l } else { m });
+            if maxlen > 1.000000001 {
+                println!("Max violation: {:.2e}",maxlen-1.0);
+            }
+
+            //gizmos.linestrip(
+            //    cube_points.iter().map(|p| 2.0 * tf.rotation.mul_vec3(Mat3::from_diagonal(tf.scale).mul_vec3(*p)) + tf.translation),
+            //    Color::rgb_u8(0,255,0));
         }
         else {
             for (mut transform,_) in & mut qbound {
@@ -227,186 +229,30 @@ fn update(time: Res<Time>,
             }
         }
     }
+}
+
+mod linalg {
+    use bevy::math::{DQuat,DMat3,DVec3};
+    use mosek::syevd;
+
+    pub fn axb_to_srt(A : &DMat3, b : &DVec3) -> (DVec3, DQuat, DVec3) {
+
+        let mut evecs = A.to_cols_array();
+        let mut evals = [0.0; 3];
+        syevd(mosek::Uplo::LO, 3, & mut evecs, &mut evals).unwrap();
+        let mut evecm = DMat3::from_cols_array(&evecs);
+
+        //println!("evecs = {:?}",evecs);
+        //println!("    ({},{},{})", evecm.col(0).dot(evecm.col(1)), evecm.col(0).dot(evecm.col(2)), evecm.col(1).dot(evecm.col(2)));
+        //println!("    ({},{},{})", evecm.col(0).length(), evecm.col(1).length(), evecm.col(2).length());
 
 
+        let tlate = *b;
+        let scl = DVec3::new(evals[0],evals[1],evals[2]);
+        let rot = DQuat::from_mat3(&evecm);
+
+        (scl,rot,tlate)
+    }
 }
 
 
-
-
-
-
-//     pub fn main() {
-//         let drawdata = DrawData{
-//             radius : vec![[0.2,0.15],[0.3,0.2],[0.4, 0.2]],
-//             center : vec![[0.2,0.2],[-0.2,0.1],[0.2,-0.2]],
-//             speed  : vec![[0.1,0.3],[-0.3,0.5],[0.4,-0.3]],
-//     
-//             ..default()
-//         };
-//     
-//         App::new()
-//             .add_plugins(DefaultPlugins)
-//             .init_gizmo_group::<DrawData>()
-//             .add_systems(Startup, setup)
-//             .add_systems(Update, ( draw, update ))
-//             .run()
-//             ;
-//     
-//         println!("Main loop exit!");
-//     }
-//     
-//     
-//     fn setup(
-//         mut commands: Commands,
-//         mut meshes: ResMut<Assets<Mesh>>,
-//         mut materials: ResMut<Assets<StandardMaterial>>)
-//     {
-//     }
-//     
-//     fn draw(
-//         mut gizmos: Gizmos,
-//         mut my_gizmos: Gizmos<DrawData>,
-//         time: Res<Time>) 
-//     {
-//     }
-//     fn update(
-//         mut config_store: ResMut<GizmoConfigStore>,
-//         keyboard: Res<ButtonInput<KeyCode>>,
-//         time: Res<Time>)
-//     {
-//     }
-
-//#[allow(non_snake_case)]
-//fn build_ui(app   : &Application,
-//            ddata : &DrawData)
-//{    
-//    // tx Send info from solver to GUI
-//    // rtx Send commands from GUI to solver
-//    let data = Rc::new(RefCell::new(ddata.clone()));
-//    
-//    let darea = GLArea::builder()
-//        .width_request(800) 
-//        .height_request(800)
-//        .build();
-//
-//    // Redraw callback
-//    {
-//        let data = data.clone();
-//        darea.connect_render(move |widget,context| redraw_window(widget,context,(&data).borrow()) );
-//        //darea.set_draw_func(move |widget,context,w,h| redraw_window(widget,context,w,h,&data.borrow()));
-//    }
-//
-//    let window = ApplicationWindow::builder()
-//        .application(app)
-//        .title("Hello Löwner-John")
-//        .child(&darea)
-//        .build();
-//    
-//    { // Time callback
-//        let data = data.clone();
-//        let darea = darea.clone();
-//        glib::source::timeout_add_local(
-//            Duration::from_millis(10), 
-//            move || {
-//                let mut data = data.borrow_mut();
-//                let dt = 0.001 * (SystemTime::now().duration_since(data.t0).unwrap().as_millis() as f64);
-//
-//                data.Abs = izip!(data.radius.iter(),data.center.iter(),data.speed.iter())
-//                    .map(|(&r,&c,&v)| {
-//                        let theta_g = (2.0 * std::f64::consts::PI * v[0] * dt * SPEED_SCALE) % (2.0 * std::f64::consts::PI);
-//                        let theta_l = (2.0 * std::f64::consts::PI * v[1] * dt * SPEED_SCALE) % (2.0 * std::f64::consts::PI);
-//
-//                        let (cost,sint) = ((theta_l/2.0).cos() , (theta_l/2.0).sin());
-//                        let A = [ cost.powi(2)*r[0]+sint.powi(2)*r[1], cost*sint*(r[1]-r[0]),
-//                                  cost*sint*(r[1]-r[0]), sint.powi(2) * r[0] + cost.powi(2) * r[1] ];                            
-//                        let b = [ theta_g.cos()*c[0] - theta_g.sin()*c[1],
-//                                  theta_g.sin()*c[0] + theta_g.cos()*c[1]];
-//                        (A,b)
-//                    }).collect();
-//
-//                      
-//                {
-//                    // outer ellipsoid
-//                    let mut m = Model::new(None);
-//                    let t = m.variable(None, unbounded());
-//                    let p = ellipsoids::det_rootn(None, & mut m, t.clone(), 2);
-//                    let q = m.variable(None, unbounded().with_shape(&[2]));
-//  
-//                    m.objective(None, mosekmodel::Sense::Maximize, &t);
-//                   
-//                    for (A,b) in data.Abs.iter() {
-//                        let A = DMat2::from_cols_array(A).inverse();
-//                        let b = A.mul_vec2(DVec2{x:b[0], y:b[1]}).to_array();
-//
-//                        let e : Ellipsoid<2> = ellipsoids::Ellipsoid::from_arrays(&A.to_cols_array(), &[-b[0],-b[1]]);
-//
-//                        ellipsoids::ellipsoid_contains(&mut m,&p,&q,&e);
-//                    }
-//
-//                    m.solve();
-//  
-//                    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&p),
-//                                                  m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
-//                        
-//                        // A² = P => A = sqrt(P)
-//                        // Ab = q => A\q
-//                        let s = (psol[0]*psol[3]-psol[1]*psol[2]).sqrt();
-//
-//                        let A = DMat2::from_cols_array(&[psol[0],psol[1],psol[2],psol[3]]).add_mat2(&DMat2::from_cols_array(&[s,0.0,0.0,s])).mul_scalar(1.0/(psol[0]+psol[3] + 2.0*s).sqrt());
-//                        let b = A.inverse().mul_vec2(DVec2::from_array([qsol[0],qsol[1]]));
-//
-//                        data.Pc = Some((A.to_cols_array(),b.to_array()));
-//                    }
-//                    else {
-//                        data.Pc = None;
-//                    }
-//                }
-//
-//
-//                {
-//                    // inner ellipsoid
-//                    let mut m = Model::new(None);
-//
-//                    let t = m.variable(None, unbounded());
-//                    let p = ellipsoids::det_rootn(None, & mut m, t.clone(), 2);
-//                    let q = m.variable(None, unbounded().with_shape(&[2]));
-//
-//                    m.objective(None, mosekmodel::Sense::Maximize, &t);
-//
-//                    for (A,b) in data.Abs.iter() {
-//                        let A = DMat2::from_cols_array(A).inverse();
-//                        let b = A.mul_vec2(DVec2{x:b[0], y:b[1]}).to_array();
-//
-//                        let e : Ellipsoid<2> = ellipsoids::Ellipsoid::from_arrays(&A.to_cols_array(), &[-b[0],-b[1]]);
-//
-//                        ellipsoids::ellipsoid_contained(&mut m,&p,&q,&e);
-//                    }
-//
-//                    m.solve();
-//
-//                    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&p),
-//                                                  m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
-//                        let A = DMat2::from_cols_array(&[psol[0],psol[1],psol[2],psol[3]]).inverse();
-//                        let b = A.mul_vec2(DVec2::from_array([qsol[0],qsol[1]])).to_array();
-//
-//                        data.Qd = Some((A.to_cols_array(),[-b[0],-b[1]]));
-//                    }
-//                    else {
-//                        data.Qd = None;
-//                    }
-//                }
-//
-//                darea.queue_draw();
-//                ControlFlow::Continue
-//            });
-//    }    
-//
-//    window.present();
-//}
-//
-//#[allow(non_snake_case)]
-//fn redraw_window(_widget : &GLArea, ctx : &GLContext, dd : &DrawData) -> Propagation {
-//    gl33::
-//    Propagation::Proceed
-//}
