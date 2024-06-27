@@ -199,16 +199,13 @@ fn update(time: Res<Time>,
             let A = DMat3::from_cols_array(&[psol[0],psol[1],psol[2],psol[3],psol[4],psol[5],psol[6],psol[7],psol[8]]).inverse();
             let b = -A.mul_vec3(DVec3::new(qsol[0],qsol[1],qsol[2]));
 
+
+            // NOTE: The Transform::from_mat4 method only works for a translated, scaled orthogonal
+            // basis. The matrix A we got is a symmetric positive definite matrix. We need to
+            // obtain a scaled orthogonal basis that maps the unit sphere into the same ellipsoid
+            // as A:
             let (scale,rotation,translation) = linalg::axb_to_srt(&A,&b);
-
             let tf = Transform{scale:scale.as_vec3(),rotation:rotation.as_quat(),translation:translation.as_vec3()};
-            //let mut tf = Transform::from_matrix(Mat4::from_mat3(A.as_mat3()));
-            //tf.translation = b.as_vec3();
-
-            let testv = DVec3::new(1.0,0.5,-0.3);
-            let rv1 = A.mul_vec3(testv).as_vec3();
-            let rv2 = tf.rotation.mul_vec3(Mat3::from_diagonal(tf.scale).mul_vec3(testv.as_vec3()));
-
 
             for (mut transform,_) in & mut qbound {
                 transform.clone_from(&tf);
@@ -240,12 +237,7 @@ mod linalg {
         let mut evecs = A.to_cols_array();
         let mut evals = [0.0; 3];
         syevd(mosek::Uplo::LO, 3, & mut evecs, &mut evals).unwrap();
-        let mut evecm = DMat3::from_cols_array(&evecs);
-
-        //println!("evecs = {:?}",evecs);
-        //println!("    ({},{},{})", evecm.col(0).dot(evecm.col(1)), evecm.col(0).dot(evecm.col(2)), evecm.col(1).dot(evecm.col(2)));
-        //println!("    ({},{},{})", evecm.col(0).length(), evecm.col(1).length(), evecm.col(2).length());
-
+        let evecm = DMat3::from_cols_array(&evecs);
 
         let tlate = *b;
         let scl = DVec3::new(evals[0],evals[1],evals[2]);
