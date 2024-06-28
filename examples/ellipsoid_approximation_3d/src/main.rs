@@ -12,13 +12,13 @@ use mosekmodel::{unbounded, Model};
 
 use std::f32::consts::PI;
 
-const N : usize = 5;
+const N : usize = 1;
 
 #[derive(Default,Component)]
 struct BoundingEllipsoid;
 
 fn rand_dir3() -> Vec3 {
-    while true {
+    loop {
         let r = Vec3::new(rand::random::<f32>()*2.0-1.0,
                           rand::random::<f32>()*2.0-1.0,
                           rand::random::<f32>()*2.0-1.0);
@@ -26,7 +26,6 @@ fn rand_dir3() -> Vec3 {
             return r.normalize();
         }
     }
-    Vec3::X
 }
 fn rand_vec3(range : f32,base : f32) -> Vec3 {
     Vec3::new(rand::random::<f32>()*range+base,
@@ -111,7 +110,8 @@ fn setup(
             }),
             ..default()},
 
-            EllipseTransform::rand(3.0, (0.2,1.5),(1.0/15.0,1.0/2.0), (1.0/10.0, 1.0) )
+            //EllipseTransform::rand(3.0, (0.2,1.5),(1.0/15.0,1.0/2.0), (1.0/10.0, 1.0) )
+            EllipseTransform::rand(3.0, (0.5,1.5),(1.0/15.0,1.0/2.0), (1.0/10.0, 1.0) )
             ));
     }
 
@@ -128,7 +128,7 @@ fn setup(
     commands.spawn((Camera3dBundle {
         transform: Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..default() },
-        CameraTransform{ rps:1.0/15.0 }));
+        CameraTransform{ rps:1.0/30.0 }));
 }
 
 
@@ -155,17 +155,17 @@ fn update(time       : Res<Time>,
         transform.rotation = Quat::from_axis_angle(e.local_axis, e.local_speed * t);
         transform.translation = Quat::from_axis_angle(e.global_axis, (e.global_speed*t) % (2.0*PI)).mul_vec3(e.center);
 
-        let A = Mat3::from_cols(transform.rotation.mul_vec3(Vec3::new(e.radii.x,0.0,      0.0)),
-                                transform.rotation.mul_vec3(Vec3::new(0.0,      e.radii.y,0.0)),
-                                transform.rotation.mul_vec3(Vec3::new(0.0,      0.0,      e.radii.z)));
+        let D = Mat3::from_diagonal(e.radii);
+        let A = Mat3::from_cols(transform.rotation.mul_vec3(D.col(0)),
+                                transform.rotation.mul_vec3(D.col(1)),
+                                transform.rotation.mul_vec3(D.col(2))).as_dmat3();
+        // Symmetric square root is also:
+        // symA = A^T √D A
+        let symA = linalg::symsqrt3(&A.transpose().mul_mat3(&A)).unwrap();
 
-        // It should be possible to derive the symmetric transformation from scale and rotation,
-        // but I'm too lazy to do the math. 
-        
-        matrixes.push((linalg::aatsymsqrt3(&A.as_dmat3()).unwrap(),transform.translation));
+        matrixes.push((symA,transform.translation));
     }
 
-   
     // outer ellipsoid
     let mut m = Model::new(None);
     let t = m.variable(None, unbounded());
@@ -195,7 +195,7 @@ fn update(time       : Res<Time>,
         let q   = DVec3::new(qsol[0],qsol[1],qsol[2]);
 
         let A   = symsqrt3(&Psq).unwrap();
-        let b   = A.inverse().mul_vec3(q);
+        let b   = -A.inverse().mul_vec3(q);
 
         let (scl,rot,tlate) = linalg::axb_to_srt(&A, &b);
 
@@ -220,21 +220,17 @@ fn update(time       : Res<Time>,
 }
 
 mod linalg {
-    use bevy::{prelude::*, math::{DMat3, DVec3,DQuat}};
+    use bevy::math::{DMat3, DVec3,DQuat};
     use mosek::syevd;
-    /// Compute the symmetric square root of AA' by using eigenvector decomposition as 
+    /// Compute the symmetric square root of (symmetric) A by using eigenvector decomposition as 
     /// ```math
-    /// AA' = UDU' = (UD^{1/2}U')^2
+    /// A = B'DB = (B'D^{1/2}B)^2 => √A = B' D^{1/2} B
     /// ```
-    /// where `U` is the matrix of eigenvectors and `D` is the diagonal matrix of eigenvalues. Then
+    /// where `B` is the matrix of eigenvectors (orthogonal basis) and `D` is the diagonal matrix
+    /// of eigenvalues. 
     ///
     /// # Arguments
     /// - `A` a positive definite matrix
-    #[allow(non_snake_case)]
-    pub fn aatsymsqrt3(A : &DMat3) -> Result<DMat3,String> {
-        symsqrt3(&A.mul_mat3(&A.transpose()))
-    }
-    
     #[allow(non_snake_case)]
     pub fn symsqrt3(A : &DMat3) -> Result<DMat3,String> {
         let mut A = A.to_cols_array();
@@ -242,6 +238,7 @@ mod linalg {
         syevd(mosek::Uplo::LO,3,&mut A,&mut w)?;
         if w.iter().any(|&v| v <= 0.0) { return Err("A is not positive definite".to_string()) }
         w.iter_mut().for_each(|v| *v = v.sqrt());
+        //println!("-- eig vals : {:?}",w);
         
         let d = DVec3::new(w[0],w[1],w[2]);
         let U = DMat3::from_cols_array(&A);
@@ -252,11 +249,10 @@ mod linalg {
     
     #[allow(non_snake_case)]
     pub fn axb_to_srt(A : &DMat3, b : &DVec3) -> (DVec3, DQuat, DVec3) {
-
         let mut evecs = A.to_cols_array();
         let mut evals = [0.0; 3];
         syevd(mosek::Uplo::LO, 3, & mut evecs, &mut evals).unwrap();
-        let evecm = DMat3::from_cols_array(&evecs);
+        let evecm = DMat3::from_cols_array(&evecs).transpose();
 
         let tlate = *b;
         let scl = DVec3::new(evals[0],evals[1],evals[2]);
@@ -264,5 +260,120 @@ mod linalg {
 
         (scl,rot,tlate)
     }
+}
+
+
+#[cfg(test)]
+mod test {
+    use bevy::math::{Quat, Mat3, DVec3, DMat3, DQuat};
+    use rand::{self, SeedableRng, Rng};
+    use ellipsoids::Ellipsoid;
+    use mosekmodel::{Model,unbounded};
+    use super::linalg;
+    use mosek;
+
+    const NSAMPLE : usize = 1000;
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn test() {
+        let e = super::EllipseTransform::rand(0.0, (0.5,1.0), (-10.0,10.0),(-10.0,10.0));
+        let t = 1.0;
+
+        let scl   = e.radii;
+        let rot   = Quat::from_axis_angle(e.local_axis, e.local_speed * t);
+
+        let D = Mat3::from_diagonal(scl);
+        let A = Mat3::from_cols(rot.mul_vec3(D.col(0)),
+                                rot.mul_vec3(D.col(1)),
+                                rot.mul_vec3(D.col(2))).as_dmat3();
+        let symA = super::linalg::symsqrt3(&A.transpose().mul_mat3(&A)).unwrap();
+        let mut R = rand::rngs::StdRng::seed_from_u64(123456);
+
+        // Sample random points in the block [-1,1]^3 and check for each point that A^{-1} maps it into
+        // the unit ball if and only if symA^{-1} maps it into the unit ball.
+        for v in (0..NSAMPLE).map(|_| DVec3::new(R.gen_range(-1.0..1.0),R.gen_range(-1.0..1.0),R.gen_range(-1.0..1.0))) {
+            assert_eq!(symA.inverse().mul_vec3(v).length() <= 1.00001,
+                       A.transpose().inverse().mul_vec3(v).length() <= 1.00001);
+        }
+
+
+
+
+        // outer ellipsoid
+        let mut m = Model::new(None);
+        let t = m.variable(None, unbounded());
+        let Psq = ellipsoids::det_rootn(None, & mut m, t.clone(), 3);
+        let q = m.variable(None, unbounded().with_shape(&[3]));
+
+        m.objective(None, mosekmodel::Sense::Maximize, &t);
+       
+        {
+            let A = symA;
+            let b = DVec3::ZERO;
+            // { Ax+b : ||x|| < 1 } = { u: || A\u - A\b | | < 1 }
+            let Z = A.inverse();
+            let w = -Z.mul_vec3(b);
+
+            let e : Ellipsoid<3> = Ellipsoid::from_arrays(&Z.to_cols_array(), &w.to_array());
+
+            ellipsoids::ellipsoid_contains(&mut m,&Psq,&q,&e);
+        }
+
+        m.solve();
+
+        if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&Psq),
+                                      m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
+            let P = linalg::symsqrt3(&DMat3::from_cols_array(&[psol[0],psol[1],psol[2],psol[3],psol[4],psol[5],psol[6],psol[7],psol[8]])).unwrap();
+            let b = DVec3::new(qsol[0],qsol[1],qsol[2]);
+            assert!(b.length() < 0.0001);
+
+            let Z = P.inverse();
+            let w = Z.mul_vec3(b);
+           
+            for v in (0..NSAMPLE).map(|_| DVec3::new(R.gen_range(-1.0..1.0),R.gen_range(-1.0..1.0),R.gen_range(-1.0..1.0))) {
+                assert_eq!(P.mul_vec3(v).length() <= 1.00001,
+                           A.transpose().inverse().mul_vec3(v).length() <= 1.00001);
+            }
+
+
+            {
+                let mut evecs = Z.to_cols_array();
+                let mut evals = [0.0; 3];
+                mosek::syevd(mosek::Uplo::LO, 3, & mut evecs, &mut evals).unwrap();
+                let mut evecm = DMat3::from_cols_array(&evecs).transpose();
+
+                let b3 = evecm.col(0).cross(evecm.col(1));
+                if b3.dot(evecm.col(2)) < 0.0 {
+                    evecm = DMat3::from_cols(evecm.col(0),evecm.col(1),-evecm.col(2));
+                }
+                let scl = DVec3::new(evals[0],evals[1],evals[2]);
+                let rot = DQuat::from_mat3(&evecm);
+                let D = DMat3::from_diagonal(scl);
+
+                assert!((rot.length()-1.0).abs() < 1.001);
+
+                println!("rot\\U = [{:?},{:?},{:?}]",
+                         rot.inverse().mul_vec3(evecm.col(0)),
+                         rot.inverse().mul_vec3(evecm.col(1)),
+                         rot.inverse().mul_vec3(evecm.col(2)));
+
+                for v in (0..NSAMPLE).map(|_| DVec3::new(R.gen_range(-1.0..1.0),R.gen_range(-1.0..1.0),R.gen_range(-1.0..1.0))) {
+                    assert!((rot.mul_vec3(v) - evecm.mul_vec3(v)).length() < 0.00001);
+                    assert_eq!(P.mul_vec3(v).length() <= 1.0, D.inverse().mul_vec3(rot.inverse().mul_vec3(v)).length() <= 1.0);
+                }
+            }
+
+            let (scl,rot,_tlate) = linalg::axb_to_srt(&Z, &w);
+            let Sinv = DMat3::from_diagonal(scl).inverse();
+            let Rinv = rot.inverse();
+
+            for v in (0..NSAMPLE).map(|_| DVec3::new(R.gen_range(-1.0..1.0),R.gen_range(-1.0..1.0),R.gen_range(-1.0..1.0))) {
+                assert_eq!(Rinv.mul_vec3(Sinv.mul_vec3(v)).length() <= 1.00001,
+                           Z.transpose().inverse().mul_vec3(v).length() <= 1.00001);
+            }
+        }
+    }
+
 }
 
