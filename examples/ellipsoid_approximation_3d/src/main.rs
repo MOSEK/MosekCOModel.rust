@@ -9,8 +9,9 @@ use linalg::symsqrt3;
 
 use ellipsoids::Ellipsoid;
 use mosekmodel::{unbounded, Model};
+use rand::Rng;
 
-use std::f32::consts::PI;
+use std::{f32::consts::PI, ops::Range};
 
 const N : usize = 1;
 
@@ -27,12 +28,25 @@ fn rand_dir3() -> Vec3 {
         }
     }
 }
+#[allow(non_snake_case)]
+fn rand_dir3_from(R : & mut rand::rngs::StdRng) -> DVec3 {
+    loop {
+        let r = DVec3::new(R.gen_range(-1.0..1.0),R.gen_range(-1.0..1.0),R.gen_range(-1.0..1.0));
+        if r.length() <= 1.0 { return r; }
+    }
+}
+
 fn rand_vec3(range : f32,base : f32) -> Vec3 {
     Vec3::new(rand::random::<f32>()*range+base,
               rand::random::<f32>()*range+base,
               rand::random::<f32>()*range+base)
 }
 
+fn rand_vec3_from(r : & mut rand::rngs::StdRng, range : Range<f32>) -> Vec3 {
+    Vec3::new(r.gen_range(range),
+              r.gen_range(range),
+              r.gen_range(range))
+}
 #[allow(non_snake_case)]
 #[derive(Default,Component)]
 struct EllipseTransform {
@@ -57,6 +71,19 @@ impl EllipseTransform {
             local_axis   : rand_dir3(),
             global_speed : rand::random::<f32>() * global_range.0 + global_range.1,
             local_speed  : rand::random::<f32>() * local_range.0 + local_range.1,
+        }
+    }
+
+    #[allow(non_snake_case)]
+pub fn rand_from(R : & mut rand::rngs::StdRng, center_radius : f32, radius_range : Range<f32>, global_rps : Range<f32>, local_rps : Range<f32>) -> EllipseTransform {
+        let center_radius = center_radius.max(0.0);
+        EllipseTransform{
+            center       : rand_dir3_from(R).as_vec3()*center_radius,
+            radii        : rand_vec3_from(R,radius_range),
+            global_axis  : rand_dir3_from(R).as_vec3(),
+            local_axis   : rand_dir3_from(R).as_vec3(),
+            global_speed : R.gen_range(global_range),
+            local_speed  : R.gen_range(local_range)
         }
     }
 }
@@ -277,7 +304,8 @@ mod test {
     #[allow(non_snake_case)]
     #[test]
     fn test() {
-        let e = super::EllipseTransform::rand(0.0, (0.5,1.0), (-10.0,10.0),(-10.0,10.0));
+        let mut R = rand::rngs::StdRng::seed_from_u64(123456);
+        let e = super::EllipseTransform::rand_from(& mut R,1.0, (0.5,1.0), (-10.0,10.0),(-10.0,10.0));
         let t = 1.0;
 
         let scl   = e.radii;
@@ -288,7 +316,6 @@ mod test {
                                 rot.mul_vec3(D.col(1)),
                                 rot.mul_vec3(D.col(2))).as_dmat3();
         let symA = super::linalg::symsqrt3(&A.transpose().mul_mat3(&A)).unwrap();
-        let mut R = rand::rngs::StdRng::seed_from_u64(123456);
 
         // Sample random points in the block [-1,1]^3 and check for each point that A^{-1} maps it into
         // the unit ball if and only if symA^{-1} maps it into the unit ball.
@@ -368,9 +395,14 @@ mod test {
             let Sinv = DMat3::from_diagonal(scl).inverse();
             let Rinv = rot.inverse();
 
-            for v in (0..NSAMPLE).map(|_| DVec3::new(R.gen_range(-1.0..1.0),R.gen_range(-1.0..1.0),R.gen_range(-1.0..1.0))) {
+            for v in (0..NSAMPLE).map(|_| DVec3::new(R.gen_range(-2.0..2.0),R.gen_range(-2.0..2.0),R.gen_range(-2.0..2.0))) {
                 assert_eq!(Rinv.mul_vec3(Sinv.mul_vec3(v)).length() <= 1.00001,
                            Z.transpose().inverse().mul_vec3(v).length() <= 1.00001);
+            }
+
+            for v in (0..NSAMPLE).map(|_| super::rand_dir3_from(& mut R)) {
+                assert!(Z.mul_vec3(rot.inverse().mul_vec3(v)).length() <= 1.00001);
+                assert!(rot.inverse().mul_vec3(Z.mul_vec3(v)).length() <= 1.00001);
             }
         }
     }
