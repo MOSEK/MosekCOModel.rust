@@ -110,30 +110,34 @@ impl<const N : usize> Ellipsoid<N> {
 
 
 
-/// Adds a constraint to the effect that 
+/// For a fixed ellipsoid E add a constraint to the effect that 
 /// ```math
-/// e ⊂ { x: || Qx+q || ≤ 1 }
+/// E ⊂ { x: || Px+q || ≤ 1 }
 /// ```
 ///
-/// The result
+/// The two variables `P_squared` and `Pq` are the parameters of the computed enclosing ellipsoid.
+/// At optimum, the values of the variables will be
+/// ```
+/// P_squared = P²
+/// Pq        = P * q
+/// ```
 ///
 /// # Arguments
 /// - `M` Model
-/// - `P`,'q' Define the ellipsis `{ x : || Qx+q || ≤ 1 }` with `P=Q*Q`. `P` must be `NxN`, and `q`
-///   must be `N` long. This means that `P` in the optimal solution is the square of the ellipsoid
-///   matrix `Q`.
-/// - `e` The contained ellipsoid.
+/// - `P_squared` must be a symmetric positive semidefinite `n x n` variable
+/// - 'Pq' is a variable vector of length `n`.
+/// - `E` The contained ellipsoid.
 #[allow(non_snake_case)]
 pub fn ellipsoid_contains<const N : usize>
 (   M : & mut Model,
-    P : &Variable<2>, 
-    q : &Variable<1>, 
-    e : &Ellipsoid<N>) {
+    P_squared : &Variable<2>, 
+    Pq : &Variable<1>, 
+    e : &Ellipsoid<N>) -> Variable<0> {
 
     let (A,b,c) = e.get_Abc();
 
-    let Pshp = P.shape();
-    let qshp = q.shape();
+    let Pshp = P_squared.shape();
+    let qshp = Pq.shape();
     if Pshp[0] != Pshp[1] || qshp[0] != Pshp[0] {
         panic!("Invalid or mismatching P and/or q");
     }
@@ -150,12 +154,14 @@ pub fn ellipsoid_contains<const N : usize>
 
     let A = dense(N,N,A.iter().flat_map(|arow| arow.iter()).cloned().collect::<Vec<f64>>());
 
-    _ = M.constraint(None, &P.clone().sub(tau.clone().mul(&A))           .add(S11), zero().with_shape(&[n,n]));
-    _ = M.constraint(None, &q.clone().sub(tau.clone().mul(b.as_slice())) .add(S21), zero().with_shape(&[n]));
-    _ = M.constraint(None, &tau.clone().mul(c).add(1.0).neg()            .add(S22), zero());
-    _ = M.constraint(None, &q.clone()                                    .add(S32), zero().with_shape(&[n]));
-    _ = M.constraint(None, &P.clone().neg()                              .add(S33), zero().with_shape(&[n,n]));
-    _ = M.constraint(None,                                                   &S31,  zero().with_shape(&[N,N]));
+    _ = M.constraint(None, &P_squared.clone().sub(tau.clone().mul(&A))    .add(S11), zero().with_shape(&[n,n]));
+    _ = M.constraint(None, &Pq.clone().sub(tau.clone().mul(b.as_slice())) .add(S21), zero().with_shape(&[n]));
+    _ = M.constraint(None, &tau.clone().mul(c).add(1.0).neg()             .add(S22), zero());
+    _ = M.constraint(None, &Pq.clone()                                    .add(S32), zero().with_shape(&[n]));
+    _ = M.constraint(None, &P_squared.clone().neg()                       .add(S33), zero().with_shape(&[n,n]));
+    _ = M.constraint(None,                                                    &S31,  zero().with_shape(&[N,N]));
+
+    tau
 }
 
 /// Adds a constraint
@@ -182,13 +188,13 @@ pub fn ellipsoid_contains_points<const N : usize>
 }
 
 
-/// Adds a constraint
-/// { Zx+w : || x || ≤ 1 } ⊂ e
+/// For a fixed ellipsoid E add a constraint to the effect
+/// { Zx+w : || x || ≤ 1 } ⊂ E
 ///
 /// #Arguments
 /// - `M` Model
-/// - `Z`, `w` define the contained ellipsoid 
-/// - `e` is the containing ellipsoid
+/// - `Z`, `w` are the variable parameters of the contained ellipsoid
+/// - `E` is the containing ellipsoid
 #[allow(non_snake_case)]
 pub fn ellipsoid_contained<const N : usize> 
 (   M : &mut Model,
@@ -258,6 +264,8 @@ pub fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize
 
     X
 }
+
+
 
 #[cfg(test)]
 mod tests {
