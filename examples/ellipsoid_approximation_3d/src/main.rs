@@ -606,7 +606,6 @@ mod test {
             };
 
             m.solve();
-            m.write_problem("ellipsoid3d.ptf");
 
             if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&Psq),
                                           m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
