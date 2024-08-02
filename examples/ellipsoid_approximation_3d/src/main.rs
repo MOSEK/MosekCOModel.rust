@@ -271,37 +271,11 @@ fn update(time       : Res<Time>,
 
         let (scl,rot,tlate) = linalg::axb_to_srt(&A, &b);
 
-        // TEST: Does A surround every ellipse e
-        {
-            let mut R = rand::rngs::StdRng::seed_from_u64(123456);
-            for v in (0..1000).map(|_| R.ddir()) {
-                assert!((DMat3::from_diagonal(scl).inverse().mul_vec3(rot.inverse().mul_vec3(A.mul_vec3(v))).length()-1.0).abs() < 0.00001);
-
-                for e in ellipses.iter() {
-                    let (eP,eq) = e.get_Pq();
-                    let eP = DMat3::from_cols(DVec3::from_array(eP[0]),DVec3::from_array(eP[1]),DVec3::from_array(eP[2]));
-                    let eq = DVec3::from_array(eq);
-
-                    let etp = eP.mul_vec3(v)+eq;
-
-                    //println!("A^-1 E v = {}; {}",
-                    //         (rot.inverse().mul_vec3(DMat3::from_diagonal(scl).inverse().mul_vec3(etp))-tlate).length(),
-                    //         ((rot.inverse().mul_vec3(DMat3::from_diagonal(scl).inverse().mul_vec3(A.mul_vec3(v)+b))-tlate).length()-1.0).abs());
-                    //assert!(A.inverse().mul_vec3(etp-b).length() < 1.00001);
-                    //assert!((rot.inverse().mul_vec3(DMat3::from_diagonal(scl).inverse().mul_vec3(etp))-tlate).length() < 1.00001);
-                    //assert!(((rot.inverse().mul_vec3(DMat3::from_diagonal(scl).inverse().mul_vec3(A.mul_vec3(v)+b))-tlate).length()-1.0).abs() < 0.00001);
-                }
-            }
-        }
-
         for mut transform in & mut qbound {
             transform.scale = scl.as_vec3();
             transform.rotation = rot.as_quat();
             transform.translation = tlate.as_vec3();
         }
-
-        //gizmos.linestrip(matrixes.iter().map(|(m,z)| DMat3::from_diagonal(scl).inverse().mul_vec3(rot.inverse().mul_vec3(z.as_dvec3()-tlate)).as_vec3()), Color::rgb_u8(255,0,0));
-        //gizmos.linestrip(matrixes.iter().map(|(_,z)| *z), Color::rgb_u8(255,0,0));
     } 
     else {
         for mut transform in & mut qbound {
