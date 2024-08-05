@@ -15,7 +15,7 @@ rand = "0.8.5"
 opt-level = 3
 
 [dependencies.bevy]
-version = "0.13.2"
+version = "0.14.1"
 default-features = false
 features = [
     ## DEFAULT FEATURES
