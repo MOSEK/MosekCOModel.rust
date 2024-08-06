@@ -2,33 +2,36 @@ extern crate mosekmodel;
 extern crate itertools;
 
 use mosekmodel::{equal_to, expr, in_geometric_mean_cone, in_psd_cone, in_quadratic_cones, matrix, nonnegative, vstack, zero, ExprTrait, Model, Variable,hstack};
-use mosekmodel::matrix::{dense,speye,Matrix};
+use mosekmodel::matrix::*;
 use itertools::izip;
 
-/// Structure defining an ellipsoid as
-/// 1.
-///     ```math 
-///     { x | ‖ Px+q ‖₂ ≤ 1 }
-///     ```
-/// 2. It can be alternatively represented as 
-///     ```math 
-///     x'Ax + 2b'x + c ≤ 0
-///     ```
-///     with
-///     ```math 
-///     A = P²
-///     b = Pqx
-///     c = q'q-1
-///   ```
-/// 3. or, as a third alternative as 
-///     ```math
-///     { Zu+w | ‖ u ‖₂ ≤ 1 }
-///     ```
-///     where 
-///     ```math
-///     Z = P^{-1}
-///     w = -P^{-1}q
-///     ```
+// Structure defining an ellipsoid as
+// 1.
+//     ```math 
+//     { x | ‖ Px+q ‖₂ ≤ 1 }
+//     ```
+// 2. It can be alternatively represented as 
+//     ```math 
+//     x'Ax + 2b'x + c ≤ 0
+//     ```
+//     with
+//     ```math 
+//     A = P²
+//     b = Pqx
+//     c = q'q-1
+//   ```
+// 3. or, as a third alternative as 
+//
+//     ```math
+//     { Zu+w | || u || ≤ 1 }
+//     ```
+//
+//     where 
+//
+//     ```math
+//     Z = P^{-1}
+//     w = -P^{-1}q
+//     ```
 #[allow(non_snake_case)]
 #[derive(Clone)]
 pub struct Ellipsoid<const N : usize> {
@@ -117,7 +120,7 @@ impl<const N : usize> Ellipsoid<N> {
 ///
 /// The two variables `P_squared` and `Pq` are the parameters of the computed enclosing ellipsoid.
 /// At optimum, the values of the variables will be
-/// ```
+/// ```text
 /// P_squared = P²
 /// Pq        = P * q
 /// ```
@@ -223,6 +226,27 @@ pub fn ellipsoid_contained<const N : usize>
     _ = M.constraint(None, &lambda.clone().mul(&matrix::speye(N)).sub(S33),zero().with_shape(&[N,N]));
 }
 
+
+
+#[allow(non_snake_case)]
+pub fn ellipsoid_subject_to<const N : usize> 
+(   M : &mut Model,
+    Z : &Variable<2>,    
+    w : &Variable<1>,
+    A : &[[f64;N]],
+    b : &[f64])
+{
+    let m = A.len();
+    assert_eq!(b.len(),m);
+    let A = DenseMatrix::new(m,N,A.iter().flat_map(|a| a.iter()).cloned().collect());
+    let b = DenseMatrix::new(m, 1, b.to_vec());
+    _ = M.constraint(Some("E_Axb"), 
+                     &hstack![ w.clone().reshape(&[2,1]).rev_mul(A.clone()).sub(b).neg(), Z.clone().rev_mul(A) ], 
+                     in_quadratic_cones(&[m,N+1],1));
+}
+
+
+
 /// Create a semidefinite variable `X` such that
 /// ```math
 /// t ≤ det(X)^{1/n}
@@ -266,14 +290,69 @@ pub fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize
 }
 
 
-
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod test {
+    use mosekmodel::{unbounded, Model, SolutionType};
+    use itertools::izip;
 
+    #[allow(non_snake_case)]
     #[test]
-    fn test_contained() {
-                
+    fn test_ellipsoid_subject_to_1() {
+        let mut M = Model::new(None);
+        let t = M.variable(None, unbounded());
+        let P = super::det_rootn(None, & mut M, t.clone(), 2);
+        let q = M.variable(None, unbounded().with_shape(&[2]));
 
+        M.objective(None, mosekmodel::Sense::Maximize, &t);
+
+        let A = [ [-1.0, -1.0], [1.0, 0.0], [-1.0,3.0] ];
+        let b = [ -3.0, 6.0, -9.0 ];
+            
+        super::ellipsoid_subject_to(& mut M, &P, &q, A.as_slice(), b.as_slice());
+
+        M.solve();
+
+        let _Psol = M.primal_solution(SolutionType::Default, &P).unwrap();
+        let _qsol = M.primal_solution(SolutionType::Default, &q).unwrap();
+    }
+
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn test_ellipsoid_subject_to_2() {
+        let points = [ [0.0,3.0],[6.0,5.0],[6.0,-3.0],
+                       [3.0,3.0],[3.0,8.0],[8.0,8.0],[8.0,3.0]];
+        let polygons = [0usize,3];
+
+
+        let mut M = Model::new(None);
+        let t = M.variable(None, unbounded());
+        let P = super::det_rootn(None, & mut M, t.clone(), 2);
+        let q = M.variable(None, unbounded().with_shape(&[2]));
+
+        M.objective(None, mosekmodel::Sense::Maximize, &t);
+          
+        let mut A = vec![ [0.0;2]; points.len()];
+        let mut b = vec![ 0.0; points.len() ];
+            
+        for ((p0,p1),a,b) in izip!(polygons.iter().zip(polygons[1..].iter())
+                                   .flat_map(|(&pb,&pe)| points[pb..pe].iter().zip(points[1..].iter().chain(std::iter::once(&points[pb])))),
+                                   A.iter_mut(),
+                                   b.iter_mut()) {
+            a[0] = p0[1]-p1[1];
+            a[1] = p1[0]-p0[0];
+            *b = a[0] * p0[0] + a[1] * p0[1]; 
+        }
+
+        super::ellipsoid_subject_to(& mut M, &P, &q, A.as_slice(), b.as_slice());
+
+        M.solve();
+
+        M.write_problem("lw-inner-2.ptf");
+
+        let _Psol = M.primal_solution(SolutionType::Default, &P).unwrap();
+        let _qsol = M.primal_solution(SolutionType::Default, &q).unwrap();
     }
 }
+
+

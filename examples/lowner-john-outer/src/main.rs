@@ -13,11 +13,14 @@ use itertools::izip;
 use cairo::Context;
 //use cairo::glib::controlflow;
 use gtk::{glib,Application, DrawingArea, ApplicationWindow};
-use mosekmodel::{unbounded, Model};
+use mosekmodel::{in_psd_cone, matrix, unbounded, zero, Model};
+use mosekmodel::expr::*;
 //use gtk::prelude::*;
 //use rand::random;
 
 const APP_ID : &str = "com.mosek.lowner-john";
+
+const SPEED_SCALE : f64 = 0.2;
 
 #[allow(non_snake_case)]
 #[derive(Clone)]
@@ -32,6 +35,7 @@ struct DrawData {
     // Bounding ellipsoid as { x : || Ax+b || < 1 } 
     tpoints : Vec<[f64;2]>,
     Pc : Option<([f64;4],[f64;2])>,
+    Zw : Option<([f64;4],[f64;2])>,
 
 }
 
@@ -41,9 +45,10 @@ pub fn main() -> glib::ExitCode {
     //let mut drawdata = Rc::new(RefCell::new(DrawData{
     let mut drawdata = DrawData{
         points : vec![ 
-            [-0.25,0.0],[-0.05,-0.1],[-0.1,0.4],
-            [0.1,0.1],[0.4,0.1],[0.4,0.4],[0.1,0.4],
-            [0.0,-0.1],[0.2,-0.1],[0.4,-0.2],[0.1,-0.4],[-0.2,-0.2]],
+            [-0.25,0.0],[-0.1,0.4],[0.2,-0.1],
+            [0.0,0.0],[0.0,0.4],[0.4,0.4],[0.4,0.0],
+            [0.0,-0.1],[0.2,-0.1],[0.4,-0.2],[0.1,-0.4],[-0.2,-0.2]
+            ],
         polygons : vec![0,3,7,12],
         polygon_center : vec![[-0.15,0.05],[0.25,0.25],[0.1,-0.2]],
         polygon_speed : vec![[0.1,0.3],[-0.3,0.5],[0.4,-0.1]],
@@ -53,6 +58,7 @@ pub fn main() -> glib::ExitCode {
         tpoints : vec![[0.0;2]; 12],
 
         Pc : None,
+        Zw : None
     };
 
     let app = Application::builder()
@@ -69,6 +75,7 @@ pub fn main() -> glib::ExitCode {
 }
 
 
+#[allow(non_snake_case)]
 fn build_ui(app   : &Application,
             ddata : &DrawData)
 {
@@ -100,7 +107,7 @@ fn build_ui(app   : &Application,
             Duration::from_millis(10), 
             move || {
                 let mut data = data.borrow_mut();
-                let dt = 0.001 * (SystemTime::now().duration_since(data.t0).unwrap().as_millis() as f64);
+                let dt = 0.001 * (SystemTime::now().duration_since(data.t0).unwrap().as_millis() as f64) * SPEED_SCALE;
 
                 let tpoints = izip!(data.polygons.iter(),
                                     data.polygons[1..].iter(),
@@ -122,7 +129,7 @@ fn build_ui(app   : &Application,
                     }).collect();
                 data.tpoints = tpoints;
 
-                
+                // Compute outer 
                 {
                     let mut m = Model::new(None);
                     let t = m.variable(None, unbounded());
@@ -137,6 +144,45 @@ fn build_ui(app   : &Application,
                     if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&p),
                                                   m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
                         data.Pc = Some(([psol[0],psol[1],psol[2],psol[3]],[qsol[0],qsol[1]]));
+                    }
+                    else {
+                        data.Pc = None;
+                    }
+                }
+  
+                // Inner
+                {
+                    let mut m = Model::new(None);
+
+                    let n_planes = *data.polygons.last().unwrap();
+                    let t = m.variable(None, unbounded());
+                    let P = ellipsoids::det_rootn(None, & mut m, t.clone(), 2);
+                    let q = m.variable(None, unbounded().with_shape(&[2]));
+
+                    m.objective(None, mosekmodel::Sense::Maximize, &t);
+
+                    let mut A = vec![ [0.0;2]; n_planes];
+                    let mut b = vec![ 0.0; n_planes ];
+
+                    for ((p0,p1),a,b) in izip!(data.polygons.iter().zip(data.polygons[1..].iter())
+                                               .flat_map(|(&pb,&pe)| data.tpoints[pb..pe].iter().zip(data.tpoints[pb+1..pe].iter().chain(std::iter::once(&data.tpoints[pb])))),
+                                               A.iter_mut(),
+                                               b.iter_mut()) {
+                        a[0] = p0[1]-p1[1];
+                        a[1] = p1[0]-p0[0];
+                        *b = a[0] * p0[0] + a[1] * p0[1]; 
+                    }
+                        
+                    ellipsoids::ellipsoid_subject_to(& mut m, &P, &q, A.as_slice(), b.as_slice());
+
+                    m.solve();
+
+                    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&P),
+                                                  m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
+                        data.Zw = Some(([psol[0],psol[1],psol[2],psol[3]],[qsol[0],qsol[1]]));
+                    }
+                    else {
+                        data.Zw = None;
                     }
                 }
 
@@ -185,6 +231,23 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
         let adata = a.to_cols_array();
         //context.transform(cairo::Matrix::new(adata[0], adata[1], adata[2], adata[3], b.x,b.y));
         context.transform(cairo::Matrix::new(adata[0], adata[1], adata[2], adata[3], -b.x,-b.y));
+
+        context.arc(0.0, 0.0, 1.0, 0.0, std::f64::consts::PI*2.0);
+
+        context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
+        _ = context.stroke();
+
+        context.set_matrix(mx);
+    }
+    if let Some((z,w)) = data.Zw {
+        context.set_source_rgb(0.0, 1.0, 0.0);
+        let mx = context.matrix();
+        let a = DMat2::from_cols_array(&z);
+        let b = DVec2::from_array(w);
+
+        let adata = a.to_cols_array();
+        //context.transform(cairo::Matrix::new(adata[0], adata[1], adata[2], adata[3], b.x,b.y));
+        context.transform(cairo::Matrix::new(adata[0], adata[1], adata[2], adata[3], b.x,b.y));
 
         context.arc(0.0, 0.0, 1.0, 0.0, std::f64::consts::PI*2.0);
 
