@@ -1,25 +1,30 @@
-////
-//  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-//  File:      sospoly.rs
-//
-//  Purpose:
-//  Models the cone of nonnegative polynomials and nonnegative trigonometric
-//  polynomials using Nesterov's framework  [1].
-//
-//  Given a set of coefficients (x0, x1, ..., xn), the functions model the
-//  cone of nonnegative polynomials
-//
-//  P_m = { x \in R^{n+1} | x0 + x1*t + ... xn*t^n >= 0, forall t \in I }
-//
-//  where I can be the entire real axis, the semi-infinite interval [0,inf), or
-//  a finite interval I = [a, b], respectively.
-//
-//  References:
-//
-//  [1] "Squared Functional Systems and Optimization Problems",
-//      Y. Nesterov, in High Performance Optimization,
-//      Kluwer Academic Publishers, 2000.
+///
+///  Copyright
+///     Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+///
+///  File
+///     sospoly.rs
+///
+///  # Purpose
+///
+///  Models the cone of nonnegative polynomials and nonnegative trigonometric
+///  polynomials using Nesterov's framework  [1].
+///
+///  Given a set of coefficients `(x0, x1, ..., xn)`, the functions model the
+///  cone of nonnegative polynomials
+///
+///  ```math
+///  P_m = { x ∊ R^{n+1} | x0 + x1*t + ... xn*t^n ≥ 0, ∀ t ∊ I }
+///  ```
+///
+///  where I can be the entire real axis, the semi-infinite interval `[0,inf)`, or
+///  a finite interval `I = [a, b]`, respectively.
+///
+///  # References
+///
+///  [1] "Squared Functional Systems and Optimization Problems",
+///      Y. Nesterov, in High Performance Optimization,
+///      Kluwer Academic Publishers, 2000.
 extern crate mosekmodel;
 
 use itertools::iproduct;
@@ -28,8 +33,12 @@ use mosekmodel::expr::*;
 use mosekmodel::matrix::*;
 
 
-// Creates a Hankel matrix of dimension n+1, where
-// H_lk = a if l+k=i, and 0 otherwise.
+/// Creates a Hankel matrix of dimension n+1, where
+/// ```math
+///         / a if l+k=i
+/// H_lk = (
+///         \ 0 otherwise
+/// ```
 fn hankel(n : usize, i_ : isize, a : f64) -> matrix::SparseMatrix {
     if i_ < 0 || i_ as usize > 2*n {
         matrix::sparse(n+1,n+1,&[],&[],&[])
@@ -51,7 +60,7 @@ fn hankel(n : usize, i_ : isize, a : f64) -> matrix::SparseMatrix {
     }
 }
 
-// Models the cone of nonnegative polynomials on the real axis
+/// Models the cone of nonnegative polynomials on the real axis
 fn nn_inf(model : & mut Model, x : & Variable<1>) {
     let m = x.shape()[0] - 1;
     let n = m / 2; 
@@ -64,7 +73,7 @@ fn nn_inf(model : & mut Model, x : & Variable<1>) {
     }
 }
 
-// Models the cone of nonnegative polynomials on the semi-infinite interval [0,inf)
+/// Models the cone of nonnegative polynomials on the semi-infinite interval `[0,∞)`
 fn nn_semiinf(m : & mut Model, x : & Variable<1>) {
     let n = x.shape()[0] - 1;
     let n1 = n / 2;
@@ -88,7 +97,7 @@ fn nn_semiinf(m : & mut Model, x : & Variable<1>) {
     }
 }
 
-// Models the cone of nonnegative polynomials on the finite interval [a,b]
+/// Models the cone of nonnegative polynomials on the finite interval `[a,b]`
 fn nn_finite(model : & mut Model, x : & Variable<1>, a : f64, b : f64) {
     let m = x.shape()[0]-1;
     let n = m / 2;
