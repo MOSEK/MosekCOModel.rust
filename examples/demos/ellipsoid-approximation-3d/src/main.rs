@@ -13,6 +13,9 @@ use ellipsoids::Ellipsoid;
 use mosekmodel::{unbounded, Model};
 use rand::Rng;
 
+use bevy::render::view::screenshot::ScreenshotManager;
+use bevy::window::PrimaryWindow;
+
 use std::{f32::consts::PI, ops::Range};
 
 const N : usize = 10;
@@ -140,8 +143,22 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(Update, update)
         .add_systems(Update, update_camera)
+        //.add_systems(Update, screen_shot)
         .run();
 }
+
+//fn screen_shot( time       : Res<Time>,
+//                main_window: Query<Entity, With<PrimaryWindow>>,
+//                mut screenshot_manager: ResMut<ScreenshotManager>,
+//                mut counter: Local<u32>)
+//{
+//    let sec = time.elapsed_seconds();
+//    let path = format!("./screenshot-{}.png", *counter);
+//    *counter += 1;
+//    let _ = screenshot_manager
+//        .save_screenshot_to_disk(main_window.single(), path)
+//        .unwrap();
+//}
 
 /// set up a simple 3D scene
 fn setup(
@@ -151,13 +168,13 @@ fn setup(
 {
     commands.spawn((PbrBundle{
         mesh : meshes.add(Sphere::new(1.0)),
-        material : materials.add(Color::rgba_u8(255,255, 255, 128)),
+        material : materials.add(Color::srgba_u8(255,255, 255, 128)),
         ..default()},
         BoundingEllipsoid{} 
         ));
 
 
-    let color = Color::rgba_u8(192,128,0,255);
+    let color = Color::srgba_u8(192,128,0,255);
     let blobmat = materials.add(StandardMaterial{
         base_color : color,
         metallic : 0.8,
@@ -170,7 +187,7 @@ fn setup(
         commands.spawn((PbrBundle{
             mesh : meshes.add(Sphere::new(1.0)),
             material : materials.add(StandardMaterial{
-                base_color : Color::rgb_u8(rand::random::<u8>()/2+127,rand::random::<u8>()/2+127, rand::random::<u8>()/2+127),
+                base_color : Color::srgb_u8(rand::random::<u8>()/2+127,rand::random::<u8>()/2+127, rand::random::<u8>()/2+127),
                 metallic : 0.8,
                 reflectance : 0.5,
                 ..default()

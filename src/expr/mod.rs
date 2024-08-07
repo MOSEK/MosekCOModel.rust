@@ -1660,7 +1660,6 @@ mod test {
         let mx = dense(2, 2, vec![1.1,2.2,3.3,4.4]);
 
         m.constraint(Some("X-Y"), &X.clone().slice(&[0..2,0..2]).sub(Y.clone().sub((&mx).mul_right(t.clone().clone().index(0)))), domain::zeros(&[2,2]));
-        m.write_problem("X_minus_Y.ptf");
 
         let mut rs = WorkStack::new(512);
         let mut ws = WorkStack::new(512);
