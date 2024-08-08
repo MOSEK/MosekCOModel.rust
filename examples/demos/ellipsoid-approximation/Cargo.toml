@@ -1,5 +1,5 @@
 [package]
-name = "lowner-john-2d"
+name = "ellipsoid-approximation"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,4 +9,4 @@ ellipsoids = { version = "0.1.0", path = "../ellipsoids" }
 glam = "0.28.0"
 gtk = { version = "0.8.0", package = "gtk4", features = ["v4_6"] }
 itertools = "0.13.0"
-mosekmodel = { version = "0.1.0", path = "../.." }
+mosekmodel = { version = "0.1.0", path = "../../.." }

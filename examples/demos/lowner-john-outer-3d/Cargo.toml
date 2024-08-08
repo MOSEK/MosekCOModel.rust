@@ -8,15 +8,15 @@ ellipsoids = { version = "0.1.0", path = "../ellipsoids" }
 glam = "0.28.0"
 itertools = "0.13.0"
 mosek = "10.2.1"
-mosekmodel = { version = "0.1.0", path = "../.." }
+mosekmodel = { version = "0.1.0", path = "../../.." }
 rand = "0.8.5"
 
 [profile.dev.package."*"]
 opt-level = 3
 
 [dependencies.bevy]
-version = "0.13.2"
-default_features = false
+version = "0.14.1"
+default-features = false
 features = [
     ## DEFAULT FEATURES
     #"android_shared_stdcxx",

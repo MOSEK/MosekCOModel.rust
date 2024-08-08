@@ -1,0 +1,10 @@
+[package]
+name = "demos"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+members = [ "ellipsoid-approximation", "ellipsoid-approximation-3d", "lowner-john-2d","lowner-john-outer-3d","ellipsoids","truss" ]
+
+[dependencies]

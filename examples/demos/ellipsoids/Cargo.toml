@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 itertools = "0.13.0"
-mosekmodel = { version = "0.1.0", path = "../.." }
+mosekmodel = { version = "0.1.0", path = "../../../" }
