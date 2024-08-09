@@ -80,7 +80,7 @@ fn lownerjohn_outer<const N : usize>(x : &[[f64;N]]) -> Option<(SolutionStatus,S
         let t = M.variable(Some("t"), nonnegative());
         let P = det_rootn(Some("det_rootn"),&mut M, t.clone(), n);
         let c = M.variable(Some("c"), unbounded().with_shape(&[1,n]));
-        let x = dense(m, n, x.iter().flat_map(|row| row.iter()).cloned().collect::<Vec<f64>>());
+        let x = dense([m, n], x.iter().flat_map(|row| row.iter()).cloned().collect::<Vec<f64>>());
 
         // (1, Px-c) in cone
         _ = M.constraint(Some("qc"),

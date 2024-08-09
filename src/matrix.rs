@@ -420,6 +420,7 @@ impl<const N : usize> std::ops::MulAssign<f64> for NDArray<N> {
 
 
 // GLOBAL FUNCTIONS
+
 pub fn dense<const N : usize>(shape : [usize;N], data : Vec<f64>) -> NDArray<N> {
     NDArray::new(shape,None,data).unwrap()
 }
@@ -427,6 +428,11 @@ pub fn sparse<const N : usize>(shape : [usize;N], sp : Vec<usize>, data : Vec<f6
     NDArray::new(shape,Some(sp),data).unwrap()
 }
 
+pub fn diag<V>(data : V) -> NDArray<2> where V:Into<Vec<f64>> {
+    let data = data.into();
+    let dim = data.len();
+    NDArray::new([dim,dim],Some((0..dim*dim).step_by(dim+1).collect()),data).unwrap()
+}
 pub fn speye(dim : usize) -> NDArray<2> {
     NDArray::new([dim,dim],Some((0..dim*dim).step_by(dim+1).collect()),vec![1.0; dim]).unwrap()
 }

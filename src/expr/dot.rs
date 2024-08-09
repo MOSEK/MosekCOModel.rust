@@ -23,7 +23,7 @@ pub struct ExprDot<const N : usize,E> where E : ExprTrait<N> {
     sp    : Option<Vec<usize>>
 }
 
-/// Implements support for `M.dot(expr)`
+/// Implements for `NDArray<N<>.dot(ExprTrait<N>)`
 impl<const N : usize, E> Dot<E> for NDArray<N>
     where 
         E : ExprTrait<N>
@@ -41,6 +41,16 @@ impl<const N : usize, E> Dot<E> for NDArray<N>
     }
 }
 
+/// Implements for `NDArray<N<>.dot(ExprTrait<N>)`
+impl<const N : usize, E> Dot<NDArray<N>> for E
+    where 
+        E : ExprTrait<N>
+{
+    type Result = ExprDot<N,E>;
+    fn dot(self, rhs : NDArray<N>) -> Self::Result { rhs.dot(self) }
+}
+
+// Implements ExprTrait<1>.dot(&[f64])
 impl<E> Dot<&[f64]> for E where E : ExprTrait<1> {
     type Result = ExprDot<1,E>;
     fn dot(self,rhs : &[f64]) -> Self::Result {
@@ -53,10 +63,34 @@ impl<E> Dot<&[f64]> for E where E : ExprTrait<1> {
     }
 }
 
+// Support &[f64] . dot(ExprTrait<1>)
 impl<E> Dot<E> for &[f64] where E : ExprTrait<1> {
     type Result = ExprDot<1,E>;
     fn dot(self,rhs : E) -> Self::Result { rhs.dot(self) }
 }
+
+
+// Implements ExprTrait<1>.dot(Vec<f64>)
+impl<E> Dot<Vec<f64>> for E where E : ExprTrait<1> {
+    type Result = ExprDot<1,E>;
+    fn dot(self,rhs : Vec<f64>) -> Self::Result {
+        ExprDot{
+            expr : self,
+            shape : [rhs.len()],
+            cof: rhs,
+            sp: None
+        }
+    }
+}
+// Support Vec<f64> . dot(ExprTrait<1>)
+impl<E> Dot<E> for Vec<f64> where E : ExprTrait<1> {
+    type Result = ExprDot<1,E>;
+    fn dot(self,rhs : E) -> Self::Result { rhs.dot(self) }
+}
+
+
+
+
 
 impl<const N : usize, E> ExprTrait<0> for ExprDot<N,E> where E : ExprTrait<N> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {

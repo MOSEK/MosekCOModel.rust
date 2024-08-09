@@ -1,6 +1,7 @@
 use super::ExprTrait;
 use super::workstack::WorkStack;
 
+
 pub trait ExprAddRecTrait {
     fn eval_rec(&self, c : f64, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize;
 }

@@ -2,7 +2,7 @@ extern crate mosekmodel;
 
 use mosekmodel::*;
 use mosekmodel::expr::*;
-use mosekmodel::matrix::DenseMatrix;
+use mosekmodel::matrix::*;
 
 
 /// Computes several portfolios on the optimal portfolios by
@@ -25,7 +25,7 @@ use mosekmodel::matrix::DenseMatrix;
 #[allow(non_snake_case)]
 fn efficient_frontier( n : usize,
                        mu : &[f64],
-                       GT : &NdArray<2>,
+                       GT : &NDArray<2>,
                        x0 : &[f64],
                        w  : f64,
                        alphas : &[f64]) -> Vec<(f64,f64,f64)> {
