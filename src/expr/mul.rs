@@ -167,7 +167,7 @@ impl<E, M> ExprRightMultipliable<2,E> for M
 {
     type Result = ExprMulRight<E>;
     fn mul_right(self,rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
+        let (shape,sp,data) = self.dissolve();
         ExprMulRight{
             item : rhs,
             shape,
@@ -183,7 +183,7 @@ impl<E, M> ExprRightMultipliable<1,E> for M
 {
     type Result = ExprReshapeOneRow<2,1,ExprMulRight<ExprReshapeOneRow<1,2,E>>>;
     fn mul_right(self,rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
+        let (shape,sp,data) = self.dissolve();
         ExprReshapeOneRow{
             item : ExprMulRight{
                 item : ExprReshapeOneRow{ item: rhs, dim : 0 },
@@ -310,7 +310,7 @@ impl<E,M> ExprLeftElmMultipliable<2,E> for M
     type Result = ExprMulElm<2,E>;
 
     fn mul_elem(self,rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
+        let (shape,sp,data) = self.dissolve();
         ExprMulElm{
             expr : rhs,
             datashape : shape,
@@ -373,7 +373,7 @@ impl<E,M> ExprRightElmMultipliable<2,E> for M
     type Result = ExprMulElm<2,E>;
 
     fn mul_elem(self,rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
+        let (shape,sp,data) = self.dissolve();
         ExprMulElm{
             expr : rhs,
             datashape : shape,
@@ -622,7 +622,7 @@ mod test {
 
     #[test]
     fn mul() {
-        let m = dense(2, 5, vec![1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0]);
+        let m = dense([2, 5], vec![1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0]);
         let e = Expr{ shape: [2,2],
                                     aptr : vec![0,1,2,3,4],
                                     asubj: vec![5,6,7,8],

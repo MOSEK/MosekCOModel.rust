@@ -9,8 +9,6 @@
 
 extern crate mosekmodel;
 
-use std::ptr::eq;
-
 use mosekmodel::*;
 use mosekmodel::expr::*;
 use mosekmodel::matrix::*;
@@ -34,7 +32,7 @@ use mosekmodel::matrix::*;
 #[allow(non_upper_case_globals)]
 #[allow(non_snake_case)]
 fn markowitz_with_cardinality(mu : &[f64],
-                              GT : &DenseMatrix,
+                              GT : &NDArray<2>,
                               x0 : &[f64],
                               w  : f64,
                               gamma : f64,
@@ -106,7 +104,7 @@ fn main() {
 
     let mut xsols : Vec<Vec<f64>> = Vec::new();
     for K in 1..n+1 {
-        xsols.push(markowitz_with_cardinality(mu,&matrix::dense(n,m,GT as &[f64]),x0,w,gamma,K));
+        xsols.push(markowitz_with_cardinality(mu,&matrix::dense([n,m],GT.to_vec()),x0,w,gamma,K));
     }
     println!("\n-----------------------------------------------------------------------------------");
     println!("Markowitz portfolio optimization with cardinality constraints");

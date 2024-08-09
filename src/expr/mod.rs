@@ -171,7 +171,7 @@ pub trait ExprTrait<const N : usize> {
             Self : Sized+ExprTrait<2>, 
             M : Matrix
     { 
-        let (shape,data,sparsity) = other.dissolve();
+        let (shape,sparsity,data) = other.dissolve();
         ExprReduceShape{
             item : ExprSumLastDims{
                 num : 1,

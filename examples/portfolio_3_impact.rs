@@ -29,7 +29,7 @@ use mosekmodel::matrix::*;
 /// Optimal expected return and the optimal portfolio     
 fn markowitz_impact(n : usize,
                     mu : &[f64],
-                    gt : &DenseMatrix,
+                    gt : &NDArray<2>,
                     x0 : &[f64],
                     w : f64,
                     gamma : f64,
@@ -76,7 +76,7 @@ fn main() {
     let w = 1.0;
     let mu = [0.07197, 0.15518, 0.17535, 0.08981, 0.42896, 0.39292, 0.32171, 0.18379];
     let x0 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-    let GT = matrix::dense(n,n,vec![
+    let GT = matrix::dense([n,n],vec![
         0.30758, 0.12146, 0.11341, 0.11327, 0.17625, 0.11973, 0.10435, 0.10638,
         0.     , 0.25042, 0.09946, 0.09164, 0.06692, 0.08706, 0.09173, 0.08506,
         0.     , 0.     , 0.19914, 0.05867, 0.06453, 0.07367, 0.06468, 0.01914,

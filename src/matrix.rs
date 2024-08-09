@@ -31,7 +31,7 @@ impl Matrix for NDArray<2> {
     fn height(&self) -> usize { self.shape()[0] }
     fn transpose(&self) -> NDArray<2> {
         let shape = [self.shape[1],self.shape[0]];
-        if let Some(sp) = self.sp {
+        if let Some(ref sp) = self.sp {
             let n = sp.len();
 
             let mut ptr = vec![0; self.shape[1]+1];
@@ -427,5 +427,7 @@ pub fn sparse<const N : usize>(shape : [usize;N], sp : Vec<usize>, data : Vec<f6
     NDArray::new(shape,Some(sp),data).unwrap()
 }
 
-
+pub fn speye(dim : usize) -> NDArray<2> {
+    NDArray::new([dim,dim],Some((0..dim*dim).step_by(dim+1).collect()),vec![1.0; dim]).unwrap()
+}
 

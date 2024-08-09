@@ -33,7 +33,7 @@ use mosekmodel::matrix::{DenseMatrix,Matrix};
 ///    Optimal expected return and the optimal portfolio     
 #[allow(non_snake_case)]
 fn markowitz_with_transactions_cost( mu : &[f64],
-                                     GT : &DenseMatrix,
+                                     GT : &NDArray<2>,
                                      x0 : &[f64],
                                      w  : f64,
                                      gamma : f64,
@@ -105,7 +105,7 @@ fn main() {
         0.     , 0.     , 0.     , 0.     , 0.     , 0.21552, 0.05663, 0.06187,
         0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.22514, 0.03327,
         0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.2202 ];
-    let GT = matrix::dense(n, m, GT_data);
+    let GT = matrix::dense([n, m], GT_data.to_vec());
 
     let f = &[0.01; n];
     let g = &[0.001; n];

@@ -31,9 +31,9 @@ fn main() {
     let x     = m.variable(Some("x"),  in_quadratic_cone(3));
 
     // Setting up constant coefficient matrices
-    let barc  = matrix::dense(3, 3, vec![2., 1., 0., 
-                                         1., 2., 1., 
-                                         0., 1., 2.]);
+    let barc  = matrix::dense([3, 3], vec![2., 1., 0., 
+                                           1., 2., 1., 
+                                           0., 1., 2.]);
     let bara1 = matrix::diag(&[1.0;3]);
     let bara2 = matrix::ones(3, 3);
 

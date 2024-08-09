@@ -1,5 +1,6 @@
 extern crate mosekmodel;
 
+use matrix::NDArray;
 use mosekmodel::*;
 use mosekmodel::expr::workstack::WorkStack;
 use mosekmodel::expr::*;
@@ -19,7 +20,7 @@ fn mul_dense_matrix_x_dense_expr() {
                       (0..N1*N1*2).collect(), // subj
                       vec![1.0; N1*N1*2]); // cof
 
-    let m = matrix::dense(N1,N1, vec![1.0; N1*N1]);
+    let m = matrix::dense([N1,N1], vec![1.0; N1*N1]);
     m.mul(e).eval(& mut rs, & mut ws, & mut xs);
 }
 
@@ -35,7 +36,7 @@ fn mul_dense_matrix_x_sparse_expr() {
                       (0..((N2*N2)/7+1)*2).collect(), // subj
                       vec![1.0; (N2*N2/7+1)*2]); // cof
 
-    let m = matrix::dense(N2,N2, vec![1.0; N2*N2]);
+    let m = matrix::dense([N2,N2], vec![1.0; N2*N2]);
     m.mul(e).eval(& mut rs, & mut ws, & mut xs);
 }
 
@@ -51,7 +52,7 @@ fn mul_dense_expr_x_dense_matrix() {
                       (0..N1*N1*2).collect(), // subj
                       vec![1.0; N1*N1*2]); // cof
 
-    let m = matrix::dense(N1,N1, vec![1.0; N1*N1]);
+    let m = matrix::dense([N1,N1], vec![1.0; N1*N1]);
     e.mul(m).eval(& mut rs, & mut ws, & mut xs);
 }
 
@@ -67,7 +68,7 @@ fn mul_sparse_expr_x_dense_matrix() {
                       (0..((N2*N2)/7+1)*2).collect(), // subj
                       vec![1.0; (N2*N2/7+1)*2]); // cof
 
-    let m = matrix::dense(N2,N2, vec![1.0; N2*N2]);
+    let m = matrix::dense([N2,N2], vec![1.0; N2*N2]);
     e.mul(m).eval(& mut rs, & mut ws, & mut xs);
 }
 
@@ -95,7 +96,7 @@ fn dense_left_mul() {
                        vec![0,1,2,3,4,5,6,7],
                        vec![1.0; 8]);
 
-    let m = matrix::dense(3,3,vec![1.1,1.2,1.3,
+    let m = matrix::dense([3,3],vec![1.1,1.2,1.3,
                                    2.1,2.2,2.3,
                                    3.1,3.2,3.3]);
 
@@ -153,7 +154,7 @@ fn basic_expr() {
                        vec![0,1,2,3,4,5,6,7],
                        vec![1.0,1.0,2.0,2.0,3.0,3.0,4.0,4.0]);
 
-    let m = matrix::dense(3,3,vec![1.1,1.2,1.3,
+    let m = matrix::dense([3,3],vec![1.1,1.2,1.3,
                                    2.1,2.2,2.3,
                                    3.1,3.2,3.3]);
     ed.eval(& mut rs, & mut ws, & mut xs);
@@ -183,7 +184,7 @@ fn dense_right_mul() {
                        vec![0,1,2,3,4,5,6,7],
                        vec![1.0,1.0,2.0,2.0,3.0,3.0,4.0,4.0]);
 
-    let m = matrix::dense(3,3,vec![1.1,1.2,1.3,
+    let m = matrix::dense([3,3],vec![1.1,1.2,1.3,
                                    2.1,2.2,2.3,
                                    3.1,3.2,3.3]);
     ed.mul(m.clone()).eval(& mut rs, & mut ws, & mut xs);
@@ -254,10 +255,9 @@ fn sparse_left_mul() {
     // | 1.1     1.3 |
     // |         2.3 |
     // | 3.1 3.2     |
-    let m = matrix::sparse(3,3,
-                           &[0,0,1,2,2],
-                           &[0,2,2,0,1],
-                           &[1.1,1.3,2.3,3.1,3.2]);
+    let m = NDArray::from_tuples([3,3],
+                           &[[0,0],[0,2],[1,2],[2,0],[2,1]],
+                           &[1.1,1.3,2.3,3.1,3.2]).unwrap();
     m.clone().mul(ed).eval(& mut rs, & mut ws, & mut xs);
     // | 1.1(x0+x1)
     {
@@ -320,10 +320,9 @@ fn sparse_right_mul() {
     // | 1.1     1.3 |
     // |         2.3 |
     // | 3.1 3.2     |
-    let m = matrix::sparse(3,3,
-                           &[0,0,1,2,2],
-                           &[0,2,2,0,1],
-                           &[1.1,1.3,2.3,3.1,3.2]);
+    let m = NDArray::from_tuples([3,3],
+                                 &[[0,0],[0,2],[1,2],[2,0],[2,1]],
+                                 &[1.1,1.3,2.3,3.1,3.2]).unwrap();
 
     ed.mul(m.clone()).eval(& mut rs, & mut ws, & mut xs);
     {
@@ -371,7 +370,7 @@ fn bigmul() {
     
     let mut model = Model::new(None);
     let v = model.variable(None,&[n,1]);
-    let mx = matrix::dense(n,n,vec![1.0; n*n]);
+    let mx = matrix::dense([n,n],vec![1.0; n*n]);
 
     let _ = model.constraint(None, &mx.clone().mul(v.clone()).reshape(&[n]),equal_to(vec![100.0;n]));
     let _ = model.constraint(None, &v.reshape(&[1,n]).mul(mx), equal_to(vec![100.0;n]).with_shape(&[1,n]));

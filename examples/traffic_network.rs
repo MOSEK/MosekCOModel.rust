@@ -21,7 +21,7 @@
 extern crate mosekmodel;
 
 use mosekmodel::*;
-use mosekmodel::matrix::SparseMatrix;
+use mosekmodel::matrix::*;
 
 
 
@@ -36,10 +36,10 @@ pub fn traffic_network_model(
         panic!("Number of nodes does not match arc definitions");
     }
 
-    let basetime = SparseMatrix::from_iterator(n,n,arcs.iter().map(|arc| (arc.i,arc.j,arc.base_travel_time)));
+    let basetime = NDArray::from_iterator([n,n],arcs.iter().map(|arc| ([arc.i,arc.j],arc.base_travel_time)));
     let sparsity : Vec<[usize;2]> = arcs.iter().map(|arc| [arc.i,arc.j]).collect();
-    let cs_inv = SparseMatrix::from_iterator(n,n,arcs.iter().map(|arc| (arc.i,arc.j,1.0 / (arc.traffic_sensitivity * arc.capacity))));
-    let s_inv  = SparseMatrix::from_iterator(n,n,arcs.iter().map(|arc| (arc.i,arc.j,1.0/arc.traffic_sensitivity)));
+    let cs_inv = NDArray::from_iterator([n,n],arcs.iter().map(|arc| ([arc.i,arc.j],1.0 / (arc.traffic_sensitivity * arc.capacity))));
+    let s_inv  = NDArray::from_iterator([n,n],arcs.iter().map(|arc| ([arc.i,arc.j],1.0/arc.traffic_sensitivity)));
 
     let x = model.variable(Some("traffic_flow"), greater_than(0.0).with_shape_and_sparsity(&[n,n],sparsity.as_slice()));
     let d = model.variable(Some("d"),            greater_than(0.0).with_shape_and_sparsity(&[n,n],sparsity.as_slice()));
