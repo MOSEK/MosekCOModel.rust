@@ -205,19 +205,39 @@ impl<const N : usize> NDArray<N> {
             self.clone()
         }
     }
-}
-
-impl Into<NDArray<1>> for &[f64] {
-    fn into(self) -> NDArray<1> {
-        NDArray{ shape : [ self.len() ], sp : None, data : self.to_vec() }
+    pub fn to_expr(&self) -> super::expr::Expr<N> {
+        if let Some(ref sp) = self.sp {
+            Expr::new(
+                &self.shape,
+                Some(sp.clone()),
+                (0..sp.len()+1).collect(),
+                vec![0; sp.len()],
+                self.data.clone())
+        }
+        else {            
+            Expr::new(
+                &self.shape,
+                None,
+                (0..self.nnz()+1).collect(),
+                vec![0; self.nnz()],
+                self.data.clone())
+        }
     }
 }
 
-impl Into<NDArray<1>> for Vec<f64> {
-    fn into(self) -> NDArray<1> {
-        NDArray{ shape : [ self.len() ], sp : None, data : self }
+
+impl From<&[f64]> for NDArray<1> {
+    fn from(v : &[f64]) -> NDArray<1> {
+        NDArray{ shape : [ v.len() ], sp : None, data : v.to_vec() }
     }
 }
+
+impl From<Vec<f64>> for NDArray<1> {
+    fn from(v : Vec<f64>) -> NDArray<1> {
+        NDArray{ shape : [ v.len() ], sp : None, data : v }
+    }
+}
+
 // Implement conversion
 
 impl<const N : usize> Into<Expr<N>> for &NDArray<N> {
@@ -435,5 +455,9 @@ pub fn diag<V>(data : V) -> NDArray<2> where V:Into<Vec<f64>> {
 }
 pub fn speye(dim : usize) -> NDArray<2> {
     NDArray::new([dim,dim],Some((0..dim*dim).step_by(dim+1).collect()),vec![1.0; dim]).unwrap()
+}
+
+pub fn ones<const N : usize>(shape : [usize; N]) -> NDArray<N> {
+    NDArray::new(shape,None,vec![1.0; shape.iter().product()]).unwrap()
 }
 

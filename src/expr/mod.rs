@@ -20,11 +20,6 @@ pub use mul::*;
 pub use add::*;
 pub use super::domain;
 
-pub trait IntoExpr<const N : usize> {
-    type Result : ExprTrait<N>;
-    fn into_expr(self) -> Self::Result;
-}
-
 /// The `ExprTrait<N>` represents a `N`-dimensional expression.
 pub trait ExprTrait<const N : usize> {
     /// Evaluate the expression and put the result on the `rs` stack,
@@ -133,12 +128,12 @@ pub trait ExprTrait<const N : usize> {
     ///
     /// # Arguments
     /// - `rhs` Add two expressions. The expression shapes must match.
-    fn add<RHS>(self, rhs : RHS) -> ExprAdd<N,Self,RHS::Result> 
+    fn add<RHS>(self, rhs : RHS, ) -> ExprAdd<N,Self,RHS> 
         where 
-            RHS : IntoExpr<N>,
+            RHS : ExprTrait<N>,
             Self : Sized
     {
-        ExprAdd::new(self,rhs.into_expr(),1.0,1.0) 
+        ExprAdd::new(self,rhs,1.0,1.0) 
     }
 
     /// Subtract expression and an item that is addable to an expression, e.g. constants or other
@@ -146,12 +141,12 @@ pub trait ExprTrait<const N : usize> {
     ///
     /// # Arguments
     /// - `rhs` Subtract two expressions. The expression shapes must match.
-    fn sub<RHS>(self, rhs : RHS) -> ExprAdd<N,Self,RHS::Result> 
+    fn sub<RHS>(self, rhs : RHS) -> ExprAdd<N,Self,RHS> 
         where 
-            RHS : IntoExpr<N>,
+            RHS : ExprTrait<N>,
             Self : Sized
     {
-        ExprAdd::new(self,rhs.into_expr(),1.0,-1.0) 
+        ExprAdd::new(self,rhs,1.0,-1.0) 
     }
 
     /// Element-wise multiplication of two operands. The operand shapes must be the same.
@@ -1253,30 +1248,38 @@ impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprPermuteAxes<N,E> {
     }
 }
 
-impl<const N : usize,E> IntoExpr<N> for E where E : ExprTrait<N> {
-    type Result = E;
-    fn into_expr(self) -> Self::Result {
-       self
-    }
+
+//impl From<f64> for Expr<0> {
+//    fn from(self) -> expr<0> { expr::new(&[], none, vec![0,1], vec![0], vec![self]) }
+//}
+
+
+
+
+//impl Into<Expr<0>> for f64 {
+//    fn into(self) -> Expr<0> { Expr::new(&[], None, vec![0,1], vec![0], vec![self]) }
+//}
+//
+//impl Into<Expr<1>> for &[f64] {
+//    fn into(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.to_vec()) }
+//}
+//
+//impl Into<Expr<1>> for Vec<f64> {
+//    fn into(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.clone()) }
+//}
+//
+
+impl From<f64> for Expr<0> {
+    fn from(v : f64) -> Expr<0> { Expr::new(&[], None, vec![0,1], vec![0], vec![v]) }
 }
 
-impl IntoExpr<0> for f64 {
-    type Result = Expr<0>;
-    fn into_expr(self) -> Expr<0> { Expr::new(&[], None, vec![0,1], vec![0], vec![self]) }
+impl From<&[f64]> for Expr<1> {
+    fn from(v : &[f64]) -> Expr<1> { Expr::new(&[v.len()], None, (0..v.len()+1).collect(), vec![0; v.len()], v.to_vec()) }
 }
 
-impl IntoExpr<1> for &[f64] {
-    type Result = Expr<1>;
-    fn into_expr(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.to_vec()) }
+impl From<Vec<f64>> for Expr<1> {
+    fn from(v : Vec<f64>) -> Expr<1> { Expr::new(&[v.len()], None, (0..v.len()+1).collect(), vec![0; v.len()], v) }
 }
-
-impl IntoExpr<1> for Vec<f64> {
-    type Result = Expr<1>;
-    fn into_expr(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.clone()) }
-}
-
-
-
 
 
 ////////////////////////////////////////////////////////////

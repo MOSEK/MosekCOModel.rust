@@ -588,6 +588,21 @@ impl<const N : usize> Variable<N> {
     }
 }
 
+
+impl<const N : usize> From<Variable<N>> for super::expr::Expr<N> {
+    fn from(v : Variable<N>) -> super::expr::Expr<N> {
+        let n = v.idxs.len();
+        super::expr::Expr::new(
+            &v.shape,
+            v.sparsity,
+            (0..n+1).collect(),
+            v.idxs,
+            vec![1.0; n])
+
+    }
+}
+
+
 impl<const N : usize> Variable<N> {
     fn eval_common(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.shape,

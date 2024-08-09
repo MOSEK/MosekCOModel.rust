@@ -53,14 +53,14 @@ fn markowitz_impact(n : usize,
 
     // Imposes a bound on the risk
     model.constraint(Some("risk"), 
-                     &vstack![gamma.into_expr().reshape(&[1]), 
+                     &vstack![Expr::from(gamma).reshape(&[1]), 
                               gt.clone().mul(x.clone())], in_quadratic_cone(n+1));
 
     // t >= |x-x0|^1.5 using a power cone
     model.constraint(Some("tz"), 
-                     &hstack![ t.clone().into_expr().reshape(&[n,1]),
-                               vec![1.0;n].into_expr().reshape(&[n,1]),
-                               x.clone().sub(x0).reshape(&[n,1]) ],
+                     &hstack![ Expr::from(t.clone()).reshape(&[n,1]),
+                               Expr::from(vec![1.0;n]).reshape(&[n,1]),
+                               x.clone().sub(Expr::from(x0)).reshape(&[n,1]) ],
                      in_power_cones(&[n,3],1,&[2.0/3.0,1.0/3.0]));
 
     model.solve();

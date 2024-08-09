@@ -15,7 +15,7 @@ use mosekmodel::matrix::*;
 /// * `gamma` Maximum risk (=std. dev) accepted
 fn basic_markowitz( n : usize,
                     mu : &[f64],
-                    gt : &NDArray,
+                    gt : &NDArray<2>,
                     x0 : &[f64],
                     w  : f64,
                     gamma : f64) -> f64 {
@@ -35,7 +35,7 @@ fn basic_markowitz( n : usize,
 
     // Imposes a bound on the risk
     model.constraint(Some("risk"), 
-                     &vstack![gamma.into_expr().reshape(&[1]), 
+                     &vstack![Expr::from(gamma).reshape(&[1]), 
                               gt.clone().mul(x.clone())], in_quadratic_cone(n+1));
 
     model.write_problem("portfolio-1.ptf");

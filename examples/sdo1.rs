@@ -35,7 +35,7 @@ fn main() {
                                            1., 2., 1., 
                                            0., 1., 2.]);
     let bara1 = matrix::diag(&[1.0;3]);
-    let bara2 = matrix::ones(3, 3);
+    let bara2 = matrix::ones([3,3]);
 
     // Objective
     m.objective(None, Sense::Minimize, &barx.clone().dot(barc).add(x.clone().index(0)));

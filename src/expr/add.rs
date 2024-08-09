@@ -34,17 +34,17 @@ impl<const N : usize, L,R> ExprAdd<N,L,R>
     }
     /// This will by default override `add()` defined for `ExprTraint<N>`, allowing us to 
     /// create a recursive add structure in stead of just nested adds.
-    pub fn add<T>(self,rhs : T) -> ExprAddRec<N,ExprAdd<N,L,R>,T::Result> 
-        where T:super::IntoExpr<N>
+    pub fn add<T>(self,rhs : T) -> ExprAddRec<N,ExprAdd<N,L,R>,T> 
+        where T:super::ExprTrait<N>
     {
-        ExprAddRec{lhs: self, rhs : rhs.into_expr(), lcof : 1.0, rcof : 1.0 }
+        ExprAddRec{lhs: self, rhs, lcof : 1.0, rcof : 1.0 }
     }
     /// This will by default override `add()` defined for `ExprTraint<N>`, allowing us to 
     /// create a recursive add structure in stead of just nested adds.
-    pub fn sub<T>(self,rhs : T) -> ExprAddRec<N,ExprAdd<N,L,R>,T::Result> 
-        where T:super::IntoExpr<N>
+    pub fn sub<T>(self,rhs : T) -> ExprAddRec<N,ExprAdd<N,L,R>,T> 
+        where T:super::ExprTrait<N>
     {
-        ExprAddRec{lhs: self, rhs : rhs.into_expr(), lcof : 1.0, rcof : -1.0 }
+        ExprAddRec{lhs: self, rhs, lcof : 1.0, rcof : -1.0 }
     }
 }
 
@@ -55,6 +55,11 @@ impl<const N : usize,L,R> ExprAddRec<N,L,R>
 {
     pub fn add<T:ExprTrait<N>>(self,rhs : T) -> ExprAddRec<N,Self,T> where Self : Sized { ExprAddRec{lhs: self, rhs, lcof : 1.0, rcof : 1.0} }
 }
+
+
+
+
+
 
 // Trait implementations
 impl<const N : usize,L,R> ExprTrait<N> for ExprAdd<N,L,R> 
@@ -69,6 +74,10 @@ impl<const N : usize,L,R> ExprTrait<N> for ExprAdd<N,L,R>
         super::eval::add(2,rs,ws,xs);
     }
 }
+
+
+
+
 
 impl<const N : usize,L,R> ExprAddRecTrait for ExprAdd<N,L,R> 
     where 

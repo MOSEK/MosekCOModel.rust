@@ -84,7 +84,7 @@ fn lownerjohn_outer<const N : usize>(x : &[[f64;N]]) -> Option<(SolutionStatus,S
 
         // (1, Px-c) in cone
         _ = M.constraint(Some("qc"),
-                         &hstack![ vec![1.0; m].into_expr().reshape(&[m,1]), 
+                         &hstack![ Expr::from(vec![1.0; m]).reshape(&[m,1]), 
                                    P.clone().rev_mul(x).sub(c.clone().repeat(0,m))],
                          in_quadratic_cones(&[m,n+1],1));
 
