@@ -3,23 +3,23 @@ use super::workstack::WorkStack;
 use super::matrix::Matrix;
 
 pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
-    item : E,
-    lhs  : f64
+    pub(super) item : E,
+    pub(super) lhs  : f64
 }
 
 pub struct ExprMulLeft<E:ExprTrait<2>> {
-    item : E,
+    pub(super) item : E,
     
-    shape : [usize;2],
-    data  : Vec<f64>,
-    sp    : Option<Vec<usize>>
+    pub(super) shape : [usize;2],
+    pub(super) data  : Vec<f64>,
+    pub(super) sp    : Option<Vec<usize>>
 }
 
 pub struct ExprMulRight<E:ExprTrait<2>> {
-    item : E,
-    shape : [usize;2],
-    data  : Vec<f64>,
-    sp    : Option<Vec<usize>>
+    pub(super) item : E,
+    pub(super) shape : [usize;2],
+    pub(super) data  : Vec<f64>,
+    pub(super) sp    : Option<Vec<usize>>
 }
 
 pub struct ExprMulElm<const N : usize,E> where E : ExprTrait<N>+Sized {
@@ -62,7 +62,7 @@ impl<E, M> ExprLeftMultipliable<2,E> for M
 {
     type Result = ExprMulLeft<E>;
     fn mul(self,rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
+        let (shape,sp,data) = self.dissolve();
         ExprMulLeft{
             item : rhs,
             shape,
@@ -78,7 +78,7 @@ impl<E, M> ExprLeftMultipliable<1,E> for M
 {
     type Result = ExprReshapeOneRow<2,1,ExprMulLeft<ExprReshapeOneRow<1,2,E>>>;
     fn mul(self,rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
+        let (shape,sp,data) = self.dissolve();
         ExprReshapeOneRow{
             item : ExprMulLeft{
                 item : ExprReshapeOneRow{ item: rhs, dim : 0 },

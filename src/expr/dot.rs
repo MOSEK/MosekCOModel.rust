@@ -1,5 +1,5 @@
-use super::{ExprTrait};
-use super::matrix::{Matrix,DenseMatrix,SparseMatrix};
+use super::ExprTrait;
+use super::matrix::{Matrix,NDArray};
 use super::workstack::WorkStack;
 use itertools::izip;
 
@@ -24,51 +24,16 @@ pub struct ExprDot<const N : usize,E> where E : ExprTrait<N> {
 }
 
 /// Implements support for `M.dot(expr)`
-impl<E> Dot<E> for DenseMatrix 
+impl<const N : usize, E> Dot<E> for NDArray<N>
     where 
-        E : ExprTrait<2>
+        E : ExprTrait<N>
 {
-    type Result = ExprDot<2,E>;
+    type Result = ExprDot<N,E>;
     fn dot(self, rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
+        let (shape,sp,data) = self.dissolve();
 
         ExprDot{
             expr : rhs,
-            shape,
-            cof: data,
-            sp
-        }
-    }
-}
-
-impl<E> Dot<E> for SparseMatrix 
-    where 
-        E : ExprTrait<2>
-{
-    type Result = ExprDot<2,E>;
-    fn dot(self, rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
-
-        ExprDot{
-            expr : rhs,
-            shape,
-            cof: data,
-            sp
-        }
-    }
-}
-
-impl<E,M> Dot<M> for E 
-    where 
-        E : ExprTrait<2>,
-        M : Matrix
-{
-    type Result = ExprDot<2,E>;
-    fn dot(self,rhs : M) -> Self::Result {
-        let (shape,data,sp) = rhs.extract();
-
-        ExprDot{
-            expr : self,
             shape,
             cof: data,
             sp
@@ -87,7 +52,6 @@ impl<E> Dot<&[f64]> for E where E : ExprTrait<1> {
         }
     }
 }
-
 
 impl<E> Dot<E> for &[f64] where E : ExprTrait<1> {
     type Result = ExprDot<1,E>;

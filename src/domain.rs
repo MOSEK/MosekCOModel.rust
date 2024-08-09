@@ -1,6 +1,6 @@
 use itertools::izip;
 
-use super::matrix::{DenseNDArray,Matrix};
+use super::matrix::{Matrix,NDArray};
 use super::utils::perm_iter;
 
 pub enum LinearDomainType {
@@ -258,17 +258,10 @@ impl OffsetTrait<1> for &[f64] {
     fn equal_to(self)     -> LinearDomain<1> { let n = self.len(); LinearDomain{ dt : LinearDomainType::Zero,        ofs:LinearDomainOfsType::M(self.to_vec()), shape:[n], sp : None, is_integer : false } }
 }
 
-impl<M> OffsetTrait<2> for M where M : Matrix {
-    fn greater_than(self) -> LinearDomain<2> { let (shape,data) = self.extract_full(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:LinearDomainOfsType::M(data), shape, sp:None, is_integer : false }
-    }
-    fn less_than(self)    -> LinearDomain<2> { let (shape,data) = self.extract_full(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:LinearDomainOfsType::M(data), shape, sp:None, is_integer : false } }
-    fn equal_to(self)     -> LinearDomain<2> { let (shape,data) = self.extract_full(); LinearDomain{ dt : LinearDomainType::Zero,        ofs:LinearDomainOfsType::M(data), shape, sp:None, is_integer : false } }
-}
-
-impl<const N : usize> OffsetTrait<N> for DenseNDArray<N> {
-    fn greater_than(self) -> LinearDomain<N> { let (shape,data) = self.extract(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:LinearDomainOfsType::M(data), shape, sp : None, is_integer : false } }
-    fn less_than(self)    -> LinearDomain<N> { let (shape,data) = self.extract(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:LinearDomainOfsType::M(data), shape, sp : None, is_integer : false } }
-    fn equal_to(self)     -> LinearDomain<N> { let (shape,data) = self.extract() ;LinearDomain{ dt : LinearDomainType::Zero,        ofs:LinearDomainOfsType::M(data), shape, sp : None, is_integer : false } }
+impl<const N : usize> OffsetTrait<N> for NDArray<N> {
+    fn greater_than(self) -> LinearDomain<N> { let (shape,sp,data) = self.dissolve(); LinearDomain{ dt : LinearDomainType::NonNegative, ofs:LinearDomainOfsType::M(data), shape, sp : sp, is_integer : false } }
+    fn less_than(self)    -> LinearDomain<N> { let (shape,sp,data) = self.dissolve(); LinearDomain{ dt : LinearDomainType::NonPositive, ofs:LinearDomainOfsType::M(data), shape, sp : sp, is_integer : false } }
+    fn equal_to(self)     -> LinearDomain<N> { let (shape,sp,data) = self.dissolve(); LinearDomain{ dt : LinearDomainType::Zero,        ofs:LinearDomainOfsType::M(data), shape, sp : sp, is_integer : false } }
 }
 
 ////////////////////////////////////////////////////////////
