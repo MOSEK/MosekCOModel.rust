@@ -238,8 +238,8 @@ pub fn ellipsoid_subject_to<const N : usize>
 {
     let m = A.len();
     assert_eq!(b.len(),m);
-    let A = dense([m,N],A.iter().flat_map(|a| a.iter()).cloned().collect());
-    let b = dense([m, 1], b.to_vec());
+    let A = matrix::dense([m,N],A.iter().flat_map(|a| a.iter()).cloned().collect::<Vec<f64>>());
+    let b = matrix::dense([m, 1], b.to_vec());
     _ = M.constraint(Some("E_Axb"), 
                      &hstack![ w.clone().reshape(&[2,1]).rev_mul(A.clone()).sub(b).neg(), Z.clone().rev_mul(A) ], 
                      in_quadratic_cones(&[m,N+1],1));
@@ -282,7 +282,7 @@ pub fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize
     // Z is lower-triangular
     _ = M.constraint(None, &Z.clone().triuvec(false), equal_to(vec![0.0; n*(n-1)/2].as_slice()));
     // DZ = Diag(Z)
-    _ = M.constraint(None, &DZ.clone().sub(Z.mul_elem(speye(n))), equal_to(dense(n,n,vec![0.0; n*n])));
+    _ = M.constraint(None, &DZ.clone().sub(Z.mul_elem(matrix::speye(n))), equal_to(matrix::dense([n,n],vec![0.0; n*n])));
     // (Z11*Z22*...*Znn) >= t^n
     _ = M.constraint(name,&vstack![DZ.clone().diag(),t.reshape(&[1])], in_geometric_mean_cone(n+1));
 

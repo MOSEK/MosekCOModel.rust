@@ -1,4 +1,4 @@
-use super::{ExprTrait,Expr};
+use super::{ExprTrait,Expr,IntoExpr};
 use super::workstack::WorkStack;
 
 
@@ -7,8 +7,8 @@ pub trait ExprAddRecTrait {
 }
 
 pub struct ExprAdd<const N : usize, L:ExprTrait<N>,R:ExprTrait<N>> {
-    lhs : L,
-    rhs : R,
+    lhs  : L,
+    rhs  : R,
     lcof : f64,
     rcof : f64
 }
@@ -34,17 +34,21 @@ impl<const N : usize, L,R> ExprAdd<N,L,R>
     }
     /// This will by default override `add()` defined for `ExprTraint<N>`, allowing us to 
     /// create a recursive add structure in stead of just nested adds.
-    pub fn add<T>(self,rhs : T) -> ExprAddRec<N,ExprAdd<N,L,R>,T> 
-        where T:super::ExprTrait<N>
+    pub fn add<T>(self,rhs : T) -> ExprAddRec<N,ExprAdd<N,L,R>,T::Result> 
+        where 
+            Self: Sized,
+            T:IntoExpr<N>
     {
-        ExprAddRec{lhs: self, rhs, lcof : 1.0, rcof : 1.0 }
+        ExprAddRec{lhs: self, rhs:rhs.into(), lcof : 1.0, rcof : 1.0 }
     }
     /// This will by default override `add()` defined for `ExprTraint<N>`, allowing us to 
     /// create a recursive add structure in stead of just nested adds.
-    pub fn sub<T>(self,rhs : T) -> ExprAddRec<N,ExprAdd<N,L,R>,T> 
-        where T:super::ExprTrait<N>
+    pub fn sub<T>(self,rhs : T) -> ExprAddRec<N,ExprAdd<N,L,R>,T::Result> 
+        where 
+            Self: Sized,
+            T:IntoExpr<N>
     {
-        ExprAddRec{lhs: self, rhs, lcof : 1.0, rcof : -1.0 }
+        ExprAddRec{lhs: self, rhs:rhs.into(), lcof : 1.0, rcof : -1.0 }
     }
 }
 
@@ -53,7 +57,11 @@ impl<const N : usize,L,R> ExprAddRec<N,L,R>
         L : ExprAddRecTrait,
         R : ExprTrait<N>
 {
-    pub fn add<T:ExprTrait<N>>(self,rhs : T) -> ExprAddRec<N,Self,T> where Self : Sized { ExprAddRec{lhs: self, rhs, lcof : 1.0, rcof : 1.0} }
+    pub fn add<T:ExprTrait<N>>(self,rhs : T) -> ExprAddRec<N,Self,T::Result> 
+        where 
+            Self : Sized,
+            T : IntoExpr<N>
+    { ExprAddRec{lhs: self, rhs : rhs.into(), lcof : 1.0, rcof : 1.0} }
 }
 
 

@@ -1,5 +1,5 @@
 use itertools::izip;
-use crate::expr::Expr;
+use crate::expr::{Expr, IntoExpr};
 
 
 pub trait Matrix  {
@@ -251,6 +251,30 @@ impl<const N : usize> Into<Expr<N>> for &NDArray<N> {
     }
 }
 
+impl<const N : usize> IntoExpr<N> for NDArray<N> {
+    type Result = Expr<N>;
+    fn into(self) -> Expr<N> { 
+        let nnz = self.nnz();
+        let (shape,sp,data) = (self.shape,self.sp,self.data);
+        Expr::new(
+            &shape,
+            sp,
+            (0..nnz+1).collect(), // ptr
+            vec![0; nnz], // subj
+            data)
+    }
+}
+impl<const N : usize> IntoExpr<N> for &NDArray<N> {
+    type Result = Expr<N>;
+    fn into(self) -> Expr<N> { 
+        Expr::new(
+            &self.shape,
+            self.sparsity().map(|s| s.to_vec()),
+            (0..self.nnz()+1).collect(), // ptr
+            vec![0; self.nnz()], // subj
+            self.data().to_vec())
+    }
+}
 ///////////////////////////////////////////////////////////////////////////////
 // SparseMatrix
 ///////////////////////////////////////////////////////////////////////////////
