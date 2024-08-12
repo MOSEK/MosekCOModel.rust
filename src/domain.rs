@@ -479,8 +479,14 @@ pub fn in_dual_power_cones<const N : usize>(shape : &[usize;N], conedim : usize,
         is_integer : false}
 }
 
-/// Domain of a single symmetric positive semidefinite cones.
-/// 
+/// Domain of a single symmetric positive semidefinite cones. For constraints this defines the constraint 
+/// ```math 
+/// 1/2 (E+E') ≽ 0
+/// ```
+/// If the expression is already symmetric, this simply means `E≽0`. For variables it is simply the
+/// symmetric positive semidefinite cone.
+///
+///
 /// # Arguments
 /// - `dim` - Dimension of the PSD cone.
 pub fn in_psd_cone(dim : usize) -> PSDDomain<2> {
@@ -490,7 +496,14 @@ pub fn in_psd_cone(dim : usize) -> PSDDomain<2> {
     }
 }
 /// Domain of a multiple symmetric positive semidefinite cones. The cones are aligned in the two
-/// dimensions give by `conedim1` and `conedim2`. 
+/// dimensions give by `conedim1` and `conedim2`. For constraints this means that each slice in `conedim1,
+/// conedim2` defines the constraint
+/// ```math 
+/// 1/2 (E+E') ≽ 0
+/// ```
+/// If the expression is already symmetric, this simply means `E≽0`.
+///
+/// For variables is produces a stack of positive symmetric semidefinite cones.
 /// 
 /// # Arguments
 /// - `shape` - shape of the cone, where `shape[conedim1]==shape[conedim2]`.
@@ -508,3 +521,4 @@ pub fn in_psd_cones<const N : usize>(shape : &[usize; N], conedim1 : usize, cone
         conedims : (conedim1,conedim2)
     }
 }
+

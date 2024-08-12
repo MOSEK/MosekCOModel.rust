@@ -1,3 +1,4 @@
+use itertools::{merge_join_by, EitherOrBoth};
 use itertools::{iproduct, izip};
 use std::{iter::once, path::Path};
 use crate::expr;
@@ -678,14 +679,20 @@ impl Model {
        
         let conedim0 = dom.conedims.0;
         let conedim1 = dom.conedims.1;
-        let numcone : usize = dom.shape.iter().enumerate().filter(|v| v.0 != conedim0 && v.0 != conedim1).map(|v| v.1).cloned().product();
+
+        let conearrshape : Vec<usize> = dom.shape.iter().enumerate().filter(|v| v.0 != conedim0 && v.0 != conedim1).map(|v| v.1).cloned().collect();
+        let numcone = conearrshape.iter().product();
         let conesize = dom.shape[conedim0] * (dom.shape[conedim0]+1) / 2;
 
-        let (shape_,ptr,_sp,subj,cof) = self.rs.pop_expr();
+        let (expr_shape,ptr,expr_sp,subj,cof) = self.rs.pop_expr();
         let nelm = ptr.len()-1;
-
+        let nnz  = ptr.last().unwrap();
+        
         let shape = dom.shape;
-        if shape_.iter().zip(shape.iter()).any(|v| v.0 != v.1) { panic!("Mismatching shapes of expression {:?} and domain {:?}",shape_,shape); }
+        // Check that expression shape matches domain shape
+        if expr_shape.iter().zip(shape.iter()).any(|v| v.0 != v.1) { panic!("Mismatching shapes of expression {:?} and domain {:?}",expr_shape,&shape); }
+        if expr_sp.is_some() { panic!("Constraint expression cannot be sparse") };
+
         if shape.iter().product::<usize>() != nelm { panic!("Mismatching expression and shape"); }
         if let Some(&j) = subj.iter().max() {
             if j >= self.vars.len() {
@@ -693,16 +700,68 @@ impl Model {
             }
         }
 
-        // build transpose permutation
         let mut strides = [0usize; N]; strides.iter_mut().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v * d });
-        let mut tperm : Vec<usize> = (0..nelm).collect();
 
-        tperm.sort_by_key(|&i| { 
+        // build transpose permutation
+        let mut tperm : Vec<usize> = (0..nelm).collect();
+        tperm.sort_by_key(|&i| {
             let mut idx = [0usize; N];
             izip!(idx.iter_mut(),strides.iter(),shape.iter()).for_each(|(idx,&s,&d)| *idx = (i / s) % d);
             idx.swap(conedim0,conedim1);
             idx.iter().zip(strides.iter()).map(|v| v.0 * v.1).sum::<usize>()
         });
+
+        let (urest,rcof) = self.xs.alloc(nnz*2+nelm+1,nnz*2);
+        let (rptr,rsubj) = urest.split_at_mut(nelm+1);
+        rptr[0] = 0;
+
+        for ((idx,&p0b,&p0e,&p1b,&p1e),rp) in izip!((0..).map(|i| { let mut idx = [0usize; N]; izip!(idx.iter_mut(),strides.iter(),shape.iter()).for_each(|(idx,&s,&d)| *idx = (i / s) % d); idx } ),
+                                                  ptr.iter(),
+                                                  ptr[1..].iter(),
+                                                  perm_iter(tperm.as_slice(),ptr),
+                                                  perm_iter(tperm.as_slice(),&ptr[1..])).filter(|(i,_,_,_,_)| i[conedim0] <= i[conedim1]).zip(rptr[1..].iter_mut()) 
+        {
+            if idx[conedim0] == idx[conedim1] {
+                *rp = p0e-p0b;
+            }
+            else { 
+                // count merged nonzeros
+                *rp = merge_join_by(subj[p0b..p0e].iter(),subj[p1b..p1e].iter(), |i,j| i.cmp(j) ).count();
+            }
+        }
+        
+        _ = rptr.iter_mut().fold(0,|p,ptr| { *ptr += p; *ptr });
+        for (i,&p0b,&p0e,&p1b,&p1e,&rpb,&rpe) in izip!(0..,
+                                                       ptr.iter(),
+                                                       ptr[1..].iter(),
+                                                       perm_iter(tperm.as_slice(),ptr),
+                                                       perm_iter(tperm.as_slice(),
+                                                       &ptr[1..]),
+                                                       rptr.iter(),
+                                                       rptr[1..].iter() ) {
+            let mut idx = [0usize; N];
+            izip!(idx.iter_mut(),strides.iter(),shape.iter()).for_each(|(idx,&s,&d)| *idx = (i / s) % d);
+           
+            if idx[conedim0] == idx[conedim1] {
+                rsubj[rpb..rpe].copy_from_slice(&subj[p0b..p0e]);
+                rcof[rpb..rpe].copy_from_slice(&cof[p0b..p0e]);
+            }
+            else {
+                // count merged nonzeros
+                for (ii,rj,rc) in izip!(merge_join_by(subj[p0b..p0e].iter().zip(cof[p0b..p0e].iter()),
+                                                      subj[p1b..p1e].iter().zip(cof[p0b..p0e].iter()), |i,j| i.0.cmp(j.0)),
+                                        rsubj[rpb..rpe].iter_mut(),
+                                        rcof[rpb..rpe].iter_mut()) {
+                    match ii {
+                        EitherOrBoth::Left((&j,&c)) => { *rj = j; *rc = c; },
+                        EitherOrBoth::Right((&j,&c)) => { *rj = j; *rc = c; },
+                        EitherOrBoth::Both((&j,&c0),(_,&c1)) => { *rj = j; *rc = c0 + c1; } 
+                    }
+                }
+            }
+        }
+        
+         
 
 
 //            

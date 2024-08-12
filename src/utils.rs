@@ -2,7 +2,7 @@
 //! Utility module.
 //!
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, iter::Peekable};
 
 use itertools::izip;
 
@@ -142,54 +142,6 @@ impl<'a,'b,T> Iterator for PermIter<'a,'b,T> {
         }
     }
 }
-
-//////////////////////////////////////////////////////////////
-//pub struct IJKLSliceIterator<'a,'b,'c,'d,'e> {
-//    subi : & 'a [i64],
-//    subj : & 'b [i32],
-//    subk : & 'c [i32],
-//    subl : & 'd [i32],
-//    cof  : & 'e [f64],
-//
-//    pos  : usize
-//}
-//
-//pub fn ijkl_slice_iterator<'a,'b,'c,'d,'e>(subi : & 'a [i64],
-//                                           subj : & 'b [i32],
-//                                           subk : & 'c [i32],
-//                                           subl : & 'd [i32],
-//                                           cof  : & 'e [f64]) -> IJKLSliceIterator<'a,'b,'c,'d,'e> {
-//    if let Some(_) = izip!(subi.iter(),subj.iter(),subi[1..].iter(),subj[1..].iter())
-//        .find(|(i0,j0,i1,j1)| i0 > i1 || (i0 == i1 && j0 > j1)) { panic!("Unsorted i,j"); }
-//    if subi.len() != subj.len()
-//        || subi.len() != subk.len()
-//        || subi.len() != subl.len()
-//        || subi.len() != cof.len() {
-//        panic!("Mismatching array length");
-//    }
-//    IJKLSliceIterator{subi,subj,subk,subl,cof,pos:0}
-//}
-//
-//impl<'a,'b,'c,'d,'e> Iterator for IJKLSliceIterator<'a,'b,'c,'d,'e> {
-//    type Item = (i64,i32,&'c[i32],&'d[i32],&'e[f64]);
-//    fn next(& mut self) -> Option<Self::Item> {
-//        if self.pos < self.subi.len() {
-//            let p0 = self.pos;
-//            let i = unsafe{ *self.subi.get_unchecked(self.pos) };
-//            let j = unsafe{ *self.subj.get_unchecked(self.pos) };
-//            self.pos += 1;
-//
-//            while unsafe{ *self.subi.get_unchecked(self.pos) == i } &&
-//                  unsafe{ *self.subj.get_unchecked(self.pos) == j } {
-//                self.pos += 1;
-//            }
-//            Some((i,j,&self.subk[p0..self.pos],&self.subl[p0..self.pos],&self.cof[p0..self.pos]))
-//        }
-//        else {
-//            None
-//        }
-//    }
-//}
 
 ////////////////////////////////////////////////////////////
 
@@ -594,6 +546,41 @@ pub fn shape_eq_except(s0 : &[usize], s1 : &[usize], d : usize) -> bool{
         }
     }
 }
+
+
+pub struct MergeIter<I0,I1,J> where 
+    I0 : Iterator<Item = J>,
+    I1 : Iterator<Item = J>,
+    J : PartialOrd
+{
+    i0 : Peekable<I0>,
+    i1 : Peekable<I1>
+}
+
+impl<I0,I1,J> MergeIter<I0,I1,J> where 
+    I0 : Iterator<Item = J>,
+    I1 : Iterator<Item = J>,
+    J : PartialOrd
+{
+    pub fn new(i0 : I0, i1 : I1) -> MergeIter<I0,I1,J> { MergeIter{ i0: i0.peekable(), i1 : i1.peekable() } } 
+}
+
+
+impl<I0,I1,J> Iterator for MergeIter<I0,I1,J> where 
+    I0 : Iterator<Item = J>,
+    I1 : Iterator<Item = J>,
+    J : PartialOrd
+{
+    type Item = J;
+    fn next(& mut self) -> Option<J> {
+        match (self.i0.peek(),self.i1.peek()) {
+            (Some(v0),Some(v1)) => if v0 <= v1 { self.i0.next() } else { self.i1.next() },
+            (_,None) => self.i0.next(),
+            (None,_) => self.i1.next()
+        }
+    }
+}
+
 
 ////////////////////////////////////////////////////////////
 
