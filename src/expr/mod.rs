@@ -1214,7 +1214,7 @@ impl<E:ExprTrait<1>> ExprTrait<2> for ExprSquareDiag<E> {
 ///
 /// The symmetrization is done by regarding the elements in dimension `dim` and `dim+1` as a the
 /// lower triangular part of a symmetric matrix in row-major order and copying the lower non-diagonal elements to the
-/// upper part.
+/// upper part.t status
 pub struct ExprIntoSymmetric<const N : usize, E : ExprTrait<N>> {
     dim : usize,
     expr : E

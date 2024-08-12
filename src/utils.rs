@@ -548,38 +548,38 @@ pub fn shape_eq_except(s0 : &[usize], s1 : &[usize], d : usize) -> bool{
 }
 
 
-pub struct MergeIter<I0,I1,J> where 
-    I0 : Iterator<Item = J>,
-    I1 : Iterator<Item = J>,
-    J : PartialOrd
-{
-    i0 : Peekable<I0>,
-    i1 : Peekable<I1>
-}
-
-impl<I0,I1,J> MergeIter<I0,I1,J> where 
-    I0 : Iterator<Item = J>,
-    I1 : Iterator<Item = J>,
-    J : PartialOrd
-{
-    pub fn new(i0 : I0, i1 : I1) -> MergeIter<I0,I1,J> { MergeIter{ i0: i0.peekable(), i1 : i1.peekable() } } 
-}
-
-
-impl<I0,I1,J> Iterator for MergeIter<I0,I1,J> where 
-    I0 : Iterator<Item = J>,
-    I1 : Iterator<Item = J>,
-    J : PartialOrd
-{
-    type Item = J;
-    fn next(& mut self) -> Option<J> {
-        match (self.i0.peek(),self.i1.peek()) {
-            (Some(v0),Some(v1)) => if v0 <= v1 { self.i0.next() } else { self.i1.next() },
-            (_,None) => self.i0.next(),
-            (None,_) => self.i1.next()
-        }
-    }
-}
+//pub struct MergeIter<I0,I1,J> where 
+//    I0 : Iterator<Item = J>,
+//    I1 : Iterator<Item = J>,
+//    J : PartialOrd
+//{
+//    i0 : Peekable<I0>,
+//    i1 : Peekable<I1>
+//}
+//
+//impl<I0,I1,J> MergeIter<I0,I1,J> where 
+//    I0 : Iterator<Item = J>,
+//    I1 : Iterator<Item = J>,
+//    J : PartialOrd
+//{
+//    pub fn new(i0 : I0, i1 : I1) -> MergeIter<I0,I1,J> { MergeIter{ i0: i0.peekable(), i1 : i1.peekable() } } 
+//}
+//
+//
+//impl<I0,I1,J> Iterator for MergeIter<I0,I1,J> where 
+//    I0 : Iterator<Item = J>,
+//    I1 : Iterator<Item = J>,
+//    J : PartialOrd
+//{
+//    type Item = J;
+//    fn next(& mut self) -> Option<J> {
+//        match (self.i0.peek(),self.i1.peek()) {
+//            (Some(v0),Some(v1)) => if v0 <= v1 { self.i0.next() } else { self.i1.next() },
+//            (_,None) => self.i0.next(),
+//            (None,_) => self.i1.next()
+//        }
+//    }
+//}
 
 
 ////////////////////////////////////////////////////////////
