@@ -2,6 +2,10 @@ use super::{eval, ExprReshapeOneRow, ExprTrait};
 use super::workstack::WorkStack;
 use super::matrix::Matrix;
 
+
+
+
+
 pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
     pub(super) item : E,
     pub(super) lhs  : f64

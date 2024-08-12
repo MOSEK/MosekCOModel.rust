@@ -1,4 +1,4 @@
-use super::ExprTrait;
+use super::{ExprTrait,Expr};
 use super::workstack::WorkStack;
 
 
@@ -113,3 +113,12 @@ impl<const N : usize,L,R> ExprTrait<N> for ExprAddRec<N,L,R>
         super::eval::add(n,rs,ws,xs);
     }
 }
+
+
+/// Implemented by types that can be added to an expression by converting it into an expression.
+pub trait ExprAddable<const N : usize> {
+    type Result : ExprTrait<N>;
+    fn to_expr(self) -> Self::Result;
+}
+
+

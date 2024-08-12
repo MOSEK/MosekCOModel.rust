@@ -149,6 +149,7 @@ use expr::workstack::WorkStack;
 use itertools::{iproduct, izip};
 use std::{iter::once, path::Path};
 
+pub use matrix::{Matrix,NDArray,};
 pub use expr::{ExprTrait,ExprRightMultipliable};
 pub use variable::Variable;
 pub use domain::{LinearDomain,

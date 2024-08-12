@@ -128,12 +128,12 @@ pub trait ExprTrait<const N : usize> {
     ///
     /// # Arguments
     /// - `rhs` Add two expressions. The expression shapes must match.
-    fn add<RHS>(self, rhs : RHS, ) -> ExprAdd<N,Self,RHS> 
+    fn add<RHS>(self, rhs : RHS) -> ExprAdd<N,Self,RHS::Result> 
         where 
-            RHS : ExprTrait<N>,
+            RHS : IntoExpr<N>,
             Self : Sized
     {
-        ExprAdd::new(self,rhs,1.0,1.0) 
+        ExprAdd::new(self,rhs.into(),1.0,1.0) 
     }
 
     /// Subtract expression and an item that is addable to an expression, e.g. constants or other
@@ -141,12 +141,12 @@ pub trait ExprTrait<const N : usize> {
     ///
     /// # Arguments
     /// - `rhs` Subtract two expressions. The expression shapes must match.
-    fn sub<RHS>(self, rhs : RHS) -> ExprAdd<N,Self,RHS> 
+    fn sub<RHS>(self, rhs : RHS) -> ExprAdd<N,Self,RHS::Result> 
         where 
-            RHS : ExprTrait<N>,
+            RHS : IntoExpr<N>,
             Self : Sized
     {
-        ExprAdd::new(self,rhs,1.0,-1.0) 
+        ExprAdd::new(self,rhs.into(),1.0,-1.0) 
     }
 
     /// Element-wise multiplication of two operands. The operand shapes must be the same.
@@ -185,14 +185,14 @@ pub trait ExprTrait<const N : usize> {
     ///
     /// # Arguments
     /// - `other` The second operand.
-    fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }
+    fn vstack<E>(self,other : E) -> ExprStack<N,Self,E::Result>  where Self:Sized, E:IntoExpr<N> { ExprStack::new(self,other.into(),0) }
 
     /// Stack horizontally, i.e. stack in second dimension. The two operands have the same number of
     /// dimensions, and must have the same shapes except in the second dimension.
     ///
     /// # Arguments
     /// - `other` The second operand.
-    fn hstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,1) }
+    fn hstack<E>(self,other : E) -> ExprStack<N,Self,E::Result>  where Self:Sized,E:IntoExpr<N> { ExprStack::new(self,other.into(),1) }
 
     /// Stack in arbitrary dimension. The two operands have the same number of
     /// dimensions, and must have the same shapes except in dimension `dim`.
@@ -200,7 +200,7 @@ pub trait ExprTrait<const N : usize> {
     /// # Arguments
     /// - `dim` The dimension in which to stack. This must be strictly less than `N`.
     /// - `other` The second operand.
-    fn stack<E:ExprTrait<N>>(self,dim : usize, other : E) -> ExprStack<N,Self,E> where Self:Sized { ExprStack::new(self,other,dim) }
+    fn stack<E>(self,dim : usize, other : E) -> ExprStack<N,Self,E::Result> where Self:Sized, E:IntoExpr<N>{ ExprStack::new(self,other.into(),dim) }
 
     /// Repeat a fixed number of times in some dimension. 
     ///
@@ -1248,6 +1248,32 @@ impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprPermuteAxes<N,E> {
     }
 }
 
+//
+//
+//impl ExprTrait<0> for f64 {
+//    fn eval(&self, rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+//        let (rptr,_sp,rsubj,rcof) = rs.alloc_expr(&[], 1, 1);
+//        rcof[0] = *self;
+//        rsubj[0] = 0;
+//        rptr[0] = 0;
+//        rptr[1] = 1;
+//    }
+//}
+//
+//impl ExprTrait<1> for &[f64] {
+//    fn eval(&self, rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+//        let (rptr,_sp,rsubj,rcof) = rs.alloc_expr(&[self.len()], self.len(), self.len());
+//        rcof.copy_from_slice(self);
+//        rsubj.iter_mut().for_each(|t| *t = 0);
+//        rptr.iter_mut().zip(0..).for_each(|(t,s)| *t = s);
+//    }
+//}
+//
+//impl ExprTrait<1> for Vec<f64> {
+//    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+//        self.as_slice().eval(rs,ws,xs);
+//    }
+//}
 
 //impl From<f64> for Expr<0> {
 //    fn from(self) -> expr<0> { expr::new(&[], none, vec![0,1], vec![0], vec![self]) }
@@ -1269,6 +1295,9 @@ impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprPermuteAxes<N,E> {
 //}
 //
 
+
+
+
 impl From<f64> for Expr<0> {
     fn from(v : f64) -> Expr<0> { Expr::new(&[], None, vec![0,1], vec![0], vec![v]) }
 }
@@ -1279,6 +1308,31 @@ impl From<&[f64]> for Expr<1> {
 
 impl From<Vec<f64>> for Expr<1> {
     fn from(v : Vec<f64>) -> Expr<1> { Expr::new(&[v.len()], None, (0..v.len()+1).collect(), vec![0; v.len()], v) }
+}
+
+pub trait IntoExpr<const N : usize> {
+    type Result : ExprTrait<N>;
+    fn into(self) -> Self::Result;
+}
+
+impl IntoExpr<0> for f64 {
+    type Result = Expr<0>;
+    fn into(self) -> Self::Result { Expr::from(self) }
+}
+    
+impl IntoExpr<1> for &[f64] {
+    type Result = Expr<1>;
+    fn into(self) -> Self::Result { Expr::from(self) }
+}
+
+impl IntoExpr<1> for Vec<f64> {
+    type Result = Expr<1>;
+    fn into(self) -> Self::Result { Expr::from(self) }
+}
+    
+impl<const N : usize, E> IntoExpr<N> for E where E : ExprTrait<N> {
+    type Result = E;
+    fn into(self) -> Self::Result { self }
 }
 
 

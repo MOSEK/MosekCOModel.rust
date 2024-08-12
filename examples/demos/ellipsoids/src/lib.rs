@@ -1,8 +1,8 @@
 extern crate mosekmodel;
 extern crate itertools;
 
-use mosekmodel::{equal_to, expr, in_geometric_mean_cone, in_psd_cone, in_quadratic_cones, matrix, nonnegative, vstack, zero, ExprTrait, Model, Variable,hstack};
-use mosekmodel::matrix::*;
+use mosekmodel::*;
+use mosekmodel::matrix;
 use itertools::izip;
 
 // Structure defining an ellipsoid as
@@ -155,7 +155,7 @@ pub fn ellipsoid_contains<const N : usize>
     let S33 = (&S).slice(&[n+1..2*n+1,n+1..2*n+1]);
     let tau = M.variable(Some("tau"), nonnegative());
 
-    let A = dense(N,N,A.iter().flat_map(|arow| arow.iter()).cloned().collect::<Vec<f64>>());
+    let A = matrix::dense([N,N],A.iter().flat_map(|arow| arow.iter()).cloned().collect::<Vec<f64>>());
 
     _ = M.constraint(None, &P_squared.clone().sub(tau.clone().mul(&A))    .add(S11), zero().with_shape(&[n,n]));
     _ = M.constraint(None, &Pq.clone().sub(tau.clone().mul(b.as_slice())) .add(S21), zero().with_shape(&[n]));
@@ -184,7 +184,7 @@ pub fn ellipsoid_contains_points<const N : usize>
     q : &Variable<1>,
     points : &[ [f64;N] ]) {
 
-    let mx = dense(points.len(), N, points.iter().flat_map(|p| p.iter()).cloned().collect::<Vec<f64>>());
+    let mx = matrix::dense([points.len(), N], points.iter().flat_map(|p| p.iter()).cloned().collect::<Vec<f64>>());
     let m = points.len();
     // 1 >=||P p_i + q||^2
     _ = M.constraint(None, &hstack![ expr::ones(&[m,1]) , P.clone().rev_mul(mx).add( q.clone().reshape(&[1,N]).repeat(0, m))], in_quadratic_cones(&[m,N+1], 1));
@@ -215,8 +215,8 @@ pub fn ellipsoid_contained<const N : usize>
     let lambda = M.variable(None, nonnegative());
 
     let (B,c) = e.get_Pq();
-    let B = dense(N,N,B.iter().flat_map(|arow| arow.iter()).cloned().collect::<Vec<f64>>());
-    let c = dense(1,N,&c[..]);
+    let B = matrix::dense([N,N],B.iter().flat_map(|arow| arow.iter()).cloned().collect::<Vec<f64>>());
+    let c = matrix::dense([1,N],&c[..]);
     
     _ = M.constraint(None, &expr::eye(N).sub(S11),zero().with_shape(&[N,N]));
     _ = M.constraint(None, &w.clone().reshape(&[1,N]).mul(B.clone()).add(c).sub(S21),zero().with_shape(&[1,N]));
@@ -238,8 +238,8 @@ pub fn ellipsoid_subject_to<const N : usize>
 {
     let m = A.len();
     assert_eq!(b.len(),m);
-    let A = DenseMatrix::new(m,N,A.iter().flat_map(|a| a.iter()).cloned().collect());
-    let b = DenseMatrix::new(m, 1, b.to_vec());
+    let A = dense([m,N],A.iter().flat_map(|a| a.iter()).cloned().collect());
+    let b = dense([m, 1], b.to_vec());
     _ = M.constraint(Some("E_Axb"), 
                      &hstack![ w.clone().reshape(&[2,1]).rev_mul(A.clone()).sub(b).neg(), Z.clone().rev_mul(A) ], 
                      in_quadratic_cones(&[m,N+1],1));
