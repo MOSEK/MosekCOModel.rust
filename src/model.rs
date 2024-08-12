@@ -220,6 +220,7 @@ pub struct Model {
 /// by the [Model] object when accessing solution assist overloading and determine which solution part to access.
 pub trait ModelItem<const N : usize> {
     fn len(&self) -> usize;
+    fn is_empty(&self) -> bool { self.len() == 0 }
     fn shape(&self) -> [usize;N];
     //fn numnonzeros(&self) -> usize;
     fn sparse_primal(&self,m : &Model,solid : SolutionType) -> Result<(Vec<f64>,Vec<[usize;N]>),String> {
@@ -503,21 +504,15 @@ impl Model {
         }
 
         if let Some(name) = name {
-            if false && nd == 2 {
-                let name = format!("{}[]",name);
-                self.task.put_barvar_name(barvar0, name.as_str()).unwrap();
-            }
-            else {
-                //let mut xstrides = [0usize; N];
-                let mut xshape = [0usize; N];
-                xshape.iter_mut().zip(dom.shape[0..cdim0].iter().chain(dom.shape[cdim0+1..cdim1].iter()).chain(dom.shape[cdim1+1..].iter())).for_each(|(t,&s)| *t = s);
-                //xstrides.iter_mut().zip(xshape[0..N-2].iter()).rev().fold(1|v,(t,*s)| { *t = v; s * v});
-                let mut idx = [1usize; N];
-                for barj in barvar0..barvar0+numcone as i32 {
-                    let name = format!("{}{:?}",name,&idx[0..N-2]);
-                    self.task.put_barvar_name(barj, name.as_str()).unwrap();
-                    idx[0..N-2].iter_mut().zip(xshape).rev().fold(1,|carry,(i,d)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
-                }
+            //let mut xstrides = [0usize; N];
+            let mut xshape = [0usize; N];
+            xshape.iter_mut().zip(dom.shape[0..cdim0].iter().chain(dom.shape[cdim0+1..cdim1].iter()).chain(dom.shape[cdim1+1..].iter())).for_each(|(t,&s)| *t = s);
+            //xstrides.iter_mut().zip(xshape[0..N-2].iter()).rev().fold(1|v,(t,*s)| { *t = v; s * v});
+            let mut idx = [1usize; N];
+            for barj in barvar0..barvar0+numcone as i32 {
+                let name = format!("{}{:?}",name,&idx[0..N-2]);
+                self.task.put_barvar_name(barj, name.as_str()).unwrap();
+                idx[0..N-2].iter_mut().zip(xshape).rev().fold(1,|carry,(i,d)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
             }
         }
 
@@ -733,6 +728,7 @@ impl Model {
 //            Self::con_names(& mut self.task,name,coni,&shape);
 //        }
 
+        panic!("TODO");
         Constraint{
             idxs : vec![],
             shape : dom.shape

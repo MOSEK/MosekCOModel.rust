@@ -1,6 +1,6 @@
 use itertools::izip;
 
-use super::matrix::{Matrix,NDArray};
+use super::matrix::NDArray;
 use super::utils::perm_iter;
 
 pub enum LinearDomainType {

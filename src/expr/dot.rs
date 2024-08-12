@@ -1,5 +1,5 @@
 use super::ExprTrait;
-use super::matrix::{Matrix,NDArray};
+use super::matrix::NDArray;
 use super::workstack::WorkStack;
 use itertools::izip;
 

@@ -2,6 +2,8 @@
 //! Utility module.
 //!
 
+use std::cmp::Ordering;
+
 use itertools::izip;
 
 
@@ -12,6 +14,7 @@ use itertools::izip;
 /// possible and return that number.
 pub trait AssignFromIterExt<I> where I : Iterator, I::Item : Copy 
 {
+    #[allow(dead_code)]
     fn copy_from_iter(&mut self, it : I) -> usize;
 }
 
@@ -226,6 +229,7 @@ impl<const N : usize> IndexIterator<N> {
 
 pub trait IndexIteratorExt<const N : usize> {
     type R;
+    #[allow(dead_code)]
     fn index_iterator(&self) -> Self::R;
 }
 
@@ -412,6 +416,7 @@ impl<T> ChunksByIterExt<T> for &[T] {
 
 
 
+#[allow(dead_code)]
 pub struct SelectFromSliceIter<'a,'b,T> {
     src : &'a[T],
     idx : &'b[usize],
@@ -430,6 +435,8 @@ impl<'a,'b,T> Iterator for SelectFromSliceIter<'a,'b,T> {
         }
     }
 }
+
+#[allow(dead_code)]
 trait SelectFromSliceExt<T>{
     fn select<'a,'b>(&'a self, idxs : &'b [usize]) -> SelectFromSliceIter<'a,'b,T>;
 }
@@ -565,27 +572,26 @@ pub fn shape_eq(s0 : &[usize], s1 : &[usize]) -> bool { s0.iter().zip(s1.iter())
 ///    equal, where the remaining entries in the shorter shape are
 ///    considered to be 1.
 pub fn shape_eq_except(s0 : &[usize], s1 : &[usize], d : usize) -> bool{
-    if s1.len() < s0.len() {
-        shape_eq_except(s1,s0,d)
-    }
-    else if s0.len() < s1.len() {
-        if d >= s0.len() {
-            // println!("{}:{}: shape_eq_except({:?},{:?},{})",file!(),line!(),s0,s1,d);
-            shape_eq(s0,&s1[..s0.len()])
-                && s1[s1.len()..].iter().all(|&d| d == 1)
+    match s0.cmp(s1) {
+        Ordering::Greater => shape_eq_except(s1,s0,d),
+        Ordering::Less => {
+            if d >= s0.len() {
+                // println!("{}:{}: shape_eq_except({:?},{:?},{})",file!(),line!(),s0,s1,d);
+                shape_eq(s0,&s1[..s0.len()])
+                    && s1[s1.len()..].iter().all(|&d| d == 1)
+            }
+            else {
+                // println!("{}:{}: shape_eq_except({:?},{:?},{})",file!(),line!(),s0,s1,d);
+                shape_eq(&s0[..d],&s1[..d])
+                    && ( d >= s0.len()-1 || shape_eq(&s0[d+1..],&s1[d+1..s0.len()]))
+                    && ( d >= s1.len()-1 || s1[d+1..].iter().all(|&d| d == 1))
+            }
+        },
+        Ordering::Equal => {
+            d >= s0.len() ||
+                ( ( d   == 0        || shape_eq(&s0[..d],&s1[..d]) )
+                    && ( d+1 == s0.len() || shape_eq(&s0[d+1..],&s1[d+1..]) ) )
         }
-        else {
-            // println!("{}:{}: shape_eq_except({:?},{:?},{})",file!(),line!(),s0,s1,d);
-            shape_eq(&s0[..d],&s1[..d])
-                && ( d >= s0.len()-1 || shape_eq(&s0[d+1..],&s1[d+1..s0.len()]))
-                && ( d >= s1.len()-1 || s1[d+1..].iter().all(|&d| d == 1))
-        }
-    }
-    else {
-        // println!("{}:{}: shape_eq_except({:?},{:?},{})",file!(),line!(),s0,s1,d);
-        d >= s0.len() ||
-            ( ( d   == 0        || shape_eq(&s0[..d],&s1[..d]) )
-                && ( d+1 == s0.len() || shape_eq(&s0[d+1..],&s1[d+1..]) ) )
     }
 }
 
@@ -676,12 +682,6 @@ pub fn shape_eq_except(s0 : &[usize], s1 : &[usize], d : usize) -> bool{
 //     })
 // }
 // 
-
-
-
-
-
-
 
 #[cfg(test)]
 mod tests {

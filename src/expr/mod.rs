@@ -709,25 +709,6 @@ impl<const M : usize, E:ExprTrait<1>> ExprTrait<M> for ExprScatter<M,E> {
     }
 }
 
-/// Pick nonzeros from a sparse expression to produce a dense expression with the given shape.
-pub struct ExprGather<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, shape : [usize; N] }
-impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprGather<N,M,E> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
-        eval::gather(self.shape.as_slice(),rs,ws,xs);
-//        let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
-//
-//        if ptr.len()-1 != self.shape.iter().product::<usize>() {
-//            panic!("Shape does not match number of elements in expression");
-//        }
-//
-//        let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(self.shape.as_slice(),ptr.len()-1,subj.len());
-//
-//        rptr.clone_from_slice(ptr);
-//        rsubj.clone_from_slice(subj);
-//        rcof.clone_from_slice(cof);
-    }
-}
 
 /// Pick nonzeros from a sparse expression to produce a dense vector expression.
 pub struct ExprGatherToVec<const N : usize, E:ExprTrait<N>> { item : E }
@@ -1224,6 +1205,16 @@ impl<E:ExprTrait<1>> ExprTrait<2> for ExprSquareDiag<E> {
 }
 
 
+/// An expression that takes as input an N-dimensional expression and produces an N-dimensional
+/// output that is symmetric in dimensions `dim` and `dim+1`. The shape must satisfy
+/// ```math
+/// shape[dim]*shape[dim+1] = n * (n+1)/2 
+/// ```
+/// for some integer `n`.
+///
+/// The symmetrization is done by regarding the elements in dimension `dim` and `dim+1` as a the
+/// lower triangular part of a symmetric matrix in row-major order and copying the lower non-diagonal elements to the
+/// upper part.
 pub struct ExprIntoSymmetric<const N : usize, E : ExprTrait<N>> {
     dim : usize,
     expr : E

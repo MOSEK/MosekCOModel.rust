@@ -244,7 +244,7 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
             rnelem += 1;
         }
 
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape, rnnz, rnelem);
         rptr[0] = 0;
         rptr.clone_from_slice(&xptr[..rnelem+1]);
         rsubj.clone_from_slice(&xsubj[..rnnz]);
@@ -297,7 +297,7 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
 
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(), rnnz, rnelm);
 
-    if let (Some(ref sp),Some(rsp)) = (sp,rsp) {
+    if let (Some(sp),Some(rsp)) = (sp,rsp) {
         let _d0 : usize = shape[..dim].iter().product();
         let d1 : usize = shape[dim];
         let d2 : usize = shape[dim+1..].iter().product();
@@ -308,7 +308,7 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
 
         for (xspi,xi,(k,spi,i)) in izip!(xsp.iter_mut(),
                                          xidx.iter_mut(),
-                                         (0..num).map(|i| izip!(0..nelm,sp.iter(),std::iter::repeat(i))).flatten()) {
+                                         (0..num).flat_map(|i| izip!(0..nelm,sp.iter(),std::iter::repeat(i)))) {
             let (i0,i1,i2) = (spi / (d1*d2), (spi / d2) % d1, spi % d2);
             *xspi = i0 * rd1 * d2 + (i1 + i * d1) * d2 + i2;
             *xi = k;
@@ -1702,7 +1702,7 @@ pub fn inplace_reshape_one_row(m : usize, dim : usize, rs : & mut WorkStack, xs 
     rs.inline_reshape_expr(newshape).unwrap();
 }
 
-pub fn inplace_reshape(rshape : &[usize],rs : & mut WorkStack, xs : & mut WorkStack) 
+pub fn inplace_reshape(rshape : &[usize],rs : & mut WorkStack, _xs : & mut WorkStack) 
 {
     rs.validate_top().unwrap();
     {
