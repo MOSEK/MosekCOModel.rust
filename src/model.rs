@@ -3,6 +3,8 @@ use std::{iter::once, path::Path};
 use crate::expr;
 use crate::utils::*;
 use crate::domain::*;
+use crate::variable::*;
+use crate::WorkStack;
 
 /// Objective sense
 #[derive(Clone,Copy)]
@@ -378,7 +380,7 @@ impl Model {
                 .enumerate()
                 .for_each(|(j,index)| {
                     buf.truncate(baselen);
-                    utils::append_name_index(& mut buf,&index);
+                    append_name_index(& mut buf,&index);
                     //println!("name is now: {}",buf);
                     self.task.put_var_name(first + j as i32,buf.as_str()).unwrap();
                 });
@@ -388,7 +390,7 @@ impl Model {
                 .enumerate()
                 .for_each(|(j,index)| {
                     buf.truncate(baselen);
-                    utils::append_name_index(&mut buf, &index);
+                    append_name_index(&mut buf, &index);
                     self.task.put_var_name(first + j as i32,buf.as_str()).unwrap();
                 });
         }
@@ -402,7 +404,7 @@ impl Model {
             .enumerate()
             .for_each(|(j,index)| {
                 buf.truncate(baselen);
-                utils::append_name_index(&mut buf, &index);
+                append_name_index(&mut buf, &index);
                 //println!("    name = {}",buf);
                 task.put_con_name(first + j as i32,buf.as_str()).unwrap();
             });
@@ -1164,7 +1166,7 @@ impl Model {
             }
         }
     }
-    fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+    pub(crate) fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
         if let Some(sol) = self.select_sol(solid) {
             if let SolutionStatus::Undefined = sol.primal.status {
                 Err("Solution part is not defined".to_string())
@@ -1180,7 +1182,7 @@ impl Model {
         }
     }
 
-    fn dual_var_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+    pub(crate) fn dual_var_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
         if let Some(sol) = self.select_sol(solid) {
             if let SolutionStatus::Undefined = sol.dual.status {
                 Err("Solution part is not defined".to_string())
@@ -1195,7 +1197,7 @@ impl Model {
             Err("Solution value is undefined".to_string())
         }
     }
-    fn primal_con_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+    pub(crate) fn primal_con_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
         if let Some(sol) = self.select_sol(solid) {
             if let SolutionStatus::Undefined = sol.primal.status {
                 Err("Solution part is not defined".to_string())
@@ -1210,7 +1212,7 @@ impl Model {
             Err("Solution value is undefined".to_string())
         }
     }
-    fn dual_con_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+    pub(crate) fn dual_con_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
         if let Some(sol) = self.select_sol(solid) {
             if let SolutionStatus::Undefined = sol.dual.status  {
                 Err("Solution part is not defined".to_string())

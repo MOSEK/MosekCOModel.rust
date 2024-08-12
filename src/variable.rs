@@ -43,47 +43,6 @@ impl<const N : usize> Variable<N> {
             Ok(sz)
         }
     }
-/*
-    fn into_symmetric<const M : usize>(&self, shape : &[usize; M], dim0 : usize, dim1 : usize) -> Variable<M> {
-        if dim0 >= M || dim1 >= M || dim0 == dim1 {
-            panic!("Invalid symmetry dimensions");
-        }
-
-        shape.iter().enumerate().filter(|(i,d)| if i != dim0 && i != dim1 ).map()
-
-
-        if self.shape.iter().product::<usize>() != shape.iter().product::<usize>() {
-            panic!("Mismatching shape sizes");
-        }
-
-        let mut rstrides = vec![0usize; M]; rstrides.iter().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v*d } );
-
-        if let Some(sp) = self.sparsity {
-            let mut rnidx = sp.iter().map(|i| )
-             
-
-
-            let mut idxs : vec![0usize; rnidxs];
-            let mut sparsity : vec![0usizel rnidxs];
-
-            Variable{
-                idxs,
-                sparsity,
-                shape : *shape,
-            }
-        }
-        else {
-            let idxs = vec![0usize; shape.iter().product()];
-
-
-            Variable{
-                idxs,
-                None,
-                shape : *shape,
-            }
-        }
-    }
-    */
 }
 
 impl<const N : usize> ModelItem<N> for Variable<N> {
