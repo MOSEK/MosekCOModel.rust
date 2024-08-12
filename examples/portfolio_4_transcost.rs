@@ -10,9 +10,9 @@
 
 extern crate mosekmodel;
 
-use mosekmodel::{SolutionType,Model,Sense,greater_than,less_than,equal_to,ModelItemIndex, unbounded, in_quadratic_cone, matrix};
+use mosekmodel::*;
 use mosekmodel::expr::*;
-use mosekmodel::matrix::{DenseMatrix,Matrix};
+use mosekmodel::matrix::{NDArray,Matrix};
 
 /// Extends the basic Markowitz model with a market cost term.
 ///
@@ -33,7 +33,7 @@ use mosekmodel::matrix::{DenseMatrix,Matrix};
 ///    Optimal expected return and the optimal portfolio     
 #[allow(non_snake_case)]
 fn markowitz_with_transactions_cost( mu : &[f64],
-                                     GT : &DenseMatrix,
+                                     GT : &NDArray<2>,
                                      x0 : &[f64],
                                      w  : f64,
                                      gamma : f64,
@@ -65,13 +65,13 @@ fn markowitz_with_transactions_cost( mu : &[f64],
 
     // Imposes a bound on the risk
     _ = model.constraint(Some("risk"), 
-                         &gamma.into_expr().reshape(&[1])
+                         &Expr::from(gamma).reshape(&[1])
                             .vstack( GT.clone().mul(x.clone()) ),
                             in_quadratic_cone(m+1));
 
     // z >= |x-x0| 
-    _ = model.constraint(Some("buy"), &z.clone().sub(x.clone().sub(x0)), greater_than(vec![0.0;n]));
-    _ = model.constraint(Some("sell"), &z.clone().sub(x0.into_expr().sub(x.clone())), greater_than(vec![0.0; n]));
+    _ = model.constraint(Some("buy"), &z.clone().sub(x.clone().sub(Expr::from(x0))), greater_than(vec![0.0;n]));
+    _ = model.constraint(Some("sell"), &z.clone().sub(Expr::from(x0).sub(x.clone())), greater_than(vec![0.0; n]));
     // Alternatively, formulate the two constraints as
     //model.constraint(Some("trade"), Expr.hstack(z,Expr.sub(x,x0)), Domain.inQcone())
 
@@ -105,7 +105,7 @@ fn main() {
         0.     , 0.     , 0.     , 0.     , 0.     , 0.21552, 0.05663, 0.06187,
         0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.22514, 0.03327,
         0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.2202 ];
-    let GT = matrix::dense(n, m, GT_data);
+    let GT = matrix::dense([n, m], GT_data.to_vec());
 
     let f = &[0.01; n];
     let g = &[0.001; n];

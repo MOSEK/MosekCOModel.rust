@@ -9,8 +9,6 @@
 
 extern crate mosekmodel;
 
-use std::ptr::eq;
-
 use mosekmodel::*;
 use mosekmodel::expr::*;
 use mosekmodel::matrix::*;
@@ -34,7 +32,7 @@ use mosekmodel::matrix::*;
 #[allow(non_upper_case_globals)]
 #[allow(non_snake_case)]
 fn markowitz_with_cardinality(mu : &[f64],
-                              GT : &DenseMatrix,
+                              GT : &NDArray<2>,
                               x0 : &[f64],
                               w  : f64,
                               gamma : f64,
@@ -62,17 +60,17 @@ fn markowitz_with_cardinality(mu : &[f64],
     _ = model.constraint(Some("budget"), &x.clone().sum(), equal_to(w+x0.iter().sum::<f64>()));
 
     // Imposes a bound on the risk
-    _ = model.constraint(Some("risk"), &gamma.into_expr().reshape(&[1]).vstack(GT.clone().mul(x.clone())), in_quadratic_cone(m+1));
+    _ = model.constraint(Some("risk"), &Expr::from(gamma).reshape(&[1]).vstack(GT.clone().mul(x.clone())), in_quadratic_cone(m+1));
 
     // z >= |x-x0| 
-    _ = model.constraint(Some("buy"), &z.clone().sub(x.clone().sub(x0)), greater_than(vec![0.0; n]));
-    _ = model.constraint(Some("sell"), &z.clone().sub(x0.into_expr().sub(x.clone())), greater_than(vec![0.0; n]));
+    _ = model.constraint(Some("buy"), &z.clone().sub(x.clone().sub(Expr::from(x0))), greater_than(vec![0.0; n]));
+    _ = model.constraint(Some("sell"), &z.clone().sub(Expr::from(x0).sub(x.clone())), greater_than(vec![0.0; n]));
 
     // Constraints for turning y off and on. z-diag(u)*y<=0 i.e. z_j <= u_j*y_j
-    _ = model.constraint(Some("y_on_off"), &z.clone().sub(y.clone().into_expr().mul_elem(u)), less_than(vec![0.0;n])); 
+    _ = model.constraint(Some("y_on_off"), &z.clone().sub(Expr::from(y.clone()).mul_elem(u)), less_than(vec![0.0;n])); 
 
     // At most K assets change position
-    _ = model.constraint(Some("cardinality"), &y.clone().sum().sub(K as f64), less_than(0.0));
+    _ = model.constraint(Some("cardinality"), &Expr::from(y.clone()).sum().sub(Expr::from(K as f64)), less_than(0.0));
 
     // Integer optimization problems can be very hard to solve so limiting the 
     // maximum amount of time is a valuable safe guard
@@ -106,7 +104,7 @@ fn main() {
 
     let mut xsols : Vec<Vec<f64>> = Vec::new();
     for K in 1..n+1 {
-        xsols.push(markowitz_with_cardinality(mu,&matrix::dense(n,m,GT as &[f64]),x0,w,gamma,K));
+        xsols.push(markowitz_with_cardinality(mu,&matrix::dense([n,m],GT.to_vec()),x0,w,gamma,K));
     }
     println!("\n-----------------------------------------------------------------------------------");
     println!("Markowitz portfolio optimization with cardinality constraints");

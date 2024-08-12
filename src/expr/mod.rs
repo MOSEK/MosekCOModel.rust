@@ -20,11 +20,6 @@ pub use mul::*;
 pub use add::*;
 pub use super::domain;
 
-pub trait IntoExpr<const N : usize> {
-    type Result : ExprTrait<N>;
-    fn into_expr(self) -> Self::Result;
-}
-
 /// The `ExprTrait<N>` represents a `N`-dimensional expression.
 pub trait ExprTrait<const N : usize> {
     /// Evaluate the expression and put the result on the `rs` stack,
@@ -138,7 +133,7 @@ pub trait ExprTrait<const N : usize> {
             RHS : IntoExpr<N>,
             Self : Sized
     {
-        ExprAdd::new(self,rhs.into_expr(),1.0,1.0) 
+        ExprAdd::new(self,rhs.into(),1.0,1.0) 
     }
 
     /// Subtract expression and an item that is addable to an expression, e.g. constants or other
@@ -151,7 +146,7 @@ pub trait ExprTrait<const N : usize> {
             RHS : IntoExpr<N>,
             Self : Sized
     {
-        ExprAdd::new(self,rhs.into_expr(),1.0,-1.0) 
+        ExprAdd::new(self,rhs.into(),1.0,-1.0) 
     }
 
     /// Element-wise multiplication of two operands. The operand shapes must be the same.
@@ -171,7 +166,7 @@ pub trait ExprTrait<const N : usize> {
             Self : Sized+ExprTrait<2>, 
             M : Matrix
     { 
-        let (shape,data,sparsity) = other.extract();
+        let (shape,sparsity,data) = other.dissolve();
         ExprReduceShape{
             item : ExprSumLastDims{
                 num : 1,
@@ -190,14 +185,14 @@ pub trait ExprTrait<const N : usize> {
     ///
     /// # Arguments
     /// - `other` The second operand.
-    fn vstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,0) }
+    fn vstack<E>(self,other : E) -> ExprStack<N,Self,E::Result>  where Self:Sized, E:IntoExpr<N> { ExprStack::new(self,other.into(),0) }
 
     /// Stack horizontally, i.e. stack in second dimension. The two operands have the same number of
     /// dimensions, and must have the same shapes except in the second dimension.
     ///
     /// # Arguments
     /// - `other` The second operand.
-    fn hstack<E:ExprTrait<N>>(self,other : E) -> ExprStack<N,Self,E>  where Self:Sized { ExprStack::new(self,other,1) }
+    fn hstack<E>(self,other : E) -> ExprStack<N,Self,E::Result>  where Self:Sized,E:IntoExpr<N> { ExprStack::new(self,other.into(),1) }
 
     /// Stack in arbitrary dimension. The two operands have the same number of
     /// dimensions, and must have the same shapes except in dimension `dim`.
@@ -205,7 +200,7 @@ pub trait ExprTrait<const N : usize> {
     /// # Arguments
     /// - `dim` The dimension in which to stack. This must be strictly less than `N`.
     /// - `other` The second operand.
-    fn stack<E:ExprTrait<N>>(self,dim : usize, other : E) -> ExprStack<N,Self,E> where Self:Sized { ExprStack::new(self,other,dim) }
+    fn stack<E>(self,dim : usize, other : E) -> ExprStack<N,Self,E::Result> where Self:Sized, E:IntoExpr<N>{ ExprStack::new(self,other.into(),dim) }
 
     /// Repeat a fixed number of times in some dimension. 
     ///
@@ -320,6 +315,83 @@ pub trait ExprTrait<const N : usize> {
 
     /// Create a sparse square matrix with the vector expression elements as diagonal.
     fn square_diag(self) -> ExprSquareDiag<Self> where Self:Sized+ExprTrait<1> { ExprSquareDiag{ item : self }}
+
+
+    // Explicit functions for performing left and right multiplcation with different types
+    fn mul_any_scalar(self, c : f64) -> ExprMulScalar<N,Self> where Self : Sized { ExprMulScalar{ item : self, lhs : c } }
+    fn mul_matrix_const_matrix<M>(self, m : &M) -> ExprMulRight<Self> where Self : Sized+ExprTrait<2>, M : Matrix { 
+        ExprMulRight{
+            item : self,
+            shape : m.shape(),
+            data : m.data().to_vec(),
+            sp : m.sparsity().map(|v| v.to_vec())
+        }
+    }
+    fn mul_rev_matrix_const_matrix<M>(self, m : &M) -> ExprMulLeft<Self> where Self:Sized+ExprTrait<2>, M : Matrix {
+        ExprMulLeft{     
+            item : self,
+            shape : m.shape(),
+            data : m.data().to_vec(),
+            sp : m.sparsity().map(|v| v.to_vec())
+        }
+    }
+
+    fn mul_matrix_vec(self,v : Vec<f64>) -> ExprReshapeOneRow<2,1,ExprMulRight<Self>> where Self:Sized+ExprTrait<2> {
+        ExprReshapeOneRow{
+            item : ExprMulRight{
+                item : self,
+                shape : [ v.len(),1],
+                data : v,
+                sp : None },
+            dim : 0
+        }
+    }
+    fn mul_rev_matrix_vec(self, v : Vec<f64>) -> ExprReshapeOneRow<2,1,ExprMulLeft<Self>> where Self:Sized+ExprTrait<2> {
+        ExprReshapeOneRow{
+            item : ExprMulLeft{
+                item : self,
+                shape : [1,v.len()],
+                data : v,
+                sp : None },
+            dim : 0 
+        }
+    }
+
+    fn mul_vec_matrix<M>(self, m : &M) -> ExprReshapeOneRow<2,1,ExprMulRight<ExprReshapeOneRow<1,2,Self>>> where Self:Sized+ExprTrait<1>, M : Matrix {
+        ExprReshapeOneRow{
+            item : ExprMulRight{
+                item : ExprReshapeOneRow{ item : self, dim : 1 },
+                shape : m.shape(),
+                data : m.data().to_vec(),
+                sp : m.sparsity().map(|v| v.to_vec()) },
+            dim : 0
+        }
+    }
+    fn mul_rev_vec_matrix<M>(self, m : &M) -> ExprReshapeOneRow<2,1,ExprMulRight<ExprReshapeOneRow<1,2,Self>>> where Self:Sized+ExprTrait<1>, M : Matrix {
+        ExprReshapeOneRow{
+            item : ExprMulRight{
+                item : ExprReshapeOneRow{ item : self, dim : 0 },
+                shape : m.shape(),
+                data : m.data().to_vec(),
+                sp : m.sparsity().map(|v| v.to_vec()) },
+            dim : 0
+        }
+    }
+    fn mul_scalar_matrix<M>(self, m : &M) -> ExprReshape<1, 2, ExprMulElm<1, ExprRepeat<1, ExprReshape<0, 1, Self>>>> where Self : Sized+ExprTrait<0>, M : Matrix { 
+        ExprReshape{
+            item : ExprMulElm{
+                expr : ExprRepeat {
+                    expr : ExprReshape{ item : self, shape : [1] },
+                    dim : 0,
+                    num : m.height()*m.width()
+                },
+                data : m.data().to_vec(),
+                datasparsity : m.sparsity().map(|s| s.to_vec()),
+                datashape : [m.height()*m.width()]
+            },
+            shape : m.shape()
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////////
@@ -1176,30 +1248,92 @@ impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprPermuteAxes<N,E> {
     }
 }
 
-impl<const N : usize,E> IntoExpr<N> for E where E : ExprTrait<N> {
-    type Result = E;
-    fn into_expr(self) -> Self::Result {
-       self
-    }
+//
+//
+//impl ExprTrait<0> for f64 {
+//    fn eval(&self, rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+//        let (rptr,_sp,rsubj,rcof) = rs.alloc_expr(&[], 1, 1);
+//        rcof[0] = *self;
+//        rsubj[0] = 0;
+//        rptr[0] = 0;
+//        rptr[1] = 1;
+//    }
+//}
+//
+//impl ExprTrait<1> for &[f64] {
+//    fn eval(&self, rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+//        let (rptr,_sp,rsubj,rcof) = rs.alloc_expr(&[self.len()], self.len(), self.len());
+//        rcof.copy_from_slice(self);
+//        rsubj.iter_mut().for_each(|t| *t = 0);
+//        rptr.iter_mut().zip(0..).for_each(|(t,s)| *t = s);
+//    }
+//}
+//
+//impl ExprTrait<1> for Vec<f64> {
+//    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+//        self.as_slice().eval(rs,ws,xs);
+//    }
+//}
+
+//impl From<f64> for Expr<0> {
+//    fn from(self) -> expr<0> { expr::new(&[], none, vec![0,1], vec![0], vec![self]) }
+//}
+
+
+
+
+//impl Into<Expr<0>> for f64 {
+//    fn into(self) -> Expr<0> { Expr::new(&[], None, vec![0,1], vec![0], vec![self]) }
+//}
+//
+//impl Into<Expr<1>> for &[f64] {
+//    fn into(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.to_vec()) }
+//}
+//
+//impl Into<Expr<1>> for Vec<f64> {
+//    fn into(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.clone()) }
+//}
+//
+
+
+
+
+impl From<f64> for Expr<0> {
+    fn from(v : f64) -> Expr<0> { Expr::new(&[], None, vec![0,1], vec![0], vec![v]) }
+}
+
+impl From<&[f64]> for Expr<1> {
+    fn from(v : &[f64]) -> Expr<1> { Expr::new(&[v.len()], None, (0..v.len()+1).collect(), vec![0; v.len()], v.to_vec()) }
+}
+
+impl From<Vec<f64>> for Expr<1> {
+    fn from(v : Vec<f64>) -> Expr<1> { Expr::new(&[v.len()], None, (0..v.len()+1).collect(), vec![0; v.len()], v) }
+}
+
+pub trait IntoExpr<const N : usize> {
+    type Result : ExprTrait<N>;
+    fn into(self) -> Self::Result;
 }
 
 impl IntoExpr<0> for f64 {
     type Result = Expr<0>;
-    fn into_expr(self) -> Expr<0> { Expr::new(&[], None, vec![0,1], vec![0], vec![self]) }
+    fn into(self) -> Self::Result { Expr::from(self) }
 }
-
+    
 impl IntoExpr<1> for &[f64] {
     type Result = Expr<1>;
-    fn into_expr(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.to_vec()) }
+    fn into(self) -> Self::Result { Expr::from(self) }
 }
 
 impl IntoExpr<1> for Vec<f64> {
     type Result = Expr<1>;
-    fn into_expr(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.clone()) }
+    fn into(self) -> Self::Result { Expr::from(self) }
 }
-
-
-
+    
+impl<const N : usize, E> IntoExpr<N> for E where E : ExprTrait<N> {
+    type Result = E;
+    fn into(self) -> Self::Result { self }
+}
 
 
 ////////////////////////////////////////////////////////////
@@ -1301,8 +1435,8 @@ mod test {
         let e0 = dense_expr();
         let e1 = sparse_expr();
 
-        let m1 = matrix::dense(3,2,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
-        let m2 = matrix::dense(2,3,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+        let m1 = matrix::dense([3,2],vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+        let m2 = matrix::dense([2,3],vec![1.0,2.0,3.0,4.0,5.0,6.0]);
 
         let e0_1 = m2.clone().mul(e0.clone());
         let e0_2 = e0.clone().mul(2.0);
@@ -1325,8 +1459,8 @@ mod test {
         let mut ws = WorkStack::new(512);
         let mut xs = WorkStack::new(512);
 
-        let m1 = matrix::dense(3,2,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
-        let m2 = matrix::dense(2,3,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+        let m1 = matrix::dense([3,2],vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+        let m2 = matrix::dense([2,3],vec![1.0,2.0,3.0,4.0,5.0,6.0]);
 
         let e0 = dense_expr();
         let e1 = sparse_expr();
@@ -1350,7 +1484,7 @@ mod test {
         let mut ws = WorkStack::new(512);
         let mut xs = WorkStack::new(512);
 
-        let m1 = matrix::dense(3,3,vec![1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0]);
+        let m1 = matrix::dense([3,3],vec![1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0]);
 
         let e0 = dense_expr().add(sparse_expr()).add(dense_expr().mul(m1));
         e0.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
@@ -1657,7 +1791,7 @@ mod test {
         //     | 5 8 10 11 |
         //     | 6 9 11 12 |
         let Y = m.variable(Some("Y"), in_psd_cone(2)); // 13,14,15
-        let mx = dense(2, 2, vec![1.1,2.2,3.3,4.4]);
+        let mx = dense([2,2], vec![1.1,2.2,3.3,4.4]);
 
         m.constraint(Some("X-Y"), &X.clone().slice(&[0..2,0..2]).sub(Y.clone().sub((&mx).mul_right(t.clone().clone().index(0)))), domain::zeros(&[2,2]));
 

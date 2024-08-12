@@ -43,47 +43,6 @@ impl<const N : usize> Variable<N> {
             Ok(sz)
         }
     }
-/*
-    fn into_symmetric<const M : usize>(&self, shape : &[usize; M], dim0 : usize, dim1 : usize) -> Variable<M> {
-        if dim0 >= M || dim1 >= M || dim0 == dim1 {
-            panic!("Invalid symmetry dimensions");
-        }
-
-        shape.iter().enumerate().filter(|(i,d)| if i != dim0 && i != dim1 ).map()
-
-
-        if self.shape.iter().product::<usize>() != shape.iter().product::<usize>() {
-            panic!("Mismatching shape sizes");
-        }
-
-        let mut rstrides = vec![0usize; M]; rstrides.iter().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v*d } );
-
-        if let Some(sp) = self.sparsity {
-            let mut rnidx = sp.iter().map(|i| )
-             
-
-
-            let mut idxs : vec![0usize; rnidxs];
-            let mut sparsity : vec![0usizel rnidxs];
-
-            Variable{
-                idxs,
-                sparsity,
-                shape : *shape,
-            }
-        }
-        else {
-            let idxs = vec![0usize; shape.iter().product()];
-
-
-            Variable{
-                idxs,
-                None,
-                shape : *shape,
-            }
-        }
-    }
-    */
 }
 
 impl<const N : usize> ModelItem<N> for Variable<N> {
@@ -587,6 +546,21 @@ impl<const N : usize> Variable<N> {
         }
     }
 }
+
+
+impl<const N : usize> From<Variable<N>> for super::expr::Expr<N> {
+    fn from(v : Variable<N>) -> super::expr::Expr<N> {
+        let n = v.idxs.len();
+        super::expr::Expr::new(
+            &v.shape,
+            v.sparsity,
+            (0..n+1).collect(),
+            v.idxs,
+            vec![1.0; n])
+
+    }
+}
+
 
 impl<const N : usize> Variable<N> {
     fn eval_common(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {

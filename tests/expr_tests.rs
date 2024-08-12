@@ -1,4 +1,4 @@
-use mosekmodel::{*, expr::workstack::WorkStack,expr::*, matrix::{SparseMatrix, Matrix}};
+use mosekmodel::{*, expr::workstack::WorkStack,expr::*, matrix::NDArray};
 
 fn dense_expr() -> Expr<2> {
     Expr::new(&[3,3],
@@ -82,7 +82,7 @@ fn add_test() {
         let m = 5;
         let n = 4;
 
-        let mx = SparseMatrix::new(n,n,&[[0,1],[0,2],[1,3],[2,1],[2,3]],vec![1.0,1.0,1.0,1.0,1.0]);
+        let mx = NDArray::from_tuples([n,n],&[[0,1],[0,2],[1,3],[2,1],[2,3]],&[1.0,1.0,1.0,1.0,1.0]).unwrap();
         let sparsity : Vec<[usize;2]> = vec![[0,1],[0,2],[1,3],[2,1],[2,3]];
 
         let x = model.variable(Some("traffic_flow"), greater_than(0.0).with_shape_and_sparsity(&[n,n],sparsity.as_slice()));
@@ -109,7 +109,7 @@ fn sum_on_test2() {
         let m = 5;
         let n = 4;
 
-        let mx = SparseMatrix::new(n,n,&[[0,1],[0,2],[1,3],[2,1],[2,3]],vec![1.0,1.0,1.0,1.0,1.0]);
+        let mx = NDArray::from_tuples([n,n],&[[0,1],[0,2],[1,3],[2,1],[2,3]],&[1.0,1.0,1.0,1.0,1.0]).unwrap();
         let sparsity : Vec<[usize;2]> = vec![[0,1],[0,2],[1,3],[2,1],[2,3]];
 
         let x = model.variable(Some("traffic_flow"), greater_than(0.0).with_shape_and_sparsity(&[n,n],sparsity.as_slice()));
@@ -171,8 +171,8 @@ fn mul_left() {
     let e0 = dense_expr();
     let e1 = sparse_expr();
 
-    let m1 = matrix::dense(3,2,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
-    let m2 = matrix::dense(2,3,vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+    let m1 = matrix::dense([3,2],vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+    let m2 = matrix::dense([2,3],vec![1.0,2.0,3.0,4.0,5.0,6.0]);
 
     let e0_1 = m2.clone().mul(e0.clone());
     let e0_2 = e0.clone().mul(2.0);

@@ -2,7 +2,7 @@ extern crate mosekmodel;
 
 use mosekmodel::*;
 use mosekmodel::expr::*;
-use mosekmodel::matrix::DenseMatrix;
+use mosekmodel::matrix::*;
 
 
 /// Computes several portfolios on the optimal portfolios by
@@ -25,7 +25,7 @@ use mosekmodel::matrix::DenseMatrix;
 #[allow(non_snake_case)]
 fn efficient_frontier( n : usize,
                        mu : &[f64],
-                       GT : &DenseMatrix,
+                       GT : &NDArray<2>,
                        x0 : &[f64],
                        w  : f64,
                        alphas : &[f64]) -> Vec<(f64,f64,f64)> {
@@ -40,7 +40,7 @@ fn efficient_frontier( n : usize,
     // Computes the risk
     model.constraint(Some("variance"), 
                      &vstack![s.clone().flatten(), 
-                              (0.5).into_expr().flatten(), 
+                              Expr::from(0.5).flatten(), 
                               GT.clone().mul(x.clone())], in_rotated_quadratic_cone(n+2));
 
     // Solve the problem for many values of parameter alpha
@@ -63,7 +63,7 @@ fn main() {
     let w  = 1.0;
     let mu = [0.07197, 0.15518, 0.17535, 0.08981, 0.42896, 0.39292, 0.32171, 0.18379];
     let x0 = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-    let GT = matrix::dense(n,n,vec![
+    let GT = matrix::dense([n,n],vec![
       0.30758, 0.12146, 0.11341, 0.11327, 0.17625, 0.11973, 0.10435, 0.10638,
       0.     , 0.25042, 0.09946, 0.09164, 0.06692, 0.08706, 0.09173, 0.08506,
       0.     , 0.     , 0.19914, 0.05867, 0.06453, 0.07367, 0.06468, 0.01914,

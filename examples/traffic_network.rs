@@ -21,9 +21,8 @@
 extern crate mosekmodel;
 
 use mosekmodel::*;
-use mosekmodel::matrix::SparseMatrix;
-
-
+use mosekmodel::expr::*;
+use mosekmodel::matrix::*;
 
 pub fn traffic_network_model(
     arcs   : &[Arc], 
@@ -36,10 +35,10 @@ pub fn traffic_network_model(
         panic!("Number of nodes does not match arc definitions");
     }
 
-    let basetime = SparseMatrix::from_iterator(n,n,arcs.iter().map(|arc| (arc.i,arc.j,arc.base_travel_time)));
+    let basetime = NDArray::from_iter([n,n],arcs.iter().map(|arc| ([arc.i,arc.j],arc.base_travel_time))).unwrap();
     let sparsity : Vec<[usize;2]> = arcs.iter().map(|arc| [arc.i,arc.j]).collect();
-    let cs_inv = SparseMatrix::from_iterator(n,n,arcs.iter().map(|arc| (arc.i,arc.j,1.0 / (arc.traffic_sensitivity * arc.capacity))));
-    let s_inv  = SparseMatrix::from_iterator(n,n,arcs.iter().map(|arc| (arc.i,arc.j,1.0/arc.traffic_sensitivity)));
+    let cs_inv = NDArray::from_iter([n,n],arcs.iter().map(|arc| ([arc.i,arc.j],1.0 / (arc.traffic_sensitivity * arc.capacity)))).unwrap();
+    let s_inv  = NDArray::from_iter([n,n],arcs.iter().map(|arc| ([arc.i,arc.j],1.0/arc.traffic_sensitivity))).unwrap();
 
     let x = model.variable(Some("traffic_flow"), greater_than(0.0).with_shape_and_sparsity(&[n,n],sparsity.as_slice()));
     let d = model.variable(Some("d"),            greater_than(0.0).with_shape_and_sparsity(&[n,n],sparsity.as_slice()));
@@ -64,9 +63,9 @@ pub fn traffic_network_model(
     // Bound flows on each arc
     // 2 z_ij + x_ij / (s_ij c_ij) = 1/s_ij
     model.constraint(Some("(1b)"),
-                     &z.clone().mul(2.0).add(x.clone().mul_elem(cs_inv)).sub(s_inv).gather(),
+                     &z.clone().mul(2.0).add(x.clone().mul_elem(cs_inv)).sub(s_inv.to_expr()).gather(),
                      equal_to(vec![0.0; m]));
-    
+
     // Constraint (2)
     // Network flow equations
     model.constraint(Some("(2)"),
@@ -141,7 +140,7 @@ fn main() {
                    Arc::new( 1,  3,  1.0, 15.0, 0.5 ),
                    Arc::new( 2,  3,  6.0, 10.0, 0.1 ) ];
 
-    let (flow,sp,t) = traffic_network_model(arcs,nodes);
+    let (flow,sp,_t) = traffic_network_model(arcs,nodes);
 
     println!("Optimal flow:");
 

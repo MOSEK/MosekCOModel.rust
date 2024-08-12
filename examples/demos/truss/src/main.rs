@@ -10,7 +10,7 @@ use itertools::izip;
 use cairo::Context;
 use gtk::{Application, DrawingArea, ApplicationWindow,Box};
 use mosekmodel::expr::*;
-use mosekmodel::matrix::SparseMatrix;
+use mosekmodel::matrix::NDArray;
 use mosekmodel::{hstack, in_rotated_quadratic_cones, unbounded, nonnegative,equal_to,zero, Model, Sense, SolutionType};
 
 use std::fs::File;
@@ -161,9 +161,8 @@ pub fn main() {
     //    0 everywhere else.
     if dosolve {
         let sqrtkappa = drawdata.kappa.sqrt();
-        let b = SparseMatrix::from_iterator(
-            numarcs, 
-            numnodes*D, 
+        let b = NDArray::from_iter(
+            [numarcs, numnodes*D], 
             drawdata.arcs.iter().enumerate().flat_map(|(arci,&(i,j))| {
                 let pi = drawdata.points[i];
                 let pj = drawdata.points[j];
@@ -174,11 +173,11 @@ pub fn main() {
                 let d = (pj[0]-pi[0], pj[1]-pi[1]);
                 let sqrnormd = d.0.powi(2) + d.1.powi(2);
                 
-                std::iter::once(           (arci, j*D,   if !tj { sqrtkappa * d.0 / sqrnormd } else { 0.0 }))
-                    .chain(std::iter::once((arci, j*D+1, if !tj { sqrtkappa * d.1 / sqrnormd } else { 0.0 })))
-                    .chain(std::iter::once((arci, i*D,   if !ti { -sqrtkappa * d.0 / sqrnormd } else { 0.0 })))
-                    .chain(std::iter::once((arci, i*D+1, if !ti { -sqrtkappa * d.1 / sqrnormd } else { 0.0 })))
-            }));
+                std::iter::once(           ([arci, j*D],   if !tj { sqrtkappa * d.0 / sqrnormd } else { 0.0 }))
+                    .chain(std::iter::once(([arci, j*D+1], if !tj { sqrtkappa * d.1 / sqrnormd } else { 0.0 })))
+                    .chain(std::iter::once(([arci, i*D],   if !ti { -sqrtkappa * d.0 / sqrnormd } else { 0.0 })))
+                    .chain(std::iter::once(([arci, i*D+1], if !ti { -sqrtkappa * d.1 / sqrnormd } else { 0.0 })))
+            })).unwrap();
 
         let numforceset = drawdata.external_force.len();
         let mut m = Model::new(Some("Truss"));

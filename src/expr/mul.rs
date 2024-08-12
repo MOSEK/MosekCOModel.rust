@@ -2,24 +2,28 @@ use super::{eval, ExprReshapeOneRow, ExprTrait};
 use super::workstack::WorkStack;
 use super::matrix::Matrix;
 
+
+
+
+
 pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
-    item : E,
-    lhs  : f64
+    pub(super) item : E,
+    pub(super) lhs  : f64
 }
 
 pub struct ExprMulLeft<E:ExprTrait<2>> {
-    item : E,
+    pub(super) item : E,
     
-    shape : [usize;2],
-    data  : Vec<f64>,
-    sp    : Option<Vec<usize>>
+    pub(super) shape : [usize;2],
+    pub(super) data  : Vec<f64>,
+    pub(super) sp    : Option<Vec<usize>>
 }
 
 pub struct ExprMulRight<E:ExprTrait<2>> {
-    item : E,
-    shape : [usize;2],
-    data  : Vec<f64>,
-    sp    : Option<Vec<usize>>
+    pub(super) item : E,
+    pub(super) shape : [usize;2],
+    pub(super) data  : Vec<f64>,
+    pub(super) sp    : Option<Vec<usize>>
 }
 
 pub struct ExprMulElm<const N : usize,E> where E : ExprTrait<N>+Sized {
@@ -62,7 +66,7 @@ impl<E, M> ExprLeftMultipliable<2,E> for M
 {
     type Result = ExprMulLeft<E>;
     fn mul(self,rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
+        let (shape,sp,data) = self.dissolve();
         ExprMulLeft{
             item : rhs,
             shape,
@@ -78,7 +82,7 @@ impl<E, M> ExprLeftMultipliable<1,E> for M
 {
     type Result = ExprReshapeOneRow<2,1,ExprMulLeft<ExprReshapeOneRow<1,2,E>>>;
     fn mul(self,rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
+        let (shape,sp,data) = self.dissolve();
         ExprReshapeOneRow{
             item : ExprMulLeft{
                 item : ExprReshapeOneRow{ item: rhs, dim : 0 },
@@ -167,7 +171,7 @@ impl<E, M> ExprRightMultipliable<2,E> for M
 {
     type Result = ExprMulRight<E>;
     fn mul_right(self,rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
+        let (shape,sp,data) = self.dissolve();
         ExprMulRight{
             item : rhs,
             shape,
@@ -183,7 +187,7 @@ impl<E, M> ExprRightMultipliable<1,E> for M
 {
     type Result = ExprReshapeOneRow<2,1,ExprMulRight<ExprReshapeOneRow<1,2,E>>>;
     fn mul_right(self,rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
+        let (shape,sp,data) = self.dissolve();
         ExprReshapeOneRow{
             item : ExprMulRight{
                 item : ExprReshapeOneRow{ item: rhs, dim : 0 },
@@ -310,7 +314,7 @@ impl<E,M> ExprLeftElmMultipliable<2,E> for M
     type Result = ExprMulElm<2,E>;
 
     fn mul_elem(self,rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
+        let (shape,sp,data) = self.dissolve();
         ExprMulElm{
             expr : rhs,
             datashape : shape,
@@ -373,7 +377,7 @@ impl<E,M> ExprRightElmMultipliable<2,E> for M
     type Result = ExprMulElm<2,E>;
 
     fn mul_elem(self,rhs : E) -> Self::Result {
-        let (shape,data,sp) = self.extract();
+        let (shape,sp,data) = self.dissolve();
         ExprMulElm{
             expr : rhs,
             datashape : shape,
@@ -622,7 +626,7 @@ mod test {
 
     #[test]
     fn mul() {
-        let m = dense(2, 5, vec![1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0]);
+        let m = dense([2, 5], vec![1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0]);
         let e = Expr{ shape: [2,2],
                                     aptr : vec![0,1,2,3,4],
                                     asubj: vec![5,6,7,8],
