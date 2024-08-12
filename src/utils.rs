@@ -2,7 +2,7 @@
 //! Utility module.
 //!
 
-use std::{cmp::Ordering, iter::Peekable};
+use std::cmp::Ordering;
 
 use itertools::izip;
 

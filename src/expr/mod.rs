@@ -1050,34 +1050,35 @@ pub struct ExprTriangularPart<T:ExprTrait<2>> {
 }
 
 
-fn eval_sparse_pick<F:Fn(usize) -> bool>(pick : F,
-                                         d:usize,ptr:&[usize],sp:&[usize],subj:&[usize],cof:&[f64],
-                                         rs : & mut WorkStack) {
-    let (rnelm,rnnz) : (usize,usize) = 
-        izip!(sp.iter(), ptr.iter(),ptr[1..].iter())
-            .filter(|(&i,_,_)| pick(i))
-            .map(|(_,&p0,&p1)| p1-p0)
-            .fold((0,0),|(elmi,nzi),n| (elmi+1,nzi+n));
 
-    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[d,d],rnnz,rnelm);
-    rptr[0] = 0;
-    let mut nzi = 0;
-    izip!(sp.iter(), ptr.iter(),ptr[1..].iter())
-        .filter(|(&i,_,_)| pick(i))
-        .zip(rptr[1..].iter_mut())
-        .for_each(|((_,&p0,&p1),rp)| {
-           rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
-           rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
-           nzi += p1-p0;
-           *rp = p1-p0;
-        });
-    if let Some(rsp) = rsp {
-        izip!(sp.iter()).filter(|&&i| pick(i))
-            .zip(rsp.iter_mut())
-            .for_each(|(&i,ri)| *ri = i );
-    }
-    let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
-}
+//--fn eval_sparse_pick<F:Fn(usize) -> bool>(pick : F,
+//--                                         d:usize,ptr:&[usize],sp:&[usize],subj:&[usize],cof:&[f64],
+//--                                         rs : & mut WorkStack) {
+//--    let (rnelm,rnnz) : (usize,usize) = 
+//--        izip!(sp.iter(), ptr.iter(),ptr[1..].iter())
+//--            .filter(|(&i,_,_)| pick(i))
+//--            .map(|(_,&p0,&p1)| p1-p0)
+//--            .fold((0,0),|(elmi,nzi),n| (elmi+1,nzi+n));
+//--
+//--    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[d,d],rnnz,rnelm);
+//--    rptr[0] = 0;
+//--    let mut nzi = 0;
+//--    izip!(sp.iter(), ptr.iter(),ptr[1..].iter())
+//--        .filter(|(&i,_,_)| pick(i))
+//--        .zip(rptr[1..].iter_mut())
+//--        .for_each(|((_,&p0,&p1),rp)| {
+//--           rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+//--           rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
+//--           nzi += p1-p0;
+//--           *rp = p1-p0;
+//--        });
+//--    if let Some(rsp) = rsp {
+//--        izip!(sp.iter()).filter(|&&i| pick(i))
+//--            .zip(rsp.iter_mut())
+//--            .for_each(|(&i,ri)| *ri = i );
+//--    }
+//--    let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+//--}
 impl<T:ExprTrait<2>> ExprTrait<2> for ExprTriangularPart<T> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.item.eval(ws,rs,xs);
@@ -1189,7 +1190,7 @@ impl<E:ExprTrait<1>> ExprTrait<2> for ExprSquareDiag<E> {
         let rnnz = *ptr.last().unwrap();
         let rnelm = n;
 
-        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, n);
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelm);
         
         rptr.copy_from_slice(ptr);
         rsubj.copy_from_slice(subj);
@@ -1215,11 +1216,13 @@ impl<E:ExprTrait<1>> ExprTrait<2> for ExprSquareDiag<E> {
 /// The symmetrization is done by regarding the elements in dimension `dim` and `dim+1` as a the
 /// lower triangular part of a symmetric matrix in row-major order and copying the lower non-diagonal elements to the
 /// upper part.t status
+#[allow(unused)]
 pub struct ExprIntoSymmetric<const N : usize, E : ExprTrait<N>> {
     dim : usize,
     expr : E
 }
 
+#[allow(unused)]
 impl<const N : usize, E : ExprTrait<N>> ExprIntoSymmetric<N,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         self.expr.eval(ws,rs,xs);
@@ -1817,7 +1820,4 @@ mod test {
             println!("subj = {:?}",subj);
         }
     }
-
-
-
 }

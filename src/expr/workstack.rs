@@ -62,8 +62,6 @@ impl WorkStack {
 
     /// Perform inline reshaping of the top-level expression.
     pub fn inline_reshape_expr(& mut self, shape: &[usize]) -> Result<(),String> {
-        let newtotalsize : usize = shape.iter().product();
-
         let selfutop = self.utop;
 
         let nd    = self.susize[selfutop-1];
@@ -430,8 +428,8 @@ impl WorkStack {
         
         if totalsize > nelm && self.utop < 3+nd+nnz+nelm*2+1 { return Err("Invalid utop".to_string()); }
         if self.ftop < nnz { return Err("Invalid ftop".to_string()); } 
-        let ubase = self.utop - if totalsize > nelm { 3+2*nelm+1+nnz+nd } else { 3+nelm+1+nnz+nd };
-        let fbase = self.ftop-nnz;
+        let _ubase = self.utop - if totalsize > nelm { 3+2*nelm+1+nnz+nd } else { 3+nelm+1+nnz+nd };
+        let _fbase = self.ftop-nnz;
 
         Ok(()) 
     }
