@@ -209,17 +209,15 @@ pub trait ExprTrait<const N : usize> {
     /// - `num` Number of times to repeat
     fn repeat(self,dim : usize, num : usize) -> ExprRepeat<N,Self> where Self:Sized { ExprRepeat{ expr : self, dim, num } }
 
-    /// Take a slice of an expression
-    fn slice_deprecated(self,ranges : &[Range<usize>;N]) -> ExprSlice<N,Self> where Self:Sized {
-        assert!(ranges.iter().all(|r| r.start <= r.end));
-        let mut begin = [0usize;N];
-        let mut end   = [0usize;N];
-        izip!(begin.iter_mut(),end.iter_mut(),ranges.iter()).for_each(|(b,e,r)| { *b = r.start; *e = r.end; } );
 
-        ExprSlice{expr : self, begin, end} 
-    }
-
-
+    /// Indexing or slicing an expression. This is not compatible with `std::ops::Index` since we
+    /// need to return a new object rather than a reference to an object. 
+    ///
+    /// Create an expression representing a slice of this expression. The exact result depends on
+    /// the type of the indexer, which can be an 
+    /// - `usize`, `[usize;N]`, which results in a scalar expression, 
+    /// - or `Range<usize>`, `[Range<usize;N>]` resulting in an expression with the same number of
+    ///   dimensions
     fn index<I>(self, idx : I) -> I::Output where I : ModelExprIndex<Self>, Self:Sized {
         idx.index(self)
     }
