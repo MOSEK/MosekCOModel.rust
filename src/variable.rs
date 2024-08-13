@@ -1,5 +1,7 @@
 //! Module for Variable object and related implementations
 
+use crate::utils::shape_to_strides;
+
 use super::*;
 use itertools::{iproduct, izip};
 use super::utils;
@@ -181,12 +183,10 @@ impl<const N : usize> ModelItemIndex<Variable<N>> for [std::ops::Range<usize>; N
         if !self.iter().zip(v.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range is out of bounds in the the shape: {:?} in {:?}",self,v.shape) }
 
         let mut rshape = [0usize;N]; rshape.iter_mut().zip(self.iter()).for_each(|(rs,ra)| *rs = ra.end-ra.start);
-        let mut rstrides = rshape; let _ = rstrides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev});
+        let rstrides = shape_to_strides(&rshape);
+        let strides = shape_to_strides(&v.shape);
 
         if let Some(ref sp) = v.sparsity {
-            let mut strides = rshape.to_vec();
-            let _ = strides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev });
-
             let mut rsp   = Vec::with_capacity(sp.len());
             let mut ridxs = Vec::with_capacity(v.idxs.len());
 
@@ -204,11 +204,11 @@ impl<const N : usize> ModelItemIndex<Variable<N>> for [std::ops::Range<usize>; N
                      shape    : rshape }
         }
         else {
-            //let rnum :usize = rshape.iter().product();
             let ridxs : Vec<usize> = (0..rshape.iter().product())
-                .map(|i| izip!(rshape.iter(),rstrides.iter(),self.iter(),rstrides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
+                .map(|i| izip!(rshape.iter(),rstrides.iter(),self.iter(),strides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
                 .map(|i| v.idxs[i] /*TODO: unsafe get*/)
                 .collect();
+            println!("Variable.index(), shape : {:?} -> {:?}, idxs : {:?} -> {:?}",v.shape,rshape,v.idxs,ridxs);
 
             Variable{idxs : ridxs,
                      sparsity : None,

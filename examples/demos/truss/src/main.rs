@@ -194,8 +194,8 @@ pub fn main() {
 
         for (fi,forces) in drawdata.external_force.iter().enumerate() {
             println!("Force set #{}",fi);
-            let s     = (&s).slice(&[fi..fi+1,0..numarcs]).reshape(&[numarcs]);
-            let sigma = (&sigma).slice(&[fi..fi+1,0..numarcs]).reshape(&[numarcs]);
+            let s     = (&s).index([fi..fi+1,0..numarcs]).reshape(&[numarcs]);
+            let sigma = (&sigma).index([fi..fi+1,0..numarcs]).reshape(&[numarcs]);
 
             // (2)
             m.constraint(Some("t_sigma_s"),

@@ -571,6 +571,17 @@ impl<T> NBoundGtOne<20> for T {}
 
 
 
+pub fn shape_to_strides<const N : usize>(shape : &[usize;N]) -> [usize;N] {
+    let mut res = [0usize; N];
+    _ = res.iter_mut().zip(shape.iter()).rev().fold(1,|c,(r,&d)| { *r = c; c * d });
+    res
+}
+pub fn key_from_strides_index<const N : usize>(strides : [usize;N], index : usize) -> [usize;N] {
+    let mut res = [0usize; N];
+    _ = res.iter_mut().zip(strides.iter()).fold(index,|i,(r,&s)| { *r = i / s; i % s });
+    res
+}
+
 //pub struct MergeIter<I0,I1,J> where 
 //    I0 : Iterator<Item = J>,
 //    I1 : Iterator<Item = J>,

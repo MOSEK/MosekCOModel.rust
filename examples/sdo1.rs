@@ -41,8 +41,8 @@ fn main() {
     m.objective(None, Sense::Minimize, &barx.clone().dot(barc).add(x.clone().index(0)));
 
     // Constraints
-    _ = m.constraint(Some("c1"), &barx.clone().dot(bara1).add(x.clone().index(0)), equal_to(1.0));
-    _ = m.constraint(Some("c2"), &barx.clone().dot(bara2).add(x.clone().slice(&[1..3]).sum()), equal_to(0.5));
+    _ = m.constraint(Some("c1"), &barx.clone().dot(bara1).add((&x).index(0)), equal_to(1.0));
+    _ = m.constraint(Some("c2"), &barx.clone().dot(bara2).add((&x).index([1..3]).sum()), equal_to(0.5));
 
 
     m.solve();

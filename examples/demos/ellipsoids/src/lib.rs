@@ -147,12 +147,12 @@ pub fn ellipsoid_contains<const N : usize>
     let n = qshp[0];
    
     let S = M.variable(Some("S"), in_psd_cone(2*n+1));
-    let S11 = (&S).slice(&[0..n,0..n]);
-    let S21 = (&S).slice(&[n..n+1,0..n]).reshape(&[n]);
-    let S22 = (&S).slice(&[n..n+1,n..n+1]).reshape(&[]);
-    let S31 = (&S).slice(&[n+1..2*n+1,0..n]);
-    let S32 = (&S).slice(&[n+1..2*n+1,n..n+1]).reshape(&[n]);
-    let S33 = (&S).slice(&[n+1..2*n+1,n+1..2*n+1]);
+    let S11 = (&S).index([0..n,0..n]);
+    let S21 = (&S).index([n..n+1,0..n]).reshape(&[n]);
+    let S22 = (&S).index([n..n+1,n..n+1]).reshape(&[]);
+    let S31 = (&S).index([n+1..2*n+1,0..n]);
+    let S32 = (&S).index([n+1..2*n+1,n..n+1]).reshape(&[n]);
+    let S33 = (&S).index([n+1..2*n+1,n+1..2*n+1]);
     let tau = M.variable(Some("tau"), nonnegative());
 
     let A = matrix::dense([N,N],A.iter().flat_map(|arow| arow.iter()).cloned().collect::<Vec<f64>>());
@@ -206,12 +206,12 @@ pub fn ellipsoid_contained<const N : usize>
     e : &Ellipsoid<N>) {
   
     let S = M.variable(None, in_psd_cone(2*N+1));
-    let S11 = (&S).slice(&[0..N,0..N]);
-    let S21 = (&S).slice(&[N..N+1,0..N]);
-    let S22 = (&S).slice(&[N..N+1,N..N+1]).reshape(&[]);
-    let S31 = (&S).slice(&[N+1..2*N+1,0..N]);
-    let S32 = (&S).slice(&[N+1..2*N+1,N..N+1]).reshape(&[N]);
-    let S33 = (&S).slice(&[N+1..2*N+1,N+1..2*N+1]);
+    let S11 = (&S).index([0..N,0..N]);
+    let S21 = (&S).index([N..N+1,0..N]);
+    let S22 = (&S).index([N..N+1,N..N+1]).reshape(&[]);
+    let S31 = (&S).index([N+1..2*N+1,0..N]);
+    let S32 = (&S).index([N+1..2*N+1,N..N+1]).reshape(&[N]);
+    let S33 = (&S).index([N+1..2*N+1,N+1..2*N+1]);
     let lambda = M.variable(None, nonnegative());
 
     let (B,c) = e.get_Pq();
@@ -275,9 +275,9 @@ pub fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize
     let Y = M.variable(name, in_psd_cone(2*n));
 
     // Setup Y = [X, Z; Z^T , diag(Z)]
-    let X  = (&Y).slice(&[0..n, 0..n]);
-    let Z  = (&Y).slice(&[0..n,   n..2*n]);
-    let DZ = (&Y).slice(&[n..2*n, n..2*n]);
+    let X  = (&Y).index([0..n, 0..n]);
+    let Z  = (&Y).index([0..n,   n..2*n]);
+    let DZ = (&Y).index([n..2*n, n..2*n]);
 
     // Z is lower-triangular
     _ = M.constraint(None, &Z.clone().triuvec(false), equal_to(vec![0.0; n*(n-1)/2].as_slice()));

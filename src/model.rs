@@ -259,16 +259,6 @@ pub trait ModelItemIndex<T> {
     fn index(self,obj : &T) -> Self::Output;
 }
 
-
-//pub trait ModelItemIndex<I> {
-//    type Output;
-//    fn index(&self, index : I) -> Self::Output;
-//}
-
-
-// impl std::ops::Index<&[usize]> for Variable { ... }
-// impl std::ops::Index<&[std::ops::Range]> for Variable { ... }
-
 /// A Constraint object is a wrapper around an array of constraint
 /// indexes and a shape. Note that constraint objects are never sparse.
 #[derive(Clone)]
@@ -277,10 +267,9 @@ pub struct Constraint<const N : usize> {
     shape    : [usize; N]
 }
 
-
 impl<const N : usize> Constraint<N> {
     pub fn index<I>(&self, idx : I) -> I::Output where I : ModelItemIndex<Self>, Self:Sized {
-        idx.index(&self)
+        idx.index(self)
     }
 }
 

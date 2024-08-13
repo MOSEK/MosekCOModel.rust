@@ -210,7 +210,7 @@ pub trait ExprTrait<const N : usize> {
     fn repeat(self,dim : usize, num : usize) -> ExprRepeat<N,Self> where Self:Sized { ExprRepeat{ expr : self, dim, num } }
 
     /// Take a slice of an expression
-    fn slice(self,ranges : &[Range<usize>;N]) -> ExprSlice<N,Self> where Self:Sized {
+    fn slice_deprecated(self,ranges : &[Range<usize>;N]) -> ExprSlice<N,Self> where Self:Sized {
         assert!(ranges.iter().all(|r| r.start <= r.end));
         let mut begin = [0usize;N];
         let mut end   = [0usize;N];
@@ -1857,7 +1857,7 @@ mod test {
         let Y = m.variable(Some("Y"), in_psd_cone(2)); // 13,14,15
         let mx = dense([2,2], vec![1.1,2.2,3.3,4.4]);
 
-        m.constraint(Some("X-Y"), &X.clone().slice(&[0..2,0..2]).sub(Y.clone().sub((&mx).mul_right(t.clone().clone().index(0)))), domain::zeros(&[2,2]));
+        m.constraint(Some("X-Y"), &(&X).index([0..2,0..2]).sub(Y.clone().sub((&mx).mul_right(t.clone().clone().index(0)))), domain::zeros(&[2,2]));
 
         let mut rs = WorkStack::new(512);
         let mut ws = WorkStack::new(512);
@@ -1873,7 +1873,7 @@ mod test {
         }
         {
             rs.clear(); ws.clear(); xs.clear();
-            X.clone().slice(&[0..2,0..2]).eval(&mut rs,&mut ws,&mut xs);
+            (&X).index([0..2,0..2]).eval(&mut rs,&mut ws,&mut xs);
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
             assert_eq!(shape,&[2,2]);
             assert_eq!(ptr,&[0,1,2,3,4]);
@@ -1882,7 +1882,7 @@ mod test {
         }
         {
             rs.clear(); ws.clear(); xs.clear();
-            X.clone().slice(&[0..2,0..2]).sub(Y.sub((&mx).mul_right(t.index(0)))).eval(&mut rs,&mut ws,&mut xs);
+            (&X).index([0..2,0..2]).sub(Y.sub((&mx).mul_right(t.index(0)))).eval(&mut rs,&mut ws,&mut xs);
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
             assert_eq!(shape,&[2,2]);
             assert_eq!(ptr,&[0,3,6,9,12]);
