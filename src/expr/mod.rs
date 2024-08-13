@@ -217,7 +217,7 @@ pub trait ExprTrait<const N : usize> {
     /// the type of the indexer, which can be an 
     /// - `usize`, `[usize;N]`, which results in a scalar expression, 
     /// - or `Range<usize>`, `[Range<usize;N>]` resulting in an expression with the same number of
-    ///   dimensions
+    ///   dimensions as this expression.
     fn index<I>(self, idx : I) -> I::Output where I : ModelExprIndex<Self>, Self:Sized {
         idx.index(self)
     }
@@ -1310,52 +1310,8 @@ impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprPermuteAxes<N,E> {
     }
 }
 
-//
-//
-//impl ExprTrait<0> for f64 {
-//    fn eval(&self, rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
-//        let (rptr,_sp,rsubj,rcof) = rs.alloc_expr(&[], 1, 1);
-//        rcof[0] = *self;
-//        rsubj[0] = 0;
-//        rptr[0] = 0;
-//        rptr[1] = 1;
-//    }
-//}
-//
-//impl ExprTrait<1> for &[f64] {
-//    fn eval(&self, rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
-//        let (rptr,_sp,rsubj,rcof) = rs.alloc_expr(&[self.len()], self.len(), self.len());
-//        rcof.copy_from_slice(self);
-//        rsubj.iter_mut().for_each(|t| *t = 0);
-//        rptr.iter_mut().zip(0..).for_each(|(t,s)| *t = s);
-//    }
-//}
-//
-//impl ExprTrait<1> for Vec<f64> {
-//    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-//        self.as_slice().eval(rs,ws,xs);
-//    }
-//}
-
-//impl From<f64> for Expr<0> {
-//    fn from(self) -> expr<0> { expr::new(&[], none, vec![0,1], vec![0], vec![self]) }
-//}
 
 
-
-
-//impl Into<Expr<0>> for f64 {
-//    fn into(self) -> Expr<0> { Expr::new(&[], None, vec![0,1], vec![0], vec![self]) }
-//}
-//
-//impl Into<Expr<1>> for &[f64] {
-//    fn into(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.to_vec()) }
-//}
-//
-//impl Into<Expr<1>> for Vec<f64> {
-//    fn into(self) -> Expr<1> { Expr::new(&[self.len()], None, (0..self.len()+1).collect(), vec![0; self.len()], self.clone()) }
-//}
-//
 
 
 
