@@ -246,16 +246,24 @@ pub trait ModelItem<const N : usize> {
     }
     fn primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64]) -> Result<usize,String>;
     fn dual_into(&self,m : &Model,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String>;
+
 }
 
 //======================================================
 // Variable and Constraint
 //======================================================
 
-pub trait ModelItemIndex<I> {
+/// Support trait for Constraint::index, Variable::index and ExprTrait::index
+pub trait ModelItemIndex<T> {
     type Output;
-    fn index(&self, index : I) -> Self::Output;
+    fn index(self,obj : &T) -> Self::Output;
 }
+
+
+//pub trait ModelItemIndex<I> {
+//    type Output;
+//    fn index(&self, index : I) -> Self::Output;
+//}
 
 
 // impl std::ops::Index<&[usize]> for Variable { ... }
@@ -267,6 +275,13 @@ pub trait ModelItemIndex<I> {
 pub struct Constraint<const N : usize> {
     idxs     : Vec<usize>,
     shape    : [usize; N]
+}
+
+
+impl<const N : usize> Constraint<N> {
+    pub fn index<I>(&self, idx : I) -> I::Output where I : ModelItemIndex<Self>, Self:Sized {
+        idx.index(&self)
+    }
 }
 
 impl<const N : usize> ModelItem<N> for Constraint <N> {

@@ -1,20 +1,17 @@
-//
-//   Copyright: ==COPYRIGHT==
-//
-//   File:      ==FILE==
-//
-//   Purpose: Demonstrates how to solve the problem
-//
-//   minimize x1 + x2
-//   such that
-//            x1 + x2 + x3  = 1.0
-//                x1,x2    >= 0.0
-//   and      x1 >= x2 * exp(x3/x2)
-//
-//TAG:begin-ceo1
+///
+///   Copyright: © Mosek ApS, 2024
+///
+///   Purpose: Demonstrates how to solve the problem
+///
+///   minimize x1 + x2
+///   such that
+///            x1 + x2 + x3  = 1.0
+///                x1,x2    >= 0.0
+///   and      x1 >= x2 * exp(x3/x2)
+///
+///TAG:begin-ceo1
 extern crate mosekmodel;
-use mosekmodel::{Model,SolutionType,unbounded,equal_to,in_exponential_cone,Sense};
-use mosekmodel::expr::*;
+use mosekmodel::*;
 
 fn main() {
     //TAG:begin-create-model
@@ -38,7 +35,7 @@ fn main() {
 
     //TAG:begin-set-objective
     // Set the objective function to (x[0] + x[1])
-    m.objective(Some("obj"), Sense::Minimize, &x.clone().slice(&[0..2]).sum());
+    m.objective(Some("obj"), Sense::Minimize, &x.clone().index(0..2).sum());
     //TAG:end-set-objective
 
     // Solve the problem

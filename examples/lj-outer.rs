@@ -7,8 +7,7 @@
 //
 extern crate mosekmodel;
 
-use mosekmodel::{equal_to, hstack, in_geometric_mean_cone, in_psd_cone, in_quadratic_cones, nonnegative, unbounded, vstack, Model, Sense, SolutionStatus, SolutionType, Variable};
-use mosekmodel::expr::*;
+use mosekmodel::*;
 use mosekmodel::matrix::{speye,dense};
 
 
@@ -35,9 +34,9 @@ fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) ->
     let Y = M.variable(name, in_psd_cone(2*n));
 
     // Setup Y = [X, Z; Z^T , diag(Z)]
-    let X  = (&Y).slice(&[0..n, 0..n]);
-    let Z  = (&Y).slice(&[0..n,   n..2*n]);
-    let DZ = (&Y).slice(&[n..2*n, n..2*n]);
+    let X  = (&Y).index([0..n, 0..n]);
+    let Z  = (&Y).index([0..n,   n..2*n]);
+    let DZ = (&Y).index([n..2*n, n..2*n]);
 
 
     // Z is lower-triangular

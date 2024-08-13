@@ -54,51 +54,51 @@ pub fn chainsing1(n : usize) -> Model {
         // s[j] >= (x[i] + 10*x[i+1])^2
         model.constraint(None,
                          &vstack![Expr::from(0.5).flatten(),
-                                  s.index(j).flatten(),
-                                  x.index(i).add(x.index(i+1).mul(10.0)).flatten()],
+                                  (&s).index(j).flatten(),
+                                  (&x).index(i).add((&x).index(i+1).mul(10.0)).flatten()],
 		         in_rotated_quadratic_cone(3));
 
         // t[j] >= 5^0.5*(x[i+2] - x[i+3])^2
         model.constraint(None,
                          &vstack![Expr::from(0.5).flatten(),
-                                  t.index(j).flatten(),
-                                  x.index(i+1).sub(x.index(i+3)).mul(5.0f64.sqrt()).flatten()],
+                                  (&t).index(j).flatten(),
+                                  (&x).index(i+1).sub((&x).index(i+3)).mul(5.0f64.sqrt()).flatten()],
 		         in_rotated_quadratic_cone(3));
 
         // r[j] >= (x[i+1] - 2*x[i+2])^2
         model.constraint(None,
                          &vstack![Expr::from(0.5).flatten(),
-                                  r.index(j).flatten(),
-                                  x.index(i+1).sub(x.index(i+2).mul(2.0)).flatten()],
+                                  (&r).index(j).flatten(),
+                                  (&x).index(i+1).sub((&x).index(i+2).mul(2.0)).flatten()],
 		         in_rotated_quadratic_cone(3));
 
         // u[j] >= sqrt(10)*(x[i] - 10*x[i+3])^2
         model.constraint(None,
                          &vstack![Expr::from(0.5*10.0f64.powf(-0.25)).flatten(),
-                                  u.index(j).flatten(),
-                                  x.index(i).sub(x.index(i+3).mul(10.0)).flatten()],
+                                  (&u).index(j).flatten(),
+                                  (&x).index(i).sub((&x).index(i+3).mul(10.0)).flatten()],
 		         in_rotated_quadratic_cone(3));
 
         // p[j] >= r[j]^2
         model.constraint(None,
                          &vstack![Expr::from(0.5).flatten(),
-                                  p.index(j).flatten(),
-                                  r.index(j).flatten()],
+                                  (&p).index(j).flatten(),
+                                  (&r).index(j).flatten()],
 		         in_rotated_quadratic_cone(3));
 
       // q[j] >= u[j]^2
         model.constraint(None,
                          &vstack![Expr::from(0.5).flatten(),
-                                  q.index(j).flatten(),
-                                  u.index(j).flatten()],
+                                  (&q).index(j).flatten(),
+                                  (&u).index(j).flatten()],
 		         in_rotated_quadratic_cone(3));
 
     }
 
     // 0.1 <= x[i] <= 1.1, i=0,2,...,n-2
     for i in (0..n).step_by(2) {
-	model.constraint(None, &(x.index(i)), greater_than(0.1));
-	model.constraint(None, &(x.index(i)), less_than(1.1));
+	model.constraint(None, &((&x).index(i)), greater_than(0.1));
+	model.constraint(None, &((&x).index(i)), less_than(1.1));
     }
 
     model.objective(None,
@@ -146,38 +146,38 @@ pub fn chainsing1(n : usize) -> Model {
   //     int i = j << 1;
 
   //     // s >= sum_i (x[i] + 10*x[i+1])^2 + 5*(x[i+2]-x[i+3])^2
-  //     se[2*j+2] = Expr.add(x.index(i), Expr.mul(10.0, x.index(i+1)));
-  //     se[2*j+3] = Expr.mul(Math.sqrt(5),Expr.sub(x.index(i+2), x.index(i+3)));
+  //     se[2*j+2] = Expr.add((&x).index(i), Expr.mul(10.0, (&x).index(i+1)));
+  //     se[2*j+3] = Expr.mul(Math.sqrt(5),Expr.sub((&x).index(i+2), (&x).index(i+3)));
     
   //     // r[j] >= (x[i+1] - 2*x[i+2])^2
   //     model.constraint(Expr.vstack(c,
-  //       		       r.index(j).asExpr(), 
-  //       		       Expr.sub(x.index(i+1), Expr.mul(2.0,x.index(i+2)))),
+  //       		       (&r).index(j).asExpr(), 
+  //       		       Expr.sub((&x).index(i+1), Expr.mul(2.0,(&x).index(i+2)))),
   //       	   Domain.inRotatedQCone());
 
   //     // u[j] >= sqrt(10)*(x[i] - 10*x[i+3])^2
   //     model.constraint(Expr.vstack(Expr.constTerm(1,0.5*Math.pow(10,-0.25)),
-  //       		       u.index(j).asExpr(), 
-  //       		       Expr.sub(x.index(i), Expr.mul(10.0,x.index(i+3)))),
+  //       		       (&u).index(j).asExpr(), 
+  //       		       Expr.sub((&x).index(i), Expr.mul(10.0,(&x).index(i+3)))),
   //       	   Domain.inRotatedQCone());
       
   //     // p[j] >= r[j]^2
   //     model.constraint(Expr.vstack(c,
-  //       		       p.index(j).asExpr(),
-  //       		       r.index(j).asExpr()), 
+  //       		       (&p).index(j).asExpr(),
+  //       		       (&r).index(j).asExpr()), 
   //       	   Domain.inRotatedQCone());
 
   //     // q[j] >= u[j]^2
   //     model.constraint(Expr.vstack(c,
-  //       		       q.index(j).asExpr(), 
-  //       		       u.index(j).asExpr()),
+  //       		       (&q).index(j).asExpr(), 
+  //       		       (&u).index(j).asExpr()),
   //       	   Domain.inRotatedQCone());
 
   //   }
     
   //   // 0.1 <= x[i] <= 1.1, i=0,2,...,n-1
   //   for (int i = 0; i < n; i+=2) {
-  //       model.constraint(x.index(i), Domain.inRange(0.1,1.1));
+  //       model.constraint((&x).index(i), Domain.inRange(0.1,1.1));
   //   }
 
   //   model.constraint(Expr.vstack(se), Domain.inRotatedQCone());
@@ -211,22 +211,22 @@ pub fn chainsing3(n : usize) -> Model {
       // r[j] >= (x[i+1] - 2*x[i+2])^2
         model.constraint(None,
                          &vstack![Expr::from(0.5).flatten(),
-                                  r.index(j).flatten(),
-                                  x.index(i+1).sub(x.index(i+2).mul(2.0)).flatten()],
+                                  (&r).index(j).flatten(),
+                                  (&x).index(i+1).sub((&x).index(i+2).mul(2.0)).flatten()],
 		   in_rotated_quadratic_cone(3));
 
       // u[j] >= sqrt(10)*(x[i] - 10*x[i+3])^2
         model.constraint(None,
                          &vstack![Expr::from(0.5f64.powf(-0.25)).flatten(),
-                                  u.index(j).flatten(),
-                                  x.index(i).sub(x.index(i+3).mul(10.0)).flatten()],
+                                  (&u).index(j).flatten(),
+                                  (&x).index(i).sub((&x).index(i+3).mul(10.0)).flatten()],
 		         in_rotated_quadratic_cone(3));
     }
 
     // 0.1 <= x[i] <= 1.1, i=0,2,...,n-1
     for i in (0..n).step_by(2) {
-        model.constraint(None, &x.index(i), greater_than(0.1));
-        model.constraint(None, &x.index(i), less_than(1.1));
+        model.constraint(None, &(&x).index(i), greater_than(0.1));
+        model.constraint(None, &(&x).index(i), less_than(1.1));
     }
 
     model.constraint(None,
@@ -234,10 +234,10 @@ pub fn chainsing3(n : usize) -> Model {
                               Expr::from(0.5).flatten(),
                               vstack((0..m).map(|j| {
                                   let i = j << 1;
-                                  vstack![x.index(i).add(x.index(i+1).mul(10.0f64)).flatten(),
-                                          x.index(i+2).mul(0.5f64.sqrt()).sub(x.index(i+3)).flatten(),
-                                          r.index(j).flatten(),
-                                          u.index(j).flatten()].dynamic() }).collect())],
+                                  vstack![(&x).index(i).add((&x).index(i+1).mul(10.0f64)).flatten(),
+                                          (&x).index(i+2).mul(0.5f64.sqrt()).sub((&x).index(i+3)).flatten(),
+                                          (&r).index(j).flatten(),
+                                          (&u).index(j).flatten()].dynamic() }).collect())],
                      in_rotated_quadratic_cone(2+m*4));
 
     model.objective(None,Sense::Minimize,&s);
@@ -256,10 +256,10 @@ pub fn chainsing4(n : usize) -> Model {
     let u = model.variable(None,&[m,1]);
 
     let xr       = x.clone().with_shape(&[n/2,2]);
-    let x_i      = xr.index(&[0..n/2-1,0..1]);
-    let x_iplus1 = xr.index(&[0..n/2-1,1..2]);
-    let x_iplus2 = xr.index(&[1..n/2,  0..1]/* as &[std::ops::Range<usize>;2]*/);
-    let x_iplus3 = xr.index(&[1..n/2,  1..2]);
+    let x_i      = (&xr).index([0..n/2-1,0..1]);
+    let x_iplus1 = (&xr).index([0..n/2-1,1..2]);
+    let x_iplus2 = (&xr).index([1..n/2,  0..1]);
+    let x_iplus3 = (&xr).index([1..n/2,  1..2]);
 
     // s[j] >= (x[i] + 10*x[i+1])^2    
     model.constraint(None,

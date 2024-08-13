@@ -43,6 +43,10 @@ impl<const N : usize> Variable<N> {
             Ok(sz)
         }
     }
+
+    pub fn index<I>(&self, idx : I) -> I::Output where I : ModelItemIndex<Self> {
+        idx.index(self)
+    }
 }
 
 impl<const N : usize> ModelItem<N> for Variable<N> {
@@ -81,14 +85,14 @@ impl<const N : usize> ModelItem<N> for Variable<N> {
     }
 }
 
-impl ModelItemIndex<usize> for Variable<1> {
+impl ModelItemIndex<Variable<1>> for usize {
     type Output = Variable<0>;
-    fn index(&self, index: usize) -> Variable<0> {
-        if self.shape.len() != 1 { panic!("Cannot index into multi-dimensional variable"); }
-        if let Some(ref sp) = self.sparsity {
-            if let Ok(i) = sp.binary_search(&index) {
+    fn index(self, v : &Variable<1>) -> Variable<0> {
+        if v.shape.len() != 1 { panic!("Cannot index into multi-dimensional variable"); }
+        if let Some(ref sp) = v.sparsity {
+            if let Ok(i) = sp.binary_search(&self) {
                 Variable{
-                    idxs     : vec![self.idxs[i]],
+                    idxs     : vec![v.idxs[i]],
                     sparsity : None,
                     shape    : []
                 }
@@ -103,7 +107,7 @@ impl ModelItemIndex<usize> for Variable<1> {
         }
         else {
             Variable{
-                idxs     : vec![self.idxs[index]],
+                idxs     : vec![v.idxs[self]],
                 sparsity : None,
                 shape    : []
             }
@@ -111,14 +115,14 @@ impl ModelItemIndex<usize> for Variable<1> {
     }
 }
 
-impl<const N : usize> ModelItemIndex<&[usize; N]> for Variable<N> {
+impl<const N : usize> ModelItemIndex<Variable<N>> for [usize; N] {
     type Output = Variable<0>;
-    fn index(&self, index: &[usize; N]) -> Variable<0> {
-        let index = self.shape.iter().zip(index.iter()).fold(0,|v,(&d,&i)| v*d+i);
-        if let Some(ref sp) = self.sparsity {
+    fn index(self, v : &Variable<N>) -> Variable<0> {
+        let index = v.shape.iter().zip(self.iter()).fold(0,|v,(&d,&i)| v*d+i);
+        if let Some(ref sp) = v.sparsity {
             if let Ok(i) = sp.binary_search(&index) {
                 Variable{
-                    idxs     : vec![self.idxs[i]],
+                    idxs     : vec![v.idxs[i]],
                     sparsity : None,
                     shape    : []
                 }
@@ -133,7 +137,7 @@ impl<const N : usize> ModelItemIndex<&[usize; N]> for Variable<N> {
         }
         else {
             Variable{
-                idxs     : vec![self.idxs[index]],
+                idxs     : vec![v.idxs[index]],
                 sparsity : None,
                 shape    : []
             }
@@ -141,29 +145,29 @@ impl<const N : usize> ModelItemIndex<&[usize; N]> for Variable<N> {
     }
 }
 
-impl ModelItemIndex<std::ops::Range<usize>> for Variable<1> {
+impl ModelItemIndex<Variable<1>> for std::ops::Range<usize> {
     type Output = Variable<1>;
-    fn index(&self, index: std::ops::Range<usize>) -> Variable<1> {
-        let n = index.len();
-        if let Some(ref sp) = self.sparsity {
-            let first = match sp.binary_search(&index.start) {
+    fn index(self, v : &Variable<1>) -> Variable<1> {
+        let n = self.len();
+        if let Some(ref sp) = v.sparsity {
+            let first = match sp.binary_search(&self.start) {
                 Ok(i)  => i,
                 Err(i) => i
             };
-            let last = match sp.binary_search(&index.start) {
+            let last = match sp.binary_search(&self.start) {
                 Ok(i) => i+1,
                 Err(i) => i
             };
 
             Variable{
-                idxs     : self.idxs[first..last].to_vec(),
-                sparsity : Some(sp[first..last].iter().map(|&i| i - index.start).collect()),
+                idxs     : v.idxs[first..last].to_vec(),
+                sparsity : Some(sp[first..last].iter().map(|&i| i - self.start).collect()),
                 shape    : [n]
             }
         }
         else {
             Variable{
-                idxs     : self.idxs[index].to_vec(),
+                idxs     : v.idxs[self].to_vec(),
                 sparsity : None,
                 shape    : [n]
             }
@@ -171,27 +175,27 @@ impl ModelItemIndex<std::ops::Range<usize>> for Variable<1> {
     }
 }
 
-impl<const N : usize> ModelItemIndex<&[std::ops::Range<usize>; N]> for Variable<N> {
+impl<const N : usize> ModelItemIndex<Variable<N>> for [std::ops::Range<usize>; N] {
     type Output = Variable<N>;
-    fn index(&self, ranges: &[std::ops::Range<usize>;N]) -> Variable<N> {
-        if !ranges.iter().zip(self.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range is out of bounds in the the shape: {:?} in {:?}",ranges,self.shape) }
+    fn index(self, v : &Variable<N>) -> Variable<N> {
+        if !self.iter().zip(v.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range is out of bounds in the the shape: {:?} in {:?}",self,v.shape) }
 
-        let mut rshape = [0usize;N]; rshape.iter_mut().zip(ranges.iter()).for_each(|(rs,ra)| *rs = ra.end-ra.start);
+        let mut rshape = [0usize;N]; rshape.iter_mut().zip(self.iter()).for_each(|(rs,ra)| *rs = ra.end-ra.start);
         let mut rstrides = rshape; let _ = rstrides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev});
 
-        if let Some(ref sp) = self.sparsity {
+        if let Some(ref sp) = v.sparsity {
             let mut strides = rshape.to_vec();
             let _ = strides.iter_mut().rev().fold(1,|v,s| { let prev = *s; *s = v; v*prev });
 
             let mut rsp   = Vec::with_capacity(sp.len());
-            let mut ridxs = Vec::with_capacity(self.idxs.len());
+            let mut ridxs = Vec::with_capacity(v.idxs.len());
 
-            sp.iter().zip(self.idxs.iter())
+            sp.iter().zip(v.idxs.iter())
                 .for_each(|(&s,&ix)|
-                          if izip!(rshape.iter(),strides.iter(),ranges.iter()).all(|(&sh,&st,ra)| { let i = (s / st) % sh; i <= ra.start && i < ra.end }) {
+                          if izip!(rshape.iter(),strides.iter(),self.iter()).all(|(&sh,&st,ra)| { let i = (s / st) % sh; i <= ra.start && i < ra.end }) {
                               rsp.push(izip!(rshape.iter(),
                                              strides.iter(),
-                                             ranges.iter(),
+                                             self.iter(),
                                              rstrides.iter()).map(|(&sh,&st,ra,&rst)| ((s / st) % sh - ra.start) * rst).sum());
                               ridxs.push(ix);
                           });
@@ -202,8 +206,8 @@ impl<const N : usize> ModelItemIndex<&[std::ops::Range<usize>; N]> for Variable<
         else {
             //let rnum :usize = rshape.iter().product();
             let ridxs : Vec<usize> = (0..rshape.iter().product())
-                .map(|i| izip!(rshape.iter(),rstrides.iter(),ranges.iter(),rstrides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
-                .map(|i| self.idxs[i] /*TODO: unsafe get*/)
+                .map(|i| izip!(rshape.iter(),rstrides.iter(),self.iter(),rstrides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
+                .map(|i| v.idxs[i] /*TODO: unsafe get*/)
                 .collect();
 
             Variable{idxs : ridxs,
@@ -345,7 +349,7 @@ impl<const N : usize> Variable<N> {
     // ///// Take the diagonal element of a square, cube,... variable
     // //pub fn diag(&self) -> Variable
     // //pub fn into_diag(&self) -> Variable
-    pub fn slice(&self, ranges : &[std::ops::Range<usize>; N]) -> Variable<N> {
+    fn slice(&self, ranges : &[std::ops::Range<usize>; N]) -> Variable<N> {
         if ranges.iter().zip(self.shape.iter()).find(|(r,&d)| r.start >= r.end || r.end > d).is_some() {
             panic!("Slice out of bounds");
         }

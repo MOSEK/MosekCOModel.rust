@@ -10,7 +10,7 @@ use std::ops::Range;
 
 use itertools::izip;
 
-use crate::matrix::Matrix;
+use crate::{matrix::Matrix, utils::NBoundGtOne, ModelItemIndex};
 
 use workstack::WorkStack;
 use super::matrix;
@@ -57,7 +57,7 @@ pub trait ExprTrait<const N : usize> {
     /// ```
     fn dynamic<'a>(self) -> ExprDynamic<'a,N> where Self : Sized+'a { ExprDynamic::new(self) }
 
-    /// Permute axes of the expression. Permute the index coordinates of each entry in the
+    /// Permute axes of the expression. Permute the ,index coordinates of each entry in the
     /// expression, and similarly permute the shape.
     ///
     /// # Arguments
@@ -217,6 +217,11 @@ pub trait ExprTrait<const N : usize> {
         izip!(begin.iter_mut(),end.iter_mut(),ranges.iter()).for_each(|(b,e,r)| { *b = r.start; *e = r.end; } );
 
         ExprSlice{expr : self, begin, end} 
+    }
+
+
+    fn index<I>(self, idx : I) -> I::Output where I : ModelExprIndex<Self>, Self:Sized {
+        idx.index(self)
     }
 
     /// Reshape the experssion. The new shape must match the old
@@ -392,7 +397,74 @@ pub trait ExprTrait<const N : usize> {
             shape : m.shape()
         }
     }
+} // ExprTrait<N>
+
+pub trait ModelExprIndex<T> {
+    type Output;
+    fn index(self,obj : T) -> Self::Output;
 }
+impl<const N : usize, E> ModelExprIndex<E> for [Range<usize>; N] 
+    where 
+        //E : ExprTrait<N>+Clone+NBoundGtOne<N>
+        E : ExprTrait<N>+Clone
+{
+    type Output = ExprSlice<N,E>;
+    fn index(self, expr : E) -> Self::Output {
+        let begin = self.clone().map(|i| i.start);
+        let end   = self.map(|i| i.end);
+
+        ExprSlice{
+            expr,
+            begin,
+            end,
+        }
+    }
+}
+
+// Once const generics allow us to exclude the case N=1 from the above implementation, we can
+// specialize for the case of a single range here:
+impl<E> ModelExprIndex<E> for Range<usize> 
+    where 
+        E : ExprTrait<1>+Clone 
+{
+    type Output = ExprSlice<1,E>;
+    fn index(self, expr : E) -> Self::Output {
+        ExprSlice{
+            expr,
+            begin : [ self.start ],
+            end   : [ self.end ],
+        }
+    }
+}
+
+impl<const N : usize, E> ModelExprIndex<E> for [usize; N] where E : ExprTrait<N>+Clone {
+    type Output = ExprReshape<N,0,ExprSlice<N,E>>;
+    fn index(self, expr : E) -> Self::Output {
+        ExprReshape{
+            shape : [],
+            item : ExprSlice{
+                expr,
+                begin : self,
+                end : self.map(|v| v+1),
+            }
+        }
+    }
+}
+
+impl<E> ModelExprIndex<E> for usize where E : ExprTrait<1>+Clone {
+    type Output = ExprReshape<1,0,ExprSlice<1,E>>;
+    fn index(self, expr : E) -> Self::Output {
+        ExprReshape{
+            shape : [],
+            item : ExprSlice{
+                expr,
+                begin : [self],
+                end : [self+1],
+            }
+        }
+    }
+}
+
 
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
@@ -578,7 +650,6 @@ pub fn nil<const N : usize>(shape : &[usize; N]) -> ExprNil<N> {
 /// Reduce (or increase) the number of dimensions in the shape from `N` to `M`. If `M<N`, the
 /// trailing `N-M+1` dimensions are flattened into one dimension. If `N<M` the shape is padded with
 /// ones.
-#[derive(Clone)]
 pub struct ExprReduceShape<const N : usize, const M : usize, E> where E : ExprTrait<N>+Sized { item : E }
 impl<const N : usize, const M : usize, E> ExprTrait<M> for ExprReduceShape<N,M,E> 
     where E : ExprTrait<N> 
@@ -860,7 +931,6 @@ impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprRepeat<N,E> {
 }
 
 
-
 pub struct ExprDynamic<'a,const N : usize> {
     expr : Box<dyn ExprTrait<N>+'a>
 }
@@ -1076,7 +1146,7 @@ pub struct ExprTriangularPart<T:ExprTrait<2>> {
 //--        izip!(sp.iter()).filter(|&&i| pick(i))
 //--            .zip(rsp.iter_mut())
 //--            .for_each(|(&i,ri)| *ri = i );
-//--    }
+//--    }`
 //--    let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
 //--}
 impl<T:ExprTrait<2>> ExprTrait<2> for ExprTriangularPart<T> {
@@ -1812,7 +1882,7 @@ mod test {
         }
         {
             rs.clear(); ws.clear(); xs.clear();
-            X.clone().slice(&[0..2,0..2]).sub(Y.sub((&mx).mul_right(t.clone().index(0)))).eval(&mut rs,&mut ws,&mut xs);
+            X.clone().slice(&[0..2,0..2]).sub(Y.sub((&mx).mul_right(t.index(0)))).eval(&mut rs,&mut ws,&mut xs);
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
             assert_eq!(shape,&[2,2]);
             assert_eq!(ptr,&[0,3,6,9,12]);

@@ -547,6 +547,29 @@ pub fn shape_eq_except(s0 : &[usize], s1 : &[usize], d : usize) -> bool{
     }
 }
 
+#[allow(unused)]
+pub trait NBoundGtOne<const N : usize> { }
+impl<T> NBoundGtOne<2>  for T {}
+impl<T> NBoundGtOne<3>  for T {}
+impl<T> NBoundGtOne<4>  for T {}
+impl<T> NBoundGtOne<5>  for T {}
+impl<T> NBoundGtOne<6>  for T {}
+impl<T> NBoundGtOne<7>  for T {}
+impl<T> NBoundGtOne<8>  for T {}
+impl<T> NBoundGtOne<9>  for T {}
+impl<T> NBoundGtOne<10> for T {}
+impl<T> NBoundGtOne<11> for T {}
+impl<T> NBoundGtOne<12> for T {}
+impl<T> NBoundGtOne<13> for T {}
+impl<T> NBoundGtOne<14> for T {}
+impl<T> NBoundGtOne<15> for T {}
+impl<T> NBoundGtOne<16> for T {}
+impl<T> NBoundGtOne<17> for T {}
+impl<T> NBoundGtOne<18> for T {}
+impl<T> NBoundGtOne<19> for T {}
+impl<T> NBoundGtOne<20> for T {}
+
+
 
 //pub struct MergeIter<I0,I1,J> where 
 //    I0 : Iterator<Item = J>,
