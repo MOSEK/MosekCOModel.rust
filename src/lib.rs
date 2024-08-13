@@ -180,7 +180,8 @@ pub use expr::{ExprTrait,
                ExprRightMultipliable,
                ModelExprIndex,
                IntoExpr,
-               Expr};
+               Expr,
+               Dot};
 pub use variable::Variable;
 pub use domain::{LinearDomain,
                  ConicDomain,

@@ -577,11 +577,11 @@ impl<const N : usize> Expr<N> {
 
 
 
-pub struct ExprScalarList {
-    exprs : Vec<ExprDynamic<'static,0>>,
+pub struct ExprScalarList<E> where E : ExprTrait<0> {
+    exprs : Vec<E>,
 }
 
-impl ExprTrait<1> for ExprScalarList {
+impl<E> ExprTrait<1> for ExprScalarList<E> where E : ExprTrait<0> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
         let n = self.exprs.len();
         for e in self.exprs.iter() { e.eval(ws,rs,xs); }
@@ -607,18 +607,38 @@ impl ExprTrait<1> for ExprScalarList {
 }
 
 
-pub fn from_sparse_iter<const N : usize,I>(shape : [usize;N], it : I) -> _
+
+/// Create an expression from a shape and an iterator, where the iterator produces linear indexes
+/// and scalar expressions. This is a homoheneous list, so each expression
+/// must have the exact same type. To get around this and create a heterogenous list, use
+/// `E=ExprDynamic<'static,0>`.
+///
+/// # Arguments
+/// - `shape` Defines the shape of the expression
+/// - `it` Generates the individual scalar expressions. At most `nelm=shape.iter().product()`
+///   values are taken from the iterator, the rest are unused, so the iterator can be infinite.
+///   Each element of the iterator is a `(usize, E)` (a linear sparsity index and a
+///   scalar expression).
+///
+///   The element indexes need not be sorted, but must not contain duplicates.
+pub fn from_sparse_iter<const N : usize,I,E>(shape : [usize;N], it : I) -> ExprScatter<N, ExprScalarList<E>>
     where 
-        I : Iterator<Item = (usize, ExprDynamic<'static,0>)> 
+        I : Iterator<Item = (usize, E)>,
+        E : ExprTrait<0>
 {
-    let mut es : Vec<(usize,ExprDynamic<'static,0>)> = it.take(shape.iter().product()).collect();
-    es.sort_by_key(|(idx,_)| idx);
+    let mut es : Vec<(usize,E)> = it.take(shape.iter().product()).collect();
+    es.sort_by_key(|(idx,_)| *idx);
     // check no duplicates
     if es.iter().zip(es[1..].iter()).any(|(a,b)| a.0 == b.0) {
         panic!("Sparsity indexes contains duplicates");
     }
-    
-    let (sparsity,exprs) = es.iter().fold((Vec::with_capacity(es.len()),Vec::with_capacity(es.len())), |(sp,es),(i,e)| { sp.push(i); es.push(e); (sp,es) });
+   
+    let mut sparsity = Vec::with_capacity(es.len());
+    let mut exprs = Vec::with_capacity(es.len());
+    for (i,e) in es {
+        sparsity.push(i);
+        exprs.push(e);
+    }
 
     ExprScatter {
         shape,
@@ -627,12 +647,22 @@ pub fn from_sparse_iter<const N : usize,I>(shape : [usize;N], it : I) -> _
     }
 }
 
-pub fn from_dense_iter<const N : usize, I>(shape : [usize; N], it : I) -> _ 
+/// Create an expression from a shape and an iterator, where the iterator produces scalar
+/// expressions. This is a homoheneous list, so each expression must have the exact same type. To
+/// get around this and create a heterogenous list, use `E=ExprDynamic<'static,0>`.
+///
+/// # Arguments
+/// - `shape` Defines the shape of the expression
+/// - `it` Generates the individual scalar expressions. Exactly `nelm=shape.iter().product()`
+///   values are taken from the iterator, the rest are unused, so the iterator can be infinite.
+///   Each element of the iterator is a `E`.
+pub fn from_dense_iter<const N : usize, I,E>(shape : [usize; N], it : I) -> ExprReshape<1, N, ExprScalarList<E>>
     where 
-        I : Iterator<Item = ExprDynamic<'static,0>>
+        I : Iterator<Item = E>,
+        E : ExprTrait<0>
 {
     let nelm = shape.iter().product();
-    let mut exprs : Vec<ExprDynamic<'static,0>> = it.take(nelm).collect();
+    let mut exprs : Vec<E> = it.take(nelm).collect();
     if exprs.len() != nelm {
         panic!("Insufficient expressions for shape");
     }
@@ -645,13 +675,27 @@ pub fn from_dense_iter<const N : usize, I>(shape : [usize; N], it : I) -> _
     }
 }
 
-pub fn from_iter<const N : usize, I>(shape : [usize; N], it : I) -> _ 
+
+/// Create an expression from a shape and an iterator, where the iterator produces linear indexes
+/// and scalar expressions for all non-zero elements. This is a homoheneous list, so each expression
+/// must have the exact same type. To get around this and create a heterogenous list, use
+/// `E=ExprDynamic<'static,0>`.
+///
+/// # Arguments
+/// - `shape` Defines the shape of the expression
+/// - `it` Generates the individual scalar expressions. At most `nelm=shape.iter().product()`
+///   values are taken from the iterator, the rest are unused, so the iterator can be infinite.
+///   Each element of the iterator is a `Option<E>`, where  `None` indicates a zero and `Some(E)`
+///   indicates a non-zero.
+///
+///   The element indexes need not be sorted, but must not contain duplicates.
+pub fn from_iter<const N : usize, I,E>(shape : [usize; N], it : I) -> ExprScatter<N, ExprScalarList<E>>
     where 
-        I : Iterator<Item = Option<ExprDynamic<'static,0>>>
+        I : Iterator<Item = Option<E>>,
+        E : ExprTrait<0>
 {
     let nelm = shape.iter().product();
-    
-    from_sparse_iter(shape,it.iter().take(nelm).enumerate().filter(|v| v.1.is_some).map(|v| (v.0,v.1.unwrap())))
+    from_sparse_iter(shape,it.take(nelm).enumerate().filter(|v| v.1.is_some()).map(|v| (v.0,v.1.unwrap())))
 }
 
 
@@ -691,6 +735,7 @@ impl<const N : usize> ExprTrait<N> for ExprNil<N> {
     }
 }
 
+/// An all zeros expression of the given shape.
 pub fn zeros<const N : usize>(shape : &[usize;N]) -> Expr<N> {
     Expr{
         shape : *shape,
@@ -701,6 +746,7 @@ pub fn zeros<const N : usize>(shape : &[usize;N]) -> Expr<N> {
     }
 }
 
+/// A constant expression of the given shape where each element is fixed to `value`.
 pub fn const_expr<const N : usize>(shape : &[usize;N], value : f64) -> Expr<N> {
     let nelm : usize = shape.iter().product();
     Expr{
@@ -712,10 +758,13 @@ pub fn const_expr<const N : usize>(shape : &[usize;N], value : f64) -> Expr<N> {
     }
 }
 
+/// A constant expression of the given shape where each element is fixed to 1.
 pub fn ones<const N : usize>(shape : &[usize;N]) -> Expr<N> {
     const_expr(shape,1.0)
 }
 
+/// A constant square expression if the given size, with `value` on the diagonal and zeros
+/// everywhere else.
 pub fn const_diag(n : usize,value:f64) -> Expr<2> {
     Expr{
         shape : [n,n],
@@ -725,6 +774,9 @@ pub fn const_diag(n : usize,value:f64) -> Expr<2> {
         sparsity : Some((0..n*n).step_by(n+1).collect())
     }
 }
+
+/// A constant square expression if the given size, with ones on the diagonal and zeros everywhere
+/// else.
 pub fn eye(n : usize) -> Expr<2> {
     const_diag(n,1.0)
 }
