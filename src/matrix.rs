@@ -1,24 +1,43 @@
+//! This module provides basic array functionality.
+//!
 use itertools::izip;
 use crate::expr::{Expr, IntoExpr};
 
 
+/// This trait represents an 2-dimensional array, with a few functions specialized for matrixes on
+/// top of functionality provided by n-dimensional arrays
 pub trait Matrix  {
+    /// Matrix width, number of columns
     fn width(&self) -> usize;
+    /// Matrix height, number of rows
     fn height(&self) -> usize;
+    /// Transpose matrix and return a new object of the same type as self.
     fn transpose(&self) -> Self;
-
+    /// Get the shape of the matrix
     fn shape(&self) -> [usize; 2];
+    /// Reshape the array - the result must have the same total number of elements as this.
     fn reshape(self,shape : [usize; 2]) -> Result<Self,()> where Self:Sized;
+    /// Return number of non-zeros
     fn nnz(&self) -> usize;
+    /// Return a reference to the non-zero coefficients.
     fn data(&self) -> &[f64];
+    /// Return the sparsity pattern if defined. The sparsity pattern is a slice of linear indexes
+    /// (rather than n-dimensional indexes) of the elements. 
     fn sparsity(&self) -> Option<&[usize]>; 
+    /// Multiply all non-zeros by a scalar
     fn inplace_mul_scalar(&mut self, s : f64);
+    /// Return the elements of the object, thereby destroying it.
     fn dissolve(self) -> ([usize;2],Option<Vec<usize>>,Vec<f64>);
+    /// Turns a sparse matrix into a dense matrix by adding the missing zeros.
     fn to_dense(&self) -> Self;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
+/// General n-dimensional dense or sparse array structure.
+///
+/// One important limitation is that the product of the dimensions of the array cannot exceed
+/// `usize::MAX`.
 #[derive(Clone)]
 pub struct NDArray<const N : usize> {
     shape : [usize; N],
@@ -73,7 +92,14 @@ impl Matrix for NDArray<2> {
 }
 
 impl<const N : usize> NDArray<N> {
-    pub fn new(shape : [usize;N], sp : Option<Vec<usize>>, data : Vec<f64>) -> Result<NDArray<N>,String>  { 
+    /// Create a new [NDArray] from data, checking that the data is valid.
+    ///
+    /// # Arguments
+    /// - `shape` Shape of the array.
+    /// - `sp` Sparsity pattern, if the array is sparse, otherwise `None`. If given, sparsity is
+    ///   provided as a vector of linear indexes (rather than as n-dimensional indexes).
+    /// - `data` Non-zero coefficients
+    pub fn new(shape : [usize;N], sp : Option<Vec<usize>>, data : Vec<f64>) -> Result<NDArray<N>,String> { 
         // validate data
         if let Some(sp) = sp {
             if sp.len() > 1 && sp.iter().zip(sp[1..].iter()).any(|(&i0,&i1)| i1 <= i0) {
@@ -100,13 +126,21 @@ impl<const N : usize> NDArray<N> {
         }
     }
 
+    /// Create a new sparse [NDArray] from shape and an iterator.
+    ///
+    /// #Arguments
+    /// - `shape` an N-dimensional shape.
+    /// - `it` An iterator where each item `([usize;N],f64)`. The iterator must generate at most
+    ///   `shape.iter().product()` elements. The generated items must not contain duplicates, but
+    ///   they need not be ordered.
     pub fn from_iter<I>(shape : [usize; N], it : I) -> Result<NDArray<N>,String> where I : Iterator<Item = ([usize;N],f64)>{
         let mut strides = [0usize;N];
         _ = strides.iter_mut().zip(shape.iter()).rev().fold(1usize, |c,(s,d)| { *s = c; c*d });
 
         let mut sp = Vec::new();
         let mut data = Vec::new();
-        for (i,v) in it {
+        let totalsize = shape.iter().product();
+        for (i,v) in it.take(totalsize) {
             if i.iter().zip(shape.iter()).any(|(j,d)| j >= d) {
                 return Err("Index out of bounds".to_string());
             }
@@ -117,6 +151,24 @@ impl<const N : usize> NDArray<N> {
         NDArray::from_flat_tuples_internal(shape, sp.as_slice(), data.as_slice())
     }
 
+    /// Create a new dense [NDArray] from an iterator. 
+    ///
+    /// # Arguments
+    /// - `shape` the shape of the array
+    /// - `it` iterator generating the coefficients. It must provide at least values enough to fill
+    ///   the shape. The remaining elements are not used, so it need not have finite length.
+    pub fn dense_from_iter<I>(shape : [usize; N], it : I) -> Result<NDArray<N>,String> where I : Iterator<Item = f64> {
+        let totalsize = shape.iter().product();
+        let data : Vec<f64> = it.take(totalsize).collect();
+        if data.len() < totalsize {
+            Err("Insufficient data".to_string())
+        }
+        else {
+            Self::new(shape,None,data)
+        }
+    }
+
+    /// Create a new sparse array from indexes and coefficient data.
     pub fn from_tuples(shape : [usize; N], index : &[ [usize; N] ], data : &[f64]) -> Result<NDArray<N>,String>{
         if data.len() != index.len() {
             Err("Mismatching data and index lengths".to_string())
@@ -174,7 +226,9 @@ impl<const N : usize> NDArray<N> {
         }
     }
 
+    /// Return the shape
     pub fn shape(&self) -> [usize; N] { self.shape }
+    /// Reshape the array. The total number of elements in the result must be the same as in this.
     pub fn reshape<const M : usize>(self,shape : [usize; M]) -> Result<NDArray<M>,()> {
         if shape.iter().product::<usize>() != self.shape.iter().product() {
             Err(())
@@ -183,11 +237,17 @@ impl<const N : usize> NDArray<N> {
             Ok(NDArray{ shape,sp : self.sp, data : self.data })
         }
     }
+    /// Return number of non-zeros.
     pub fn nnz(&self) -> usize { self.data.len() }
+    /// Return the array coefficients as a slice.
     pub fn data(&self) -> &[f64] { self.data.as_slice() }
+    /// Return the sparsity pattern, of present.
     pub fn sparsity(&self) -> Option<&[usize]> { if let Some(ref sp) = self.sp { Some(sp.as_slice()) } else { None } }
+    /// Multiply all coefficients by a scalar, inplace.
     pub fn inplace_mul_scalar(&mut self, s : f64) { self.data.iter_mut().for_each(|v| *v *= s); }
+    /// Return the array items. This consumes the array.
     pub fn dissolve(self) -> ([usize;N],Option<Vec<usize>>,Vec<f64>) { (self.shape,self.sp,self.data) }
+    /// Turns a sparse array into a dense array.
     pub fn to_dense(&self) -> NDArray<N> {
         if let Some(ref sp) = self.sp {
             let mut data = vec![0.0; self.shape.iter().product()];
@@ -205,6 +265,7 @@ impl<const N : usize> NDArray<N> {
             self.clone()
         }
     }
+    /// Return an expression that represents the array.
     pub fn to_expr(&self) -> super::expr::Expr<N> {
         if let Some(ref sp) = self.sp {
             Expr::new(
@@ -275,146 +336,6 @@ impl<const N : usize> IntoExpr<N> for &NDArray<N> {
             self.data().to_vec())
     }
 }
-///////////////////////////////////////////////////////////////////////////////
-// SparseMatrix
-///////////////////////////////////////////////////////////////////////////////
-
-/// Represents a sparse matrix.
-
-
-//impl SparseMatrix {
-//    pub fn from_iterator<T>(height : usize, width : usize, it : T) -> SparseMatrix
-//        where T : IntoIterator<Item=(usize,usize,f64)>
-//    {
-//        let mut m = SparseMatrix::zeros(height,width);
-//        m.extend(it);
-//        m
-//    }
-//    pub fn zeros(height : usize, width : usize) -> SparseMatrix { SparseMatrix{ shape : [height,width], sp : Vec::new(), data : Vec::new() } }
-//    pub fn diagonal(data : Vec<f64>) -> SparseMatrix {
-//        let n = data.len();
-//        SparseMatrix{ shape : [n,n], sp : (0..n*n).step_by(n+1).collect(), data}
-//    }
-//    pub fn from_ijv(height : usize, width : usize, subi : &[usize], subj : &[usize], coefficients : Vec<f64>) -> SparseMatrix {
-//        if subi.len() != subj.len() || subi.len() != coefficients.len() {
-//            panic!("Mismatching vector length");
-//        } 
-//        if let Some(&v) = subi.iter().max() { if v >= height { panic!("Invalid subi entry"); } }
-//        if let Some(&v) = subj.iter().max() { if v >= width { panic!("Invalid subj entry"); } }
-//
-//        let sp = subi.iter().zip(subj.iter()).map(|(&i,&j)| i*width+j).collect();
-//        SparseMatrix::from_sparsity_v(height, width, sp, coefficients)
-//    }
-//    pub fn from_sparsity_v(height : usize, width : usize, sp : Vec<usize>, coefficients : Vec<f64>) -> SparseMatrix {
-//        if sp.len() != coefficients.len() { panic!("Mismatching data dimensions"); }
-//
-//        if let Some(&v) = sp.iter().max() { if v >= width*height { panic!("Invalid sparsity entry"); } };
-//        if sp.iter().zip(sp[1..].iter()).all(|(&i0,&i1)| i0 < i1) {
-//            SparseMatrix{
-//                shape : [height,width],
-//                data : coefficients,
-//                sp
-//            }
-//        } else {
-//            let nnz = sp.len();
-//            let mut sparsity   = vec![0usize; nnz];
-//            let mut data = vec![0.0; nnz];
-//            let mut perm = vec![0usize;nnz];
-//            let mut ptr  = vec![0usize; usize::max(height,width)+1];
-//
-//            sp.iter().for_each(|i| unsafe { *ptr.get_unchecked_mut(i%width+1) += 1; } );
-//            _ = ptr.iter_mut().fold(0,|c,v| { *v += c; *v });
-//            sp.iter().enumerate().for_each(|(i,&si)| unsafe{ *perm.get_unchecked_mut(*ptr.get_unchecked(si%width)) = i; *ptr.get_unchecked_mut(si%width) += 1; });
-//
-//            ptr.iter_mut().for_each(|p| *p = 0);
-//            sp.iter().for_each(|i| unsafe { *ptr.get_unchecked_mut(i%width+1) += 1; } );
-//            _ = ptr.iter_mut().fold(0,|c,v| { *v += c; *v });
-//            for &p in perm.iter() {
-//                let i = unsafe{ *sp.get_unchecked(p) };
-//                let ti = unsafe{ *ptr.get_unchecked(i/width) };
-//                unsafe { 
-//                    *sparsity.get_unchecked_mut(ti) = (i/width) * width + i%width;
-//                    *data.get_unchecked_mut(ti) = *coefficients.get_unchecked(p);
-//                    *ptr.get_unchecked_mut(i/width) += 1;
-//                }
-//            }
-//            SparseMatrix{ shape : [height,width], sp:sparsity,data}
-//        }
-//    }
-//    pub fn new(height : usize, width : usize, sparsity : &[[usize;2]], coefficients : Vec<f64>) -> SparseMatrix {
-//        if sparsity.len() != coefficients.len() { panic!("Mismatching data dimensions"); }
-//        if sparsity.iter().any(|&i| i[0] >= height || i[1] >= width) {
-//            panic!("Sparsity pattern out of bounds");
-//        }
-//        let nnz = coefficients.len();
-//
-//        if sparsity.iter().zip(sparsity[1..].iter()).all(|(i0,i1)| i0[0] < i1[0] || (i0[0] == i1[0] && i0[1] < i1[1])) {
-//            //sorted
-//            SparseMatrix{ shape : [height,width],
-//                          sp    : sparsity.iter().map(|&i| i[0]*width+i[1]).collect(),
-//                          data  : coefficients.to_vec() }
-//        }
-//        else {
-//            let mut sp   = vec![0usize; nnz];
-//            let mut data = vec![0.0; nnz];
-//            let mut perm = vec![0usize;nnz];
-//            let mut ptr  = vec![0usize; usize::max(height,width)+1];
-//
-//            sparsity.iter().for_each(|i| unsafe { *ptr.get_unchecked_mut(i[1]+1) += 1; } );
-//            _ = ptr.iter_mut().fold(0,|c,v| { *v += c; *v });
-//            sparsity.iter().enumerate().for_each(|(i,&si)| unsafe{ *perm.get_unchecked_mut(*ptr.get_unchecked(si[1])) = i; *ptr.get_unchecked_mut(si[1]) += 1; });
-//
-//            ptr.iter_mut().for_each(|p| *p = 0);
-//            sparsity.iter().for_each(|i| unsafe { *ptr.get_unchecked_mut(i[0]+1) += 1; } );
-//            _ = ptr.iter_mut().fold(0,|c,v| { *v += c; *v });
-//            for &p in perm.iter() {
-//                let i = unsafe{ *sparsity.get_unchecked(p) };
-//                let ti = unsafe{ *ptr.get_unchecked(i[0]) };
-//                unsafe { 
-//                    *sp.get_unchecked_mut(ti) = i[0] * width + i[1];
-//                    *data.get_unchecked_mut(ti) = *coefficients.get_unchecked(p);
-//                    *ptr.get_unchecked_mut(i[0]) += 1;
-//                }
-//            }
-//
-//            SparseMatrix{ shape : [height,width], sp,data}
-//        }
-//    }
-//    pub fn shape(&self) -> [usize; 2] { self.shape }
-//    pub fn data(&self) -> &[f64] { self.data.as_slice() }
-//    pub fn sparsity(&self) -> &[usize] { self.sp.as_slice() }
-//
-//    pub fn transpose(&self) -> SparseMatrix {
-//        let n = self.sp.len();
-//        let (height,width) = (self.shape[0],self.shape[1]);
-//        let mut ptr = vec![0; width+1];
-//        self.sp.iter().for_each(|&i| unsafe{ *ptr.get_unchecked_mut(1 + i % width) += 1 });
-//        _ = ptr.iter_mut().fold(0,|c,p| {*p += c; *p });
-//
-//        let mut sp = vec![0usize; n];
-//        let mut data = vec![0.0; n];
-//
-//        for (&k,&d) in self.sp.iter().zip(self.data.iter()) {
-//            let (i,j) = (k / width, k % width); 
-//            let p = unsafe{ *ptr.get_unchecked(j) };
-//            unsafe {
-//                *sp.get_unchecked_mut(p) = j*height + i;
-//                *data.get_unchecked_mut(p) = d;
-//                *ptr.get_unchecked_mut(j) += 1;
-//            }
-//        }
-//
-//        SparseMatrix{
-//            shape : [width,height],
-//            sp,
-//            data
-//        }
-//    }
-//
-//    pub fn get_flat_data(self) -> (Vec<usize>,Vec<f64>) {
-//        (self.sp,self.data)
-//    }
-//}
 
 
 impl<const N : usize> std::ops::Mul<f64> for NDArray<N> {
@@ -440,47 +361,31 @@ impl<const N : usize> std::ops::MulAssign<f64> for NDArray<N> {
 }
 
 
-//impl std::ops::Mul<DenseMatrix> for DenseMatrix {
-//    type Output = DenseMatrix;
-//
-//    fn mul(self,rhs : DenseMatrix) -> DenseMatrix {
-//        let lhsshape = self.shape();
-//        let rhsshape = rhs.shape();
-//        if lhsshape[1] != rhsshape[0] { panic!("Mismatching operand dimensions"); }
-//        // naive implementation:
-//        
-//        let shape = [lhsshape[0],rhsshape[1]];
-//
-//        let data = iproduct!(0..lhsshape[0],0..rhsshape[1]).map(|(i,j)| self.data[i*lhsshape[1]..].iter().zip(rhs.data[j..].iter().step_by(rhsshape[1])).map(|(&v0,&v1)| v0*v1).sum() ).collect();
-//
-//        DenseMatrix{
-//            shape,
-//            data
-//        }
-//    }
-//}
-//
-
-
-
 // GLOBAL FUNCTIONS
 
+/// Create a dense [NDArray] from data.
 pub fn dense<const N : usize,D>(shape : [usize;N], data : D) -> NDArray<N> where D : Into<Vec<f64>> {
     NDArray::new(shape,None,data.into()).unwrap()
 }
+
+/// Create a sparse [NDArray] from data.
 pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> where D : Into<Vec<f64>>, I : Into<Vec<usize>> {
     NDArray::new(shape,Some(sp.into()),data.into()).unwrap()
 }
 
+/// Create a sparse 2-dimensional diagonal matrix.
 pub fn diag<V>(data : V) -> NDArray<2> where V:Into<Vec<f64>> {
     let data = data.into();
     let dim = data.len();
     NDArray::new([dim,dim],Some((0..dim*dim).step_by(dim+1).collect()),data).unwrap()
 }
+
+/// Create a sparse 2-dimensional array with ones on the diagonal.
 pub fn speye(dim : usize) -> NDArray<2> {
     NDArray::new([dim,dim],Some((0..dim*dim).step_by(dim+1).collect()),vec![1.0; dim]).unwrap()
 }
 
+/// Create a dense [NDArray] of ones.
 pub fn ones<const N : usize>(shape : [usize; N]) -> NDArray<N> {
     NDArray::new(shape,None,vec![1.0; shape.iter().product()]).unwrap()
 }

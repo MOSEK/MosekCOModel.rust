@@ -46,6 +46,18 @@ impl<const N : usize> Variable<N> {
         }
     }
 
+    /// Create a variable as an index or a slice of this variable. 
+    ///
+    /// Notice that this can be confused with `ExprTrait::index` since `Variable<N>` implements
+    /// `ExprTrait<N>`. To ensure that `Variable::index` is called, it may be necessary to call it
+    /// as `(&x).index(...)` or `ExprTrait::index` will take preceedence.
+    ///
+    /// # Arguments
+    /// - `idx` this is the index(es) or the range(s). By default following are accepted
+    ///   - `usize` for `Variable<1>`: produces a scalar variable
+    ///   - `[usize; N]` `variable<N>`: produces a scalar variable
+    ///   - `Range<usize>` for `Variable<1>`: produces a `Variable<1>`
+    ///   - `[Range<usize>;N]` for `Variable<N>`: produces a `Variable<N>`
     pub fn index<I>(&self, idx : I) -> I::Output where I : ModelItemIndex<Self> {
         idx.index(self)
     }

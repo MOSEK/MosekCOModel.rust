@@ -68,13 +68,30 @@
 //!
 //! Constraint, domains, variables and expressions have shapes, and the latter three can be either
 //! dense or sparse meanning that some entries are fixed to zero. A shaped variable, expression and
-//! constraint is basically a multi-dimensional array of scalar variables, expressions and
-//! constraints respectively.
+//! constraint is basically a multi-dimensional array of scalar variables, affine expressions and
+//! scalar constraints respectively.
+//!
+//! When reshaping an object it is important to understand the order of the scalar elements in the
+//! multi-dimensional array. In `MosekModel` everything is in row-major order, i.e. for a
+//! two-dimensional array, where the first dimension is the height and the second is the width
+//! ```math
+//! ⎡ a b ⎤
+//! ⎣ c d ⎦
+//! ```
+//! the elements are ordered as ` [a,b,c,d]`. More generally, elements are ordered by inner
+//! dimension first.
+//!
+//! A scalar is an n-dimensional object with `n=0`.
+//!
+//! In `MosekModel` the dimension of variables, constraints, expressions and domains are part of
+//! the object type, so only correct combinations of dimensionality are allowed. The actual shapes
+//! still have to be checked at runtime.
 //!
 //! ## Domains
 //! 
-//! A domain is a value that indicates things like cone type, cone parameters, right-hand sides,
-//! shape and sparsity pattern. This is used when creating constraint or variables to define their
+//! A domain is an object that indicates things like type (cone type or domain type), cone
+//! parameters, right-hand sides, shape and sparsity pattern. This is used when creating constraint
+//! or variables to define their
 //! properties.
 //!
 //! ## Variables
@@ -95,7 +112,8 @@
 //!
 //! ## Expression
 //!
-//! An expression is an n-dimensional array of scalar affine expressions. 
+//! An expression is an n-dimensional array of scalar affine expressions. Anything that implements
+//! the trait [ExprTrait] can be used as an `N`-dimensional expression.
 //!
 //! # Note
 //! Please note that the package is still somewhat exprimental.
@@ -103,8 +121,8 @@
 //! # Example
 //!
 //! ```
+//! // Importing everything from mosekmodel provides all basic functionality.
 //! use mosekmodel::*;
-//! use mosekmodel::expr::*;
 //!
 //! let a0 = vec![ 3.0, 1.0, 2.0, 0.0 ];
 //! let a1 = vec![ 2.0, 1.0, 3.0, 1.0 ];
