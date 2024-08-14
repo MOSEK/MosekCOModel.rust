@@ -7,6 +7,8 @@ stages:
   - doc
 
 prepare:
+  tags:
+    - rust-1.80
   cache:
     paths:
       - mosek.lic
@@ -18,6 +20,8 @@ prepare:
     - tar xf mosektoolslinuxaarch64.tar.bz2
 
 build:
+  tags:
+    - rust-1.80
   cache:
     paths:
       - target/release
@@ -30,6 +34,8 @@ build:
     - (cd examples/demos; cargo build && cargo build --workspace)
 
 test:
+  tags:
+    - rust-1.80
   variables:
     MOSEK_INST_BASE: .
     MOSEKLM_LICENSE_FILE: mosek.lic
@@ -40,6 +46,8 @@ test:
     - (cd examples/demos; cargo --release test && cargo test --release --workspace)
 
 doc:
+  tags:
+    - rust-1.80
   script:
     - cargo doc --release
     - tar cjvf doc.tar.bz2 -C target doc
