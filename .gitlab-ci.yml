@@ -30,9 +30,9 @@ build:
 
 test:
   variables:
-    MOSEK_INST_BASE=.
-    MOSEKLM_LICENSE_FILE=mosek.lic
-    LD_LIBRARY_PATH=mosek/10.2/tools/platform/linux64x86/bin
+    MOSEK_INST_BASE: .
+    MOSEKLM_LICENSE_FILE: mosek.lic
+    LD_LIBRARY_PATH: mosek/10.2/tools/platform/linux64x86/bin
   script:
     - cargo test --release
     - cargo test --release --examples 
