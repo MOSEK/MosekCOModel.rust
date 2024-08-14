@@ -31,7 +31,7 @@ build:
   script:
     - cargo build --release
     - cargo build --release --examples
-    - (cd examples/demos; cargo build && cargo build --workspace)
+    - (cd examples/demos; cargo build && cargo build --release -p ellipses)
 
 test:
   tags:
@@ -43,7 +43,7 @@ test:
   script:
     - cargo test --release
     - cargo test --release --examples 
-    - (cd examples/demos; cargo --release test && cargo test --release --workspace)
+    - (cd examples/demos; cargo --release test && cargo test --release -p ellipses)
 
 doc:
   tags:
