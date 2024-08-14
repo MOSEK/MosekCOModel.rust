@@ -21,8 +21,6 @@
 extern crate mosekmodel;
 
 use mosekmodel::*;
-use mosekmodel::expr::*;
-use mosekmodel::matrix::*;
 
 pub fn traffic_network_model(
     arcs   : &[Arc], 

@@ -1,8 +1,6 @@
 extern crate mosekmodel;
 
 use mosekmodel::*;
-use mosekmodel::expr::*;
-use mosekmodel::matrix::*;
 
 
 /// Computes several portfolios on the optimal portfolios by

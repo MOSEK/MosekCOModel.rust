@@ -21,8 +21,7 @@
 //                   X >> 0,  x0 >= (x1^2 + x2^2) ^ (1/2)
 //
 extern crate mosekmodel;
-use mosekmodel::{SolutionType,Model,Sense,equal_to,ModelItemIndex, in_psd_cone, in_quadratic_cone, matrix};
-use mosekmodel::expr::*;
+use mosekmodel::*;
 
 fn main() {
     let mut m = Model::new(Some("sdo1"));

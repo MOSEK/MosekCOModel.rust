@@ -178,6 +178,7 @@ pub use model::{Sense,
 pub use matrix::{Matrix,NDArray,};
 pub use expr::{ExprTrait,
                ExprRightMultipliable,
+               ExprLeftMultipliable,
                ModelExprIndex,
                IntoExpr,
                Expr,

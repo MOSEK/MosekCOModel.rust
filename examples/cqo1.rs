@@ -22,7 +22,7 @@
 //TAG:begin-cqo1
 extern crate mosekmodel;
 use mosekmodel::*;
-use mosekmodel::expr::*;
+
 
 fn main() {
     //TAG:begin-create-model

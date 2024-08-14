@@ -16,8 +16,7 @@
 //
 extern crate mosekmodel;
 
-use mosekmodel::{SolutionType,Model,Sense,greater_than,less_than,equal_to,ModelItemIndex};
-use mosekmodel::expr::*;
+use mosekmodel::*;
 
 fn main() {
     let a0 = vec![ 3.0, 1.0, 2.0, 0.0 ];

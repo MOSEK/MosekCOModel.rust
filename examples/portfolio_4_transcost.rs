@@ -11,8 +11,6 @@
 extern crate mosekmodel;
 
 use mosekmodel::*;
-use mosekmodel::expr::*;
-use mosekmodel::matrix::{NDArray,Matrix};
 
 /// Extends the basic Markowitz model with a market cost term.
 ///

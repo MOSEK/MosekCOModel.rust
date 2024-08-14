@@ -10,8 +10,6 @@ extern crate mosekmodel;
 use mosekmodel::*;
 use mosekmodel::matrix::{speye,dense};
 
-
-
 /// Purpose: Models the hypograph of the n-th power of the
 /// determinant of a positive definite matrix. See [1,2] for more details.
 ///
@@ -103,6 +101,7 @@ fn lownerjohn_outer<const N : usize>(x : &[[f64;N]]) -> Option<(SolutionStatus,S
         }
 }
 
+#[allow(non_snake_case)]
 fn main() {
     let points = &[[0., 0.], [1., 3.], [5.5, 4.5], [7., 4.], [7., 1.], [3., -2.]];
 

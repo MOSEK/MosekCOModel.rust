@@ -357,57 +357,57 @@ impl<const N : usize> Variable<N> {
         }
     }
 
-    // // Other functions to be implemented:
-    // ///// Take the diagonal element of a square, cube,... variable
-    // //pub fn diag(&self) -> Variable
-    // //pub fn into_diag(&self) -> Variable
-    fn slice(&self, ranges : &[std::ops::Range<usize>; N]) -> Variable<N> {
-        if ranges.iter().zip(self.shape.iter()).find(|(r,&d)| r.start >= r.end || r.end > d).is_some() {
-            panic!("Slice out of bounds");
-        }
-
-        let mut rshape = [0usize; N];
-        let mut rstrides= [8usize; N];
-        rshape.iter_mut().zip(ranges).for_each(|(res,r)| *res = r.end-r.start);
-
-        rshape.iter().rev().scan(1,|v,d| { let w=*v; *v = *v*d; Some(w) } ).zip(rstrides.iter_mut().rev()).for_each(|(s,t)| *t = s);
-
-        let mut strides = [0usize; N];
-        strides.iter_mut().zip(self.shape.iter()).rev().fold(1,|v,(st,&d)| { *st = v; d*v });
-
-        if let Some(ref sp) = self.sparsity {
-            let mut rsp   = Vec::with_capacity(sp.len());
-            let mut ridxs = Vec::with_capacity(self.idxs.len());
-
-            sp.iter().zip(self.idxs.iter())
-                .for_each(|(&s,&ix)|
-                          if izip!(rshape.iter(),strides.iter(),ranges.iter()).all(|(&sh,&st,ra)| { let i = (s / st) % sh; i <= ra.start && i < ra.end }) {
-                              rsp.push(izip!(rshape.iter(),
-                                             strides.iter(),
-                                             ranges.iter(),
-                                             rstrides.iter()).map(|(&sh,&st,ra,&rst)| ((s / st) % sh - ra.start) * rst).sum());
-                              ridxs.push(ix);
-                          });
-            Variable{idxs     : ridxs,
-                     sparsity : Some(rsp),
-                     shape    : rshape }
-        }
-        else {            
-
-            let ridxs : Vec<usize> = 
-                (0..rshape.iter().product())
-                .map(|i| izip!(rshape.iter(),
-                               rstrides.iter(),
-                               ranges.iter(),
-                               strides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
-                .map(|i| self.idxs[i] /*TODO: unsafe get*/)
-                .collect();
-
-            Variable{idxs : ridxs,
-                     sparsity : None,
-                     shape : rshape}
-        }
-    }
+//--    // // Other functions to be implemented:
+//--    // ///// Take the diagonal element of a square, cube,... variable
+//--    // //pub fn diag(&self) -> Variable
+//--    // //pub fn into_diag(&self) -> Variable
+//--    fn slice(&self, ranges : &[std::ops::Range<usize>; N]) -> Variable<N> {
+//--        if ranges.iter().zip(self.shape.iter()).find(|(r,&d)| r.start >= r.end || r.end > d).is_some() {
+//--            panic!("Slice out of bounds");
+//--        }
+//--
+//--        let mut rshape = [0usize; N];
+//--        let mut rstrides= [8usize; N];
+//--        rshape.iter_mut().zip(ranges).for_each(|(res,r)| *res = r.end-r.start);
+//--
+//--        rshape.iter().rev().scan(1,|v,d| { let w=*v; *v = *v*d; Some(w) } ).zip(rstrides.iter_mut().rev()).for_each(|(s,t)| *t = s);
+//--
+//--        let mut strides = [0usize; N];
+//--        strides.iter_mut().zip(self.shape.iter()).rev().fold(1,|v,(st,&d)| { *st = v; d*v });
+//--
+//--        if let Some(ref sp) = self.sparsity {
+//--            let mut rsp   = Vec::with_capacity(sp.len());
+//--            let mut ridxs = Vec::with_capacity(self.idxs.len());
+//--
+//--            sp.iter().zip(self.idxs.iter())
+//--                .for_each(|(&s,&ix)|
+//--                          if izip!(rshape.iter(),strides.iter(),ranges.iter()).all(|(&sh,&st,ra)| { let i = (s / st) % sh; i <= ra.start && i < ra.end }) {
+//--                              rsp.push(izip!(rshape.iter(),
+//--                                             strides.iter(),
+//--                                             ranges.iter(),
+//--                                             rstrides.iter()).map(|(&sh,&st,ra,&rst)| ((s / st) % sh - ra.start) * rst).sum());
+//--                              ridxs.push(ix);
+//--                          });
+//--            Variable{idxs     : ridxs,
+//--                     sparsity : Some(rsp),
+//--                     shape    : rshape }
+//--        }
+//--        else {            
+//--
+//--            let ridxs : Vec<usize> = 
+//--                (0..rshape.iter().product())
+//--                .map(|i| izip!(rshape.iter(),
+//--                               rstrides.iter(),
+//--                               ranges.iter(),
+//--                               strides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
+//--                .map(|i| self.idxs[i] /*TODO: unsafe get*/)
+//--                .collect();
+//--
+//--            Variable{idxs : ridxs,
+//--                     sparsity : None,
+//--                     shape : rshape}
+//--        }
+//--    }
     // pub fn index(&self, idx : &[usize]) -> Variable {
     //     if idx.len() != self.shape.len() { panic!("The range does not match the shape") }
     //     if idx.iter().zip(self.shape.iter()).any(|(&i,&d)| i >= d ) { panic!("The range does not match the shape") }

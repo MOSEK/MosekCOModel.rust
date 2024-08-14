@@ -571,138 +571,20 @@ impl<T> NBoundGtOne<20> for T {}
 
 
 
+#[allow(unused)]
 pub fn shape_to_strides<const N : usize>(shape : &[usize;N]) -> [usize;N] {
     let mut res = [0usize; N];
     _ = res.iter_mut().zip(shape.iter()).rev().fold(1,|c,(r,&d)| { *r = c; c * d });
     res
 }
+#[allow(unused)]
 pub fn key_from_strides_index<const N : usize>(strides : [usize;N], index : usize) -> [usize;N] {
     let mut res = [0usize; N];
     _ = res.iter_mut().zip(strides.iter()).fold(index,|i,(r,&s)| { *r = i / s; i % s });
     res
 }
 
-//pub struct MergeIter<I0,I1,J> where 
-//    I0 : Iterator<Item = J>,
-//    I1 : Iterator<Item = J>,
-//    J : PartialOrd
-//{
-//    i0 : Peekable<I0>,
-//    i1 : Peekable<I1>
-//}
-//
-//impl<I0,I1,J> MergeIter<I0,I1,J> where 
-//    I0 : Iterator<Item = J>,
-//    I1 : Iterator<Item = J>,
-//    J : PartialOrd
-//{
-//    pub fn new(i0 : I0, i1 : I1) -> MergeIter<I0,I1,J> { MergeIter{ i0: i0.peekable(), i1 : i1.peekable() } } 
-//}
-//
-//
-//impl<I0,I1,J> Iterator for MergeIter<I0,I1,J> where 
-//    I0 : Iterator<Item = J>,
-//    I1 : Iterator<Item = J>,
-//    J : PartialOrd
-//{
-//    type Item = J;
-//    fn next(& mut self) -> Option<J> {
-//        match (self.i0.peek(),self.i1.peek()) {
-//            (Some(v0),Some(v1)) => if v0 <= v1 { self.i0.next() } else { self.i1.next() },
-//            (_,None) => self.i0.next(),
-//            (None,_) => self.i1.next()
-//        }
-//    }
-//}
 
-
-////////////////////////////////////////////////////////////
-
-// Convert between linear index and coordinate index
-// /// Create a function that converts from linear index to coordinate index.
-// ///
-// /// # Examples
-// /// 
-// /// ```
-// /// use mosekmodel::utils::*;
-// /// let shape = [2,4,3];
-// /// let lindexes = &[1,5,10,0,22,18,6];
-// /// let cindexes : Vec<[usize; 3]> = lindexes.iter().map(to_coord(&shape)).collect();
-// /// ```
-// pub fn to_coord<const N : usize>(shape:&[usize; N]) -> impl Fn(usize) -> [usize; N] { 
-//     let mut strides = [0usize; N];
-//     let _ = strides.iter_mut().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v * d});
-//     
-//     | i | -> [usize;N] {
-//         let mut r = [0; N];
-//         let _ = r.iter_mut().zip(strides.iter()).fold(i,|i,(r,&s)| unsafe{ *r = i/s; i % s } );
-//         r;
-//     }
-// }
-// 
-// 
-// /// Create a function that converts from coordinate index to linear index.
-// ///
-// /// # Examples
-// /// 
-// /// ```
-// /// use mosekmodel::utils::*;
-// /// let shape = [2,4,3];
-// /// let cindexes = &[ [0,0,0],
-// ///                   [1,3,2],
-// ///                   [1,2,1],
-// ///                   [0,2,0] ];
-// /// let lindexes : Vec<usize> = cindexes.iter().map(from_coord(shape)).collect();
-// /// ```
-// pub fn from_coord<const N : usize,F>(shape:&[usize; N]) -> F where F : Fn(&[usize; N]) -> usize {
-//     let mut strides = [0usize; N];
-//     let _ = strides.iter_mut().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v * d});
-// 
-//     | i | strides.iter().zip(shape.iter()).fold(0,|v,(&st,&sh)| v + st*sh)
-// }
-// 
-// 
-// /// Create a function that perform a permutation on a fixed size array.
-// /// 
-// /// # Examples
-// ///
-// /// ```
-// /// use mosekmodel::utils::perm_coord;
-// /// let perm : [usize;4] = [3,1,0,2];
-// /// let index : &[[usize; 4]] = &[ [ 0,0,0,0 ],
-// ///                                [ 0,0,0,1 ],
-// ///                                [ 0,0,2,0 ],
-// ///                                [ 0,3,0,0 ],
-// ///                                [ 4,0,0,0 ] ];
-// /// let pindex : Vec<[usize; 4]> = index.iter().map(perm_coord(&perm)).collect();
-// /// ```
-// pub fn perm_coord<const N : usize,T,F>(perm : &[usize; N]) -> Result<F,String> 
-//     where 
-//         F : Fn(&[T; N]) -> [T; N],
-//         T : Default
-// {
-//     // check that it is a permutation
-//     let mut check = [false; N];
-//     for (i,&p) in perm.iter().enumerate() {
-//         if p > N { return Err("Invalid permuration".to_string()); }
-//         if unsafe { *check.get_unchecked(p) } {
-//             return Err("Invalid permuration".to_string());
-//         }
-//         else {
-//             unsafe{ *check.get_unchecked_mut(p) = true };
-//         }
-//     }
-// 
-//     Ok(| i | { 
-//         let mut r = [T::default(); N]; 
-//         for (r,&p) in izip!(r.iter_mut(),i.iter(),perm.iter()) {
-//             *r = unsafe{ i.get_unchecked(p) };
-//         }
-// 
-//         r
-//     })
-// }
-// 
 
 #[cfg(test)]
 mod tests {

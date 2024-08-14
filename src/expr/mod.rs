@@ -578,7 +578,7 @@ impl<const N : usize> Expr<N> {
 
 
 pub struct ExprScalarList<E> where E : ExprTrait<0> {
-    exprs : Vec<E>,
+    exprs : Vec<E>
 }
 
 impl<E> ExprTrait<1> for ExprScalarList<E> where E : ExprTrait<0> {
@@ -662,7 +662,7 @@ pub fn from_dense_iter<const N : usize, I,E>(shape : [usize; N], it : I) -> Expr
         E : ExprTrait<0>
 {
     let nelm = shape.iter().product();
-    let mut exprs : Vec<E> = it.take(nelm).collect();
+    let exprs : Vec<E> = it.take(nelm).collect();
     if exprs.len() != nelm {
         panic!("Insufficient expressions for shape");
     }
