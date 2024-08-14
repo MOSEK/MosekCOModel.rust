@@ -15,7 +15,6 @@ prepare:
       - mosek/10.2/tools/platform/linux64x86
       
   script:
-    - curl -o mosek.lic http://files.mosek.intranet/docs/lic/mosek11-1.lic
     - curl -O https://download.mosek.com/stable/10.2.3/mosektoolslinuxaarch64.tar.bz2 
     - tar xf mosektoolslinuxaarch64.tar.bz2
 
@@ -41,6 +40,7 @@ test:
     MOSEKLM_LICENSE_FILE: mosek.lic
     LD_LIBRARY_PATH: mosek/10.2/tools/platform/linux64x86/bin
   script:
+    - curl -o mosek.lic http://files.mosek.intranet/docs/lic/mosek11-1.lic
     - MOSEKLM_LICENSE_FILE=$(pwd)/mosek.lic cargo test --release
     - MOSEKLM_LICENSE_FILE=$(pwd)/mosek.lic cargo test --release --examples 
     - MOSEKLM_LICENSE_FILE=$(pwd)/mosek.lic (cd examples/demos; cargo --release test && cargo test --release -p ellipsoids)
