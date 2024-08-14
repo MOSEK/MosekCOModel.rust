@@ -12,7 +12,7 @@
 //! such that A x + b ∊ Kc
 //!           X ∊ Kx
 //! ```
-//! where `Kc=Kc_0 × ... × Kc_m` and `Kx=Kx_0 × ... × Kx_n`, each `Kc_i` and `Kx_i` is a conic
+//! where `Kc=Kc₀ × ... × Kc_m` and `Kx=Kx₀ × ... × Kxₙ`, each `Kcᵢ` and `Kxᵢ` is a conic
 //! domain from the currently supported set plus an offset:
 //! - Non-positive or non-negative orthant (see [nonpositive], [nonnegative], [less_than] and
 //!   [greater_than]).
@@ -20,50 +20,50 @@
 //! - Fixed values (see [zero] and [equal_to])
 //! - Second order cone(s) (see [in_quadratic_cone], [in_quadratic_cones]): 
 //!   ```math
-//!   { x ∊ R^n | x_1^2 ≥ ‖ x_2^2 + ... + x_n^2 ‖^2, x_1 ≥ 0 }
+//!   { x ∊ Rⁿ | x₁² ≥ ‖ x₂² + ... + xₙ² ‖², x₁ ≥ 0 }
 //!   ```
 //! - Rotated second order cone(s) (see [in_rotated_quadratic_cone], [in_rotated_quadratic_cones]): 
 //!   ```math
-//!   { x ∊ R^n | 1/2 x_1 x_2 ≥ ‖ x_3^2 + ... + x_n^2 ‖^2, x_1, x_2 ≥ 0 }
+//!   { x ∊ Rⁿ | 1/2 x₁ x₂ ≥ ‖ x₃² + ... + xₙ² ‖², x₁, x₂ ≥ 0 }
 //!   ```
-//! - Symmetric positive semidefinite cone(s) if dimension `n > 1` (see [in_psd_cone], [in_psd_cones]).
+//!<!-- - Symmetric positive semidefinite cone(s) if dimension `n > 1` (see [in_psd_cone], [in_psd_cones]).-->
 //! - Primal power cone(s) (see [in_power_cone], [in_power_cones]): 
 //!   ```math
-//!   { x ∊ R^n | x_1^(β_1) ··· x_k^(β_k) ≥ √(x_(k+1)^2 ··· x_n^2), x_0,..., x_k ≥ 0 }
+//!   { x ∊ Rⁿ | x₁^(β₁) ··· xₖ^(βₖ) ≥ √(x_(k+1)² ··· xₙ²), x₀,..., xₖ ≥ 0 }
 //!   ```
 //! - Dual power cone(s) (see [in_dual_power_cone], [in_dual_power_cones]): 
 //!   ```math
-//!   { x ∊ R^n | (x_1/β_1)^(β_1) ··· (x_k/β_k)^(β_k) ≥ √(x_(k+1)^2 ··· x_n^2), x_0,..., x_k ≥ 0 }
+//!   { x ∊ Rⁿ | (x₁/β₁)^(β₁) ··· (xₖ/βₖ)^(βₖ) ≥ √(x_(k+1)² ··· xₙ²), x₀,..., xₖ ≥ 0 }
 //!   ```
 //! - Primal exponential cone(s) (see [in_exponential_cone], [in_exponential_cones]): 
 //!   ```math
-//!   { x ∊ R^3 | x_1 ≥ x_1 exp(x_3/x_2), x_0, x_1 ≥ 0 }
+//!   { x ∊ R^3 | x₁ ≥ x₁ exp(x₃/x₂), x₀, x₁ ≥ 0 }
 //!   ```
 //! - Dual exponential cone(s) (see [in_dual_exponential_cone], [in_dual_exponential_cones]): 
 //!   ```math
-//!   { x ∊ R^3 | x_1 ≥ -x_3 exp(-1) exp(x_2/x_3), x_3 ≤ 0, x_1 ≥ 0 }
+//!   { x ∊ R^3 | x₁ ≥ -x₃ exp(-1) exp(x₂/x₃), x₃ ≤ 0, x₁ ≥ 0 }
 //!   ```
 //! - Primal geometric mean cone(s) (see [in_geometric_mean_cone], [in_geometric_mean_cones]): 
 //!   ```math
-//!   { x ∊ R^n | (x_1 ··· x_(n-1))^{1/(n-1)} |x_n|, x_1,...,x_(n-1) ≥ 0}
+//!   { x ∊ Rⁿ | (x₁ ··· x_(n-1))^{1/(n-1)} |xₙ|, x₁,...,x_(n-1) ≥ 0}
 //!   ```
 //! - Dual geometric mean cone(s) (see [in_dual_geometric_mean_cone], [in_dual_geometric_mean_cones]): 
 //!   ```math
-//!   { x ∊ R^n | (n-1)(x_1 ··· x_(n-1))^{1/(n-1)} |x_n|, x_1,...,x_(n-1) ≥ 0}
+//!   { x ∊ Rⁿ | (n-1)(x₁ ··· x_(n-1))^{1/(n-1)} |xₙ|, x₁,...,x_(n-1) ≥ 0}
 //!   ```
 //! - Scaled vectorized positive semidefinite cone(s) (see [in_svecpsd_cone], [in_svecpsd_cones]). For a `n` dimensional positive symmetric this
 //!   is the scaled lower triangular part of the matrix in column-major format, i.e. 
 //!   ```math
-//!   { x ∊ R^(n(n+1)/2)} | sMat(x) ∊ S^n }
+//!   { x ∊ R^(n(n+1)/2)} | sMat(x) ∊ S₊ⁿ }
 //!   ```
 //!   where
 //!   ```math
-//!             │ x_1    x_2/√2   ···    x_n/√2         │
-//!   sMat(x) = │ x_2/√2 x_n+1    ···    x_(2n-1)/√2    │
-//!             │                 ···                   │
-//!             │ x_n/√2 x_(2n-1)/√2 ... x_(n(n+1)/2)^2 │
+//!             ⎡ x₁    x₂/√2       ···   xₙ/√2       ⎤
+//!   sMat(x) = ⎢ x₂/√2 xₙ+1        ···   x_(2n-1)/√2 ⎥
+//!             ⎢                   ···               ⎥
+//!             ⎣ xₙ/√2 x_(2n-1)/√2 ... x_(n(n+1)/2)² ⎦
 //!   ```
-//!
+//! 
 //! # Expressions and shapes
 //!
 //! Constraint, domains, variables and expressions have shapes, and the latter three can be either
@@ -216,5 +216,6 @@ pub use domain::{LinearDomain,
                  in_power_cones,
                  in_dual_power_cone,
                  in_dual_power_cones,
-                 in_psd_cone,
-                 in_psd_cones };
+                 //in_psd_cone,
+                 //in_psd_cones 
+                 };
