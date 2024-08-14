@@ -41,9 +41,9 @@ test:
     MOSEKLM_LICENSE_FILE: mosek.lic
     LD_LIBRARY_PATH: mosek/10.2/tools/platform/linux64x86/bin
   script:
-    - cargo test --release
-    - cargo test --release --examples 
-    - (cd examples/demos; cp ../../mosek.lic . ; cargo --release test && cargo test --release -p ellipsoids)
+    - MOSEKLM_LICENSE_FILE=$(pwd)/mosek.lic cargo test --release
+    - MOSEKLM_LICENSE_FILE=$(pwd)/mosek.lic cargo test --release --examples 
+    - MOSEKLM_LICENSE_FILE=$(pwd)/mosek.lic (cd examples/demos; cargo --release test && cargo test --release -p ellipsoids)
 
 doc:
   tags:
