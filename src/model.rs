@@ -1,3 +1,4 @@
+use itertools::{merge_join_by, EitherOrBoth};
 use itertools::{iproduct, izip};
 use std::{iter::once, path::Path};
 use crate::expr;
@@ -26,6 +27,7 @@ enum VarAtom {
 enum ConAtom {
     // Conic constraint element (acci, offset)
     ConicElm(i64,usize), 
+    BarElm(i32,usize),
     Linear(i32)
 }
 
@@ -674,138 +676,201 @@ impl Model {
         dom.create(self,name)
     }
 
-    // Currently not supported. We can implement this two ways:
-    // 1. A PSD variable and a linear constraint, i.e `X ∊ PSD(n), 1/2(E+E') - X = 0`, or 
-    // 2. A svecpsd constraint, `sMat(E) ∊ PSD(d)`
-    // In the first case we need to add a new kind of constraints, where primal and dual solution
-    // values are mapped to the variable. 
-    // In the second case we have to scale the solutions we get out to get the solution for the
-    // matrix constraint rather than the SvecPSD constraint.
-    fn psd_constraint<const N : usize>(& mut self, _name : Option<&str>, _dom : PSDDomain<N>) -> Constraint<N> {
-        unimplemented!("Not supported: Symmetric positive semidefinite constraints");
-//     --        // validate domain
-//     --        if dom.conedims.0 == dom.conedims.1 { panic!("Invalid cone dimension specification"); }
-//     --        if dom.conedims.0 >= N || dom.conedims.1 >= N { panic!("Invalid cone dimension specification"); }
-//     --        if dom.shape[dom.conedims.0] != dom.shape[dom.conedims.1] { panic!("Invalid cone shape"); }
-//     --       
-//     --        let conedim0 = dom.conedims.0;
-//     --        let conedim1 = dom.conedims.1;
-//     --
-//     --        let conearrshape : Vec<usize> = dom.shape.iter().enumerate().filter(|v| v.0 != conedim0 && v.0 != conedim1).map(|v| v.1).cloned().collect();
-//     --        let numcone = conearrshape.iter().product();
-//     --        let conesize = dom.shape[conedim0] * (dom.shape[conedim0]+1) / 2;
-//     --
-//     --        let (expr_shape,ptr,expr_sp,subj,cof) = self.rs.pop_expr();
-//     --        let nelm = ptr.len()-1;
-//     --        let nnz  = ptr.last().unwrap();
-//     --        
-//     --        let shape = dom.shape;
-//     --        // Check that expression shape matches domain shape
-//     --        if expr_shape.iter().zip(shape.iter()).any(|v| v.0 != v.1) { panic!("Mismatching shapes of expression {:?} and domain {:?}",expr_shape,&shape); }
-//     --        if expr_sp.is_some() { panic!("Constraint expression cannot be sparse") };
-//     --
-//     --        if shape.iter().product::<usize>() != nelm { panic!("Mismatching expression and shape"); }
-//     --        if let Some(&j) = subj.iter().max() {
-//     --            if j >= self.vars.len() {
-//     --                panic!("Invalid subj index in evaluated expression");
-//     --            }
-//     --        }
-//     --
-//     --        let mut strides = [0usize; N]; strides.iter_mut().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v * d });
-//     --
-//     --        // build transpose permutation
-//     --        let mut tperm : Vec<usize> = (0..nelm).collect();
-//     --        tperm.sort_by_key(|&i| {
-//     --            let mut idx = [0usize; N];
-//     --            izip!(idx.iter_mut(),strides.iter(),shape.iter()).for_each(|(idx,&s,&d)| *idx = (i / s) % d);
-//     --            idx.swap(conedim0,conedim1);
-//     --            idx.iter().zip(strides.iter()).map(|v| v.0 * v.1).sum::<usize>()
-//     --        });
-//     --
-//     --        let (urest,rcof) = self.xs.alloc(nnz*2+nelm+1,nnz*2);
-//     --        let (rptr,rsubj) = urest.split_at_mut(nelm+1);
-//     --        rptr[0] = 0;
-//     --
-//     --        // count non-zeros per element of E+E'
-//     --        for ((idx,&p0b,&p0e,&p1b,&p1e),rp) in izip!((0..).map(|i| { let mut idx = [0usize; N]; izip!(idx.iter_mut(),strides.iter(),shape.iter()).for_each(|(idx,&s,&d)| *idx = (i / s) % d); idx } ),
-//     --                                                    ptr.iter(),
-//     --                                                    ptr[1..].iter(),
-//     --                                                    perm_iter(tperm.as_slice(),ptr),
-//     --                                                    perm_iter(tperm.as_slice(),&ptr[1..])).filter(|(i,_,_,_,_)| i[conedim0] <= i[conedim1]).zip(rptr[1..].iter_mut()) 
-//     --        {
-//     --            if idx[conedim0] == idx[conedim1] {
-//     --                *rp = p0e-p0b;
-//     --            }
-//     --            else { 
-//     --                // count merged nonzeros
-//     --                *rp = merge_join_by(subj[p0b..p0e].iter(),subj[p1b..p1e].iter(), |i,j| i.cmp(j) ).count();
-//     --            }
-//     --        }
-//     --       
-//     --        // collect nonzeros of 1/2 (E+E')
-//     --        _ = rptr.iter_mut().fold(0,|p,ptr| { *ptr += p; *ptr });
-//     --        for (i,&p0b,&p0e,&p1b,&p1e,&rpb,&rpe) in izip!(0..,
-//     --                                                       ptr.iter(),
-//     --                                                       ptr[1..].iter(),
-//     --                                                       perm_iter(tperm.as_slice(),ptr),
-//     --                                                       perm_iter(tperm.as_slice(),
-//     --                                                       &ptr[1..]),
-//     --                                                       rptr.iter(),
-//     --                                                       rptr[1..].iter() ) {
-//     --            let mut idx = [0usize; N];
-//     --            izip!(idx.iter_mut(),strides.iter(),shape.iter()).for_each(|(idx,&s,&d)| *idx = (i / s) % d);
-//     --          
-//     --            const offdiag_scale = (0.5f64).sqrt()
-//     --            if idx[conedim0] == idx[conedim1] {
-//     --                rsubj[rpb..rpe].copy_from_slice(&subj[p0b..p0e]);
-//     --                rcof[rpb..rpe].copy_from_slice(&cof[p0b..p0e]);
-//     --            }
-//     --            else {
-//     --                // count merged nonzeros
-//     --                for (ii,rj,rc) in izip!(merge_join_by(subj[p0b..p0e].iter().zip(cof[p0b..p0e].iter()),
-//     --                                                      subj[p1b..p1e].iter().zip(cof[p0b..p0e].iter()), |i,j| i.0.cmp(j.0)),
-//     --                                        rsubj[rpb..rpe].iter_mut(),
-//     --                                        rcof[rpb..rpe].iter_mut()) {
-//     --                    match ii {
-//     --                        EitherOrBoth::Left((&j,&c)) => { *rj = j; *rc = 0.5 * c; },
-//     --                        EitherOrBoth::Right((&j,&c)) => { *rj = j; *rc = 0.5 * c; },
-//     --                        EitherOrBoth::Both((&j,&c0),(_,&c1)) => { *rj = j; *rc = 0.5*(c0 + c1); } 
-//     --                    }
-//     --                }
-//     --            }
-//     --        }
-//     --        
-//     --         
-//     --
-//     --
-//     --//            
-//     --//        let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
-//     --//        let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
-//     --//        if shape.len() != dshape.len() || shape.iter().zip(dshape.iter()).any(|(&a,&b)| a != b) {
-//     --//            panic!("Mismatching shapes of expression {:?} and domain {:?}",shape,dshape);
-//     --//        }
-//     --//        // let nnz = subj.len();
-//     --//        let nelm = ptr.len()-1;
-//     --//        if shape.iter().product::<usize>() != nelm {
-//     --//            panic!("Mismatching expression and shape");
-//     --//        }
-//     --//
-//     --//        if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
-//     --//            panic!("Invalid subj index in evaluated expression");
-//     --//        }
-//     --//
-//     --//        let coni = self.task.get_num_con().unwrap();
-//     --//        self.task.append_cons(nelm.try_into().unwrap()).unwrap();
-//     --//
-//     --//        if let Some(name) = name {
-//     --//            Self::con_names(& mut self.task,name,coni,&shape);
-//     --//        }
-//     --
-//     --        panic!("TODO");
-//     --        Constraint{
-//     --            idxs : vec![],
-//     --            shape : dom.shape
-//     --        }
+    fn psd_constraint<const N : usize>(& mut self, name : Option<&str>, dom : PSDDomain<N>) -> Constraint<N> {
+        // validate domain
+        if dom.conedims.0 == dom.conedims.1 { panic!("Invalid cone dimension specification"); }
+        if dom.conedims.0 >= N || dom.conedims.1 >= N { panic!("Invalid cone dimension specification"); }
+        if dom.shape[dom.conedims.0] != dom.shape[dom.conedims.1] { panic!("Invalid cone shape"); }
+       
+        let conedim0 = dom.conedims.0;
+        let conedim1 = dom.conedims.1;
+
+        let conearrshape : Vec<usize> = dom.shape.iter().enumerate().filter(|v| v.0 != conedim0 && v.0 != conedim1).map(|v| v.1).cloned().collect();
+        let numcone : usize = conearrshape.iter().product();
+        let conesize = dom.shape[conedim0] * (dom.shape[conedim0]+1) / 2;
+        
+        // Pop expression and validate 
+        let (expr_shape,ptr,expr_sp,subj,cof) = self.rs.pop_expr();
+        let nelm = ptr.len()-1;
+        let nelmi32 : i32 = nelm.try_into().unwrap();
+        let nnz  = ptr.last().unwrap();
+        
+        let shape = dom.shape;
+        // Check that expression shape matches domain shape
+        if expr_shape.iter().zip(shape.iter()).any(|v| v.0 != v.1) { panic!("Mismatching shapes of expression {:?} and domain {:?}",expr_shape,&shape); }
+        if expr_sp.is_some() { panic!("Constraint expression cannot be sparse") };
+
+        if shape.iter().product::<usize>() != nelm { panic!("Mismatching expression and shape"); }
+        if let Some(&j) = subj.iter().max() {
+            if j >= self.vars.len() {
+                panic!("Invalid subj index in evaluated expression");
+            }
+        }
+
+        let mut strides = [0usize; N]; strides.iter_mut().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v * d });
+
+        // build transpose permutation
+        let mut tperm : Vec<usize> = (0..nelm).collect();
+        tperm.sort_by_key(|&i| {
+            let mut idx = [0usize; N];
+            izip!(idx.iter_mut(),strides.iter(),shape.iter()).for_each(|(idx,&s,&d)| *idx = (i / s) % d);
+            idx.swap(conedim0,conedim1);
+            idx.iter().zip(strides.iter()).map(|v| v.0 * v.1).sum::<usize>()
+        });
+
+        let rnelm = conesize * numcone;
+
+        let (urest,rcof) = self.xs.alloc(nnz*2+rnelm+1,nnz*2);
+        let (rptr,rsubj) = urest.split_at_mut(rnelm+1);
+        
+        //----------------------------------------
+        // Compute number of non-zeros per element of the lower triangular part if 1/2 (E+E')
+        rptr[0] = 0;
+        for ((idx,&p0b,&p0e,&p1b,&p1e),rp) in 
+            izip!(shape.index_iterator(),
+                  ptr.iter(),
+                  ptr[1..].iter(),
+                  perm_iter(tperm.as_slice(),ptr),
+                  perm_iter(tperm.as_slice(),&ptr[1..]))
+                .filter(|(index,_,_,_,_)| index[conedim0] >= index[conedim1])
+                .zip(rptr[1..].iter_mut()) 
+        {
+            if idx[conedim0] == idx[conedim1] {
+                *rp = p0e-p0b;
+            }
+            else {
+                // count merged nonzeros
+                *rp = merge_join_by(subj[p0b..p0e].iter(),subj[p1b..p1e].iter(), |i,j| i.cmp(j) ).count();
+            }
+        }
+        rptr.iter_mut().fold(0,|p,ptr| { *ptr += p; *ptr });
+
+        //----------------------------------------
+        // Compute nonzeros of the lower triangular part if 1/2 (E+E')
+        izip!(shape.index_iterator(),
+              ptr.iter(),
+              ptr[1..].iter(),
+              perm_iter(tperm.as_slice(),ptr),
+              perm_iter(tperm.as_slice(),&ptr[1..]))
+            .filter(|(index,_,_,_,_)| index[conedim0] >= index[conedim1])
+            .zip( rptr.iter().zip(rptr[1..].iter()))
+            .for_each(| ((index,&p0b,&p0e,&p1b,&p1e),(&rpb,&rpe)) | {
+                if index[conedim0] == index[conedim1] {
+                    rsubj[rpb..rpe].copy_from_slice(&subj[p0b..p0e]);
+                    rcof[rpb..rpe].copy_from_slice(&cof[p0b..p0e]);
+                }
+                else {
+                    // count merged nonzeros
+                    for (ii,rj,rc) in izip!(merge_join_by(subj[p0b..p0e].iter().zip(cof[p0b..p0e].iter()),
+                                                          subj[p1b..p1e].iter().zip(cof[p0b..p0e].iter()), 
+                                                          |i,j| i.0.cmp(j.0)),
+                                            rsubj[rpb..rpe].iter_mut(),
+                                            rcof[rpb..rpe].iter_mut()) {
+                        match ii {
+                            EitherOrBoth::Left((&j,&c)) => { *rj = j; *rc = 0.5 * c; },
+                            EitherOrBoth::Right((&j,&c)) => { *rj = j; *rc = 0.5 * c; },
+                            EitherOrBoth::Both((&j,&c0),(_,&c1)) => { *rj = j; *rc = 0.5*(c0 + c1); } 
+                        }
+                    }
+                }
+
+            });
+       
+        // 
+
+        // now rptr, subj, cof contains the full 1/2(E'+E)
+        let (asubj,
+             acof,
+             aptr,
+             afix,
+             abarsubi,
+             abarsubj,
+             abarsubk,
+             abarsubl,
+             abarcof) = split_expr(rptr,rsubj,rcof,self.vars.as_slice());
+
+        let conedim = dom.shape[dom.conedims.0];
+        let nelm : usize = conesize*numcone;
+
+        let barvar0 = self.task.get_num_barvar().unwrap();
+        let con0    = self.task.get_num_con().unwrap();
+        self.task.append_barvars(vec![conedim.try_into().unwrap(); conesize].as_slice()).unwrap();
+        self.task.append_cons(nelmi32).unwrap();
+
+        // Input linear non-zeros and bounds
+        self.task.put_a_row_slice(con0,con0+nelmi32,
+                                  &aptr[0..nelm-1],
+                                  &aptr[1..],
+                                  asubj.as_slice(),
+                                  acof.as_slice()).unwrap();
+        let dim : i32 = shape[conedim0].try_into().unwrap();
+        let mxs : Vec<i64> = (0..dim).flat_map(|i| (0..i+1).map(|j| self.task.append_sparse_sym_mat(dim,&[i],&[j],&[1.0]).unwrap())).collect();
+
+        self.task.put_con_bound_slice(con0,con0+nelmi32,&vec![mosek::Boundkey::FX; nelm],&afix,&afix).unwrap();
+
+        let xstride = [0usize;N];
+        izip!(0..N,xstride.iter_mut(),shape.iter()).rev()
+            .fold(1usize, |c,(i,s,&d)| 
+                  if i == conedim0 || i == conedim1 {
+                      *s = 0;
+                      c
+                  }
+                  else {
+                      *s = c; 
+                      c * d
+                  });
+        // put PSD slack variable terms and constraint mappings
+        self.cons.reserve(nelm);
+        let firstcon = self.cons.len();
+        shape.index_iterator()
+            .filter(|index| index[conedim0] >= index[conedim1])
+            .zip(con0..con0+nelmi32)
+            .for_each(| (index,coni) | {
+                let barvari : i32 = barvar0 + i32::try_from(xstride.iter().zip(index.iter()).map(|(&a,&b)| a * b).sum::<usize>()).unwrap();
+                let ii = index[conedim0];
+                let jj = index[conedim1];
+                let mi = mxs[ii*(ii+1)/2+jj];
+                self.task.put_bara_ij(coni,barvari,&[mi], &[-1.0]).unwrap();
+                self.cons.push(ConAtom::BarElm(barvari, ii*(ii+1)/2+jj));
+            });
+
+        if let Some(name) = name {
+            shape.index_iterator()
+                .filter(|index| index[conedim0] >= index[conedim1])
+                .zip(con0..con0+nelmi32)
+                .for_each(| (index,coni) | {
+                    self.task.put_con_name(coni,format!("{}[{:?}]",name,index).as_str()).unwrap();
+                });
+            let xshape = [1usize;N]; (0..).zip(shape.iter()).filter_map(|(i,s)| if i == conedim0 || i == conedim1 { None } else { Some(s) }).zip(xshape.iter_mut()).for_each(|(a,b)| *b = *a);
+            xshape.index_iterator()
+                .zip(barvar0..barvar0+i32::try_from(numcone).unwrap())
+                .for_each(| (index,barvari) | {
+                    self.task.put_barvar_name(barvari,format!("{}[{:?}]",name,&index[..N-2]).as_str()).unwrap();
+                });
+        }
+
+        // compute the mapping
+        let xstrides = [0usize;N]; izip!(0..N,xstrides.iter_mut(),shape.iter()).rev()
+            .fold(1usize,|c,(i,s,&d)| {
+                if i == conedim0 { *s = c; c*d*(d+1)/2 }
+                else if i == conedim1 { *s = 0; c }
+                else { *s = c; c*d }
+            });
+        let idxs = shape.index_iterator()
+            .map(| index | {
+                let barvari = barvar0 + i32::try_from(xstride.iter().zip(index.iter()).map(|(&a,&b)| a * b).sum::<usize>()).unwrap();
+                let ii = index[conedim0];
+                let jj = index[conedim1];
+                let mut xindex = index;
+                xindex[conedim0] = if ii >= jj { ii*(ii+1)/2+jj } else { jj*(jj+1)/2+ii };
+                firstcon + xindex.iter().zip(xstrides.iter()).map(|(&a,&b)| a*b).sum::<usize>()
+            })
+            .collect();
+
+        Constraint{
+            idxs,
+            shape,
+        }
     }
 
 
@@ -1173,7 +1238,8 @@ impl Model {
                                 //println!("{}:{}: accx = {:?}",file!(),line!(),accx);
                                 accx[accptr[acci as usize]+ofs]
                             },
-                            ConAtom::Linear(i) => xc[i as usize]
+                            ConAtom::Linear(i) => xc[i as usize],
+                            ConAtom::BarElm(j,ofs) => barx[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                         };
                     });
                 }
@@ -1196,7 +1262,8 @@ impl Model {
                             VarAtom::ConicElm(_j,coni) => {
                                 match self.cons[coni] {
                                     ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs],
-                                    ConAtom::Linear(i) => y[i as usize]
+                                    ConAtom::Linear(i) => y[i as usize],
+                                    ConAtom::BarElm(j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                                 }
                             }
                         };
@@ -1204,7 +1271,8 @@ impl Model {
                     self.cons.iter().zip(sol.dual.con.iter_mut()).for_each(|(&v,r)| {
                         *r = match v {
                             ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs],
-                            ConAtom::Linear(i) => y[i as usize]
+                            ConAtom::Linear(i) => y[i as usize],
+                            ConAtom::BarElm(j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                         };
                     });
                 }
