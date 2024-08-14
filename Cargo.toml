@@ -17,8 +17,8 @@ readme = "README.md"
 
 [dependencies]
 itertools = "0.10"
-#mosek = "10.2"
-mosek = { path = "../Mosek.rust" }
+mosek = "10.2"
+#mosek = { path = "../Mosek.rust" }
 
 [dev-dependencies]
 criterion = "0.3"
