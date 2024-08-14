@@ -1,0 +1,26 @@
+image: rust:1.80.0
+
+stages:
+  prepare
+  build
+  test
+
+prepare:
+  script:
+    - curl -O `
+
+build:
+  script:
+    - cargo build --release
+    - cargo build --release --examples
+    - (cd examples/demos; cargo build && cargo build --workspace)
+
+test:
+  script:
+    - cargo test --release
+    - cargo test --examples
+    - (cd examples/demos; cargo test && cargo test --workspace)
+
+
+  
+

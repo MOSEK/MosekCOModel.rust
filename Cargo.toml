@@ -3,11 +3,22 @@ name = "mosekmodel"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.69.0"
+description = "Library for conic optimization modeling with Mosek"
+authors = [ "Ulf Worsøe <ulf.worsoe@mosek.com>" ]
+keywords = ["mosek","optimization","conic_optimization","linear_optimization","integer_optimization","conic_modeling"]
+categories = ["mathematics","science"]
+# licence = 
+# repository =
+# documentation = 
+# homepage =
+readme = "README.md"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 itertools = "0.10"
-mosek = "10.2"
+#mosek = "10.2"
+mosek = { path = "../Mosek.rust" }
 
 [dev-dependencies]
 criterion = "0.3"
