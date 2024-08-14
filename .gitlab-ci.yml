@@ -22,7 +22,7 @@ build:
     target/release
     examples/demos/target/release
   variables:
-    MOSEK_INST_BASE=.
+    MOSEK_INST_BASE: .
   script:
     - cargo build --release
     - cargo build --release --examples
