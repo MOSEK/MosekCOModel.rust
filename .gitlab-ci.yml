@@ -43,7 +43,7 @@ test:
   script:
     - cargo test --release
     - cargo test --release --examples 
-    - (cd examples/demos; cargo --release test && cargo test --release -p ellipsoids)
+    - (cd examples/demos; cp ../../mosek.lic . ; cargo --release test && cargo test --release -p ellipsoids)
 
 doc:
   tags:
