@@ -37,7 +37,7 @@ test:
     - rust-1.80
   variables:
     MOSEK_INST_BASE: .
-    MOSEKLM_LICENSE_FILE: mosek.lic:../../mosek.lic
+    MOSEKLM_LICENSE_FILE: $GITLAB_PROJECT_PATH/mosek.lic
     LD_LIBRARY_PATH: mosek/10.2/tools/platform/linux64x86/bin
   script:
     - curl -o mosek.lic http://files.mosek.intranet/docs/lic/mosek11-1.lic
