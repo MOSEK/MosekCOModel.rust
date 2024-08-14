@@ -216,6 +216,6 @@ pub use domain::{LinearDomain,
                  in_power_cones,
                  in_dual_power_cone,
                  in_dual_power_cones,
-                 //in_psd_cone,
-                 //in_psd_cones 
+                 in_psd_cone,
+                 in_psd_cones 
                  };
