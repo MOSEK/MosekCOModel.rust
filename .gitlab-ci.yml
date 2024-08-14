@@ -19,8 +19,9 @@ prepare:
 
 build:
   cache:
-    target/release
-    examples/demos/target/release
+    paths:
+      - target/release
+      - examples/demos/target/release
   variables:
     MOSEK_INST_BASE: .
   script:
