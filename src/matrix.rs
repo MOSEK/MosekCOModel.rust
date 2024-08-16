@@ -1,7 +1,7 @@
 //! This module provides basic array functionality.
 //!
 use itertools::izip;
-use crate::expr::{Expr, IntoExpr};
+use crate::{expr::{Expr, IntoExpr}, utils};
 
 
 /// This trait represents an 2-dimensional array, with a few functions specialized for matrixes on
@@ -368,10 +368,37 @@ pub fn dense<const N : usize,D>(shape : [usize;N], data : D) -> NDArray<N> where
     NDArray::new(shape,None,data.into()).unwrap()
 }
 
-/// Create a sparse [NDArray] from data.
-pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> where D : Into<Vec<f64>>, I : Into<Vec<usize>> {
-    NDArray::new(shape,Some(sp.into()),data.into()).unwrap()
+
+pub trait IntoIndexes<const N : usize> {
+    fn into_indexes(&self, shape : &[usize;N]) -> Vec<usize>;
 }
+
+impl<const N : usize> IntoIndexes<N> for [[usize;N]] {
+    fn into_indexes(&self, shape : &[usize;N]) -> Vec<usize> {
+        let strides = utils::shape_to_strides(shape);
+        self.iter().map(|index| index.iter().zip(strides.iter()).map(|(a,b)| a*b).sum() ).collect()
+    }
+}
+
+impl<const N : usize> IntoIndexes<N> for Vec<[usize;N]> {
+    fn into_indexes(&self, shape : &[usize;N]) -> Vec<usize> {
+        let strides = utils::shape_to_strides(shape);
+        self.iter().map(|index| index.iter().zip(strides.iter()).map(|(a,b)| a*b).sum() ).collect()
+    }
+}
+
+impl IntoIndexes<1> for [usize] {
+    fn into_indexes(&self, _shape : &[usize;1]) -> Vec<usize> { self.to_vec() }
+}
+
+
+/// Create a sparse [NDArray] from data.
+pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> where D : Into<Vec<f64>>, I : IntoIndexes<N> {
+    NDArray::new(shape,Some(sp.into_indexes(&shape)),data.into()).unwrap()
+}
+//pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> where D : Into<Vec<f64>>, I : Into<Vec<usize>> {
+//    NDArray::new(shape,Some(sp.into()),data.into()).unwrap()
+//}
 
 /// Create a sparse 2-dimensional diagonal matrix.
 pub fn diag<V>(data : V) -> NDArray<2> where V:Into<Vec<f64>> {

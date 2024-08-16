@@ -1609,7 +1609,6 @@ mod tests {
 
         m.solve();
 
-        m.write_problem("test_psd_con.ptf");
         let csol = m.primal_solution(SolutionType::Default, &c).unwrap();
 
         let shape = [3,2,3];
