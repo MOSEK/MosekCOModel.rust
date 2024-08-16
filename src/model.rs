@@ -27,7 +27,7 @@ enum VarAtom {
 enum ConAtom {
     // Conic constraint element (acci, offset)
     ConicElm(i64,usize), 
-    BarElm(i32,usize),
+    BarElm(i32,i32,usize),
     Linear(i32)
 }
 
@@ -678,13 +678,11 @@ impl Model {
 
     fn psd_constraint<const N : usize>(& mut self, name : Option<&str>, dom : PSDDomain<N>) -> Constraint<N> {
         // validate domain
-        if dom.conedims.0 == dom.conedims.1 { panic!("Invalid cone dimension specification"); }
-        if dom.conedims.0 >= N || dom.conedims.1 >= N { panic!("Invalid cone dimension specification"); }
-        if dom.shape[dom.conedims.0] != dom.shape[dom.conedims.1] { panic!("Invalid cone shape"); }
+        let (conedim0,conedim1) = if dom.conedims.0 < dom.conedims.1 { (dom.conedims.0,dom.conedims.1) } else { (dom.conedims.1,dom.conedims.0) } ;
+        if dom.conedims.0 >= dom.conedims.1 { panic!("Invalid cone dimension specification"); }
+        if dom.conedims.1 >= N { panic!("Invalid cone dimension specification"); }
+        if dom.shape[conedim0] != dom.shape[conedim1] { panic!("Invalid cone shape"); }
        
-        let conedim0 = dom.conedims.0;
-        let conedim1 = dom.conedims.1;
-
         let conearrshape : Vec<usize> = dom.shape.iter().enumerate().filter(|v| v.0 != conedim0 && v.0 != conedim1).map(|v| v.1).cloned().collect();
         let numcone : usize = conearrshape.iter().product();
         let conesize = dom.shape[conedim0] * (dom.shape[conedim0]+1) / 2;
@@ -725,6 +723,7 @@ impl Model {
         
         //----------------------------------------
         // Compute number of non-zeros per element of the lower triangular part if 1/2 (E+E')
+        //
         rptr[0] = 0;
         for ((idx,&p0b,&p0e,&p1b,&p1e),rp) in 
             izip!(shape.index_iterator(),
@@ -733,7 +732,7 @@ impl Model {
                   perm_iter(tperm.as_slice(),ptr),
                   perm_iter(tperm.as_slice(),&ptr[1..]))
                 .filter(|(index,_,_,_,_)| index[conedim0] >= index[conedim1])
-                .zip(rptr[1..].iter_mut()) 
+                .zip(rptr[1..].iter_mut())
         {
             if idx[conedim0] == idx[conedim1] {
                 *rp = p0e-p0b;
@@ -775,8 +774,10 @@ impl Model {
                 }
 
             });
+        let rsubj = &rsubj[..*rptr.last().unwrap()];
+        let rcof  = &rcof[..*rptr.last().unwrap()];
        
-        // 
+        //println!("psd_constraint. 1/2 E+E':\n\tptr : {:?}\n\tsubj : {:?}\n\t - {:?}",rptr,rsubj,rptr.iter().zip(rptr[1..].iter()).map(|(&b,&e)| &rsubj[b..e]).collect::<Vec<&[usize]>>());
 
         // now rptr, subj, cof contains the full 1/2(E'+E)
         let (asubj,
@@ -794,21 +795,51 @@ impl Model {
 
         let barvar0 = self.task.get_num_barvar().unwrap();
         let con0    = self.task.get_num_con().unwrap();
-        self.task.append_barvars(vec![conedim.try_into().unwrap(); conesize].as_slice()).unwrap();
-        self.task.append_cons(nelmi32).unwrap();
+        self.task.append_barvars(vec![conedim.try_into().unwrap(); numcone].as_slice()).unwrap();
+        self.task.append_cons(rnelm.try_into().unwrap()).unwrap();
+
 
         // Input linear non-zeros and bounds
-        self.task.put_a_row_slice(con0,con0+nelmi32,
-                                  &aptr[0..nelm-1],
+        
+
+        self.task.put_a_row_slice(con0,con0+i32::try_from(rnelm).unwrap(),
+                                  &aptr[0..rnelm],
                                   &aptr[1..],
                                   asubj.as_slice(),
                                   acof.as_slice()).unwrap();
         let dim : i32 = shape[conedim0].try_into().unwrap();
-        let mxs : Vec<i64> = (0..dim).flat_map(|i| (0..i+1).map(|j| self.task.append_sparse_sym_mat(dim,&[i],&[j],&[1.0]).unwrap())).collect();
+        let mxs : Vec<i64> = (0..dim).flat_map(|i| std::iter::repeat(i).zip(0..i+1))
+            .map(|(i,j)| self.task.append_sparse_sym_mat(dim,&[i],&[j],&[1.0]).unwrap())
+            .collect::<Vec<i64>>();
 
-        self.task.put_con_bound_slice(con0,con0+nelmi32,&vec![mosek::Boundkey::FX; nelm],&afix,&afix).unwrap();
+        self.task.put_con_bound_slice(con0,con0+i32::try_from(rnelm).unwrap(),&vec![mosek::Boundkey::FX; nelm],&afix,&afix).unwrap();
 
-        let xstride = [0usize;N];
+        if ! abarsubi.is_empty() {
+            let mut p0 = 0usize;
+            for (i,j,p) in izip!(abarsubi.iter(),
+                                 abarsubi[1..].iter(),
+                                 abarsubj.iter(),
+                                 abarsubj[1..].iter())
+                .enumerate()
+                .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
+                .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+               
+                let subk = &abarsubk[p0..p];
+                let subl = &abarsubl[p0..p];
+                let cof  = &abarcof[p0..p];
+                p0 = p;
+
+                let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
+                let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
+                self.task.put_bara_ij(con0+i as i32, j,&[matidx],&[1.0]).unwrap();
+            }
+        }
+
+        
+        // put PSD slack variable terms and constraint mappings
+
+
+        let mut xstride = [0usize;N];
         izip!(0..N,xstride.iter_mut(),shape.iter()).rev()
             .fold(1usize, |c,(i,s,&d)| 
                   if i == conedim0 || i == conedim1 {
@@ -819,7 +850,6 @@ impl Model {
                       *s = c; 
                       c * d
                   });
-        // put PSD slack variable terms and constraint mappings
         self.cons.reserve(nelm);
         let firstcon = self.cons.len();
         shape.index_iterator()
@@ -831,7 +861,7 @@ impl Model {
                 let jj = index[conedim1];
                 let mi = mxs[ii*(ii+1)/2+jj];
                 self.task.put_bara_ij(coni,barvari,&[mi], &[-1.0]).unwrap();
-                self.cons.push(ConAtom::BarElm(barvari, ii*(ii+1)/2+jj));
+                self.cons.push(ConAtom::BarElm(coni,barvari, ii*(ii+1)/2+jj));
             });
 
         if let Some(name) = name {
@@ -839,34 +869,58 @@ impl Model {
                 .filter(|index| index[conedim0] >= index[conedim1])
                 .zip(con0..con0+nelmi32)
                 .for_each(| (index,coni) | {
-                    self.task.put_con_name(coni,format!("{}[{:?}]",name,index).as_str()).unwrap();
+                    self.task.put_con_name(coni,format!("{}{:?}",name,index).as_str()).unwrap();
                 });
-            let xshape = [1usize;N]; (0..).zip(shape.iter()).filter_map(|(i,s)| if i == conedim0 || i == conedim1 { None } else { Some(s) }).zip(xshape.iter_mut()).for_each(|(a,b)| *b = *a);
+            let mut xshape = [1usize;N]; (0..).zip(shape.iter()).filter_map(|(i,s)| if i == conedim0 || i == conedim1 { None } else { Some(s) }).zip(xshape.iter_mut()).for_each(|(a,b)| *b = *a);
             xshape.index_iterator()
                 .zip(barvar0..barvar0+i32::try_from(numcone).unwrap())
                 .for_each(| (index,barvari) | {
-                    self.task.put_barvar_name(barvari,format!("{}[{:?}]",name,&index[..N-2]).as_str()).unwrap();
+                    self.task.put_barvar_name(barvari,format!("{}{:?}",name,&index[..N-2]).as_str()).unwrap();
                 });
         }
 
+        
         // compute the mapping
-        let xstrides = [0usize;N]; izip!(0..N,xstrides.iter_mut(),shape.iter()).rev()
+
+
+        let mut xstrides = [0usize;N]; izip!(0..N,xstrides.iter_mut(),shape.iter()).rev()
             .fold(1usize,|c,(i,s,&d)| {
                 if i == conedim0 { *s = c; c*d*(d+1)/2 }
                 else if i == conedim1 { *s = 0; c }
                 else { *s = c; c*d }
             });
-        let idxs = shape.index_iterator()
-            .map(| index | {
-                let barvari = barvar0 + i32::try_from(xstride.iter().zip(index.iter()).map(|(&a,&b)| a * b).sum::<usize>()).unwrap();
-                let ii = index[conedim0];
-                let jj = index[conedim1];
-                let mut xindex = index;
-                xindex[conedim0] = if ii >= jj { ii*(ii+1)/2+jj } else { jj*(jj+1)/2+ii };
-                firstcon + xindex.iter().zip(xstrides.iter()).map(|(&a,&b)| a*b).sum::<usize>()
-            })
-            .collect();
 
+        let mut idxs = vec![0usize; shape.iter().product()];
+        idxs.iter_mut().zip(shape.index_iterator())
+            .filter(|(_,index)| index[conedim0] >= index[conedim1])
+            .zip(firstcon..firstcon+rnelm)
+            .for_each(|((ix,_),coni)| { *ix = coni; } );
+        let idxs_ = idxs.clone();
+        //println!("tperm = {:?}, {} / {}",tperm,tperm.iter().max().unwrap(),idxs.len());
+        izip!(idxs.iter_mut(),
+              perm_iter(&tperm,&idxs_),
+              shape.index_iterator())
+            .filter(|(_,_,index)| index[conedim0] < index[conedim1])
+            .for_each(|(t,&s,_)| { *t = s; })
+            ;
+
+//--
+//--
+//--        let idxs : Vec<usize> = shape.index_iterator()
+//--            .map(| index | {
+//--                let ii = index[conedim0];
+//--                let jj = index[conedim1];
+//--                let mut xindex = index;
+//--                xindex[conedim1] = 0;
+//--                xindex[conedim0] = if ii >= jj { ii*(ii+1)/2+jj } else { jj*(jj+1)/2+ii };
+//--                let coni = firstcon + xindex.iter().zip(xstrides.iter()).map(|(&a,&b)| a*b).sum::<usize>();
+//--                println!("\tindex = {:?} -> {:?}, ii = {}, jj = {}, coni = {} : {:?}",index,xindex,ii,jj,coni,self.cons[coni]);
+//--                coni
+//--            })
+//--            .collect();
+//--
+        //println!("psd con elements = {:?}",&self.cons[firstcon..firstcon+rnelm]);
+        //println!("\tidxs : {:?}",idxs.iter().map(|i| self.cons[*i]).collect::<Vec<ConAtom>>());
         Constraint{
             idxs,
             shape,
@@ -1093,8 +1147,6 @@ impl Model {
         let (_shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
         if ptr.len()-1 > 1 { panic!("Objective expressions may only contain one element"); }
 
-        // println!("Objective: ptr = {:?}, subj = {:?}, cof = {:?}",ptr,subj,cof);
-
         if let Some(name) = name { self.task.put_obj_name(name).unwrap(); }
         else { self.task.put_obj_name("").unwrap(); }
         let (csubj,
@@ -1239,7 +1291,7 @@ impl Model {
                                 accx[accptr[acci as usize]+ofs]
                             },
                             ConAtom::Linear(i) => xc[i as usize],
-                            ConAtom::BarElm(j,ofs) => barx[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                            ConAtom::BarElm(_,j,ofs) => barx[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                         };
                     });
                 }
@@ -1263,7 +1315,7 @@ impl Model {
                                 match self.cons[coni] {
                                     ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs],
                                     ConAtom::Linear(i) => y[i as usize],
-                                    ConAtom::BarElm(j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                                    ConAtom::BarElm(_,j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                                 }
                             }
                         };
@@ -1272,7 +1324,7 @@ impl Model {
                         *r = match v {
                             ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs],
                             ConAtom::Linear(i) => y[i as usize],
-                            ConAtom::BarElm(j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                            ConAtom::BarElm(_,j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                         };
                     });
                 }
@@ -1518,7 +1570,10 @@ fn row_major_offset_to_col_major(ofs : usize, dim : usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use matrix::dense;
+
+    use crate::utils::*;
+    use crate::*;
 
     fn eq<T:std::cmp::Eq>(a : &[T], b : &[T]) -> bool {
         a.len() == b.len() && a.iter().zip(b.iter()).all(|(a,b)| *a == *b )
@@ -1527,24 +1582,24 @@ mod tests {
     #[test]
     fn it_works() {
         let mut m = Model::new(Some("SuperModel"));
-        let mut v1 = m.variable(None, greater_than(5.0));
-        let mut v2 = m.variable(None, 10);
-        let mut v3 = m.variable(None, &[3,3]);
-        let mut v4 = m.variable(None, in_quadratic_cone(5));
-        let mut v5 = m.variable(None, greater_than(vec![1.0,2.0,3.0,4.0]).with_shape(&[2,2]));
-        let mut v6 = m.variable(None, greater_than(vec![1.0,3.0]).with_shape_and_sparsity(&[2,2],&[[0,0],[1,1]]));
+        let _v1 = m.variable(None, greater_than(5.0));
+        let _v2 = m.variable(None, 10);
+        let _v3 = m.variable(None, &[3,3]);
+        let _v4 = m.variable(None, in_quadratic_cone(5));
+        let _v5 = m.variable(None, greater_than(vec![1.0,2.0,3.0,4.0]).with_shape(&[2,2]));
+        let _v6 = m.variable(None, greater_than(vec![1.0,3.0]).with_shape_and_sparsity(&[2,2],&[[0,0],[1,1]]));
     }
 
     #[test]
     fn variable_stack() {
         let mut m = Model::new(Some("SuperModel"));
-        let mut v1 = m.variable(None, &[3,2,1]);
-        let mut v2 = m.variable(None, &[3,2,1]);
-        let mut v3 = m.variable(None, equal_to(vec![1.0,2.0,3.0,4.0]).with_shape_and_sparsity(&[3,2,1],&[[0,0,0],[1,0,0],[1,1,0],[2,1,0]]));
+        let v1 = m.variable(None, &[3,2,1]);
+        let v2 = m.variable(None, &[3,2,1]);
+        let v3 = m.variable(None, equal_to(vec![1.0,2.0,3.0,4.0]).with_shape_and_sparsity(&[3,2,1],&[[0,0,0],[1,0,0],[1,1,0],[2,1,0]]));
 
-        let mut w_0 = Variable::stack(0,&[&v1,&v2]);
-        let mut w_1 = Variable::stack(1,&[&v1,&v2]);
-        let mut w_2 = Variable::stack(2,&[&v1,&v2]);
+        let w_0 = Variable::stack(0,&[&v1,&v2]);
+        let w_1 = Variable::stack(1,&[&v1,&v2]);
+        let w_2 = Variable::stack(2,&[&v1,&v2]);
 
         assert!(eq(w_0.shape(),&[6,2,1]));
         assert!(eq(w_0.idxs(),&[1,2,3,4,5,6,7,8,9,10,11,12]));
@@ -1565,17 +1620,36 @@ mod tests {
         assert!(eq(u_2.idxs(),     &[1,13,2,3,14,4,15,5,6,16]));
         assert!(eq(u_2.sparsity().unwrap(), &[0,1,2,4,5,6,7,8,10,11]));
     }
+
+    #[test]
+    fn psd_constraint() {
+        let mut m = Model::new(Some("SuperModel"));
+        let x = m.variable(Some("x"), unbounded().with_shape(&[3,2,3]));
+        //let y = m.variable(Some("y"), unbounded().with_shape(&[3,2,3]));
+        let z = m.variable(Some("z"), zero());
+
+        let c = m.constraint(Some("c"), &x.sub(dense([3,2,3],vec![0.0,-1.0,-2.0,-3.0,-4.0,-5.0,-6.0,-7.0,-8.0,-9.0,-10.0,-11.0,-12.0,-13.0,-14.0,-15.0,-16.0,-17.0])), in_psd_cones(&[3,2,3],0,2));
+        m.objective(Some("obj"), Sense::Minimize, &z);
+
+        m.solve();
+
+        m.write_problem("test_psd_con.ptf");
+        let csol = m.primal_solution(SolutionType::Default, &c).unwrap();
+
+        let shape = [3,2,3];
+        let m1 : Vec<f64> = shape.index_iterator().zip(csol.iter()).filter_map(|(index,v)| if index[1] == 0 { Some(*v) } else { None } ).collect();
+        let m2 : Vec<f64> = shape.index_iterator().zip(csol.iter()).filter_map(|(index,v)| if index[1] == 1 { Some(*v) } else { None } ).collect();
+
+        let mut m1eig = [0.0; 3];
+        let mut m2eig = [0.0; 3];
+        mosek::syeig(mosek::Uplo::LO, 3, &m1, &mut m1eig).unwrap();
+        mosek::syeig(mosek::Uplo::LO, 3, &m2, &mut m2eig).unwrap();
+    
+        println!("eig1 = {:?}",m1eig);
+        println!("m1 = {:?}",m1);
+        println!("c = {:?}",c.idxs);
+
+        assert!(m1eig.iter().all(|v| *v >= 0.0));
+        assert!(m2eig.iter().all(|v| *v >= 0.0));
+    }
 }
-
-//
-// 1  4   14
-// 2  5   15 16
-// 3  6      17
-//
-
-//  1  2
-//  3  4
-//  5  6
-// 13
-// 14 15
-//    16

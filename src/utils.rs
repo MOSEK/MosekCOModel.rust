@@ -126,7 +126,7 @@ pub struct PermIter<'a,'b,T> {
 }
 
 pub fn perm_iter<'a,'b,T>(perm : &'a [usize], data : &'b[T]) -> PermIter<'a,'b,T> {
-    if let Some(&v) = perm.iter().max() { if v >= data.len() { panic!("Invalid permutation")} }
+    if let Some(&v) = perm.iter().max() { if v >= data.len() { panic!("Permutation index out of bounds")} }
     PermIter{ data,perm,i:0 }
 }
 
