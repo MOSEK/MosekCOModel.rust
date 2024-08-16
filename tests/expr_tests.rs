@@ -1,4 +1,5 @@
-use mosekmodel::{*, expr::workstack::WorkStack,expr::*, matrix::NDArray};
+use mosekmodel::*;
+use expr::workstack::WorkStack;
 
 fn dense_expr() -> Expr<2> {
     Expr::new(&[3,3],
@@ -79,7 +80,7 @@ fn add_test() {
         rs.clear(); ws.clear(); xs.clear();
 
         let mut model = Model::new(Some("TrafficNetwork"));
-        let m = 5;
+        let _m = 5;
         let n = 4;
 
         let mx = NDArray::from_tuples([n,n],&[[0,1],[0,2],[1,3],[2,1],[2,3]],&[1.0,1.0,1.0,1.0,1.0]).unwrap();
@@ -93,7 +94,7 @@ fn add_test() {
         let e = &z.clone().mul_elem(mx.clone()).dynamic().add(x.clone()).gather();
         e.eval(&mut rs,&mut ws,&mut xs);
 
-        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+        let (_shape,ptr,_sp,_subj,_cof) = rs.pop_expr();
         assert_eq!(ptr.len()-1,mx.nnz());
     }
 }
@@ -106,13 +107,13 @@ fn sum_on_test2() {
         let mut xs = WorkStack::new(512);
 
         let mut model = Model::new(Some("TrafficNetwork"));
-        let m = 5;
+        let _m = 5;
         let n = 4;
 
         let mx = NDArray::from_tuples([n,n],&[[0,1],[0,2],[1,3],[2,1],[2,3]],&[1.0,1.0,1.0,1.0,1.0]).unwrap();
         let sparsity : Vec<[usize;2]> = vec![[0,1],[0,2],[1,3],[2,1],[2,3]];
 
-        let x = model.variable(Some("traffic_flow"), greater_than(0.0).with_shape_and_sparsity(&[n,n],sparsity.as_slice()));
+        let _x = model.variable(Some("traffic_flow"), greater_than(0.0).with_shape_and_sparsity(&[n,n],sparsity.as_slice()));
         let z = model.variable(Some("z"),            greater_than(0.0).with_shape_and_sparsity(&[n,n],sparsity.as_slice()));
 
 
@@ -121,7 +122,7 @@ fn sum_on_test2() {
         let e2 = &z.clone().mul_elem(mx.clone()).sum_on(&[1]);
 
         e0.eval(&mut rs,&mut ws,&mut xs);        
-        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+        let (shape,ptr,sp,_subj,_cof) = rs.pop_expr();
         //println!("shape = {:?}, ptr = {:?}, sp = {:?}",shape,ptr,sp);
         assert_eq!(shape.len(),2);
         assert_eq!(shape,&[4,4]);
@@ -130,7 +131,7 @@ fn sum_on_test2() {
         assert_eq!(ptr,&[0,1,2,3,4,5]);
 
         e1.eval(&mut rs,&mut ws,&mut xs);        
-        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+        let (shape,ptr,sp,_subj,_cof) = rs.pop_expr();
         //println!("shape = {:?}, ptr = {:?}, sp = {:?}",shape,ptr,sp);
         assert_eq!(shape.len(),1);
         assert_eq!(shape[0],4);
@@ -142,7 +143,7 @@ fn sum_on_test2() {
         rs.clear(); ws.clear(); xs.clear();
         
         e2.eval(&mut rs,&mut ws,&mut xs);
-        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+        let (shape,ptr,sp,_subj,_cof) = rs.pop_expr();
         assert!(sp.is_some());
         assert_eq!(shape.len(),1);
         assert_eq!(shape[0],4);
@@ -152,6 +153,7 @@ fn sum_on_test2() {
     
 }
 
+#[allow(non_snake_case)]
 #[test]
 fn mul_left() {
     let mut M = Model::new(Some("M"));
@@ -159,10 +161,10 @@ fn mul_left() {
     //      | 1 2 3 |       | 10 11 12 |
     // vd = | 4 5 6 |  wd = | 13 14 15 |
     //      | 7 8 9 |       | 16 17 18 |
-    let dv = M.variable(Some("vd"), unbounded().with_shape(&[3,3]));
-    let dw = M.variable(Some("wd"), unbounded().with_shape(&[3,3]));
-    let sv = M.variable(Some("vs"), unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[1,1],[1,2],[2,2]]));
-    let sw = M.variable(Some("vs"), unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[1,1],[1,2],[2,2]]));
+    let _dv = M.variable(Some("vd"), unbounded().with_shape(&[3,3]));
+    let _dw = M.variable(Some("wd"), unbounded().with_shape(&[3,3]));
+    let _sv = M.variable(Some("vs"), unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[1,1],[1,2],[2,2]]));
+    let _sw = M.variable(Some("vs"), unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[1,1],[1,2],[2,2]]));
 
     let mut rs = WorkStack::new(512);
     let mut ws = WorkStack::new(512);
@@ -171,7 +173,7 @@ fn mul_left() {
     let e0 = dense_expr();
     let e1 = sparse_expr();
 
-    let m1 = matrix::dense([3,2],vec![1.0,2.0,3.0,4.0,5.0,6.0]);
+    let _m1 = matrix::dense([3,2],vec![1.0,2.0,3.0,4.0,5.0,6.0]);
     let m2 = matrix::dense([2,3],vec![1.0,2.0,3.0,4.0,5.0,6.0]);
 
     let e0_1 = m2.clone().mul(e0.clone());

@@ -23,6 +23,7 @@ enum VarAtom {
     // Conic variable (j,offset)
     ConicElm(i32,usize)
 }
+#[allow(unused)]
 #[derive(Clone,Copy,Debug)]
 enum ConAtom {
     // Conic constraint element (acci, offset)
@@ -896,7 +897,6 @@ impl Model {
             .zip(firstcon..firstcon+rnelm)
             .for_each(|((ix,_),coni)| { *ix = coni; } );
         let idxs_ = idxs.clone();
-        //println!("tperm = {:?}, {} / {}",tperm,tperm.iter().max().unwrap(),idxs.len());
         izip!(idxs.iter_mut(),
               perm_iter(&tperm,&idxs_),
               shape.index_iterator())
@@ -904,23 +904,6 @@ impl Model {
             .for_each(|(t,&s,_)| { *t = s; })
             ;
 
-//--
-//--
-//--        let idxs : Vec<usize> = shape.index_iterator()
-//--            .map(| index | {
-//--                let ii = index[conedim0];
-//--                let jj = index[conedim1];
-//--                let mut xindex = index;
-//--                xindex[conedim1] = 0;
-//--                xindex[conedim0] = if ii >= jj { ii*(ii+1)/2+jj } else { jj*(jj+1)/2+ii };
-//--                let coni = firstcon + xindex.iter().zip(xstrides.iter()).map(|(&a,&b)| a*b).sum::<usize>();
-//--                println!("\tindex = {:?} -> {:?}, ii = {}, jj = {}, coni = {} : {:?}",index,xindex,ii,jj,coni,self.cons[coni]);
-//--                coni
-//--            })
-//--            .collect();
-//--
-        //println!("psd con elements = {:?}",&self.cons[firstcon..firstcon+rnelm]);
-        //println!("\tidxs : {:?}",idxs.iter().map(|i| self.cons[*i]).collect::<Vec<ConAtom>>());
         Constraint{
             idxs,
             shape,
@@ -967,7 +950,6 @@ impl Model {
         };
 
         self.cons.reserve(nelm);
-        // (0..nelm).for_each(|i| self.cons.push(ConAtom::ConicElm(acci,i)));
 
         let (asubj,
              acof,
@@ -978,11 +960,8 @@ impl Model {
              abarsubk,
              abarsubl,
              abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
-        // let abarsubi : Vec<i64> = abarsubi.iter().map(|&i| i + afei).collect();
 
-        // let afeidxs : Vec<i64> = (afei..afei+nelm as i64).collect();
         if !asubj.is_empty() {
-            //println!("coni = {}\n\taptr = {:?}\n\tasubj = {:?}\n\tacof = {:?}",coni,aptr,asubj,acof);
             self.task.put_a_row_slice(
                 coni,coni+nelm as i32,
                 &aptr[0..aptr.len()-1],
@@ -990,10 +969,8 @@ impl Model {
                 asubj.as_slice(),
                 acof.as_slice()).unwrap();
         }
-        // self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
 
         let rhs : Vec<f64> = b.iter().zip(afix.iter()).map(|(&ofs,&b)| ofs-b).collect();
-        // println!("{}:{}: coni = {}:{}, dom.ofs : {}, afix : {}",file!(),line!(),coni,coni+nelm as i32,dom.ofs.len(), afix.len());
         self.task.put_con_bound_slice(coni,
                                       coni+nelm as i32,
                                       vec![bk; nelm].as_slice(),
@@ -1096,7 +1073,6 @@ impl Model {
                 xshape.iter().zip(idx.iter_mut()).rev().fold(1,|carry,(&d,i)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
                 self.task.put_acc_name(i,n.as_str()).unwrap();
             } 
-        //     }
         }
 
         if asubj.len() > 0 {
@@ -1599,7 +1575,7 @@ mod tests {
 
         let w_0 = Variable::stack(0,&[&v1,&v2]);
         let w_1 = Variable::stack(1,&[&v1,&v2]);
-        let w_2 = Variable::stack(2,&[&v1,&v2]);
+        let _w_2 = Variable::stack(2,&[&v1,&v2]);
 
         assert!(eq(w_0.shape(),&[6,2,1]));
         assert!(eq(w_0.idxs(),&[1,2,3,4,5,6,7,8,9,10,11,12]));
