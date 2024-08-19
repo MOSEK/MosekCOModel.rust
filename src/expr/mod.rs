@@ -1079,6 +1079,53 @@ pub fn hstack<const N : usize>(exprs : Vec<ExprDynamic<'static,N>>) -> ExprDynSt
 }
 
 
+pub struct ExprSumVec<const N : usize,E> where E : ExprTrait<N>
+{
+    exprs : Vec<E>
+}
+
+impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
+    fn eval(&self, rs : & mut WorkStack,ws : & mut WorkStack, xs : & mut WorkStack) {
+        let n = self.exprs.len();
+        if n == 1 {
+            self.exprs[0].eval(rs,ws,xs)
+        }
+        else {
+            self.exprs.iter().for_each(|e| e.eval(ws,rs,xs));
+            let vals = ws.pop_exprs(n);
+
+            // check shapes
+            if vals.iter().zip(vals[1..].iter()).any(|(s0,s1)| *s0 != *s1) {
+                panic!("Mismarching operand shapes");
+            }
+
+            let is_dense = vals.iter().any(|vv| vv.2.is_none() );
+            if is_dense {
+                let rshape = *vals[0].0;
+                let rnelm = rshape.iter().product();
+                let rnnz = vals.iter().map(|vv| *(vv.1.last().unwrap())).sum::<usize>();
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelm);
+
+                rptr.iter_mut().for_each(|p| *p = 0);
+                for (_,ptr,_,_) in vals {
+
+                }
+            }
+            else {
+            }
+        }
+    }
+}
+
+pub fn sum_vec<const N : usize,E>(exprs : Vec<E>) -> ExprSumVec<N,E> where E : ExprTrait<N> {
+    if exprs.is_empty() {
+        panic!("Empty operand list");
+    }
+    ExprSumVec{
+        exprs : exprs
+    }
+}
+
 ////////////////////////////////////////////////////////////
 //
 //

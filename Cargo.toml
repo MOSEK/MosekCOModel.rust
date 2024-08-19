@@ -22,6 +22,7 @@ mosek = "10.2"
 
 [dev-dependencies]
 criterion = "0.3"
+rand = "0.8.5"
 #bencher = "0.1"
 
 [[bench]]

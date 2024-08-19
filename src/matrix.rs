@@ -1,6 +1,6 @@
 //! This module provides basic array functionality.
 //!
-use itertools::izip;
+use itertools::{izip, EitherOrBoth};
 use crate::{expr::{Expr, IntoExpr}, utils};
 
 
@@ -283,6 +283,70 @@ impl<const N : usize> NDArray<N> {
                 vec![0; self.nnz()],
                 self.data.clone())
         }
+    }
+
+
+    pub fn add(self, rhs: Self) -> Self {
+        assert!(self.shape == rhs.shape);
+        let mut lhs = self;
+        let mut rhs = rhs;
+        NDArray{
+            shape : lhs.shape,
+            sp : 
+                match (&lhs.sp,&rhs.sp) {
+                    (Some(ref lsp),Some(ref rsp)) => 
+                        Some(itertools::merge_join_by(lsp.iter().zip(rhs.data.iter()), 
+                                                 rsp.iter().zip(rhs.data.iter()),
+                                                 |a,b| a.0.cmp(b.0))
+                            .map(|v| 
+                                 match v {
+                                     EitherOrBoth::Left((&i,_)) => i,
+                                     EitherOrBoth::Right((&i,_)) => i,
+                                     EitherOrBoth::Both((&il,_c),(&_ir,_)) => il
+                                 })
+                            .collect::<Vec<usize>>()),
+                        _ => None
+                },
+            data : 
+                match (&lhs.sp,&rhs.sp) {
+                    (None,None)           => { lhs.data.iter_mut().zip(rhs.data.iter()).for_each(|(t,&s)| *t += s); lhs.data },
+                    (Some(ref lsp),None)      => { lsp.iter().zip(lhs.data().iter()).for_each(|(&i,c)| rhs.data[i] += c); rhs.data },
+                    (None,Some(ref rsp))      => { rsp.iter().zip(rhs.data().iter()).for_each(|(&i,c)| lhs.data[i] += c); lhs.data },
+                    (Some(ref lsp),Some(ref rsp)) =>
+                        itertools::merge_join_by(lsp.iter().zip(rhs.data.iter()), 
+                                                 rsp.iter().zip(rhs.data.iter()),
+                                                 |a,b| a.0.cmp(b.0))
+                            .map(|v| 
+                                 match v {
+                                     EitherOrBoth::Left((_,&c)) => c,
+                                     EitherOrBoth::Right((_,&c)) => c,
+                                     EitherOrBoth::Both((_,&cl),(_,&cr)) => cl+cr
+                                 })
+                            .collect::<Vec<f64>>(),
+                }
+        }
+    }
+
+    pub fn mul_scalar(mut self, v : f64) -> Self {
+        self.data.iter_mut().for_each(|c| *c += v);
+        self
+    }
+}
+
+
+impl<const N : usize> std::ops::Add for NDArray<N> {
+    type Output = NDArray<N>;
+    fn add(self, rhs: Self) -> Self::Output {
+        (self as NDArray<N>).add(rhs)
+    }
+}
+
+impl<const N : usize> std::ops::Sub for NDArray<N> {
+    type Output = NDArray<N>;
+    fn sub(self, rhs: Self) -> Self::Output {
+        let mut rhs = rhs;
+        rhs.inplace_mul_scalar(-1.0);
+        self.add(rhs)
     }
 }
 
