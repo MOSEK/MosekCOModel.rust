@@ -13,6 +13,9 @@ use crate::matrix::Matrix;
 use itertools::izip;
 use workstack::WorkStack;
 use super::matrix;
+use super::utils::*;
+use std::iter::{Peekable,Zip};
+use std::slice::Iter;
 
 pub use dot::{Dot,ExprDot};
 pub use mul::*;
@@ -1100,18 +1103,121 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
             }
 
             let is_dense = vals.iter().any(|vv| vv.2.is_none() );
+            let rnnz = vals.iter().map(|vv| *(vv.1.last().unwrap())).sum::<usize>();
+            let mut rshape = [0usize;N]; rshape.copy_from_slice(vals[0].0);
             if is_dense {
-                let rshape = *vals[0].0;
                 let rnelm = rshape.iter().product();
-                let rnnz = vals.iter().map(|vv| *(vv.1.last().unwrap())).sum::<usize>();
                 let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelm);
 
                 rptr.iter_mut().for_each(|p| *p = 0);
-                for (_,ptr,_,_) in vals {
-
+                for (_,ptr,sp,_,_) in vals.iter() {
+                    if let Some(sp) = sp { 
+                        for (&pb,&pe,&i) in izip!(ptr.iter(),ptr[1..].iter(),sp.iter()) { rptr[i] += pe-pb; }
+                    }
+                    else {
+                        for (&pb,&pe,rp) in izip!(ptr.iter(),ptr[1..].iter(),rptr.iter_mut()) { *rp += pe-pb; }
+                    }
                 }
+                rptr.iter_mut().fold(0usize, |c,rp| { *rp += c; *rp });
+                
+                for (_,ptr,sp,subj,cof) in vals.iter() {
+                    if let Some(sp) = sp { 
+                        for (&pb,&pe,&i) in izip!(ptr.iter(),ptr[1..].iter(),sp.iter()) {
+                            let rp = rptr[i];
+                            rsubj[rp..rp+pe-pb].copy_from_slice(&subj[pb..pe]);
+                            rcof[rp..rp+pe-pb].copy_from_slice(&cof[pb..pe]);
+                            rptr[i] += pe-pb;
+                        }
+                    }
+                    else {
+                        for (&pb,&pe,rp) in izip!(ptr.iter(),ptr[1..].iter(),rptr.iter_mut()) {
+                            rsubj[*rp..*rp+pe-pb].copy_from_slice(&subj[pb..pe]);
+                            rcof[*rp..*rp+pe-pb].copy_from_slice(&cof[pb..pe]);
+                            *rp += pe-pb;
+                        }
+                    }
+                }
+                rptr.iter_mut().fold(0usize, |c,rp| { let tmp = *rp; *rp = c; tmp });
             }
             else {
+                // all sparse
+                
+                let totalnelm : usize = vals.iter().map(|vv| vv.1.len()-1).sum();
+
+                let (urest,xcof)  = xs.alloc(totalnelm*3+1+rnnz,rnnz); // (xperm,xptr,xsp,xsubj),(xcof)
+                let (xperm,urest) = urest.split_at_mut(totalnelm);
+                let (xsp,urest)   = urest.split_at_mut(totalnelm);
+                let (xptr,xsubj)  = urest.split_at_mut(totalnelm+1);
+
+                xptr[0] = 0;
+
+                
+                // compute number of result elements
+                let mut rnelm = 0usize;
+                {
+                    let mut spit = vals.iter()
+                        .map(| (_,_,sp,_,_) | sp.unwrap().iter().peekable())
+                        .collect::<Vec<Peekable<Iter<usize>>>>();
+                    while let Some(i) = spit.iter().filter_map(|it| it.peek()).min() {
+                        rnelm += 1;
+                    }
+                }
+                
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape,rnnz,rnelm);
+                rptr[0] = 0;
+                if let Some(rsp) = rsp {
+                    let mut nzi = 0usize;
+                    let mut nelmi = 0usize;
+                    let mut spit = vals.iter()
+                        .map(| (_,_,sp,_,_) | sp.unwrap().iter().peekable())
+                        .collect::<Vec<Peekable<Iter<usize>>>>();
+                    let mut ptrit = vals.iter()
+                        .map(| (_,_,_,ptr,_) | ptr.iter().zip(ptr[1..].iter()))
+                        .collect::<Vec<Zip<Iter<usize>,Iter<usize>>>>();
+
+                    while let Some(&&i) = spit.iter().filter_map(|it| it.peek()).min() {
+                        rsp[nelmi] = i;
+                        spit.iter_mut()
+                            .zip(
+                              ptrit.iter_mut()
+                                .zip(vals.iter()))
+                            .filter_map(| (spit,arg) | if let Some(&&ii) = spit.peek() { if ii == i { _ = spit.next(); Some(arg) } else { None } } else { None } )
+                            .filter_map(| (ptrit,arg) | ptrit.next().and_then(|p| Some((p,arg))))
+                            .for_each(|((&pb,&pe),(_,_,_,subj,cof))| {
+                                let n = pe-pb;
+                                rsubj[nzi..nzi+n].copy_from_slice(&subj[pb..pe]);
+                                rcof[nzi..nzi+n].copy_from_slice(&cof[pb..pe]);
+                                nzi += n;
+                            });
+                        nelmi += 1;
+                        rptr[nelmi] = nzi;
+                    }
+                }
+                else {
+                    rptr.iter_mut().for_each(|p| *p = 0) ;
+                    for (_,ptr,sp,subj,cof) in vals.iter() {
+                        let sp = sp.unwrap();
+                        izip!(rptr[1..].permute_by_mut(sp),
+                              ptr.iter(),
+                              ptr[1..].iter())
+                            .for_each(|(rp,&pb,&pe)| *rp += pe-pb ); 
+                    }
+                    rptr.iter_mut().fold(0usize, |c,p| { *p += c; *p });
+                    
+                    for (_,ptr,sp,subj,cof) in vals.iter() {
+                        let sp = sp.unwrap();
+                        izip!(rptr.permute_by_mut(sp),
+                              ptr.iter(),
+                              ptr[1..].iter())
+                            .for_each(|(rp,&pb,&pe)| {
+                                let n = pe-pb;
+                                rsubj[*rp..*rp+n].copy_from_slice(&subj[pb..pe]);
+                                rcof[*rp..*rp+n].copy_from_slice(&cof[pb..pe]);
+                                *rp += n;
+                            });
+                    }
+                    rptr.iter_mut().fold(0usize,|c,p| { let tmp = *p; *p = c; tmp });
+                }
             }
         }
     }

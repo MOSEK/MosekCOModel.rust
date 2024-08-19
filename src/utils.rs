@@ -2,7 +2,7 @@
 //! Utility module.
 //!
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, marker::PhantomData, ptr::NonNull};
 
 use itertools::izip;
 
@@ -142,6 +142,58 @@ impl<'a,'b,T> Iterator for PermIter<'a,'b,T> {
         }
     }
 }
+
+
+pub trait PermuteByEx<'a,'b,T> {
+    fn permute_by(self,perm:&'a[usize]) -> PermIter<'a,'b,T>; 
+}
+
+pub trait PermuteByMutEx<'a,'b,T> {
+    fn permute_by_mut(self,perm:&'a[usize]) -> PermIterMut<'a,'b,T>; 
+}
+
+impl<'a,'b,T> PermuteByEx<'a,'b,T> for &'b [T] {
+    fn permute_by(self,perm:&'a [usize]) -> PermIter<'a,'b,T> {
+        if let Some(&v) = perm.iter().max() { if v >= self.len() { panic!("Permutation index out of bounds")} }
+        PermIter{ data: self,perm, i:0 }
+    }
+}
+
+////////////////////////////////////////////////////////////
+// Mutable permutation iterator
+
+// Ideas stolen from implementation of std::iter::IterMut
+pub struct PermIterMut<'a,'b,T : 'b> {
+    perm : & 'a [usize],
+    ptr  : NonNull<T>,
+    _marker : PhantomData<&'b T>,
+    i : usize
+}
+
+impl<'a,'b,T> Iterator for PermIterMut<'a,'b,T> {
+    type Item = & 'b mut T;
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(&i) = self.perm.get(self.i) {
+            self.i += 1;
+            Some(unsafe{ & mut ( *self.ptr.add(i).as_mut()) })
+        }
+        else {
+            None
+        }
+    }
+}
+
+impl<'a,'b,T> PermuteByMutEx<'a,'b,T> for &'b mut [T] {
+    fn permute_by_mut(self,perm:&'a [usize]) -> PermIterMut<'a,'b,T> {
+        if let Some(&v) = perm.iter().max() { if v >= self.len() { panic!("Permutation index out of bounds")} }
+        PermIterMut{ 
+            perm, 
+            ptr : NonNull::from(self).cast(),
+            _marker : PhantomData,
+            i:0 }
+    }
+}
+
 
 ////////////////////////////////////////////////////////////
 
@@ -312,7 +364,6 @@ impl Iterator for ToDigit10Iter {
 
 ////////////////////////////////////////////////////////////
 
-
 pub struct ChunksByIter<'a,'b,T,I>
 where
     I:Iterator<Item = (&'b usize,&'b usize)>
@@ -351,6 +402,53 @@ impl<T> ChunksByIterExt<T> for &[T] {
         ChunksByIter{ data : self, ptr:ptr.iter().zip(ptr[1..].iter()) }
     }
 }
+
+
+////////////////////////////////////////////////////////////
+
+pub struct ChunksByIterMut<'a,'b,'c,T:'a>
+{
+    ptrb : & 'b [usize],
+    ptre : & 'c [usize],
+    ptr  : NonNull<T>,
+    _marker : PhantomData<'a,T>,
+    i : usize
+}
+
+impl<'a,'b,'c,T:'a> Iterator for ChunksByIterMut<'a,'b,'c,T> {
+    type Item = &'a mut [T];
+    fn next(& mut self) -> Option<Self::Item> {
+        if self.i < self.ptrb.len() && i < self.ptre.len() {
+            let (b,e) = unsafe {
+                (*self.ptrb.get_unchecked(self.i),
+                 *self.ptre.get_unchecked(self.i))
+            };
+            self.i += 1;
+
+            unsafe {
+                Some(std::slice::from_raw_parts_mut(self.ptr.add(b).as_mut(),e-b))
+            }
+        }
+        else {
+            None
+        }
+    }
+}
+
+pub trait ChunksByIterMutExt<T> {
+    fn chunks_by_mut<'a,'b,'c>(&'a mut self, ptrb : &'b[usize],ptre : &'c[usize]) -> ChunksByIterMut<'a,'b,'c,T> where T:'a;
+}
+
+impl<T> ChunksByIterMutExt<T> for [T] {
+    fn chunks_by_mut<'a,'b,'c>(& 'a mut self, ptrb : &'b[usize], ptrb : & 'c[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>> {
+        if let Some(&p) = ptr.last() { if p > self.len() { panic!("Invalid ptr for chunks_by iterator") } }
+        if ptr.iter().zip(ptr[1..].iter()).any(|(p0,p1)| p1 < p0) { panic!("Invalid ptr for chunks_by iterator") }
+
+        ChunksByIter{ data : self, ptr:ptr.iter().zip(ptr[1..].iter()) }
+    }
+}
+
+
 
 //pub fn chunks_by_iterator<'a,'b,T,I>(items : &'a [T], i : I) 
 //where 

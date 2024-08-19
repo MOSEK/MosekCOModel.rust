@@ -65,48 +65,48 @@ fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) ->
 ///                || P*xi - c ||_2 <= 1,  i=1,...,m
 ///                P is PSD.
 #[allow(non_snake_case)]
-fn lownerjohn_outer<const N : usize>(x : &[[f64;N]]) -> Option<(SolutionStatus,SolutionStatus,Vec<f64>,Vec<f64>)> {
+fn lowner_john_outer<const N : usize>(x : &[[f64;N]]) -> Option<(SolutionStatus,SolutionStatus,Vec<f64>,Vec<f64>)> {
     let mut M = Model::new(Some("lownerjohn_outer"));
-        //M.setLogHandler(sys.stdout)
-        M.set_log_handler(|msg| print!("{}",msg)); 
+    M.set_log_handler(|msg| print!("{}",msg)); 
 
-        let m = x.len();
-        let n = N;
+    let m = x.len();
+    let n = N;
 
-        // Setup variables
-        let t = M.variable(Some("t"), nonnegative());
-        let P = det_rootn(Some("det_rootn"),&mut M, t.clone(), n);
-        let c = M.variable(Some("c"), unbounded().with_shape(&[1,n]));
-        let x = dense([m, n], x.iter().flat_map(|row| row.iter()).cloned().collect::<Vec<f64>>());
+    // Setup variables
+    let t = M.variable(Some("t"), nonnegative());
+    let P = det_rootn(Some("det_rootn"),&mut M, t.clone(), n);
+    let c = M.variable(Some("c"), unbounded().with_shape(&[1,n]));
+    let x = dense([m, n], x.iter().flat_map(|row| row.iter()).cloned().collect::<Vec<f64>>());
 
-        // (1, Px-c) in cone
-        _ = M.constraint(Some("qc"),
-                         &hstack![ Expr::from(vec![1.0; m]).reshape(&[m,1]), 
-                                   P.clone().rev_mul(x).sub(c.clone().repeat(0,m))],
-                         in_quadratic_cones(&[m,n+1],1));
+    // (1, Px-c) in cone
+    _ = M.constraint(Some("qc"),
+                     &hstack![ Expr::from(vec![1.0; m]).reshape(&[m,1]), 
+                               P.clone().rev_mul(x).sub(c.clone().repeat(0,m))],
+                     in_quadratic_cones(&[m,n+1],1));
 
-        // Objective: Maximize t
-        M.objective(None,Sense::Maximize, &t);
-        M.solve();
+    // Objective: Maximize t
+    M.objective(None,Sense::Maximize, &t);
+    M.solve(); 
 
-        let Psol = M.primal_solution(SolutionType::Default, &P);
-        let csol = M.primal_solution(SolutionType::Default, &c);
-        //P, c = P.level(), c.level()
-        let (psta,dsta) = M.solution_status(SolutionType::Default);
-        if let (Ok(P),Ok(c)) = (Psol,csol) {
-            Some((psta,dsta,P,c))
-        }
-        else {
-            None 
-        }
+    let Psol = M.primal_solution(SolutionType::Default, &P);
+    let csol = M.primal_solution(SolutionType::Default, &c);
+    //P, c = P.level(), c.level()
+    let (psta,dsta) = M.solution_status(SolutionType::Default);
+    if let (Ok(P),Ok(c)) = (Psol,csol) {
+        Some((psta,dsta,P,c))
+    }
+    else {
+        None 
+    }
 }
+
 
 #[allow(non_snake_case)]
 fn main() {
     let points = &[[0., 0.], [1., 3.], [5.5, 4.5], [7., 4.], [7., 1.], [3., -2.]];
 
-    if let Some((psta,dsta,P,c)) = lownerjohn_outer(points) {
-        println!(" Status = {:?}/{:?}",psta,dsta);
+    if let Some((psta,dsta,P,c)) = lowner_john_outer(points) {
+        println!(" Outer ellipsoid Status = {:?}/{:?}",psta,dsta);
         println!(" P = | {:4.2} {:4.2} |, c = | {:4.2} |",P[0],P[1],c[0]);
         println!("     | {:4.2} {:4.2} |      | {:4.2} |",P[2],P[3],c[1]);
 
@@ -118,7 +118,8 @@ fn main() {
         }
     }
     else {
-        println!("Failed to solve");
+        println!("Failed to solve outer ellipsoid problem");
     }
+    
 }
 
