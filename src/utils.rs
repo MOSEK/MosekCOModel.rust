@@ -440,8 +440,12 @@ pub trait ChunksByIterMutExt<T> {
 }
 
 impl<T> ChunksByIterMutExt<T> for [T] {
-    fn chunks_by_mut<'a,'b,'c>(& 'a mut self, ptrb : &'b[usize], ptrb : & 'c[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>> {
-        if let Some(&p) = ptr.last() { if p > self.len() { panic!("Invalid ptr for chunks_by iterator") } }
+    fn chunks_by_mut<'a,'b,'c>(& 'a mut self, ptrb : &'b[usize], ptrb : & 'c[usize]) -> ChunksByIter<'a,'b,'c,T> where T:'a {
+        
+
+
+
+        if let Some(&p) = ptrb.last() { if p > self.len() { panic!("Invalid ptr for chunks_by iterator") } }
         if ptr.iter().zip(ptr[1..].iter()).any(|(p0,p1)| p1 < p0) { panic!("Invalid ptr for chunks_by iterator") }
 
         ChunksByIter{ data : self, ptr:ptr.iter().zip(ptr[1..].iter()) }
