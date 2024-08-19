@@ -15,6 +15,9 @@ readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = ["utils"]
+
 [dependencies]
 itertools = "0.10"
 mosek = "10.2"
