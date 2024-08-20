@@ -31,6 +31,7 @@ use itertools::iproduct;
 use mosekmodel::*;
 use mosekmodel::matrix;
 
+
 /// Creates a Hankel matrix of dimension n+1, where
 /// ```math
 ///         / a if l+k=i
@@ -39,18 +40,18 @@ use mosekmodel::matrix;
 /// ```
 fn hankel(n : usize, i_ : isize, a : f64) -> NDArray<2> {
     if i_ < 0 || i_ as usize > 2*n {
-        matrix::sparse([n+1,n+1],&[],&[])
+        matrix::zeros([n+1,n+1])
     } 
     else {
         let i = i_ as usize;
         if i < n + 1 {
             matrix::sparse([n+1, n+1],
-                           (0..i+1).rev().zip(0..i+1).map(|(i,j)| i*(n+1)+j).collect::<Vec<usize>>().as_slice(),
+                           (0..i+1).rev().zip(0..i+1).map(|(i,j)| [i,j]).collect().as_slice(),
                            vec![a; i+1].as_slice())
         } 
         else {
             matrix::sparse([n+1, n+1], 
-                           (i-n..n+1).rev().zip(i-n..n+1).map(|(i,j)| i*(n+1)+j).collect::<Vec<usize>>().as_slice(),
+                           (i-n..n+1).rev().zip(i-n..n+1).map(|(i,j)| [i,j]).collect().as_slice(),
                            vec![a; 2*n+1].as_slice())
         }
     }

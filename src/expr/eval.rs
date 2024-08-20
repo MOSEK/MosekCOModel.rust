@@ -4,8 +4,8 @@
 
 use std::iter::once;
 use super::*;
-use super::super::utils::*;
 use super::workstack::WorkStack;
+use utils::{*,iter::*};
 
 use itertools::{izip,iproduct};
 
@@ -318,10 +318,10 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
         perm.sort_by_key(|&i| xsp[i]);
 
         rptr.iter_mut().for_each(|p| *p = 0);
-        rsp.iter_mut().zip(perm_iter(perm,xsp)).for_each(|(t,&s)| *t = s);
+        rsp.iter_mut().zip(xsp.permute_by(perm)).for_each(|(t,&s)| *t = s);
 
         let mut p = 0usize;
-        for (rptr,&i) in izip!(rptr[1..].iter_mut(), perm_iter(perm,xidx)) {
+        for (rptr,&i) in izip!(rptr[1..].iter_mut(), xidx.permute_by(perm)) {
             let ptrb = ptr[i];
             let ptre = ptr[i+1];
             let n = ptre-ptrb;
@@ -352,45 +352,42 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
 }
 
 
-pub fn permute_axes(perm : &[usize],
-                    rs : & mut WorkStack,
-                    ws : & mut WorkStack,
-                    xs : & mut WorkStack) {
+pub fn permute_axes<const N : usize>(
+    perm : &[usize;N],
+    rs : & mut WorkStack,
+    ws : & mut WorkStack,
+    xs : & mut WorkStack) 
+{
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nelem = ptr.len()-1;
-    let nd = shape.len();
 
-    if perm.len() != nd || *perm.iter().max().unwrap() >= nd {
+    if shape.len() != N || *perm.iter().max().unwrap() >= N {
         panic!("Mismatching permutation and shape");
     }
-    let mut rshape = vec![usize::MAX; shape.len()];
-    {
-        perm.iter().zip(rshape.iter_mut()).for_each(|(&i,d)| {
-            unsafe {
-                if i >= shape.len() || *d < usize::MAX  {
-                    panic!("Invalid permutation {:?}",perm);
-                }
-
-                *d = *shape.get_unchecked(i);
+    let shape = { let mut r = [0usize; N]; r.copy_from_slice(shape); r };
+    let mut rshape = [usize::MAX; N];
+    rshape.iter_mut().zip(shape.permute_by(perm))
+        .for_each(|(d,&s)| {
+            if *d < usize::MAX {
+                panic!("Invalid permutation {:?}",perm);
+            } 
+            else {
+                *d = s;
             }
         });
-    }
-    //println!("permute_axes: perm = {:?}, shape = {:?}, rshape = {:?}",perm,shape,rshape);
 
-    let nd = shape.len();
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),subj.len(),*ptr.last().unwrap());
     rptr[0] = 0;
         
-    let (uslice,_)           = xs.alloc(nelem*2+shape.len()*3,0);
-    let (spx,uslice)         = uslice.split_at_mut(nelem);
-    let (elmperm,uslice)     = uslice.split_at_mut(nelem);
-    let (strides,uslice)     = uslice.split_at_mut(nd);
-    let (rstrides,prstrides) = uslice.split_at_mut(nd);
+    let (uslice,_)   = xs.alloc(nelem*2,0);
+    let (spx,uslice) = uslice.split_at_mut(nelem);
+    let (elmperm,_)  = uslice.split_at_mut(nelem);
 
+    let strides = shape.to_strides();
+    let rstrides = rshape.to_strides();
 
-    strides.iter_mut().rev().zip(shape.iter().rev().fold_map0(1usize,|cum,d| d*cum )).for_each(|(t,s)| *t = s);
-    rstrides.iter_mut().rev().zip(rshape.iter().rev().fold_map0(1,|cum,d| d*cum )).for_each(|(t,s)| *t = s);
-    prstrides.iter_mut().zip(perm.iter()).for_each(|(s,&p)| *s = rstrides[p] );
+    let mut prstrides = [0usize;N];
+    prstrides.permute_by_mut(perm).zip(rstrides.iter()).for_each(|(d,&s)| *d = s);
 
     if let Some(sp) = sp {
         spx.iter_mut().zip(sp.iter()).for_each(|(ix,&i)| {
@@ -403,7 +400,7 @@ pub fn permute_axes(perm : &[usize],
        
         // apply permutation
         if let Some(rsp) = rsp { 
-            for (t,&s) in rsp.iter_mut().zip(perm_iter(elmperm,sp)) {
+            for (t,&s) in rsp.iter_mut().zip(sp.permute_by(elmperm)) {
                 (_,*t) = izip!(strides.iter(),prstrides.iter()).fold((s,0),|(sv,r),(&s,&ps)| (sv % s,r + (sv/s)*ps)  );
             }
         };
@@ -412,14 +409,13 @@ pub fn permute_axes(perm : &[usize],
         { 
             let mut nzi = 0;
     
-            for (&p0,&p1,p) in izip!(perm_iter(elmperm,&ptr[0..nelem]),perm_iter(elmperm,&ptr[1..nelem+1]),rptr[1..].iter_mut()) {
+            for (&p0,&p1,p) in izip!(ptr[0..nelem].permute_by(elmperm),ptr[1..nelem+1].permute_by(elmperm),rptr[1..].iter_mut()) {
                 rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
                 rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
                 *p = p1-p0;
                 nzi += p1-p0;
             }
             _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p } );
-            //println!("permute_axes: sparse\n\trsubj = {:?}\n\trcof = {:?}\n\trptr = {:?}",rsubj,rcof,rptr);
         }
     }
     else {
@@ -546,15 +542,15 @@ pub fn add(n  : usize,
             //println!("len rptr: {}, rsp: {}, perm: {}",rptr.len(),rsp.len(),perm.len());
             for (rp,ri,&si,&sd) in izip!(rptr[1..].iter_mut(),
                                          rsp.iter_mut(),
-                                         perm_iter(perm, hindex),
-                                         perm_iter(perm, hdata)) {
+                                         hindex.permute_by(perm),
+                                         hdata.permute_by(perm)) {
                 *ri = si;
                 *rp = sd;
             }
             hindex[..rnelm].clone_from_slice(rsp);
         }
         else {
-            for (rp,&sd) in izip!(rptr[1..].iter_mut(), perm_iter(perm, hdata)) {
+            for (rp,&sd) in izip!(rptr[1..].iter_mut(), hdata.permute_by(perm)) {
                 *rp = sd;
             }
             hindex[..rnelm].iter_mut().enumerate().for_each(|(i,x)| *x = i);
@@ -786,7 +782,7 @@ pub fn mul_left_sparse(mheight : usize,
 
         let numecols = {
             let mut colidx = 0; let mut coli = usize::MAX;
-            for (k,&ix) in perm_iter(perm,sp).enumerate() {
+            for (k,&ix) in sp.permute_by(perm).enumerate() {
                 let j = ix % ewidth;
                 if j != coli {
                     ecolptr[colidx] = k;
@@ -806,9 +802,9 @@ pub fn mul_left_sparse(mheight : usize,
         let mut rnnz  = 0;
         for (&mp0,&mp1) in izip!(mrowptr.iter(),mrowptr[1..].iter()) {
             for (&ep0,&ep1) in izip!(ecolptr.iter(),ecolptr[1..].iter()) {
-                let mut espi = izip!(perm_iter(&perm[ep0..ep1],sp),
-                                     perm_iter(&perm[ep0..ep1],ptr),
-                                     perm_iter(&perm[ep0..ep1],&ptr[1..])).peekable();
+                let mut espi = izip!(sp.permute_by(&perm[ep0..ep1]),
+                                     ptr.permute_by(&perm[ep0..ep1]),
+                                     ptr[1..].permute_by(&perm[ep0..ep1])).peekable();
                 let mut mspi = msparsity[mp0..mp1].iter().peekable();
 
                 let mut ijnnz = 0;
@@ -835,9 +831,9 @@ pub fn mul_left_sparse(mheight : usize,
         rptr[0] = 0;
         for (&i,&mp0,&mp1) in izip!(msubi.iter(),mrowptr.iter(),mrowptr[1..].iter()) {
             for (&j,&ep0,&ep1) in izip!(esubj.iter(),ecolptr.iter(),ecolptr[1..].iter()) {
-                let mut espi = izip!(perm_iter(&perm[ep0..ep1],sp),
-                                     perm_iter(&perm[ep0..ep1],ptr),
-                                     perm_iter(&perm[ep0..ep1],&ptr[1..])).peekable();
+                let mut espi = izip!(sp.permute_by(&perm[ep0..ep1]),
+                                     ptr.permute_by(&perm[ep0..ep1]),
+                                     ptr[1..].permute_by(&perm[ep0..ep1])).peekable();
                 let mut mspi = izip!(msparsity[mp0..mp1].iter(),
                                      mdata[mp0..mp1].iter()).peekable();
 
@@ -1054,8 +1050,8 @@ pub fn mul_right_sparse(mheight : usize,
             for (&mp0,&mp1) in izip!(mcolptr.iter(),mcolptr[1..].iter()) {
 
                 let mcolsubi = &msubi[mp0..mp1];
-                rnnz += izip!(perm_iter(mcolsubi,p0s),
-                              perm_iter(mcolsubi,p1s)).map(|(&p0,&p1)| p1-p0).sum::<usize>();
+                rnnz += izip!(p0s.permute_by(mcolsubi),
+                              p1s.permute_by(mcolsubi)).map(|(&p0,&p1)| p1-p0).sum::<usize>();
             }
         }
 
@@ -1073,8 +1069,8 @@ pub fn mul_right_sparse(mheight : usize,
             .zip(rptr[1..].iter_mut())
             .for_each(|((p0s,p1s,&mp0,&mp1),rp)| {
                 let mcolsubi = &msubi[mp0..mp1];
-                izip!(perm_iter(mcolsubi,p0s),
-                      perm_iter(mcolsubi,p1s),
+                izip!(p0s.permute_by(mcolsubi),
+                      p1s.permute_by(mcolsubi),
                       mcof[mp0..mp1].iter()).for_each(|(&p0,&p1,&mv)| {
                           rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
                           rcof[nzi..nzi+p1-p0].iter_mut().zip(&cof[p0..p1]).for_each(|(rc,&c)| *rc = c * mv);
@@ -1149,7 +1145,7 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
 
     // check shapes
     //println!("vec = {:?}",exprs.iter().map(|v| v.0).collect::<Vec<&[usize]>>());
-    if ! exprs.iter().zip(exprs[1..].iter()).any(|((s0,_,_,_,_),(s1,_,_,_,_))| shape_eq_except(s0,s1,dim)) {
+    if ! exprs.iter().zip(exprs[1..].iter()).any(|((s0,_,_,_,_),(s1,_,_,_,_))| s0.iter().zip(s1.iter()).enumerate().all(|(i,(&d0,&d1))| i == dim || d0 == d1)) {
         panic!("Mismatching shapes or stacking dimension");
     }
 
@@ -1589,20 +1585,20 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
         xperm[..rnelm].sort_by_key(|&i| xsp[i]);
 
         if let Some(rsp) = rsp {
-            perm_iter(xperm,xsp).zip(rsp.iter_mut()).for_each(|(&i,spi)| *spi = i);            
+            xsp.permute_by(xperm).zip(rsp.iter_mut()).for_each(|(&i,spi)| *spi = i);            
         }
         let xperm2 = xsp; 
-        perm_iter(xperm,xsrc).zip(xperm2.iter_mut()).for_each(|(&si,i)| *i = si);
+        xsrc.permute_by(xperm).zip(xperm2.iter_mut()).for_each(|(&si,i)| *i = si);
 
         rptr[0] = 0;
-        for (&pb,&pe,p) in izip!(perm_iter(xperm2, ptr),
-                                 perm_iter(xperm2, &ptr[1..]),
+        for (&pb,&pe,p) in izip!(ptr.permute_by(xperm2),
+                                 ptr[1..].permute_by(xperm2),
                                  rptr[1..].iter_mut()) {
             *p = pe-pb;
         }
         rptr.iter_mut().fold(0,|c,p| { *p += c; *p });
-        for (&pb,&pe,&rpb,&rpe) in izip!(perm_iter(xperm2, ptr),
-                                         perm_iter(xperm2, &ptr[1..]),
+        for (&pb,&pe,&rpb,&rpe) in izip!(ptr.permute_by(xperm2),
+                                         ptr[1..].permute_by(xperm2),
                                          rptr.iter(),
                                          rptr[1..].iter()) {
             rsubj[rpb..rpe].copy_from_slice(&subj[pb..pe]);

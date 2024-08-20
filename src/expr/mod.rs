@@ -13,7 +13,7 @@ use crate::matrix::Matrix;
 use itertools::izip;
 use workstack::WorkStack;
 use super::matrix;
-use super::utils::*;
+use utils::iter::*;
 use std::iter::{Peekable,Zip};
 use std::slice::Iter;
 
@@ -1082,11 +1082,13 @@ pub fn hstack<const N : usize>(exprs : Vec<ExprDynamic<'static,N>>) -> ExprDynSt
 }
 
 
+#[allow(unused)]
 pub struct ExprSumVec<const N : usize,E> where E : ExprTrait<N>
 {
     exprs : Vec<E>
 }
 
+#[allow(unused)]
 impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
     fn eval(&self, rs : & mut WorkStack,ws : & mut WorkStack, xs : & mut WorkStack) {
         let n = self.exprs.len();
@@ -1107,7 +1109,7 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
             let mut rshape = [0usize;N]; rshape.copy_from_slice(vals[0].0);
             if is_dense {
                 let rnelm = rshape.iter().product();
-                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelm);
+                let (rptr,_,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelm);
 
                 rptr.iter_mut().for_each(|p| *p = 0);
                 for (_,ptr,sp,_,_) in vals.iter() {
@@ -1142,60 +1144,56 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
             else {
                 // all sparse
                 
-                let totalnelm : usize = vals.iter().map(|vv| vv.1.len()-1).sum();
-
-                let (urest,xcof)  = xs.alloc(totalnelm*3+1+rnnz,rnnz); // (xperm,xptr,xsp,xsubj),(xcof)
-                let (xperm,urest) = urest.split_at_mut(totalnelm);
-                let (xsp,urest)   = urest.split_at_mut(totalnelm);
-                let (xptr,xsubj)  = urest.split_at_mut(totalnelm+1);
-
-                xptr[0] = 0;
-
-                
                 // compute number of result elements
                 let mut rnelm = 0usize;
                 {
                     let mut spit = vals.iter()
                         .map(| (_,_,sp,_,_) | sp.unwrap().iter().peekable())
                         .collect::<Vec<Peekable<Iter<usize>>>>();
-                    while let Some(i) = spit.iter().filter_map(|it| it.peek()).min() {
+                    while let Some(&i) = spit.iter_mut().filter_map(|it| it.peek()).min() {
                         rnelm += 1;
+                        spit.iter_mut().for_each(|it| if let Some(&ii) = it.peek() { if ii == i { it.next(); } } );
                     }
                 }
-                
+               
+                // allocate result
                 let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape,rnnz,rnelm);
                 rptr[0] = 0;
+
+                // Copy result
+                rptr[0] = 0;
                 if let Some(rsp) = rsp {
-                    let mut nzi = 0usize;
+                    let mut nzi   = 0usize;
                     let mut nelmi = 0usize;
                     let mut spit = vals.iter()
                         .map(| (_,_,sp,_,_) | sp.unwrap().iter().peekable())
                         .collect::<Vec<Peekable<Iter<usize>>>>();
-                    let mut ptrit = vals.iter()
-                        .map(| (_,_,_,ptr,_) | ptr.iter().zip(ptr[1..].iter()))
-                        .collect::<Vec<Zip<Iter<usize>,Iter<usize>>>>();
+                    let mut datait = vals.iter()
+                        .map(| (_,ptr,_,subj,cof) | 
+                             subj.chunks_by(ptr)
+                                .zip(cof.chunks_by(ptr)))
+                        .collect::<Vec<Zip<ChunksByIter<usize,Zip<Iter<usize>,Iter<usize>>>,
+                                           ChunksByIter<f64,Zip<Iter<usize>,Iter<usize>>>>>>();
 
-                    while let Some(&&i) = spit.iter().filter_map(|it| it.peek()).min() {
+                    while let Some(&&i) = spit.iter_mut().filter_map(|it| it.peek()).min() {
                         rsp[nelmi] = i;
-                        spit.iter_mut()
-                            .zip(
-                              ptrit.iter_mut()
-                                .zip(vals.iter()))
-                            .filter_map(| (spit,arg) | if let Some(&&ii) = spit.peek() { if ii == i { _ = spit.next(); Some(arg) } else { None } } else { None } )
-                            .filter_map(| (ptrit,arg) | ptrit.next().and_then(|p| Some((p,arg))))
-                            .for_each(|((&pb,&pe),(_,_,_,subj,cof))| {
-                                let n = pe-pb;
-                                rsubj[nzi..nzi+n].copy_from_slice(&subj[pb..pe]);
-                                rcof[nzi..nzi+n].copy_from_slice(&cof[pb..pe]);
+                        spit.iter_mut().zip(datait.iter_mut())
+                            .filter_map(| (spit,data) | if let Some(&&ii) = spit.peek() { if ii == i { _ = spit.next(); Some(data) } else { None } } else { None } )
+                            .filter_map(| data | data.next())
+                            .for_each(|(subj,cof)| {
+                                rsubj[nzi..nzi+n].copy_from_slice(subj);
+                                rcof[nzi..nzi+n].copy_from_slice(cof);
                                 nzi += n;
                             });
+
                         nelmi += 1;
                         rptr[nelmi] = nzi;
                     }
                 }
                 else {
+                    // case: all operands are sparse, but the result is dense.
                     rptr.iter_mut().for_each(|p| *p = 0) ;
-                    for (_,ptr,sp,subj,cof) in vals.iter() {
+                    for (_,ptr,sp,_,_) in vals.iter() {
                         let sp = sp.unwrap();
                         izip!(rptr[1..].permute_by_mut(sp),
                               ptr.iter(),
@@ -1228,7 +1226,7 @@ pub fn sum_vec<const N : usize,E>(exprs : Vec<E>) -> ExprSumVec<N,E> where E : E
         panic!("Empty operand list");
     }
     ExprSumVec{
-        exprs : exprs
+        exprs
     }
 }
 

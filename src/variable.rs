@@ -1,6 +1,6 @@
 //! Module for Variable object and related implementations
 
-use crate::utils::shape_to_strides;
+use utils::*;
 
 use super::*;
 use itertools::{iproduct, izip};
@@ -195,8 +195,8 @@ impl<const N : usize> ModelItemIndex<Variable<N>> for [std::ops::Range<usize>; N
         if !self.iter().zip(v.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range is out of bounds in the the shape: {:?} in {:?}",self,v.shape) }
 
         let mut rshape = [0usize;N]; rshape.iter_mut().zip(self.iter()).for_each(|(rs,ra)| *rs = ra.end-ra.start);
-        let rstrides = shape_to_strides(&rshape);
-        let strides = shape_to_strides(&v.shape);
+        let rstrides = rshape.to_strides();
+        let strides = v.shape.to_strides();
 
         if let Some(ref sp) = v.sparsity {
             let mut rsp   = Vec::with_capacity(sp.len());
@@ -436,8 +436,8 @@ impl<const N : usize> Variable<N> {
 
     // }
     pub fn stack(dim : usize, xs : &[&Variable<N>]) -> Variable<N> {
-        if ! xs.iter().zip(xs[1..].iter())
-            .all(|(v0,v1)| utils::shape_eq_except(v0.shape.as_slice(),v1.shape.as_slice(),dim)) {
+        if xs.iter().zip(xs[1..].iter())
+            .any(|(v0,v1)| v0.shape.iter().zip(v1.shape.iter()).enumerate().all(|(i,(a,b))| i != dim && *a != *b)) {
                 panic!("Operands have mismatching shapes");
             }
 

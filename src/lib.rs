@@ -155,8 +155,8 @@
 
 extern crate mosek;
 extern crate itertools;
+extern crate utils;
 
-mod utils;
 pub mod variable;
 pub mod domain;
 pub mod matrix;

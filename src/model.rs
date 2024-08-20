@@ -2,7 +2,8 @@ use itertools::{merge_join_by, EitherOrBoth};
 use itertools::{iproduct, izip};
 use std::{iter::once, path::Path};
 use crate::expr;
-use crate::utils::*;
+use utils::iter::*;
+use utils::*;
 use crate::domain::*;
 use crate::variable::*;
 use crate::WorkStack;
@@ -388,7 +389,7 @@ impl Model {
                 .enumerate()
                 .for_each(|(j,index)| {
                     buf.truncate(baselen);
-                    append_name_index(& mut buf,&index);
+                    index.append_to_string(& mut buf);
                     //println!("name is now: {}",buf);
                     self.task.put_var_name(first + j as i32,buf.as_str()).unwrap();
                 });
@@ -398,7 +399,7 @@ impl Model {
                 .enumerate()
                 .for_each(|(j,index)| {
                     buf.truncate(baselen);
-                    append_name_index(&mut buf, &index);
+                    index.append_to_string(&mut buf);
                     self.task.put_var_name(first + j as i32,buf.as_str()).unwrap();
                 });
         }
@@ -412,7 +413,7 @@ impl Model {
             .enumerate()
             .for_each(|(j,index)| {
                 buf.truncate(baselen);
-                append_name_index(&mut buf, &index);
+                index.append_to_string(&mut buf);
                 //println!("    name = {}",buf);
                 task.put_con_name(first + j as i32,buf.as_str()).unwrap();
             });
@@ -730,8 +731,8 @@ impl Model {
             izip!(shape.index_iterator(),
                   ptr.iter(),
                   ptr[1..].iter(),
-                  perm_iter(tperm.as_slice(),ptr),
-                  perm_iter(tperm.as_slice(),&ptr[1..]))
+                  ptr.permute_by(tperm.as_slice()),
+                  ptr[1..].permute_by(tperm.as_slice()))
                 .filter(|(index,_,_,_,_)| index[conedim0] >= index[conedim1])
                 .zip(rptr[1..].iter_mut())
         {
@@ -750,8 +751,8 @@ impl Model {
         izip!(shape.index_iterator(),
               ptr.iter(),
               ptr[1..].iter(),
-              perm_iter(tperm.as_slice(),ptr),
-              perm_iter(tperm.as_slice(),&ptr[1..]))
+              ptr.permute_by(tperm.as_slice()),
+              ptr[1..].permute_by(tperm.as_slice()))
             .filter(|(index,_,_,_,_)| index[conedim0] >= index[conedim1])
             .zip( rptr.iter().zip(rptr[1..].iter()))
             .for_each(| ((index,&p0b,&p0e,&p1b,&p1e),(&rpb,&rpe)) | {
@@ -898,7 +899,7 @@ impl Model {
             .for_each(|((ix,_),coni)| { *ix = coni; } );
         let idxs_ = idxs.clone();
         izip!(idxs.iter_mut(),
-              perm_iter(&tperm,&idxs_),
+              idxs_.permute_by(&tperm),
               shape.index_iterator())
             .filter(|(_,_,index)| index[conedim0] < index[conedim1])
             .for_each(|(t,&s,_)| { *t = s; })
@@ -1216,10 +1217,10 @@ impl Model {
         let dimbarvar : Vec<usize> = (0..numbarvar).map(|j| self.task.get_dim_barvar_j(j as i32).unwrap() as usize).collect();
         let accptr    : Vec<usize> = once(0usize).chain((0..numacc)
                                                         .map(|i| self.task.get_acc_n(i as i64).unwrap() as usize)
-                                                        .fold_map(0,|&p,n| n+p)).collect();
+                                                        .scan(0,|p,n| { *p += n; Some(*p) })).collect();
         let barvarptr : Vec<usize> = once(0usize).chain((0..numbarvar)
                                                         .map(|j| self.task.get_len_barvar_j(j as i32).unwrap() as usize)
-                                                        .fold_map(0,|&p,n| n+p)).collect();
+                                                        .scan(0,|p,n| { *p += n; Some(*p) })).collect();
 
         // extract solutions
         for &whichsol in [mosek::Soltype::BAS,
@@ -1548,7 +1549,7 @@ fn row_major_offset_to_col_major(ofs : usize, dim : usize) -> usize {
 mod tests {
     use matrix::dense;
 
-    use crate::utils::*;
+    use utils::iter::*;
     use crate::*;
 
     fn eq<T:std::cmp::Eq>(a : &[T], b : &[T]) -> bool {

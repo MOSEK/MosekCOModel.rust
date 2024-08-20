@@ -1,7 +1,8 @@
 //! This module provides basic array functionality.
 //!
 use itertools::{izip, EitherOrBoth};
-use crate::{expr::{Expr, IntoExpr}, utils};
+use crate::expr::{Expr, IntoExpr};
+use utils::*;
 
 
 /// This trait represents an 2-dimensional array, with a few functions specialized for matrixes on
@@ -439,15 +440,15 @@ pub trait IntoIndexes<const N : usize> {
 
 impl<const N : usize> IntoIndexes<N> for [[usize;N]] {
     fn into_indexes(&self, shape : &[usize;N]) -> Vec<usize> {
-        let strides = utils::shape_to_strides(shape);
-        self.iter().map(|index| index.iter().zip(strides.iter()).map(|(a,b)| a*b).sum() ).collect()
+        let strides = shape.to_strides();
+        self.iter().map(|index| strides.to_linear(&index)).collect()
     }
 }
 
 impl<const N : usize> IntoIndexes<N> for Vec<[usize;N]> {
     fn into_indexes(&self, shape : &[usize;N]) -> Vec<usize> {
-        let strides = utils::shape_to_strides(shape);
-        self.iter().map(|index| index.iter().zip(strides.iter()).map(|(a,b)| a*b).sum() ).collect()
+        let strides = shape.to_strides();
+        self.iter().map(|index| strides.to_linear(&index)).collect()
     }
 }
 
@@ -455,6 +456,9 @@ impl IntoIndexes<1> for [usize] {
     fn into_indexes(&self, _shape : &[usize;1]) -> Vec<usize> { self.to_vec() }
 }
 
+pub fn zeros<const N : usize>(shape : [usize;N]) -> NDArray<N> {
+    NDArray::new(shape,Some(Vec::new()),Vec::new()).unwrap()
+}
 
 /// Create a sparse [NDArray] from data.
 pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> where D : Into<Vec<f64>>, I : IntoIndexes<N> {
