@@ -1,5 +1,6 @@
 //! Module for Variable object and related implementations
 
+use iter::IndexIteratorExt;
 use utils::*;
 
 use super::*;
@@ -198,6 +199,7 @@ impl<const N : usize> ModelItemIndex<Variable<N>> for [std::ops::Range<usize>; N
         let rstrides = rshape.to_strides();
         let strides = v.shape.to_strides();
 
+
         if let Some(ref sp) = v.sparsity {
             let mut rsp   = Vec::with_capacity(sp.len());
             let mut ridxs = Vec::with_capacity(v.idxs.len());
@@ -216,15 +218,24 @@ impl<const N : usize> ModelItemIndex<Variable<N>> for [std::ops::Range<usize>; N
                      shape    : rshape }
         }
         else {
-            let ridxs : Vec<usize> = (0..rshape.iter().product())
-                .map(|i| izip!(rshape.iter(),rstrides.iter(),self.iter(),strides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
-                .map(|i| v.idxs[i] /*TODO: unsafe get*/)
-                .collect();
-            println!("Variable.index(), shape : {:?} -> {:?}, idxs : {:?} -> {:?}",v.shape,rshape,v.idxs,ridxs);
+            fn addvec<const N : usize>(lhs : &[usize;N], rhs : &[usize;N]) -> [usize;N] {
+                let mut r = [0usize;N]; 
+                r.iter_mut().zip(lhs.iter().zip(rhs.iter())).for_each(|(d,(&s0,&s1))| *d = s0+s1 );
+                r
+            }
 
-            Variable{idxs : ridxs,
+            let mut offset = [0usize; N]; offset.iter_mut().zip(self.iter()).for_each(|(o,i)| *o = i.start);
+            let ridxs : Vec<usize> = 
+                rshape.index_iterator()
+                    .map(|index| strides.to_linear(&addvec(&index,&offset)))
+                //(0..rshape.iter().product())
+                //    .map(|i| izip!(rshape.iter(),rstrides.iter(),self.iter(),strides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
+                    .map(|i| v.idxs[i] /*TODO: unsafe get*/)
+                    .collect();
+
+            Variable{idxs     : ridxs,
                      sparsity : None,
-                     shape : rshape}
+                     shape    : rshape}
         }
     }
 }

@@ -798,7 +798,7 @@ pub fn constants<const N : usize>(shape : &[usize;N], values : &[f64]) -> Expr<N
 }
 
 pub fn nil<const N : usize>(shape : &[usize; N]) -> ExprNil<N> {
-    if shape.iter().product::<usize>() != 0 {
+    if shape.len() > 0 && shape.iter().product::<usize>() != 0 {
         panic!("Shape must have at least one zero-dimension");
     }
     ExprNil{shape:*shape}

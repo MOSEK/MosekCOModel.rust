@@ -4,12 +4,17 @@ pub mod iter;
 use itertools::izip;
 
 
-
+#[derive(Debug,Clone,Copy)]
 pub struct Strides<const N : usize> {
     strides : [usize;N]
 }
 
 impl<const N : usize> Strides<N> {
+    pub fn from_shape(shape : &[usize;N]) -> Strides<N> {
+        let mut strides = [0usize; N]; 
+        strides.iter_mut().zip(shape.iter()).rev().fold(1usize,|c,(t,&s)| { *t = c; c*s });
+        Strides{ strides }
+    }
     pub fn to_array(&self) -> [usize;N] { self.strides }
     pub fn to_linear(&self, index : &[usize;N]) -> usize {
         index.iter().zip(self.strides.iter()).map(|(a,b)| a*b).sum()
@@ -29,9 +34,7 @@ pub trait ShapeToStridesEx<const N : usize> {
 
 impl<const N : usize> ShapeToStridesEx<N> for [usize;N] {
     fn to_strides(&self) -> Strides<N> {
-        let mut strides = [0usize; N]; 
-        strides.iter_mut().zip(self.iter()).rev().fold(1usize,|c,(t,&s)| { *t = s*c; *t });
-        Strides{ strides }
+        Strides::from_shape(self)
     }
 }
 
