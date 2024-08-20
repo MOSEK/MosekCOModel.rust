@@ -1,4 +1,4 @@
-use super::{eval, ExprReshapeOneRow, ExprTrait};
+use super::{eval, ExprEvalError, ExprReshapeOneRow, ExprTrait};
 use super::workstack::WorkStack;
 use super::matrix::Matrix;
 
@@ -432,142 +432,44 @@ impl<E> ExprRightElmMultipliable<1,E> for &[f64]
 
 
 impl<E> ExprTrait<2> for ExprMulLeft<E> where E:ExprTrait<2> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(ws,rs,xs)?;
         if let Some(ref sp) = self.sp {
-            super::eval::mul_left_sparse(self.shape[0],self.shape[1],sp.as_slice(),self.data.as_slice(),rs,ws,xs);
+            super::eval::mul_left_sparse(self.shape[0],self.shape[1],sp.as_slice(),self.data.as_slice(),rs,ws,xs)
         } else {
-            super::eval::mul_left_dense(self.data.as_slice(), self.shape[0],self.shape[1],rs,ws,xs);
+            super::eval::mul_left_dense(self.data.as_slice(), self.shape[0],self.shape[1],rs,ws,xs)
         }
     }
 }
 
 impl<E> ExprTrait<2> for ExprMulRight<E> where E:ExprTrait<2> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(ws,rs,xs)?;
         if let Some(ref sp) = self.sp {
-            super::eval::mul_right_sparse(self.shape[0],self.shape[1],sp.as_slice(),self.data.as_slice(),rs,ws,xs);
+            super::eval::mul_right_sparse(self.shape[0],self.shape[1],sp.as_slice(),self.data.as_slice(),rs,ws,xs)
         } else {
-            super::eval::mul_right_dense(self.data.as_slice(), self.shape[0],self.shape[1],rs,ws,xs);
+            super::eval::mul_right_dense(self.data.as_slice(), self.shape[0],self.shape[1],rs,ws,xs)
         }
     }
 }
 
 
 impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprMulScalar<N,E> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(rs,ws,xs);
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(rs,ws,xs)?;
         let (_shape,_ptr,_sp,_subj,cof) = rs.peek_expr_mut();
-        cof.iter_mut().for_each(|c| *c *= self.lhs)
+        cof.iter_mut().for_each(|c| *c *= self.lhs);
+        Ok(())
     }
 }
 
 impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprMulElm<N,E> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.expr.eval(ws,rs,xs);
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.expr.eval(ws,rs,xs)?;
         super::eval::mul_elem(&self.datashape,
                               if let Some(ref v) = &self.datasparsity { Some(v.as_slice()) } else { None },
                               self.data.as_slice(),
-                              rs,ws,xs);
-//        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-//        let &nnz = ptr.last().unwrap();
-//        let nelm = ptr.len()-1;
-//
-//        if shape.iter().zip(self.datashape.iter()).any(|(&s0,&s1)| s0 != s1) { panic!("Mismatching operand shapes in mul_elm"); }
-//
-//        match (&self.datasparsity,sp) {
-//            (Some(msp),Some(esp)) => {
-//                let (upart,xcof) = xs.alloc(esp.len()*2+1+subj.len(),subj.len());
-//                let (xsp,upart) = upart.split_at_mut(esp.len());
-//                let (xptr,xsubj) = upart.split_at_mut(esp.len()+1);
-//
-//                xptr[0] = 0;
-//                let mut mit   = msp.iter().zip(self.data.iter()).peekable();
-//                let mut eit   = izip!(esp.iter(),ptr.iter(),ptr[1..].iter()).peekable();
-//                let mut rnelm = 0usize;
-//                let mut rnnz  = 0usize;
-//
-//                while let (Some((&mi,&mc)),Some((ei,&p0,&p1))) = (mit.peek(),eit.peek()) {
-//                    match mi.cmp(ei) {
-//                        std::cmp::Ordering::Less => _ = mit.next(),
-//                        std::cmp::Ordering::Greater => _ = eit.next(),
-//                        std::cmp::Ordering::Equal => {
-//                            xsp[rnelm] = mi;                            
-//                            xsubj[rnnz..rnnz+p1-p0].clone_from_slice(&subj[p0..p1]);                            
-//                            xcof[rnnz..rnnz+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(tc,&sc)| *tc = sc * mc);
-//
-//                            rnelm += 1;
-//                            rnnz += p1-p0;
-//                            xptr[rnelm] = rnnz;
-//
-//                            _ = mit.next();
-//                            _ = eit.next();
-//                        }
-//                    }
-//                }
-//
-//                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape, rnnz, rnelm);
-//                rptr.clone_from_slice(&xptr[..rnelm+1]);
-//                assert!(rptr[0] == 0);
-//                if let Some(rsp) = rsp { rsp.clone_from_slice(&xsp[..rnelm]) };
-//                rsubj.clone_from_slice(&xsubj[..rnnz]);
-//                rcof.clone_from_slice(&xcof[..rnnz]);
-//                xs.clear();
-//            }
-//            (Some(msp),None) =>  {
-//                // count result size
-//                let rnelm = msp.len();
-//                let rnnz = msp.iter().map(|&i| ptr[i+1]-ptr[i]).sum();
-//                //println!("ExprMulElm::eval(): nelm = {}, nnz = {}, rnelm = {}, rnnz = {}",nelm,nnz, rnelm,rnnz);
-//                //println!("ExprMulElm::eval():\nSource\n\tptr = {:?}\n\tsubj = {:?}",ptr,subj);
-//                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape, rnnz, rnelm);
-//                rptr[0] = 0;
-//                let mut nzi = 0usize;
-//
-//                let rsp = rsp.unwrap();
-//                for (ri,rp,&i,&mc) in izip!(rsp.iter_mut(),
-//                                            rptr[1..].iter_mut(),
-//                                            msp.iter(),
-//                                            self.data.iter()) {
-//                    let p0 = ptr[i];
-//                    let p1 = ptr[i+1];
-//
-//                    //println!("  p0 = {}, p1 = {}",p0,p1);
-//                    *ri = i;
-//                    rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
-//                    rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * mc);
-//                    nzi += p1-p0;
-//                    *rp = nzi; 
-//                }
-//                //println!("ExprMulElm::eval(): rptr = {:?}",rptr);
-//            }
-//            (None,Some(esp)) => {
-//                let rnnz = nnz;
-//                let rnelm = nelm;
-//
-//                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape, rnnz, rnelm);
-//
-//                if let Some(rsp) = rsp {
-//                    rsp.clone_from_slice(esp);
-//                }
-//                rsubj.clone_from_slice(subj);
-//                rptr.clone_from_slice(ptr);
-//                rcof.clone_from_slice(cof);
-//                for (&p0,&p1,&i) in izip!(ptr.iter(),ptr[1..].iter(),esp.iter()) {
-//                    let mc = self.data[i];
-//                    rcof[p0..p1].iter_mut().for_each(|c| *c *= mc);
-//                }
-//            }
-//            (None,None) => {
-//                let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(shape, nnz, nelm);
-//                rptr.clone_from_slice(ptr);
-//                rsubj.clone_from_slice(subj);
-//                rcof.clone_from_slice(cof);
-//                for (&p0,&p1,&c) in izip!(ptr.iter(),ptr[1..].iter(),self.data.iter()) {
-//                    rcof[p0..p1].iter_mut().for_each(|t| *t *= c );
-//                }
-//            }
-//        } // match (self.sparsity,sp)
+                              rs,ws,xs)
     }
 }
 
@@ -575,36 +477,14 @@ impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprMulElm<N,E> {
 
 
 impl<const N : usize,E> ExprTrait<N> for ExprScalarMul<N,E> where E : ExprTrait<0> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.expr.eval(ws,rs,xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.expr.eval(ws,rs,xs)?;
         if let Some(ref sp) = self.datasparsity {
-            eval::scalar_expr_mul(self.datashape.as_slice(), Some(sp.as_slice()), self.data.as_slice(), rs, ws, xs);
+            eval::scalar_expr_mul(self.datashape.as_slice(), Some(sp.as_slice()), self.data.as_slice(), rs, ws, xs)
         }
         else {
-            eval::scalar_expr_mul(self.datashape.as_slice(), None, self.data.as_slice(), rs, ws, xs);
+            eval::scalar_expr_mul(self.datashape.as_slice(), None, self.data.as_slice(), rs, ws, xs)
         }
-//        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-//        assert_eq!(shape.len(), 0);
-//        if let Some(_sp) = sp {
-//            let (rptr,_rsp,_rsubj,_rcof) = rs.alloc_expr(&self.datashape, 0, 0);
-//            rptr[0] = 0;
-//        }
-//        else {
-//            let nnz = *ptr.last().unwrap();
-//            let rnelem = self.data.len();
-//            let rnnz = nnz * rnelem;
-//            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.datashape, rnnz, rnelem);
-//            
-//            rptr.iter_mut().fold(0,|c,r| { *r = c; c + nnz });
-//            if let (Some(rsp),Some(dsp)) = (rsp,&self.datasparsity) {
-//                rsp.copy_from_slice(dsp.as_slice());
-//            }
-//            rsubj.iter_mut().zip(subj[0..nnz].iter().cycle()).for_each(| (r,&s)| *r = s);
-//            izip!(rcof.iter_mut(),
-//                  self.data.iter().flat_map(|&v| repeat(v).take(nnz)),  
-//                  cof[0..nnz].iter().cycle())
-//                .for_each(| (r,s0,&s1)| *r = s0 * s1);
-//        }
     }
 }
 

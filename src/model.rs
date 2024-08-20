@@ -674,7 +674,7 @@ impl Model {
             E : expr::ExprTrait<N>, 
             D : ConDomainTrait<N> 
     {
-        expr.eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs);
+        expr.eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).unwrap();
         dom.create(self,name)
     }
 
@@ -1167,7 +1167,7 @@ impl Model {
                                              name  : Option<&str>,
                                              sense : Sense,
                                              expr  : & E) {
-        expr.eval_finalize(& mut self.rs,& mut self.ws, & mut self.xs);
+        expr.eval_finalize(& mut self.rs,& mut self.ws, & mut self.xs).unwrap();
         self.set_objective(name,sense);
     }
 

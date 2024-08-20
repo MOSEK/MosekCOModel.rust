@@ -1,5 +1,6 @@
 //! Module for Variable object and related implementations
 
+use expr::ExprEvalError;
 use iter::IndexIteratorExt;
 use utils::*;
 
@@ -590,7 +591,7 @@ impl<const N : usize> From<Variable<N>> for super::expr::Expr<N> {
 
 
 impl<const N : usize> Variable<N> {
-    fn eval_common(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+    fn eval_common(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError>{
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.shape,
                                                   self.idxs.len(),
                                                   self.idxs.len());
@@ -600,12 +601,13 @@ impl<const N : usize> Variable<N> {
         if let (Some(rsp),Some(sp)) = (rsp,&self.sparsity) {
             rsp.clone_from_slice(sp.as_slice())
         }
+        Ok(())
     }
 }
 
 impl<const N : usize> super::ExprTrait<N> for Variable<N> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.eval_common(rs,ws,xs);
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.eval_common(rs,ws,xs)
     }
 }
 

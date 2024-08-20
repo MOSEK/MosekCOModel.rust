@@ -9,17 +9,17 @@ use utils::{*,iter::*};
 
 use itertools::{izip,iproduct};
 
-pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
+pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nd = shape.len();
 
     if nd != 2 || shape[0] != shape[1] {
-        panic!("Diagonals can only be taken from square matrixes");
+        return Err(ExprEvalError::new(file!(), line!(), "Diagonals can only be taken from square matrixes"));
     }
     let d = shape[0];
     if index.unsigned_abs() as usize >= d {
-        panic!("Diagonal index out of bounds");
+        return Err(ExprEvalError::new(file!(),line!(),"Diagonal index out of bounds"));
     }
 
     let absidx = index.unsigned_abs() as usize;
@@ -104,18 +104,18 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
                 nzi += p1-p0;
             });
         let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p } );
+
     }
+    Ok(())
 }
 
-pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
+pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-
-    //println!("triangular_part(upper:{}, with_diag:{},...)",upper,with_diag);
 
     let nd = shape.len();
 
     if nd != 2 || shape[0] != shape[1] {
-        panic!("Triangular parts can only be taken from square matrixes");
+        return Err(ExprEvalError::new(file!(), line!(), "Triangular parts can only be taken from square matrixes"));
     }
     let d = shape[0];
 
@@ -183,19 +183,21 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
         rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
     }
     rs.validate_top().unwrap();
+    Ok(())
 }
 
-pub fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
+pub fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
     let (rptr,_rsp,rsubj,rcof)    = rs.alloc_expr(&[],*ptr.last().unwrap(),1);
     rptr[0] = 0;
     rptr[1] = *ptr.last().unwrap();
     rsubj.clone_from_slice(subj);
     rcof.clone_from_slice(cof);
+    Ok(())
 }
 
 
-pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) { 
+pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nnz = *ptr.last().unwrap();
     let nelem = ptr.len()-1;
@@ -203,7 +205,9 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
 
     // check indexes
     assert!(n == begin.len() && n == end.len());
-    if shape.iter().zip(end.iter()).any(|(a,b)| a < b) { panic!("Index out of bounds") }
+    if shape.iter().zip(end.iter()).any(|(a,b)| a < b) { 
+        return Err(ExprEvalError::new(file!(),line!(),"Index out of bounds"));
+    }
 
     let (urest,fpart) = xs.alloc(n*5+nelem*2+1+nnz,nnz);
     let (strides,urest) = urest.split_at_mut(n); 
@@ -281,12 +285,13 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
         rsubj.clone_from_slice(&xsubj[..rnnz]);
         rcof.clone_from_slice(&xcof[..rnnz]);
     }
+    Ok(())
 }
 
-pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     if dim >= shape.len() {
-        panic!("Invalid stacking dimension");
+        return Err(ExprEvalError::new(file!(),line!(),"Invalid stacking dimension"));
     }
     let mut rshape = shape.to_vec();
     rshape[dim] *= num;
@@ -349,6 +354,7 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
 
         _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
     }
+    Ok(())
 }
 
 
@@ -356,13 +362,13 @@ pub fn permute_axes<const N : usize>(
     perm : &[usize;N],
     rs : & mut WorkStack,
     ws : & mut WorkStack,
-    xs : & mut WorkStack) 
+    xs : & mut WorkStack) -> Result<(),ExprEvalError> 
 {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nelem = ptr.len()-1;
 
     if shape.len() != N || *perm.iter().max().unwrap() >= N {
-        panic!("Mismatching permutation and shape");
+        return Err(ExprEvalError::new(file!(),line!(),"Mismatching permutation and shape"));
     }
     let shape = { let mut r = [0usize; N]; r.copy_from_slice(shape); r };
     let mut rshape = [usize::MAX; N];
@@ -434,6 +440,7 @@ pub fn permute_axes<const N : usize>(
             rcof[nzi..nzi+n].clone_from_slice(scof);
         }
     }
+    Ok(())
 }
 
 
@@ -441,7 +448,7 @@ pub fn permute_axes<const N : usize>(
 pub fn add(n  : usize,
                   rs : & mut WorkStack,
                   ws : & mut WorkStack,
-                  xs : & mut WorkStack) {
+                  xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     // check that shapes match
     let exprs = ws.pop_exprs(n);
 
@@ -583,6 +590,7 @@ pub fn add(n  : usize,
         // Recompute ptr
         _ = rptr.iter_mut().fold(0,|v,p| { let tmp = *p; *p = v; tmp } );
     }
+    Ok(())
 } // add
 
 /// Evaluates `lhs` * expr.
@@ -591,14 +599,14 @@ pub fn mul_left_dense(mdata : &[f64],
                              mdimj : usize,
                              rs    : & mut WorkStack,
                              ws    : & mut WorkStack,
-                             _xs    : & mut WorkStack) {
+                             _xs    : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nd   = shape.len();
     let nnz  = subj.len();
 
-    if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
-    if mdimj != shape[0] { panic!("Mismatching shapes for multiplication") }
+    if nd != 2 && nd != 1{ return Err(ExprEvalError::new(file!(),line!(),"Invalid shape for multiplication")) }
+    if mdimj != shape[0] { return Err(ExprEvalError::new(file!(),line!(),"Mismatching shapes for multiplication")) }
 
     let rdimi = mdimi;
     let rdimj = if nd == 1 { 1 } else { shape[1] };
@@ -655,6 +663,7 @@ pub fn mul_left_dense(mdata : &[f64],
             }
         }
     }
+    Ok(())
 } // mul_left_dense
 
 pub fn mul_right_dense(mdata : &[f64],
@@ -662,13 +671,13 @@ pub fn mul_right_dense(mdata : &[f64],
                               mdimj : usize,
                               rs    : & mut WorkStack,
                               ws    : & mut WorkStack,
-                              _xs    : & mut WorkStack) {
+                              _xs    : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nd   = shape.len();
     let nnz  = subj.len();
     //let nelm = ptr.len()-1;
-    if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
+    if nd != 2 && nd != 1{ return Err(ExprEvalError::new(file!(),line!(),"Invalid shape for multiplication")) }
     let (edimi,edimj) = if let Some(d2) = shape.get(1) {
         (shape[0],*d2)
     }
@@ -676,7 +685,7 @@ pub fn mul_right_dense(mdata : &[f64],
         (1,shape[0])
     };
 
-    if mdimi != edimj { panic!("Mismatching shapes for multiplication") }
+    if mdimi != edimj { return Err(ExprEvalError::new(file!(),line!(),"Mismatching shapes for multiplication")) }
 
     let rdimi = edimi;
     let rdimj = mdimj;
@@ -727,6 +736,7 @@ pub fn mul_right_dense(mdata : &[f64],
             *rp = nzi;
         }
     }
+    Ok(())
 } // mul_right_dense
 
 
@@ -736,12 +746,12 @@ pub fn mul_left_sparse(mheight : usize,
                               mdata : &[f64],
                               rs : & mut WorkStack,
                               ws : & mut WorkStack,
-                              xs : & mut WorkStack) {
+                              xs : & mut WorkStack) -> Result<(),ExprEvalError> {
 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nd = shape.len();
     if nd != 1 && nd != 2 { panic!("Expression is incorrect shape for multiplication: {:?}",shape); }
-    if shape[0] != mwidth { panic!("Mismatching operand shapes for multiplication"); }
+    if shape[0] != mwidth { return Err(ExprEvalError::new(file!(),line!(),"Mismatching operand shapes for multiplication")); }
     let _eheight = shape[0];
     let ewidth = shape.get(1).copied().unwrap_or(1);
 
@@ -897,6 +907,7 @@ pub fn mul_left_sparse(mheight : usize,
             }
         }
     }
+    Ok(())
 }
 
 // expr x matrix
@@ -906,10 +917,10 @@ pub fn mul_right_sparse(mheight : usize,
                                mdata : &[f64],
                                rs : & mut WorkStack,
                                ws : & mut WorkStack,
-                               xs : & mut WorkStack) {
+                               xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     if shape.len() != 1 && shape.len() != 2 {
-        panic!("Invalid operand shapes: Expr is not 1- or 2-dimensional");
+        return Err(ExprEvalError::new(file!(),line!(),"Invalid operand shapes: Expr is not 1- or 2-dimensional"));
     }
 
     let (eheight,ewidth) =
@@ -1083,29 +1094,30 @@ pub fn mul_right_sparse(mheight : usize,
                 .for_each(|(k,(i,&j))| { *k = i*mwidth+j; })
         }
     }
+    Ok(())
 }
 
 pub fn dot_sparse(_sparsity : &[usize],
                   _data     : &[f64],
                   _rs       : & mut WorkStack,
                   ws       : & mut WorkStack,
-                  _xs      : & mut WorkStack) {
+                  _xs      : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (_shape,_ptr,_sp,_subj,_cof) = ws.pop_expr();
    
-    panic!("TODO");
+    return Err(ExprEvalError::new(file!(),line!(),"TODO"));
 }
 
 pub fn dot_vec(data : &[f64],
                rs   : & mut WorkStack,
                ws   : & mut WorkStack,
-               _xs  : & mut WorkStack) {
+               _xs  : & mut WorkStack) -> Result<(),ExprEvalError> {
 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nd   = shape.len();
     let nnz  = subj.len();
 
     if nd != 1 || shape[0] != data.len() {
-        panic!("Mismatching operands");
+        return Err(ExprEvalError::new(file!(),line!(),"Mismatching operands"));
     }
 
     if let Some(sp) = sp {
@@ -1137,16 +1149,17 @@ pub fn dot_vec(data : &[f64],
             }
         }
     }
+    Ok(())
 } // dot_vec
 
-pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     // println!("{}:{}: eval::stack n={}, dim={}",file!(),line!(),n,dim);
     let exprs = ws.pop_exprs(n);
 
     // check shapes
     //println!("vec = {:?}",exprs.iter().map(|v| v.0).collect::<Vec<&[usize]>>());
     if ! exprs.iter().zip(exprs[1..].iter()).any(|((s0,_,_,_,_),(s1,_,_,_,_))| s0.iter().zip(s1.iter()).enumerate().all(|(i,(&d0,&d1))| i == dim || d0 == d1)) {
-        panic!("Mismatching shapes or stacking dimension");
+        return Err(ExprEvalError::new(file!(),line!(),"Mismatching shapes or stacking dimension"));
     }
 
     let nd = (dim+1).max(exprs.iter().map(|(shape,_,_,_,_)| shape.len()).max().unwrap());
@@ -1318,9 +1331,10 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
             ofs += vd1;
         }
     }
+    Ok(())
 }
 
-pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) {
+pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let d = shape[shape.len()-num..].iter().product();
@@ -1371,6 +1385,7 @@ pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : &
         rcof.clone_from_slice(cof);
         rptr.iter_mut().zip(ptr.iter().step_by(d)).for_each(|(rp,&p)| *rp = p );
     }
+    Ok(())
 }
 
 pub fn mul_elem(datashape : &[usize],
@@ -1378,12 +1393,12 @@ pub fn mul_elem(datashape : &[usize],
                         data : &[f64],
                         rs : & mut WorkStack,
                         ws : & mut WorkStack,
-                        xs : & mut WorkStack) {
+                        xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let &nnz = ptr.last().unwrap();
     let nelm = ptr.len()-1;
 
-    if shape.iter().zip(datashape.iter()).any(|(&s0,&s1)| s0 != s1) { panic!("Mismatching operand shapes in mul_elm"); }
+    if shape.iter().zip(datashape.iter()).any(|(&s0,&s1)| s0 != s1) { return Err(ExprEvalError::new(file!(),line!(),"Mismatching operand shapes in mul_elm")); }
 
     match (datasparsity,sp) {
         (Some(msp),Some(esp)) => {
@@ -1478,6 +1493,7 @@ pub fn mul_elem(datashape : &[usize],
             }
         }
     } // match (sparsity,sp)
+    Ok(())
 }
 
 pub fn scalar_expr_mul
@@ -1486,7 +1502,7 @@ pub fn scalar_expr_mul
     data : &[f64],
     rs : & mut WorkStack, 
     ws : & mut WorkStack, 
-    _xs : & mut WorkStack) 
+    _xs : & mut WorkStack) -> Result<(),ExprEvalError> 
 {
     use std::iter::repeat;
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
@@ -1511,15 +1527,16 @@ pub fn scalar_expr_mul
               cof[0..nnz].iter().cycle())
             .for_each(| (r,s0,&s1)| *r = s0 * s1);
     }
+    Ok(())
 }
 
 
 
-pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     use std::iter::repeat;
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     // check
-    if dim + 2 > shape.len() { panic!("Invalid dimension for symmetrization"); }
+    if dim + 2 > shape.len() { return Err(ExprEvalError::new(file!(),line!(),"Invalid dimension for symmetrization")); }
     
     let n : usize = {
         let d = shape[dim]*shape[dim+1];
@@ -1529,7 +1546,7 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
 
         let n = (((1.0+8.0*d as f64).sqrt()-1.0)/2.0).floor() as usize;
         if n*(n+1)/2 != d {
-            panic!("Specified symmetrization dimensions do not match a symmetric size");
+            return Err(ExprEvalError::new(file!(),line!(),"Specified symmetrization dimensions do not match a symmetric size"));
         }
         n
     };
@@ -1664,10 +1681,11 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
 //
 //        `
     }
+    Ok(())
 }
 
 
-pub fn inplace_reduce_shape(m : usize,rs : & mut WorkStack, xs : & mut WorkStack) 
+pub fn inplace_reduce_shape(m : usize,rs : & mut WorkStack, xs : & mut WorkStack)  -> Result<(),ExprEvalError>
 {
     rs.validate_top().unwrap();
     let (rshape,_) = xs.alloc(m,0);
@@ -1682,12 +1700,13 @@ pub fn inplace_reduce_shape(m : usize,rs : & mut WorkStack, xs : & mut WorkStack
             rshape[shape.len()..].iter_mut().for_each(|s| *s = 1);
         }
     }
-    rs.inline_reshape_expr(rshape).unwrap()
+    rs.inline_reshape_expr(rshape).or_else(|s| Err(ExprEvalError::new(file!(),line!(),s)))?;
+    Ok(())
 }
 
-pub fn inplace_reshape_one_row(m : usize, dim : usize, rs : & mut WorkStack, xs : & mut WorkStack) 
+pub fn inplace_reshape_one_row(m : usize, dim : usize, rs : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> 
 {
-    if dim >= m { panic!("Invalid dimension given"); }
+    if dim >= m { return Err(ExprEvalError::new(file!(),line!(),"Invalid dimension given")); }
         
     let (newshape,_) = xs.alloc(m,0);
     newshape.iter_mut().for_each(|s| *s = 1 );
@@ -1696,26 +1715,28 @@ pub fn inplace_reshape_one_row(m : usize, dim : usize, rs : & mut WorkStack, xs 
         shp.iter().product()
     };
     rs.inline_reshape_expr(newshape).unwrap();
+    Ok(())
 }
 
-pub fn inplace_reshape(rshape : &[usize],rs : & mut WorkStack, _xs : & mut WorkStack) 
+pub fn inplace_reshape(rshape : &[usize],rs : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> 
 {
     rs.validate_top().unwrap();
     {
         let (shape,_,_,_,_) = rs.peek_expr();
         if shape.iter().product::<usize>() != rshape.iter().product() {
-            panic!("Cannot reshape expression into given shape");
+            return Err(ExprEvalError::new(file!(),line!(),"Cannot reshape expression into given shape"));
         }
     }
     rs.inline_reshape_expr(rshape).unwrap();
+    Ok(())
 }
 
-pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) 
+pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> 
 {
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
 
     if ptr.len()-1 != sparsity.len() {
-        panic!("Sparsity pattern does not match number of elements in expression");
+        return Err(ExprEvalError::new(file!(),line!(),"Sparsity pattern does not match number of elements in expression"));
     }
 
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape,ptr.len()-1,subj.len());
@@ -1727,14 +1748,15 @@ pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws 
     if let Some(rsp) = rsp {
         rsp.copy_from_slice(sparsity);
     }
+    Ok(())
 }
 
-pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) 
+pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> 
 {
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
 
     if ptr.len()-1 != rshape.iter().product::<usize>() {
-        panic!("Shape does not match number of elements in expression");
+        return Err(ExprEvalError::new(file!(),line!(),"Shape does not match number of elements in expression"));
     }
 
     let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(rshape,ptr.len()-1,subj.len());
@@ -1742,9 +1764,10 @@ pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs
     rptr.clone_from_slice(ptr);
     rsubj.clone_from_slice(subj);
     rcof.clone_from_slice(cof);
+    Ok(())
 }
 
-pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) {
+pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
     let rnelm = ptr.len()-1;
     let rnnz  = subj.len();        
@@ -1754,13 +1777,14 @@ pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut Wor
     rptr.clone_from_slice(ptr);
     rsubj.clone_from_slice(subj);
     rcof.clone_from_slice(cof);
+    Ok(())
 }
 
 
 
 
 
-pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nnz  = subj.len();
@@ -1853,6 +1877,7 @@ pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut Work
             ii += 1;
         }
     }
+    Ok(())
 }
 
 

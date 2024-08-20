@@ -1,9 +1,9 @@
-use super::{ExprTrait,IntoExpr};
+use super::{ExprEvalError, ExprTrait, IntoExpr};
 use super::workstack::WorkStack;
 
 
 pub trait ExprAddRecTrait {
-    fn eval_rec(&self, c : f64, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize;
+    fn eval_rec(&self, c : f64, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<usize,ExprEvalError>;
 }
 
 pub struct ExprAdd<const N : usize, L:ExprTrait<N>,R:ExprTrait<N>> {
@@ -75,11 +75,11 @@ impl<const N : usize,L,R> ExprTrait<N> for ExprAdd<N,L,R>
         L : ExprTrait<N>,
         R : ExprTrait<N>
 {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.lhs.eval(ws,rs,xs); ws.inplace_mul(self.lcof);
-        self.rhs.eval(ws,rs,xs); ws.inplace_mul(self.rcof);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.lhs.eval(ws,rs,xs)?; ws.inplace_mul(self.lcof);
+        self.rhs.eval(ws,rs,xs)?; ws.inplace_mul(self.rcof);
 
-        super::eval::add(2,rs,ws,xs);
+        super::eval::add(2,rs,ws,xs)
     }
 }
 
@@ -92,10 +92,10 @@ impl<const N : usize,L,R> ExprAddRecTrait for ExprAdd<N,L,R>
         L : ExprTrait<N>,
         R : ExprTrait<N>
 {
-    fn eval_rec(&self, c : f64, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
-        self.rhs.eval(rs,ws,xs); rs.inplace_mul(self.rcof * c);
-        self.lhs.eval(rs,ws,xs); rs.inplace_mul(self.lcof * c);
-        2
+    fn eval_rec(&self, c : f64, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<usize,ExprEvalError> {
+        self.rhs.eval(rs,ws,xs)?; rs.inplace_mul(self.rcof * c);
+        self.lhs.eval(rs,ws,xs)?; rs.inplace_mul(self.lcof * c);
+        Ok(2)
     }
 }
 
@@ -104,9 +104,9 @@ impl<const N : usize,L,R> ExprAddRecTrait for ExprAddRec<N,L,R>
         L : ExprAddRecTrait,
         R : ExprTrait<N>
 {
-    fn eval_rec(&self, c : f64, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
-        self.rhs.eval(rs,ws,xs); rs.inplace_mul(self.rcof * c);
-        1+self.lhs.eval_rec(self.lcof*c,rs,ws,xs)
+    fn eval_rec(&self, c : f64, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<usize,ExprEvalError> {
+        self.rhs.eval(rs,ws,xs)?; rs.inplace_mul(self.rcof * c);
+        Ok(1+self.lhs.eval_rec(self.lcof*c,rs,ws,xs)?)
     }
 }
 
@@ -115,10 +115,10 @@ impl<const N : usize,L,R> ExprTrait<N> for ExprAddRec<N,L,R>
         L : ExprAddRecTrait,
         R : ExprTrait<N>
 {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        let n = self.eval_rec(1.0,ws,rs,xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(), ExprEvalError> {
+        let n = self.eval_rec(1.0,ws,rs,xs)?;
 
-        super::eval::add(n,rs,ws,xs);
+        super::eval::add(n,rs,ws,xs)
     }
 }
 

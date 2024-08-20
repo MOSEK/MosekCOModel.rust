@@ -6,6 +6,7 @@ mod dot;
 mod mul;
 mod add;
 
+use std::fmt::{Debug, Write};
 use std::ops::Range;
 
 use crate::matrix::Matrix;
@@ -22,6 +23,24 @@ pub use mul::*;
 pub use add::*;
 pub use super::domain;
 
+pub struct ExprEvalError {
+    file : &'static str,
+    line : u32,
+    msg : String
+}
+impl ExprEvalError {
+    fn new<S>(file : &'static str, line : u32, msg : S) -> ExprEvalError where S : Into<String> { ExprEvalError{ file,line,msg:msg.into() } } 
+}
+impl Debug for ExprEvalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.file)?;
+        f.write_char(':')?;
+        self.line.fmt(f)?;
+        f.write_char(':')?;
+        f.write_str(self.msg.as_str())
+    }
+}
+
 /// The `ExprTrait<N>` represents a `N`-dimensional expression.
 ///
 /// Anything that implements this can be used to construct new expressions or constraints. It
@@ -34,16 +53,16 @@ pub trait ExprTrait<const N : usize> {
     /// general storage. The job of `eval` is to evaluate all sub-expressions and compute the
     /// flattened expression from this (basically, coefficients and subscripts of the expression).
     /// Upon return, the `rs` stack must hold the result of the evaluation.
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack);
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError>;
    
     /// Evaluate the expression, then clean it up and put
     /// it on the `rs` stack. The result will guarantee that
     /// - non-zeros in each row are sorted by `subj`
     /// - expression contains no zeros or duplicate nonzeros.
     /// - the expression is dense
-    fn eval_finalize(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.eval(ws,rs,xs);
-        eval::eval_finalize(rs,ws,xs);
+    fn eval_finalize(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.eval(ws,rs,xs)?;
+        eval::eval_finalize(rs,ws,xs)
     }
 
     /// Create a dynamic expression from an expression. Expression types generally depend on the
@@ -585,9 +604,9 @@ pub struct ExprScalarList<E> where E : ExprTrait<0> {
 }
 
 impl<E> ExprTrait<1> for ExprScalarList<E> where E : ExprTrait<0> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
         let n = self.exprs.len();
-        for e in self.exprs.iter() { e.eval(ws,rs,xs); }
+        for e in self.exprs.iter() { e.eval(ws,rs,xs)?; }
             
         let es = ws.pop_exprs(n);
 
@@ -605,7 +624,8 @@ impl<E> ExprTrait<1> for ExprScalarList<E> where E : ExprTrait<0> {
             .for_each(|(&pb,&pe, (_,_,_,subj,cof))| {
                 rsubj[pb..pe].copy_from_slice(subj);
                 rcof[pb..pe].copy_from_slice(cof);
-            });        
+            });       
+        Ok(())
     }
 }
 
@@ -711,7 +731,7 @@ pub fn from_iter<const N : usize, I,E>(shape : [usize; N], it : I) -> ExprScatte
 
 
 impl<const N : usize> ExprTrait<N> for Expr<N> {
-    fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+    fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
         let nnz  = self.asubj.len();
         let nelm = self.aptr.len()-1;
 
@@ -724,6 +744,7 @@ impl<const N : usize> ExprTrait<N> for Expr<N> {
         aptr.clone_from_slice(self.aptr.as_slice());
         asubj.clone_from_slice(self.asubj.as_slice());
         acof.clone_from_slice(self.acof.as_slice());
+        Ok(())
     }
 }
 
@@ -732,9 +753,10 @@ impl<const N : usize> ExprTrait<N> for Expr<N> {
 pub struct ExprNil<const N : usize> { shape : [usize; N] }
 
 impl<const N : usize> ExprTrait<N> for ExprNil<N> {
-    fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+    fn eval(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
         let (rptr,_,_,_) = rs.alloc_expr(self.shape.as_slice(),0,0);
         rptr[0] = 0;
+        Ok(())
     }
 }
 
@@ -812,9 +834,9 @@ pub struct ExprReduceShape<const N : usize, const M : usize, E> where E : ExprTr
 impl<const N : usize, const M : usize, E> ExprTrait<M> for ExprReduceShape<N,M,E> 
     where E : ExprTrait<N> 
 {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(rs,ws,xs);
-        eval::inplace_reduce_shape(M, rs, xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(rs,ws,xs)?;
+        eval::inplace_reduce_shape(M, rs, xs)
     }
 }
 
@@ -832,9 +854,9 @@ impl<const N : usize,const M : usize,E> ExprReshapeOneRow<N,M,E>
 }
 
 impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprReshapeOneRow<N,M,E> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
         if self.dim >= M { panic!("Invalid dimension given"); }
-        self.item.eval(rs,ws,xs);
+        self.item.eval(rs,ws,xs)?;
         eval::inplace_reshape_one_row(M, self.dim, rs, xs)
     }
 }
@@ -843,9 +865,9 @@ impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprResh
 /// expression must be the same.
 pub struct ExprReshape<const N : usize, const M : usize, E:ExprTrait<N>> { item : E, shape : [usize; M] }
 impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprReshape<N,M,E> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(rs,ws,xs);
-        eval::inplace_reshape(self.shape.as_slice(), rs, xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(rs,ws,xs)?;
+        eval::inplace_reshape(self.shape.as_slice(), rs, xs)
     }
 }
 
@@ -878,9 +900,9 @@ impl<const M : usize, E:ExprTrait<1>> ExprScatter<M,E> {
 }
 
 impl<const M : usize, E:ExprTrait<1>> ExprTrait<M> for ExprScatter<M,E> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
-        eval::scatter(self.shape.as_slice(),self.sparsity.as_slice(), rs, ws, xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(ws,rs,xs)?;
+        eval::scatter(self.shape.as_slice(),self.sparsity.as_slice(), rs, ws, xs)
     }
 }
 
@@ -888,9 +910,9 @@ impl<const M : usize, E:ExprTrait<1>> ExprTrait<M> for ExprScatter<M,E> {
 /// Pick nonzeros from a sparse expression to produce a dense vector expression.
 pub struct ExprGatherToVec<const N : usize, E:ExprTrait<N>> { item : E }
 impl<const N : usize, E:ExprTrait<N>> ExprTrait<1> for ExprGatherToVec<N,E> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
-        eval::gather_to_vec(rs, ws, xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(ws,rs,xs)?;
+        eval::gather_to_vec(rs, ws, xs)
     }
 }
 
@@ -958,7 +980,7 @@ pub struct ExprStackRec<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>
 
 pub trait ExprStackRecTrait<const N : usize> : ExprTrait<N> {
     fn stack_dim(&self) -> usize;
-    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize;
+    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<usize,ExprEvalError>;
 }
 
 impl<const N : usize, E1:ExprTrait<N>,E2:ExprTrait<N>> ExprStack<N,E1,E2> {
@@ -975,40 +997,40 @@ impl<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>> ExprStackRec<N,E1
 }
 
 impl<const N : usize,E1:ExprTrait<N>,E2:ExprTrait<N>> ExprTrait<N> for ExprStack<N,E1,E2> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        let n = self.eval_rec(ws,rs,xs);
-        eval::stack(self.dim,n,rs,ws,xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        let n = self.eval_rec(ws,rs,xs)?;
+        eval::stack(self.dim,n,rs,ws,xs)
     }
 }
 impl<const N : usize, E1:ExprTrait<N>,E2:ExprTrait<N>> ExprStackRecTrait<N> for ExprStack<N,E1,E2> {
     fn stack_dim(&self) -> usize { self.dim }
-    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
-        self.item2.eval(rs,ws,xs);
-        self.item1.eval(rs,ws,xs);
-        2
+    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<usize,ExprEvalError> {
+        self.item2.eval(rs,ws,xs)?;
+        self.item1.eval(rs,ws,xs)?;
+        Ok(2)
     }
 }
 
 impl<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>> ExprTrait<N> for ExprStackRec<N,E1,E2> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        let n = self.eval_rec(ws,rs,xs);
-        eval::stack(self.dim,n,rs,ws,xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        let n = self.eval_rec(ws,rs,xs)?;
+        eval::stack(self.dim,n,rs,ws,xs)
     }
 }
 impl<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>> ExprStackRecTrait<N> for ExprStackRec<N,E1,E2> {
     fn stack_dim(&self) -> usize { self.dim }
-    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> usize {
+    fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<usize,ExprEvalError> {
         // we can only do recursive stacking if everything is stacked
         // in the same dimension. If we encounter subexpression that
         // is stacked in a different dimensionm, we simply evaluate it
         // as a normal expression and end the recursion
         self.item2.eval(rs,ws,xs);
         if self.dim == self.item1.stack_dim() {
-            1+self.item1.eval_rec(rs,ws,xs)
+            Ok(1+self.item1.eval_rec(rs,ws,xs)?)
         }
         else {
-            self.item1.eval(rs,ws,xs);
-            2
+            self.item1.eval(rs,ws,xs)?;
+            Ok(2)
         }
     }
 }
@@ -1019,9 +1041,9 @@ pub struct ExprRepeat<const N : usize, E : ExprTrait<N>> {
     num : usize
 }
 impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprRepeat<N,E> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.expr.eval(ws,rs,xs);
-        eval::repeat(self.dim,self.num,rs,ws,xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.expr.eval(ws,rs,xs)?;
+        eval::repeat(self.dim,self.num,rs,ws,xs)
     }
 }
 
@@ -1039,8 +1061,8 @@ impl<'a,const N : usize> ExprDynamic<'a,N> {
 }
 
 impl<'a,const N : usize> ExprTrait<N> for ExprDynamic<'a,N> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.expr.eval(rs,ws,xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.expr.eval(rs,ws,xs)
     }
 }
 
@@ -1054,12 +1076,12 @@ pub struct ExprDynStack<const N : usize> {
 }
 
 impl<const N : usize> ExprTrait<N> for ExprDynStack<N> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
         let n = self.exprs.len();
         for e in self.exprs.iter() {
-            e.eval(ws,rs,xs);
+            e.eval(ws,rs,xs)?;
         }
-        eval::stack(self.dim,n,rs,ws,xs);
+        eval::stack(self.dim,n,rs,ws,xs)
     }
 }
 
@@ -1090,13 +1112,15 @@ pub struct ExprSumVec<const N : usize,E> where E : ExprTrait<N>
 
 #[allow(unused)]
 impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
-    fn eval(&self, rs : & mut WorkStack,ws : & mut WorkStack, xs : & mut WorkStack) {
+    fn eval(&self, rs : & mut WorkStack,ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
         let n = self.exprs.len();
         if n == 1 {
             self.exprs[0].eval(rs,ws,xs)
         }
         else {
-            self.exprs.iter().for_each(|e| e.eval(ws,rs,xs));
+            for e in self.exprs.iter() {
+                e.eval(ws,rs,xs)?
+            }
             let vals = ws.pop_exprs(n);
 
             // check shapes
@@ -1217,6 +1241,7 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
                     rptr.iter_mut().fold(0usize,|c,p| { let tmp = *p; *p = c; tmp });
                 }
             }
+            Ok(())
         }
     }
 }
@@ -1240,9 +1265,9 @@ pub struct ExprSlice<const N : usize, E : ExprTrait<N>> {
 }
 
 impl<const N : usize, E> ExprTrait<N> for ExprSlice<N,E> where E : ExprTrait<N> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.expr.eval(ws,rs,xs);
-        eval::slice(&self.begin,&self.end,rs,ws,xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.expr.eval(ws,rs,xs)?;
+        eval::slice(&self.begin,&self.end,rs,ws,xs)
     }
 }
 
@@ -1261,15 +1286,15 @@ pub struct ExprSumLastDims<const N : usize, T : ExprTrait<N>> {
 }
 
 impl<const N : usize, T:ExprTrait<N>> ExprTrait<0> for ExprSum<N,T> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
-        eval::sum(rs,ws,xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(ws,rs,xs)?;
+        eval::sum(rs,ws,xs)
     }
 }
 
 impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprSumLastDims<N,E> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(ws,rs,xs)?;
         eval::sum_last(self.num,rs,ws,xs)
     }
 }
@@ -1315,9 +1340,9 @@ pub struct ExprTriangularPart<T:ExprTrait<2>> {
 //--    let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
 //--}
 impl<T:ExprTrait<2>> ExprTrait<2> for ExprTriangularPart<T> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
-        eval::triangular_part(self.upper, self.with_diag, rs, ws, xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(ws,rs,xs)?;
+        eval::triangular_part(self.upper, self.with_diag, rs, ws, xs)
     }
 }
 
@@ -1328,10 +1353,10 @@ pub struct ExprDiag<E:ExprTrait<2>> {
 }
 
 impl<E:ExprTrait<2>> ExprTrait<1> for ExprDiag<E> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(ws,rs,xs)?;
 
-        eval::diag(self.anti, self.index, rs, ws, xs);
+        eval::diag(self.anti, self.index, rs, ws, xs)
     }
 }
 
@@ -1340,7 +1365,7 @@ pub struct ExprSquareDiag<E : ExprTrait<1>> {
 }
 
 impl<E:ExprTrait<1>> ExprTrait<2> for ExprSquareDiag<E> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
         self.item.eval(ws,rs,xs);
 
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
@@ -1360,9 +1385,10 @@ impl<E:ExprTrait<1>> ExprTrait<2> for ExprSquareDiag<E> {
         if let Some(sp) = sp {
             rsp.unwrap().iter_mut().zip(sp.iter()).for_each(|(ri,&i)| *ri = i * (n+1));
         }
-        else {
+        else {            
             rsp.unwrap().iter_mut().enumerate().for_each(|(i,ri)| *ri = i * (n+1));
         }
+        Ok(())
     }
 }
 
@@ -1385,8 +1411,8 @@ pub struct ExprIntoSymmetric<const N : usize, E : ExprTrait<N>> {
 
 #[allow(unused)]
 impl<const N : usize, E : ExprTrait<N>> ExprIntoSymmetric<N,E> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.expr.eval(ws,rs,xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.expr.eval(ws,rs,xs)?;
         eval::into_symmetric(self.dim,rs,ws,xs)
     }
 }
@@ -1397,8 +1423,8 @@ pub struct ExprPermuteAxes<const N : usize, E:ExprTrait<N>> {
 }
 
 impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprPermuteAxes<N,E> {
-    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.item.eval(ws,rs,xs);
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(ws,rs,xs)?;
         eval::permute_axes(&self.perm,rs,ws,xs)
     }
 }
