@@ -175,7 +175,7 @@ pub use model::{Sense,
                 Constraint,
                 ConDomainTrait,
                 VarDomainTrait};
-pub use matrix::{Matrix,NDArray,};
+pub use matrix::{Matrix,NDArray,IntoIndexes};
 pub use expr::{ExprTrait,
                ExprRightMultipliable,
                ExprLeftMultipliable,

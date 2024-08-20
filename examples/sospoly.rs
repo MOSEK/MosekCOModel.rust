@@ -46,12 +46,12 @@ fn hankel(n : usize, i_ : isize, a : f64) -> NDArray<2> {
         let i = i_ as usize;
         if i < n + 1 {
             matrix::sparse([n+1, n+1],
-                           (0..i+1).rev().zip(0..i+1).map(|(i,j)| [i,j]).collect().as_slice(),
+                           (0..i+1).rev().zip(0..i+1).map(|(i,j)| [i,j]).collect::<Vec<[usize;2]>>(),
                            vec![a; i+1].as_slice())
         } 
         else {
             matrix::sparse([n+1, n+1], 
-                           (i-n..n+1).rev().zip(i-n..n+1).map(|(i,j)| [i,j]).collect().as_slice(),
+                           (i-n..n+1).rev().zip(i-n..n+1).map(|(i,j)| [i,j]).collect::<Vec<[usize;2]>>(),
                            vec![a; 2*n+1].as_slice())
         }
     }
