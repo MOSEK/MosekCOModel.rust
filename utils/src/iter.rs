@@ -103,7 +103,7 @@ impl<'a,'b,T> Iterator for PermIterMut<'a,'b,T> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(&i) = self.perm.get(self.i) {
             self.i += 1;
-            Some(unsafe{ & mut ( *self.ptr.add(i).as_mut()) })
+            Some(unsafe{ &mut (*self.ptr.as_ptr().add(i).as_mut().unwrap()) })
         }
         else {
             None
@@ -313,7 +313,7 @@ impl<'a,'b,'c,T:'a> Iterator for ChunksByIterMut<'a,'b,'c,T> {
             self.i += 1;
 
             unsafe {
-                Some(std::slice::from_raw_parts_mut(self.ptr.add(b).as_mut(),e-b))
+                Some(std::slice::from_raw_parts_mut(self.ptr.as_ptr().add(b).as_mut().unwrap(),e-b))
             }
         }
         else {
@@ -333,67 +333,7 @@ impl<T> ChunksByIterMutExt<T> for [T] {
 }
 
 
-
 ////////////////////////////////////////////////////////////
-
-
-
-///// An iterator that produces names from a base name and an iterator whose values can be added to
-///// the base name.
-//pub struct NameGenIter<I,T> where I : Iterator<Item = T> {
-//    iter : I,
-//    name : String,
-//    base_index : usize
-//}
-//
-//impl<I,T> NameGenIter<I,T> where I : Iterator<Item = T>, T : NameAppender {
-//    pub fn new(name : &str, iter : I) -> Self {
-//        NameGenIter{
-//            iter,
-//            name : name.to_string(),
-//            base_index : name.len()
-//        }
-//    }
-//}
-//
-//impl<'a,I,T> Iterator for NameGenIter<'a,I,T> where I : Iterator<Item = T>, T : NameAppender {
-//    type Item = &'a str;
-//
-//    fn next(&'a mut self) -> Option<Self::Item> {
-//        if let Some(v) = self.iter.next() {
-//            self.name.truncate(self.base_index);
-//            v.append_to_string(& mut self.name);
-//            Some(self.name.as_str())
-//        }
-//        else {
-//            None
-//        }
-//    }
-//           
-//}
-//
-//pub trait NameGenIterEx<I,T> where I : Iterator<Item = T>, T : NameAppender {
-//    fn indexed_names(self, name : & str) -> NameGenIter<I,T>;
-//}
-//
-//impl<I,T> NameGenIterEx<I,T> for I where I : Iterator<Item = T>, T : NameAppender {
-//    fn indexed_names(self, name : & str) -> NameGenIter<I,T,'a> {
-//        NameGenIter::new(name,self)
-//    }
-//}
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

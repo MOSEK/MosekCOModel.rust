@@ -279,12 +279,12 @@ pub trait ExprTrait<const N : usize> {
     /// fn dynstack(n : usize) {
     ///     assert!(n > 0);
     ///     let mut M = Model::new(None);
-    ///     let vs : Vec<Variable<2>> = (0..n).map(|i| M.variable(None,&[i+1,3])).collect();
+    ///     let vs : Vec<Variable<2>> = (0..n).map(|i| M.variable(None,&[3,i+1])).collect();
     ///
     ///     // Recursively stack the elements of vs, but convert each right-hand operand to a
     ///     // dynamic. This means that the result is always the same type,
     ///     // `ExprStack<ExprDynamic,ExprDynamic>`
-    ///     let e = vs[1..].iter().fold(vs[0].dynamic(),|vstack,v| vstack.stack(1,v.dynamic()));
+    ///     let e = vs.into_iter().fold(expr::nil(&[3,0]).dynamic(),|vstack,v| vstack.stack(1,v).dynamic());
     /// }
     /// dynstack(10);
     /// ```
@@ -1318,6 +1318,7 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
                     rptr.iter_mut().fold(0usize,|c,p| { let tmp = *p; *p = c; tmp });
                 }
             }
+            rs.check();
             Ok(())
         }
     }
@@ -1465,6 +1466,7 @@ impl<E:ExprTrait<1>> ExprTrait<2> for ExprSquareDiag<E> {
         else {            
             rsp.unwrap().iter_mut().enumerate().for_each(|(i,ri)| *ri = i * (n+1));
         }
+    rs.check();
         Ok(())
     }
 }

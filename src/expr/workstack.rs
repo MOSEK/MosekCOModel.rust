@@ -433,6 +433,14 @@ impl WorkStack {
 
         Ok(()) 
     }
+    #[cfg(not(debug_assertions))]
+    pub fn check(&self) {
+        // nop
+    }
+    #[cfg(debug_assertions)]
+    pub fn check(&self) {
+        self.validate_top().unwrap();
+    }
 }
 
 impl std::fmt::Display for WorkStack {

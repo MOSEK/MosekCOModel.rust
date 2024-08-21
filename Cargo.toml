@@ -25,12 +25,16 @@ utils = { path = "utils" }
 #mosek = { path = "../Mosek.rust" }
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = { verson = "0.5.1", features = [ "html_reports" ] }
 rand = "0.8.5"
 #bencher = "0.1"
 
 [[bench]]
 name="performance"
+harness = false
+
+[[bench]]
+name="exprs"
 harness = false
 
 [[example]]

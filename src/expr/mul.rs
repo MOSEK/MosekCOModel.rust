@@ -3,9 +3,6 @@ use super::workstack::WorkStack;
 use super::matrix::Matrix;
 
 
-
-
-
 pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
     pub(super) item : E,
     pub(super) lhs  : f64
@@ -515,7 +512,7 @@ mod test {
         let mut rs = WorkStack::new(512);
         let mut ws = WorkStack::new(512);
         let mut xs = WorkStack::new(512);
-        e.mul(m).eval(& mut rs, & mut ws, & mut xs);
+        e.mul(m).eval(& mut rs, & mut ws, & mut xs).unwrap();
     }
 }
 

@@ -106,6 +106,7 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
         let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p } );
 
     }
+    rs.check();
     Ok(())
 }
 
@@ -182,7 +183,7 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
             });
         rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
     }
-    rs.validate_top().unwrap();
+    rs.check();
     Ok(())
 }
 
@@ -193,6 +194,7 @@ pub fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) ->
     rptr[1] = *ptr.last().unwrap();
     rsubj.clone_from_slice(subj);
     rcof.clone_from_slice(cof);
+    rs.check();
     Ok(())
 }
 
@@ -285,6 +287,7 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
         rsubj.clone_from_slice(&xsubj[..rnnz]);
         rcof.clone_from_slice(&xcof[..rnnz]);
     }
+    rs.check();
     Ok(())
 }
 
@@ -354,6 +357,7 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
 
         _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
     }
+    rs.check();
     Ok(())
 }
 
@@ -440,6 +444,7 @@ pub fn permute_axes<const N : usize>(
             rcof[nzi..nzi+n].clone_from_slice(scof);
         }
     }
+    rs.check();
     Ok(())
 }
 
@@ -590,6 +595,7 @@ pub fn add(n  : usize,
         // Recompute ptr
         _ = rptr.iter_mut().fold(0,|v,p| { let tmp = *p; *p = v; tmp } );
     }
+    rs.check();
     Ok(())
 } // add
 
@@ -1149,6 +1155,7 @@ pub fn dot_vec(data : &[f64],
             }
         }
     }
+    rs.check();
     Ok(())
 } // dot_vec
 
@@ -1331,6 +1338,7 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
             ofs += vd1;
         }
     }
+    rs.check();
     Ok(())
 }
 
@@ -1385,6 +1393,7 @@ pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : &
         rcof.clone_from_slice(cof);
         rptr.iter_mut().zip(ptr.iter().step_by(d)).for_each(|(rp,&p)| *rp = p );
     }
+    rs.check();
     Ok(())
 }
 
@@ -1493,6 +1502,7 @@ pub fn mul_elem(datashape : &[usize],
             }
         }
     } // match (sparsity,sp)
+    rs.check();
     Ok(())
 }
 
@@ -1527,6 +1537,7 @@ pub fn scalar_expr_mul
               cof[0..nnz].iter().cycle())
             .for_each(| (r,s0,&s1)| *r = s0 * s1);
     }
+    rs.check();
     Ok(())
 }
 
@@ -1681,6 +1692,7 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
 //
 //        `
     }
+    rs.check();
     Ok(())
 }
 
@@ -1701,6 +1713,7 @@ pub fn inplace_reduce_shape(m : usize,rs : & mut WorkStack, xs : & mut WorkStack
         }
     }
     rs.inline_reshape_expr(rshape).or_else(|s| Err(ExprEvalError::new(file!(),line!(),s)))?;
+    rs.check();
     Ok(())
 }
 
@@ -1715,6 +1728,7 @@ pub fn inplace_reshape_one_row(m : usize, dim : usize, rs : & mut WorkStack, xs 
         shp.iter().product()
     };
     rs.inline_reshape_expr(newshape).unwrap();
+    rs.check();
     Ok(())
 }
 
@@ -1728,6 +1742,7 @@ pub fn inplace_reshape(rshape : &[usize],rs : & mut WorkStack, _xs : & mut WorkS
         }
     }
     rs.inline_reshape_expr(rshape).unwrap();
+    rs.check();
     Ok(())
 }
 
@@ -1748,6 +1763,7 @@ pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws 
     if let Some(rsp) = rsp {
         rsp.copy_from_slice(sparsity);
     }
+    rs.check();
     Ok(())
 }
 
@@ -1764,6 +1780,7 @@ pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs
     rptr.clone_from_slice(ptr);
     rsubj.clone_from_slice(subj);
     rcof.clone_from_slice(cof);
+    rs.check();
     Ok(())
 }
 
