@@ -47,6 +47,9 @@ impl Debug for ExprEvalError {
 /// provides a set of operations to build expressions with default implementations. The only
 /// function every implementor needs to provide is [eval], which provides evaluation of the
 /// expression.
+///
+/// Note that the dimensionality if an expression if determined at compile-time (the `N`), but the
+/// actual shape of an expression is not determined until it is evaluated.
 pub trait ExprTrait<const N : usize> {
     /// Evaluate the expression and put the result on the `rs` stack,
     /// using the `ws` to evaluate sub-expressions and `xs` for
@@ -85,8 +88,9 @@ pub trait ExprTrait<const N : usize> {
     /// ```
     fn dynamic<'a>(self) -> ExprDynamic<'a,N> where Self : Sized+'a { ExprDynamic::new(self) }
 
-    /// Permute axes of the expression. Permute the ,index coordinates of each entry in the
-    /// expression, and similarly permute the shape.
+    /// Permute axes of the expression. Permute the index coordinates of each entry in the
+    /// expression, and similarly permute the shape. This is a generalized transpose operation, so
+    /// in two dimensions this is just a regular transpose.
     ///
     /// # Arguments
     /// - `perm` - The permutation. This must be a valid permutation, i.e. it must be a permutation
@@ -96,17 +100,31 @@ pub trait ExprTrait<const N : usize> {
     /// Sum all elements in an expression producing a scalar expression.
     fn sum(self) -> ExprSum<N,Self> where Self:Sized { ExprSum{item:self} }
 
+    /// Negate coefficients of all elements in the expression.
     fn neg(self) -> ExprMulScalar<N,Self> where Self:Sized {
         self.mul(-1.0)
     }
 
-    /// Sum over a number of axes.
+    /// Sum over a number of axes, reducing the dimensionality of the expression.
     ///
     /// # Arguments
     /// - `axes` - list of axes to preserve; all other dimensions are summed. The list must be
     ///   sorted and not contain duplicates.
     ///
-    /// NOTE: The construction may seem a  but backward, but it s because we need to explicitly
+    /// # Example
+    /// ```
+    /// use mosekmodel::*;
+    /// let mut M = Model::new(None);
+    /// let v = M.variable(None,&[3,4,5]);
+    /// let w = M.variable(None,&[3,4,5]);
+    /// 
+    /// // Sum in the second dimension leaving a two-dimensional expression with shape [3,5].
+    /// let e = v.add(w).sum_on(&[0,2]);
+    ///
+    /// ```
+    /// 
+    /// # Note
+    /// The construction may seem a  but backward, but it s because we need to explicitly
     /// specify the dimensionality of the output. Rust does not support aritmetic with generic
     /// constants.
     fn sum_on<const K : usize>(self, axes : &[usize; K]) -> ExprReduceShape<N,K,ExprSumLastDims<N,ExprPermuteAxes<N,Self>>> where Self:Sized { 
@@ -208,8 +226,12 @@ pub trait ExprTrait<const N : usize> {
         }
     }
 
+    //TODO: Generalized dot_rows that perform summing in an arbitrary dimension.
+
     /// Stack vertically, i.e. in first dimension. The two operands have the same number of
     /// dimensions, and must have the same shapes except in the first dimension.
+    ///
+    /// Specialized case of [ExprTrait::stack].
     ///
     /// # Arguments
     /// - `other` The second operand.
@@ -218,6 +240,8 @@ pub trait ExprTrait<const N : usize> {
     /// Stack horizontally, i.e. stack in second dimension. The two operands have the same number of
     /// dimensions, and must have the same shapes except in the second dimension.
     ///
+    /// Specialized case of [ExprTrait::stack].
+    ///
     /// # Arguments
     /// - `other` The second operand.
     fn hstack<E>(self,other : E) -> ExprStack<N,Self,E::Result>  where Self:Sized,E:IntoExpr<N> { ExprStack::new(self,other.into(),1) }
@@ -225,12 +249,49 @@ pub trait ExprTrait<const N : usize> {
     /// Stack in arbitrary dimension. The two operands have the same number of
     /// dimensions, and must have the same shapes except in dimension `dim`.
     ///
+    /// Often we wish to stack multiple expression. If the list of expressions is entirely
+    /// determined at compile-time, we can simply stack using `e0.stack(e2).stack(e3)...`, but in
+    /// some cases we wish to stack a variable number of expressions. In this case we need to use
+    /// dynamic expressions since otherwise the number of expressions we stack affect the resulting
+    /// type. 
+    ///
     /// # Arguments
     /// - `dim` The dimension in which to stack. This must be strictly less than `N`.
     /// - `other` The second operand.
+    ///
+    /// # Example: Stacking a compile-time known list
+    /// ```
+    /// use mosekmodel::*;
+    ///
+    /// let mut M = Model::new(None);
+    /// let u = M.variable(None,&[3,2]);
+    /// let v = M.variable(None,&[3,3]);
+    /// let w = M.variable(None,&[3,4]);
+    ///
+    /// // Stack three operands producing an expression of shape `[3,9]`. The type of `e` depends
+    /// // on the number and types of operands, in this case it would be something like 
+    /// // `ExprStack<ExprStack<Variable,Variable>,Variable>`.
+    /// let e = u.stack(1,v).stack(1,w);
+    /// ```
+    /// # Example: Stacking a variable length list
+    /// ```
+    /// use mosekmodel::*;
+    /// fn dynstack(n : usize) {
+    ///     assert!(n > 0);
+    ///     let mut M = Model::new(None);
+    ///     let vs : Vec<Variable<2>> = (0..n).map(|i| M.variable(None,&[i+1,3])).collect();
+    ///
+    ///     // Recursively stack the elements of vs, but convert each right-hand operand to a
+    ///     // dynamic. This means that the result is always the same type,
+    ///     // `ExprStack<ExprDynamic,ExprDynamic>`
+    ///     let e = vs[1..].iter().fold(vs[0].dynamic(),|vstack,v| vstack.stack(1,v.dynamic()));
+    /// }
+    /// dynstack(10);
+    /// ```
+    ///
     fn stack<E>(self,dim : usize, other : E) -> ExprStack<N,Self,E::Result> where Self:Sized, E:IntoExpr<N>{ ExprStack::new(self,other.into(),dim) }
 
-    /// Repeat a fixed number of times in some dimension. 
+    /// Repeat a fixed number of times in the given dimension. 
     ///
     /// # Arguments
     /// - `dim` Dimension in which to repeat. This must be strictly less than `N`.
@@ -252,7 +313,7 @@ pub trait ExprTrait<const N : usize> {
 
     /// Reshape the experssion. The new shape must match the old
     /// shape, meaning that the product of the dimensions are the
-    /// same.
+    /// same. The function will panic if operand shapes do not match.
     ///
     /// # Arguments
     /// - `shape` The new shape.
@@ -277,14 +338,28 @@ pub trait ExprTrait<const N : usize> {
 
 
     /// Flatten the expression into a vector. Preserve sparsity.
+    ///
+    /// The expression is flattened with inner-most dimension first (row-major mode for matrixes).
+    /// So, for example, for a dense expression with shape `e:[3,4,2]`, will order the individual
+    /// elements as 
+    /// ```text
+    /// [ e[0,0,0],e[0,0,1],e[0,0,2],e[0,1,0],e[0,2,0],...,e[2,3,1] ]
+    /// ```
+    ///
     fn flatten(self) -> ExprReshapeOneRow<N,1,Self> where Self:Sized { ExprReshapeOneRow { item:self, dim : 0 } }
 
     /// Flatten expression into a column, i.e. an expression of size `[n,1]` where
     /// `n=shape.iter().product()`.
+    ///
+    /// Special case of [ExprTrait::into_vec]. 
+    ///
+    /// See [ExprTrait::flatten] for a description of how elements are ordered in the result.
     fn into_column(self) -> ExprReshapeOneRow<N,2,Self> where Self:Sized { ExprReshapeOneRow { item:self, dim : 0 } }
 
     /// Reshape an expression into a vector expression, where all but (at most) one dimension are
     /// of size 1.
+    ///
+    /// See [ExprTrait::flatten] for a description of how elements are ordered in the result.
     ///
     /// # Arguments
     /// - `i` - The dimension where the vector is defined, i.e the non-one dimension.
@@ -295,9 +370,8 @@ pub trait ExprTrait<const N : usize> {
         ExprReshapeOneRow{item:self, dim : i }
     }
 
-    /// Reshape a sparse expression into a dense expression with the
-    /// given shape. The shape must match the actual number of
-    /// elements in the expression.
+    /// Reshape a sparse expression into a dense expression vector. The length of the vector
+    /// cannot be known until the expression is evaluated.
     fn gather(self) -> ExprGatherToVec<N,Self>  where Self:Sized { ExprGatherToVec{item:self} }
 
     /// Multiply `(self * other)`, where other must be right-multipliable with `Self`.
@@ -313,6 +387,8 @@ pub trait ExprTrait<const N : usize> {
     fn rev_mul<LHS>(self, lhs: LHS) -> LHS::Result where Self: Sized, LHS : ExprLeftMultipliable<N,Self> { lhs.mul(self) }
 
     /// Transpose a two-dimensional expression.
+    ///
+    /// This is a special case of [ExprTrait::axispermute].
     fn transpose(self) -> ExprPermuteAxes<2,Self> where Self:Sized+ExprTrait<2> { ExprPermuteAxes{ item : self, perm : [1,0]} }
 
     /// Create a new expression with only lower triangular nonzeros from the operand.
@@ -350,6 +426,7 @@ pub trait ExprTrait<const N : usize> {
 
     // Explicit functions for performing left and right multiplcation with different types
     fn mul_any_scalar(self, c : f64) -> ExprMulScalar<N,Self> where Self : Sized { ExprMulScalar{ item : self, lhs : c } }
+
     fn mul_matrix_const_matrix<M>(self, m : &M) -> ExprMulRight<Self> where Self : Sized+ExprTrait<2>, M : Matrix { 
         ExprMulRight{
             item : self,
