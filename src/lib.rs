@@ -66,6 +66,13 @@
 //! 
 //! # Expressions and shapes
 //!
+//! The central trait for expressions is [ExprTrait], which all objects that must act as
+//! expressions have to implement. For example, [Variable] and [NDArray] implement [ExprTrait].
+//! [ExprTrait] also implements most of the functionality for creating new expressions. Note that
+//! im most cases, expression objects *own* their data (for example the [expr::ExprAdd] object owns its
+//! operands). This means that normally it will be necessary to clone a [Variable] object that is
+//! used in an expression, if it is used in more than one place.
+//!
 //! Constraint, domains, variables and expressions have shapes, and the latter three can be either
 //! dense or sparse meanning that some entries are fixed to zero. A shaped variable, expression and
 //! constraint is basically a multi-dimensional array of scalar variables, affine expressions and
