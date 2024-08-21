@@ -1101,7 +1101,7 @@ impl<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>> ExprStackRecTrait
         // in the same dimension. If we encounter subexpression that
         // is stacked in a different dimensionm, we simply evaluate it
         // as a normal expression and end the recursion
-        self.item2.eval(rs,ws,xs);
+        self.item2.eval(rs,ws,xs)?;
         if self.dim == self.item1.stack_dim() {
             Ok(1+self.item1.eval_rec(rs,ws,xs)?)
         }
@@ -1444,7 +1444,7 @@ pub struct ExprSquareDiag<E : ExprTrait<1>> {
 
 impl<E:ExprTrait<1>> ExprTrait<2> for ExprSquareDiag<E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
-        self.item.eval(ws,rs,xs);
+        self.item.eval(ws,rs,xs).unwrap();
 
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
         if shape.len() != 1 { panic!("Operand has invalid shape {:?}, expected a vector", shape); }
@@ -1508,10 +1508,23 @@ impl<const N : usize, E:ExprTrait<N>> ExprTrait<N> for ExprPermuteAxes<N,E> {
     }
 }
 
+/// Expression that is one of two types, which is determined at runtime.
+pub enum ExprEither<const N : usize,EL,ER> where EL : ExprTrait<N>, ER : ExprTrait<N> {
+    Left(EL),
+    Right(ER)
+}
 
+impl<const N : usize, EL,ER> ExprTrait<N> for ExprEither<N,EL,ER> where EL : ExprTrait<N>, ER : ExprTrait<N> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        match self {
+            ExprEither::Left(e) => e.eval(rs,ws,xs),
+            ExprEither::Right(e) => e.eval(rs,ws,xs)
+        }
+    }
+}
 
-
-
+pub use ExprEither::Left as ExprLeft;
+pub use ExprEither::Right as ExprRight;
 
 
 impl From<f64> for Expr<0> {
