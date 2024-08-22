@@ -44,11 +44,11 @@ fn sum_on(sp : bool, n : usize, dims : [usize;3]) {
 }
 
 fn sum_on_dense_8_012( c : &mut Criterion) { c.bench_function("sum-on-dense-8-012", |b| b.iter(|| sum_on(false,8,[0,1,2]))); }
-fn sum_on_dense_8_351( c : &mut Criterion) { c.bench_function("sum-on-dense-8-351", |b| b.iter(|| sum_on(false,8,[3,5,1]))); }
+fn sum_on_dense_8_351( c : &mut Criterion) { c.bench_function("sum-on-dense-8-351", |b| b.iter(|| sum_on(false,8,[1,3,5]))); }
 fn sum_on_dense_8_345( c : &mut Criterion) { c.bench_function("sum-on-dense-8-345", |b| b.iter(|| sum_on(false,8,[3,4,5]))); }
 
 fn sum_on_sparse_8_012( c : &mut Criterion) { c.bench_function("sum-on-sparse-8-012", |b| b.iter(|| sum_on(true,8,[0,1,2]))); }
-fn sum_on_sparse_8_351( c : &mut Criterion) { c.bench_function("sum-on-sparse-8-351", |b| b.iter(|| sum_on(true,8,[3,5,1]))); }
+fn sum_on_sparse_8_351( c : &mut Criterion) { c.bench_function("sum-on-sparse-8-351", |b| b.iter(|| sum_on(true,8,[1,3,5]))); }
 fn sum_on_sparse_8_345( c : &mut Criterion) { c.bench_function("sum-on-sparse-8-345", |b| b.iter(|| sum_on(true,8,[3,4,5]))); }
 
 

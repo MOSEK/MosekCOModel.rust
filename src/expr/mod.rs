@@ -132,7 +132,7 @@ pub trait ExprTrait<const N : usize> {
             panic!("Invalid axis specification")
         }
         else if axes.iter().zip(axes[1..].iter()).any(|(a,b)| a >= b) {
-            panic!("Axis specification is unsorted or contains duplicates")
+            panic!("Axis specification is unsorted or contains duplicates: {:?}",axes)
         }
         else if let Some(&last) = axes.last() {
             if last >= N {
@@ -1271,8 +1271,8 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
                         .collect::<Vec<Peekable<Iter<usize>>>>();
                     let mut datait = vals.iter()
                         .map(| (_,ptr,_,subj,cof) | 
-                             subj.chunks_by(ptr)
-                                .zip(cof.chunks_by(ptr)))
+                             subj.chunks_ptr(ptr)
+                                .zip(cof.chunks_ptr(ptr)))
                         .collect::<Vec<Zip<ChunksByIter<usize,Zip<Iter<usize>,Iter<usize>>>,
                                            ChunksByIter<f64,Zip<Iter<usize>,Iter<usize>>>>>>();
 
@@ -2053,6 +2053,44 @@ mod test {
             assert_eq!(ptr,&[0,3,6,9,12]);
             assert_eq!(subj,&[1,13,3, 1,14,4, 1,14,4, 1,15,7]);
             println!("subj = {:?}",subj);
+        }
+    }
+
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn permute_axes() {
+        let mut m = Model::new(None);
+        let u = m.variable(None,&[2,3,4,5,6,7]);
+        let v = m.variable(None,&[2,3,4,5,6,7]);
+        let w = m.variable(None,&[2,3,4,5,6,7]);
+        m.constraint(None, &u.add(v).add(w).axispermute(&[3,4,5,0,1,2]).axispermute(&[4,3,2,0,1,5]).axispermute(&[5,4,3,2,1,0]), unbounded().with_shape(&[4,6,5,7,2,3]));
+    }
+    
+    #[allow(non_snake_case)]
+    #[test]
+    fn sum_on() {
+        let mut m = Model::new(None);
+        let u = m.variable(None,&[3,4,3,4]);
+        let v = m.variable(None,&[4,3,4,3]);
+        let w = m.variable(None,&[4,3,3,4]);
+        {
+            let u = u.clone();
+            let v = v.clone();
+            let w = w.clone();
+            m.constraint(None, &u.add(v.axispermute(&[1,0,1,0])).add(w.axispermute(&[1,0,2,3])).sum_on(&[0,3]), unbounded().with_shape(&[3,4]));
+        }
+        {
+            let u = u.clone();
+            let v = v.clone();
+            let w = w.clone();
+            m.constraint(None, &u.add(v.axispermute(&[1,0,1,0])).add(w.axispermute(&[1,0,2,3])).sum_on(&[1,3]), unbounded().with_shape(&[4,4]));
+        }
+        {
+            let u = u.clone();
+            let v = v.clone();
+            let w = w.clone();
+            m.constraint(None, &u.add(v.axispermute(&[1,0,1,0])).add(w.axispermute(&[1,0,2,3])).sum_on(&[2]), unbounded().with_shape(&[3]));
         }
     }
 }

@@ -130,8 +130,8 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
             .sum();
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
 
-        izip!(subj.chunks_by(ptr),
-              cof.chunks_by(ptr),
+        izip!(subj.chunks_ptr(ptr),
+              cof.chunks_ptr(ptr),
               sp.iter().map(|i| (i/d,i%d)))
             .filter(|(_,_,(i,j))| (upper && i < j) || (! upper && i > j) || (with_diag && i == j))
             .flat_map(|(subj,cof,_)| subj.iter().zip(cof.iter()))
@@ -158,8 +158,8 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
 
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
 
-        izip!(subj.chunks_by(ptr),
-              cof.chunks_by(ptr),
+        izip!(subj.chunks_ptr(ptr),
+              cof.chunks_ptr(ptr),
               iproduct!(0..d,0..d))
             .filter(|(_,_,(i,j))| 
                 (upper     && i  < j) ||
@@ -385,8 +385,9 @@ pub fn permute_axes<const N : usize>(
                 *d = s;
             }
         });
+    let nnz = subj.len();
 
-    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),subj.len(),*ptr.last().unwrap());
+    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape,nnz,nelem);
     rptr[0] = 0;
         
     let (uslice,_)   = xs.alloc(nelem*2,0);
@@ -429,13 +430,14 @@ pub fn permute_axes<const N : usize>(
         }
     }
     else {
+        rptr.iter_mut().for_each(|v| *v = 0);
         for (si,n) in ptr.iter().zip(ptr[1..].iter()).map(|(&p0,&p1)| p1-p0).enumerate() {
             let (_,ti) = strides.iter().zip(prstrides.iter()).fold((si,0),|(v,r),(&s,&rs)| (v%s,r+(v/s)*rs));
             rptr[ti+1] = n
         }
         let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
         
-        for (si,(ssubj,scof)) in izip!(subj.chunks_by(ptr),cof.chunks_by(ptr)).enumerate() {
+        for (si,(ssubj,scof)) in izip!(subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)).enumerate() {
             let (_,ti) = strides.iter().zip(prstrides.iter()).fold((si,0),|(v,r),(&s,&rs)| (v%s,r+(v/s)*rs));
             let n = ssubj.len();
             let nzi = rptr[ti];
@@ -446,7 +448,7 @@ pub fn permute_axes<const N : usize>(
     }
     rs.check();
     Ok(())
-}
+} // fn permute_axes
 
 
 /// Add `n` expression residing on `ws`. Result pushed to `rs`.
@@ -491,8 +493,8 @@ pub fn add(n  : usize,
 
         for (_,ptr,sp,subj,cof) in exprs.iter() {
             if let Some(sp) = sp {
-                izip!(subj.chunks_by(ptr),
-                      cof.chunks_by(ptr),
+                izip!(subj.chunks_ptr(ptr),
+                      cof.chunks_ptr(ptr),
                       sp.iter())
                     .for_each(|(js,cs,&i)| {
                         let nnz = js.len();
@@ -504,8 +506,8 @@ pub fn add(n  : usize,
                     });
             }
             else {
-                izip!(subj.chunks_by(ptr),
-                      cof.chunks_by(ptr),
+                izip!(subj.chunks_ptr(ptr),
+                      cof.chunks_ptr(ptr),
                       rptr.iter())
                     .for_each(|(js,cs,&p0)| {
                         let nnz = js.len();
@@ -581,8 +583,8 @@ pub fn add(n  : usize,
         for (_,ptr,sp,subj,cof) in exprs.iter() {
             if let Some(sp) = sp {
                 for (&i,sj,sc) in izip!(sp.iter(),
-                                        subj.chunks_by(ptr),
-                                        cof.chunks_by(ptr)) {
+                                        subj.chunks_ptr(ptr),
+                                        cof.chunks_ptr(ptr)) {
                     let n = sj.len();
                     if let Some(index) = h.at(i) {
                         let rp = { let p = &mut rptr[*index]; *p += n; *p - n };
@@ -1803,98 +1805,174 @@ pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut Wor
 
 pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-
-    let nnz  = subj.len();
-    let nelm = shape.iter().product();
-    let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,nnz,nelm);
+    let nd = shape.len();
+    let rnnz  = subj.len();
+    let rnelm = shape.iter().product();
+    let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
  
-    let maxj = subj.iter().max().unwrap_or(&0);
-    let (jj,ff) = xs.alloc(maxj*2+2,maxj+1);
-    let (jj,jjind) = jj.split_at_mut(maxj+1);
+    let (urest,_frest) = xs.alloc(rnnz+rnelm+1,0);
+    let (perm,xptr) = urest.split_at_mut(rnnz); 
+    xptr[0] = 0;
+    perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+    for (pp,xptr) in perm.chunks_ptr_mut(ptr, &ptr[1..])
+        .zip(xptr[1..].iter_mut())
+    {
+        pp.sort_by_key(|&p| unsafe{ *subj.get_unchecked(p) });
+        *xptr = 
+            if pp.len() > 1 {
+                subj.permute_by(pp).zip(subj.permute_by(&pp[1..])).filter(|(&a,&b)| a != b ).count()+1
+            }
+            else {
+                pp.len()
+            };
+    }
+    xptr.iter_mut().fold(0usize,|c,p| { *p += c; *p });
+  
+    for (rsubj,rcof,perm) in izip!(rsubj.chunks_ptr_mut(xptr,&xptr[1..]),
+                                   rcof.chunks_ptr_mut(xptr,&xptr[1..]),
+                                   perm.chunks_ptr(ptr))
+    {
+        
+        let mut sit = subj.permute_by(perm).zip(cof.permute_by(perm));
+        let mut tit = rsubj.iter_mut().zip(rcof.iter_mut()).peekable();
+        
+        if let Some((j,c)) = sit.next() {
+            if let Some((jj,cc)) = tit.peek_mut() {
+                **jj = *j;
+                **cc = *c;
+            }
+        }
 
-
-    let mut ii  = 0;
-    let mut nzi = 0;
-    rptr[0] = 0;
-
-    subj.iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
+        for (j,c) in sit {
+            if let Some((jj,cc)) = tit.peek_mut() {
+                if **jj == *j {
+                    **cc += *c;
+                }
+                else {
+                    _ = tit.next();
+                    if let Some((jj,cc)) = tit.peek_mut() {
+                        **jj = *j;
+                        **cc = *c;
+                    }
+                }
+            }
+        }
+    }
 
     if let Some(sp) = sp {
-        for (&i,&p0,&p1) in izip!(sp, ptr[0..ptr.len()-1].iter(), ptr[1..].iter()) {
-            if ii < i { rptr[ii+1..i+1].fill(nzi); ii = i; }
-
-            let mut rownzi : usize = 0;
-            subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
-            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
-                if c == 0.0 {}
-                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
-                    unsafe{
-                        *jjind.get_unchecked_mut(j)   = 1;
-                        *jj.get_unchecked_mut(rownzi) = j;
-                        *ff.get_unchecked_mut(j)      = c;
-                    }
-                    rownzi += 1;
-                }
-                else {
-                    unsafe{
-                        *ff.get_unchecked_mut(j) += c;
-                    }
-                }
-            });
-
-            izip!(jj[0..rownzi].iter(),
-                  rsubj[nzi..nzi+rownzi].iter_mut(),
-                  rcof[nzi..nzi+rownzi].iter_mut())
-                .for_each(|(&j,rj,rc)| {
-                    *rc = unsafe{ *ff.get_unchecked(j) };
-                    unsafe{ *jjind.get_unchecked_mut(j) = 0; };
-                    *rj = j;
-                });
-
-            nzi += rownzi;
-            // println!("ExprTrait::eval_finalize sparse: nzi = {}",nzi);
-            rptr[i+1] = nzi;
-            ii += 1;
+        rptr.iter_mut().for_each(|p| *p = 0);
+        for (i,ni) in sp.iter().zip(ptr.iter().zip(ptr[1..].iter()).map(|v| *v.1-*v.0)) {
+            rptr[i+1] = ni;
         }
+
+        rptr.iter_mut().fold(0usize,|c,p| { *p += c; *p } );
     }
     else {
-        for (&p0,&p1,rp) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),rptr[1..].iter_mut()) {
-
-            let mut rownzi : usize = 0;
-
-            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
-                // println!("-- j = {}, c = {}, ind = {}",j,c,jjind[j]);
-                if c == 0.0 {}
-                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
-                    unsafe{
-                        *jjind.get_unchecked_mut(j)   = 1;
-                        *jj.get_unchecked_mut(rownzi) = j;
-                        *ff.get_unchecked_mut(j)      = c;
-                    }
-                    rownzi += 1;
-                }
-                else {
-                    unsafe{ *ff.get_unchecked_mut(j) += c; }
-                }
-            });
-
-            izip!(jj[0..rownzi].iter(),
-                  rsubj[nzi..nzi+rownzi].iter_mut(),
-                  rcof[nzi..nzi+rownzi].iter_mut()).for_each(|(&j,rj,rc)| {
-                      *rc = unsafe{ *ff.get_unchecked(j) };
-                      unsafe{ *jjind.get_unchecked_mut(j) = 0; };
-                      *rj = j;
-                  });
-
-            jj[0..rownzi].fill(0);
-
-            nzi += rownzi;
-            // println!("ExprTrait::eval_finalize dense: nzi = {}",nzi);
-            *rp = nzi;
-            ii += 1;
-        }
+        rptr.copy_from_slice(xptr);
     }
+
+//---
+//---
+//---    let maxj = subj.iter().max().unwrap_or(&0);
+//---    let (jj,ff) = xs.alloc(maxj*2+2,maxj+1);
+//---    let (jj,jjind) = jj.split_at_mut(maxj+1);
+//---
+//---
+//---    let mut ii  = 0;
+//---    let mut nzi = 0;
+//---    rptr[0] = 0;
+//---
+//---    subj.iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
+//---
+//---    if let Some(sp) = sp {
+//---        println!("eval_finalize(), Sparse");
+//---        
+//---        rsubj.copy_from_slice(subj);
+//---        rcof.copy_from_slice(cof);
+//---        
+//---        let (strides,_) = xs.alloc(nd,0);
+//---        strides.iter_mut().zip(shape.iter()).fold(1usize, |c,(s,&d)| { *s = c; d*c });
+//---
+//---
+//---
+//---
+//---
+//---        for (&i,&p0,&p1) in izip!(sp, ptr[0..ptr.len()-1].iter(), ptr[1..].iter()) {
+//---            if ii < i { rptr[ii+1..i+1].fill(nzi); ii = i; }
+//---
+//---            let mut rownzi : usize = 0;
+//---            subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
+//---            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
+//---                if c == 0.0 {}
+//---                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
+//---                    unsafe{
+//---                        *jjind.get_unchecked_mut(j)   = 1;
+//---                        *jj.get_unchecked_mut(rownzi) = j;
+//---                        *ff.get_unchecked_mut(j)      = c;
+//---                    }
+//---                    rownzi += 1;
+//---                }
+//---                else {
+//---                    unsafe{
+//---                        *ff.get_unchecked_mut(j) += c;
+//---                    }
+//---                }
+//---            });
+//---
+//---            izip!(jj[0..rownzi].iter(),
+//---                  rsubj[nzi..nzi+rownzi].iter_mut(),
+//---                  rcof[nzi..nzi+rownzi].iter_mut())
+//---                .for_each(|(&j,rj,rc)| {
+//---                    *rc = unsafe{ *ff.get_unchecked(j) };
+//---                    unsafe{ *jjind.get_unchecked_mut(j) = 0; };
+//---                    *rj = j;
+//---                });
+//---
+//---            nzi += rownzi;
+//---            // println!("ExprTrait::eval_finalize sparse: nzi = {}",nzi);
+//---            rptr[i+1] = nzi;
+//---            ii += 1;
+//---        }
+//---    }
+//---    else {
+//---        for (&p0,&p1,rp) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),rptr[1..].iter_mut()) {
+//---
+//---            let mut rownzi : usize = 0;
+//---
+//---            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
+//---                // println!("-- j = {}, c = {}, ind = {}",j,c,jjind[j]);
+//---                if c == 0.0 {}
+//---                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
+//---                    unsafe{
+//---                        *jjind.get_unchecked_mut(j)   = 1;
+//---                        *jj.get_unchecked_mut(rownzi) = j;
+//---                        *ff.get_unchecked_mut(j)      = c;
+//---                    }
+//---                    rownzi += 1;
+//---                }
+//---                else {
+//---                    unsafe{ *ff.get_unchecked_mut(j) += c; }
+//---                }
+//---            });
+//---
+//---            izip!(jj[0..rownzi].iter(),
+//---                  rsubj[nzi..nzi+rownzi].iter_mut(),
+//---                  rcof[nzi..nzi+rownzi].iter_mut()).for_each(|(&j,rj,rc)| {
+//---                      *rc = unsafe{ *ff.get_unchecked(j) };
+//---                      unsafe{ *jjind.get_unchecked_mut(j) = 0; };
+//---                      *rj = j;
+//---                  });
+//---
+//---            jj[0..rownzi].fill(0);
+//---
+//---            nzi += rownzi;
+//---            // println!("ExprTrait::eval_finalize dense: nzi = {}",nzi);
+//---            *rp = nzi;
+//---            ii += 1;
+//---        }
+//---    }
+    rs.check();
     Ok(())
-}
+} // eval_finalize
 
 

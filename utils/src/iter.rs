@@ -260,13 +260,13 @@ where
 }
 
 pub trait ChunksByIterExt<T> {
-    fn chunks_by<'a,'b>(&'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>>;
+    fn chunks_ptr<'a,'b>(&'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>>;
 }
 
-impl<T> ChunksByIterExt<T> for &[T] {
-    fn chunks_by<'a,'b>(& 'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>> {
-        if let Some(&p) = ptr.last() { if p > self.len() { panic!("Invalid ptr for chunks_by iterator") } }
-        if ptr.iter().zip(ptr[1..].iter()).any(|(p0,p1)| p1 < p0) { panic!("Invalid ptr for chunks_by iterator") }
+impl<T> ChunksByIterExt<T> for [T] {
+    fn chunks_ptr<'a,'b>(& 'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>> {
+        if let Some(&p) = ptr.last() { if p > self.len() { panic!("Invalid ptr for chunks_ptr iterator") } }
+        if ptr.iter().zip(ptr[1..].iter()).any(|(p0,p1)| p1 < p0) { panic!("Invalid ptr for chunks_ptr iterator") }
 
         ChunksByIter{ data : self, ptr:ptr.iter().zip(ptr[1..].iter()) }
     }
@@ -287,8 +287,8 @@ pub struct ChunksByIterMut<'a,'b,'c,T:'a>
 
 impl<'a,'b,'c,T:'a> ChunksByIterMut<'a,'b,'c,T> {
     fn new(data : &'a mut [T], ptrb : &'b[usize], ptre : &'c[usize]) -> Self {
-        if let Some(&p) = ptrb.last() { if p > data.len() { panic!("Invalid ptrb for chunks_by iterator") } }
-        if let Some(&p) = ptre.last() { if p > data.len() { panic!("Invalid ptre for chunks_by iterator") } }
+        if let Some(&p) = ptrb.last() { if p > data.len() { panic!("Invalid ptrb for chunks_ptr iterator") } }
+        if let Some(&p) = ptre.last() { if p > data.len() { panic!("Invalid ptre for chunks_ptr iterator") } }
         if ptrb.iter().zip(ptre.iter()).any(|(&p0,&p1)| p0 > p1 ) {
             panic!("Invalid ptrb/ptre construction");
         }
@@ -323,11 +323,11 @@ impl<'a,'b,'c,T:'a> Iterator for ChunksByIterMut<'a,'b,'c,T> {
 }
 
 pub trait ChunksByIterMutExt<T> {
-    fn chunks_by_mut<'a,'b,'c>(&'a mut self, ptrb : &'b[usize],ptre : &'c[usize]) -> ChunksByIterMut<'a,'b,'c,T> where T:'a;
+    fn chunks_ptr_mut<'a,'b,'c>(&'a mut self, ptrb : &'b[usize],ptre : &'c[usize]) -> ChunksByIterMut<'a,'b,'c,T> where T:'a;
 }
 
 impl<T> ChunksByIterMutExt<T> for [T] {
-    fn chunks_by_mut<'a,'b,'c>(& 'a mut self, ptrb : &'b[usize], ptre : & 'c[usize]) -> ChunksByIterMut<'a,'b,'c,T> where T:'a {
+    fn chunks_ptr_mut<'a,'b,'c>(& 'a mut self, ptrb : &'b[usize], ptre : & 'c[usize]) -> ChunksByIterMut<'a,'b,'c,T> where T:'a {
         ChunksByIterMut::new(self,ptrb,ptre)
     }
 }

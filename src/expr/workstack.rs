@@ -117,7 +117,7 @@ impl WorkStack {
         let fbase   = self.ftop;
 
         let fullsize : usize = shape.iter().product();
-        if fullsize < nelm { panic!("Number of elements too large for shape: {} in {:?}",nelm,shape); }
+        if fullsize < nelm { panic!("Number of elements too large for shape: {} in {:?} (total size = {})",nelm,shape,fullsize); }
 
         let unnz  = 3+nd+(nelm+1)+nnz+(if nelm < fullsize { nelm } else { 0 } );
 
@@ -424,12 +424,34 @@ impl WorkStack {
         let nelm = self.susize[self.utop-3];
 
         if self.utop < 3+nd+nnz+nelm+1 { return Err("Invalid utop".to_string()); }
-        let totalsize : usize = self.susize[self.utop-3-nd..self.utop-3].iter().product();
+        let shape = &self.susize[self.utop-3-nd..self.utop-3];
+        let totalsize : usize = shape.iter().product();
         
-        if totalsize > nelm && self.utop < 3+nd+nnz+nelm*2+1 { return Err("Invalid utop".to_string()); }
+        let issparse = totalsize > nelm;
+
+        if issparse {
+            if self.utop < 3+nd+nnz+nelm*2+1 { return Err("Invalid utop".to_string()); }
+        } 
+        else if self.utop < 3+nd+nnz+nelm+1 { return Err("Invalid utop".to_string()); } 
+
         if self.ftop < nnz { return Err("Invalid ftop".to_string()); } 
-        let _ubase = self.utop - if totalsize > nelm { 3+2*nelm+1+nnz+nd } else { 3+nelm+1+nnz+nd };
-        let _fbase = self.ftop-nnz;
+        let ubase = self.utop - if totalsize > nelm { 3+2*nelm+1+nnz+nd } else { 3+nelm+1+nnz+nd };
+        let fbase = self.ftop-nnz;
+
+        let subj = &self.susize[0..nnz];
+        let ptr = &self.susize[self.utop-3-nd-nelm-1..self.utop-3-nd];
+        
+        if *ptr.last().unwrap() > nnz { return Err("Invalid ptr structure".to_string()); }
+        if ptr.iter().zip(ptr[1..].iter()).any(|(a,b)| a > b) {
+            return Err("Invalid ptr structure".to_string());
+        }
+
+        if issparse {
+            let sp = &self.susize[nnz..nnz+nelm];
+            if sp.iter().zip(sp[1..].iter()).any(|(a,b)| a >= b) {
+                return Err("Sparsity pattern is unsorted or contains duplicates".to_string());
+            }
+        }
 
         Ok(()) 
     }

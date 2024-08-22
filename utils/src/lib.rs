@@ -83,7 +83,10 @@ pub trait NameAppender {
 impl<T> NameAppender for [T] where T : NameAppender {
     fn append_to_string(&self, s : & mut String) {
         s.push('[');
-        for i in self.iter() { i.append_to_string(s) }
+        if self.len() > 0 {
+            self[0].append_to_string(s);
+            for i in self[1..].iter() { s.push(','); i.append_to_string(s) }
+        }
         s.push(']');
     }
 }

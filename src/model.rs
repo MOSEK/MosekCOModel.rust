@@ -707,15 +707,14 @@ impl Model {
             }
         }
 
-        let mut strides = [0usize; N]; strides.iter_mut().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v * d });
+        let strides = shape.to_strides();
 
         // build transpose permutation
         let mut tperm : Vec<usize> = (0..nelm).collect();
         tperm.sort_by_key(|&i| {
-            let mut idx = [0usize; N];
-            izip!(idx.iter_mut(),strides.iter(),shape.iter()).for_each(|(idx,&s,&d)| *idx = (i / s) % d);
+            let mut idx = strides.to_index(i);
             idx.swap(conedim0,conedim1);
-            idx.iter().zip(strides.iter()).map(|v| v.0 * v.1).sum::<usize>()
+            strides.to_linear(&idx)
         });
 
         let rnelm = conesize * numcone;
@@ -723,6 +722,8 @@ impl Model {
         let (urest,rcof) = self.xs.alloc(nnz*2+rnelm+1,nnz*2);
         let (rptr,rsubj) = urest.split_at_mut(rnelm+1);
         
+        println!("---- \n\tptr = {:?}\n\tsubj = {:?}\n\tcof = {:?}",ptr,subj,cof);
+
         //----------------------------------------
         // Compute number of non-zeros per element of the lower triangular part if 1/2 (E+E')
         //
@@ -803,7 +804,6 @@ impl Model {
 
         // Input linear non-zeros and bounds
         
-
         self.task.put_a_row_slice(con0,con0+i32::try_from(rnelm).unwrap(),
                                   &aptr[0..rnelm],
                                   &aptr[1..],
@@ -1609,6 +1609,7 @@ mod tests {
         m.objective(Some("obj"), Sense::Minimize, &z);
 
         m.solve();
+        m.write_problem("psd.ptf");
 
         let csol = m.primal_solution(SolutionType::Default, &c).unwrap();
 
