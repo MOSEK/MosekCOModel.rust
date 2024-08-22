@@ -298,7 +298,6 @@ pub trait ExprTrait<const N : usize> {
     /// - `num` Number of times to repeat
     fn repeat(self,dim : usize, num : usize) -> ExprRepeat<N,Self> where Self:Sized { ExprRepeat{ expr : self, dim, num } }
 
-
     /// Indexing or slicing an expression. This is not compatible with `std::ops::Index` since we
     /// need to return a new object rather than a reference to an object. 
     ///

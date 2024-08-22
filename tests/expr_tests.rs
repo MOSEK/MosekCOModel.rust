@@ -224,3 +224,98 @@ fn stack() {
     test_stack(1,true,3);
     test_stack(2,true,3);
 }
+
+
+
+fn test_repeat(sp : bool, d : usize, n : usize, rep : usize) {
+    use utils::ShapeToStridesEx;
+    let mut m = Model::new(None);
+    let shape = [n,n,n];
+    let v = 
+        if sp {
+            let st = shape.to_strides();
+            let sp = (0..shape.iter().product()).step_by(10).map(|i| st.to_index(i)).collect::<Vec<[usize;3]>>();
+            m.variable(None, unbounded().with_shape_and_sparsity(&shape, sp.as_slice()))
+        }
+        else {
+            m.variable(None,&shape)
+        };
+    let mut rs = WorkStack::new(1024);
+    let mut ws = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    rs.clear(); ws.clear(); xs.clear();
+    v.clone().repeat(d,rep).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+}
+
+#[allow(non_snake_case)]
+#[test]
+fn repeat() {
+    test_repeat(false,0,3,5);
+    test_repeat(false,1,3,5);
+    test_repeat(false,2,3,5);
+    test_repeat(true, 0,3,5);
+    test_repeat(true, 1,3,5);
+    test_repeat(true, 2,3,5);
+}
+
+
+
+
+#[derive(Debug,Clone,Copy)]
+enum Sparsity {
+    Sparse,
+    Dense
+}
+fn test_mul(vsp : Sparsity, dsp : Sparsity, rev : bool, n : usize) {
+    use utils::ShapeToStridesEx;
+    let mut m = Model::new(None);
+    let shape = [n,n];
+    let st = shape.to_strides();
+    let v = 
+        match vsp {
+            Sparsity::Sparse => {
+                let sp = (0..shape.iter().product()).step_by(10).map(|i| st.to_index(i)).collect::<Vec<[usize;2]>>();
+                m.variable(None, unbounded().with_shape_and_sparsity(&shape, sp.as_slice()))
+            },
+            Sparsity::Dense => m.variable(None,&shape),
+        };
+    let mx = 
+        match dsp {
+            Sparsity::Sparse =>  {
+                let sp = (0..n*n).step_by(7).map(|i| st.to_index(i)).collect::<Vec<[usize;2]>>();
+                let num = sp.len();
+                matrix::sparse( [n,n], sp, vec![1.0; num])
+            },
+            Sparsity::Dense => matrix::dense([n,n], vec![1.0;n*n]),
+        };
+
+    let mut rs = WorkStack::new(1024);
+    let mut ws = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+
+    if rev {
+        rs.clear(); ws.clear(); xs.clear();
+        v.clone().mul(mx.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+    }
+    else {
+        rs.clear(); ws.clear(); xs.clear();
+        mx.clone().mul(v.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+    }
+}
+
+
+
+#[allow(non_snake_case)]
+#[test]
+fn mul() {
+    test_mul(Sparsity::Dense, Sparsity::Dense, false,32);
+    test_mul(Sparsity::Dense, Sparsity::Dense, true, 32);
+    test_mul(Sparsity::Dense, Sparsity::Sparse,false,32);
+    test_mul(Sparsity::Dense, Sparsity::Sparse,true, 32);
+    test_mul(Sparsity::Sparse,Sparsity::Dense, false,32);
+    test_mul(Sparsity::Sparse,Sparsity::Dense, true, 32);
+    test_mul(Sparsity::Sparse,Sparsity::Sparse,false,32);
+    test_mul(Sparsity::Sparse,Sparsity::Sparse,true, 32);
+}
