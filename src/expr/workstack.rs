@@ -435,10 +435,10 @@ impl WorkStack {
         else if self.utop < 3+nd+nnz+nelm+1 { return Err("Invalid utop".to_string()); } 
 
         if self.ftop < nnz { return Err("Invalid ftop".to_string()); } 
-        let ubase = self.utop - if totalsize > nelm { 3+2*nelm+1+nnz+nd } else { 3+nelm+1+nnz+nd };
-        let fbase = self.ftop-nnz;
+        //let ubase = self.utop - if totalsize > nelm { 3+2*nelm+1+nnz+nd } else { 3+nelm+1+nnz+nd };
+        //let fbase = self.ftop-nnz;
 
-        let subj = &self.susize[0..nnz];
+        //let subj = &self.susize[0..nnz];
         let ptr = &self.susize[self.utop-3-nd-nelm-1..self.utop-3-nd];
         
         if *ptr.last().unwrap() > nnz { return Err("Invalid ptr structure".to_string()); }

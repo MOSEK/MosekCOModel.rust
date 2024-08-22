@@ -189,3 +189,38 @@ fn mul_left() {
     e1_1.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
     e1_2.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
 }
+
+
+
+fn test_stack(d : usize, sp : bool, n : usize) {
+    use utils::ShapeToStridesEx;
+
+    let mut m = Model::new(None);
+    let shape = [n,n,n];
+    let v = 
+        if sp {
+            let st = shape.to_strides();
+            let sp = (0..shape.iter().product()).step_by(10).map(|i| st.to_index(i)).collect::<Vec<[usize;3]>>();
+            m.variable(None, unbounded().with_shape_and_sparsity(&shape, sp.as_slice()))
+        }
+        else {
+            m.variable(None,&shape)
+        };
+    let mut rs = WorkStack::new(1024);
+    let mut ws = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    rs.clear(); ws.clear(); xs.clear();
+    v.clone().stack(d,v.clone()).stack(d,v.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+}
+
+#[allow(non_snake_case)]
+#[test]
+fn stack() {
+    test_stack(0,false,3);
+    test_stack(1,false,3);
+    test_stack(2,false,3);
+    test_stack(0,true,3);
+    test_stack(1,true,3);
+    test_stack(2,true,3);
+}

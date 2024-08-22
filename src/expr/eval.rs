@@ -1297,7 +1297,7 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
         let mut ofs  : usize = 0;
         // Build the result ptr
         // println!("{}:{}: Stack: Dense, rshape = {:?}, stack dim = {}",file!(),line!(),rshape,dim);
-        rptr[0] = 0;
+        rptr.iter_mut().for_each(|v| *v = 0);
         for (shape,ptr,_,_,_) in exprs.iter() {
             let vd1 = shape.get(dim).copied().unwrap_or(1);
             let blocksize = vd1*d2;
@@ -1312,11 +1312,9 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
 
             ofs += vd1;
         }
-
         let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
         // Then copy nonzeros
         let mut ofs : usize = 0;
-        // println!("{}:{}: rptr = {:?}",file!(),line!(),rptr);
         rsubj.fill(0);
         for (shape,ptr,_,subj,cof) in exprs.iter() {
             let vd1 = shape.get(dim).copied().unwrap_or(1);
@@ -1327,9 +1325,6 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
                 .for_each(|(rps,p0s,p1s)| {
                     let p0 = *p0s.first().unwrap();
                     let p1 = *p1s.last().unwrap();
-
-                    // println!("{}:{}:\n\trptr[...] = {:?}\n\tptr[...] = {:?}\n\tptr+1[...] = {:?}, ofs = {}",
-                    //          file!(),line!(),&rps,p0s,p1s,ofs);
 
                     let rp = rps[ofs];
                     rsubj[rp..rp+p1-p0].clone_from_slice(&subj[p0..p1]);
@@ -1805,17 +1800,15 @@ pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut Wor
 
 pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-    let nd = shape.len();
     let rnnz  = subj.len();
     let rnelm = shape.iter().product();
     let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
  
-    let (urest,_frest) = xs.alloc(rnnz+rnelm+1,0);
+    let (urest,_frest) = xs.alloc(rnnz+ptr.len(),0);
     let (perm,xptr) = urest.split_at_mut(rnnz); 
     xptr[0] = 0;
     perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
-    for (pp,xptr) in perm.chunks_ptr_mut(ptr, &ptr[1..])
-        .zip(xptr[1..].iter_mut())
+    for (pp,xptr) in perm.chunks_ptr_mut(ptr, &ptr[1..]).zip(xptr[1..].iter_mut())
     {
         pp.sort_by_key(|&p| unsafe{ *subj.get_unchecked(p) });
         *xptr = 
@@ -1827,11 +1820,19 @@ pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut Work
             };
     }
     xptr.iter_mut().fold(0usize,|c,p| { *p += c; *p });
-  
+    //println!("subj = {:?}",subj);
+    //println!("ptr = {:?}",ptr);
+    //println!("xptr = {:?}",xptr);
+    //println!("xptr.last() = {}, rsubj.len() = {}",xptr.last().unwrap(),rsubj.len());
+    //println!("perm = {:?}",perm);
+
+    
+
     for (rsubj,rcof,perm) in izip!(rsubj.chunks_ptr_mut(xptr,&xptr[1..]),
                                    rcof.chunks_ptr_mut(xptr,&xptr[1..]),
                                    perm.chunks_ptr(ptr))
     {
+        //println!("sub perm = {:?}",perm);
         
         let mut sit = subj.permute_by(perm).zip(cof.permute_by(perm));
         let mut tit = rsubj.iter_mut().zip(rcof.iter_mut()).peekable();
