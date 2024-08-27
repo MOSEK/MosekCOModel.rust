@@ -2,41 +2,42 @@
 //! Utility module.
 //!
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, marker::PhantomData, ptr::NonNull};
 
 use itertools::izip;
+use utils::iter::*;
 
-
-/// Trait that provides a function that copies from an iterator into a slice.
-///
-/// # Notes
-/// Implementations should not fail if the lengths do not match, but rather copy the maximum number
-/// possible and return that number.
-pub trait AssignFromIterExt<I> where I : Iterator, I::Item : Copy 
-{
-    #[allow(dead_code)]
-    fn copy_from_iter(&mut self, it : I) -> usize;
-}
-
-impl<I> AssignFromIterExt<I> for [I::Item]
-    where 
-        I : Iterator,
-        I::Item : Copy
-{
-    fn copy_from_iter(&mut self, it : I) -> usize {
-        self.iter_mut().zip(it).map(|(t,s)| *t = s).count()
-    }
-}
-
-impl<I> AssignFromIterExt<I> for Vec<I::Item>
-    where 
-        I : Iterator,
-        I::Item : Copy
-{
-    fn copy_from_iter(&mut self, it : I) -> usize {
-        self.iter_mut().zip(it).map(|(t,s)| *t = s).count()
-    }
-}
+//->utils::iter -- 
+//->utils::iter -- /// Trait that provides a function that copies from an iterator into a slice.
+//->utils::iter -- ///
+//->utils::iter -- /// # Notes
+//->utils::iter -- /// Implementations should not fail if the lengths do not match, but rather copy the maximum number
+//->utils::iter -- /// possible and return that number.
+//->utils::iter -- pub trait AssignFromIterExt<I> where I : Iterator, I::Item : Copy 
+//->utils::iter -- {
+//->utils::iter --     #[allow(dead_code)]
+//->utils::iter --     fn copy_from_iter(&mut self, it : I) -> usize;
+//->utils::iter -- }
+//->utils::iter -- 
+//->utils::iter -- impl<I> AssignFromIterExt<I> for [I::Item]
+//->utils::iter --     where 
+//->utils::iter --         I : Iterator,
+//->utils::iter --         I::Item : Copy
+//->utils::iter -- {
+//->utils::iter --     fn copy_from_iter(&mut self, it : I) -> usize {
+//->utils::iter --         self.iter_mut().zip(it).map(|(t,s)| *t = s).count()
+//->utils::iter --     }
+//->utils::iter -- }
+//->utils::iter -- 
+//->utils::iter -- impl<I> AssignFromIterExt<I> for Vec<I::Item>
+//->utils::iter --     where 
+//->utils::iter --         I : Iterator,
+//->utils::iter --         I::Item : Copy
+//->utils::iter -- {
+//->utils::iter --     fn copy_from_iter(&mut self, it : I) -> usize {
+//->utils::iter --         self.iter_mut().zip(it).map(|(t,s)| *t = s).count()
+//->utils::iter --     }
+//->utils::iter -- }
 
 /// An interator that produces an accumulation map, a bit like fold+map.
 ///
@@ -117,159 +118,85 @@ impl<I:Iterator,T:Copy,F:FnMut(&T,I::Item) -> T> FoldMap0Ext<T,F> for I {}
 
 
 
-////////////////////////////////////////////////////////////
-
-pub struct PermIter<'a,'b,T> {
-    data : & 'b [T],
-    perm : & 'a [usize],
-    i : usize
-}
-
-pub fn perm_iter<'a,'b,T>(perm : &'a [usize], data : &'b[T]) -> PermIter<'a,'b,T> {
-    if let Some(&v) = perm.iter().max() { if v >= data.len() { panic!("Invalid permutation")} }
-    PermIter{ data,perm,i:0 }
-}
-
-impl<'a,'b,T> Iterator for PermIter<'a,'b,T> {
-    type Item = & 'b T;
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(&i) = self.perm.get(self.i) {
-            self.i += 1;
-            Some(unsafe{self.data.get_unchecked(i)})
-        }
-        else {
-            None
-        }
-    }
-}
-
-////////////////////////////////////////////////////////////
-
-/// Given a shape, iterate over all indexes in that shape.
-pub struct IndexIterator<const N : usize> {
-    shape : [usize; N],
-    cur   : [usize; N],
-    done  : bool
-}
-
-impl<const N : usize> Iterator for IndexIterator<N> {
-    type Item = [usize; N];
-    fn next(& mut self) -> Option<Self::Item> {
-        if self.done {
-            None
-        } 
-        else {
-            let res = self.cur;
-
-            if 0 < self.shape.iter().zip(self.cur.iter_mut()).rev().fold(1, |v,(&d, i)| { *i += v; if *i < d { 0 } else { *i = 0; 1 } }) {
-                self.done = true;
-            }
-            Some(res)
-        }
-    }
-}
-
-impl<const N : usize> IndexIterator<N> {
-    pub fn new(shape : &[usize; N]) -> IndexIterator<N> {
-        IndexIterator{
-            shape : *shape,
-            cur   : [0; N],
-            done : shape.iter().any(|&v| v == 0)
-        }
-    }
-}
-
-pub trait IndexIteratorExt<const N : usize> {
-    type R;
-    #[allow(dead_code)]
-    fn index_iterator(&self) -> Self::R;
-}
-
-impl<const N : usize> IndexIteratorExt<N> for [usize;N] {
-    type R = IndexIterator<N>;
-    fn index_iterator(&self) -> Self::R { IndexIterator::new(self) }
-}
-
-
-
-/// Given a shape and a list of linear indexes, iterate over the sparsity yielding the indexes
-/// corresponding to the given shape.
-pub struct SparseIndexIterator<'a, const N : usize> {
-    stride : [usize; N],
-    sp     : & 'a [usize],
-    i      : usize
-}
-
-impl<'a, const N : usize> SparseIndexIterator<'a,N> {
-    /// Create a new SparseIndexIterator
-    ///
-    /// The indexes are not verified.
-    ///
-    /// # Arguments
-    /// - `shape` - shape to use
-    /// - `sp` - list of sparsity indexes
-    pub fn new(shape : &[usize; N], sp : &'a [usize]) -> SparseIndexIterator<'a,N> {
-        let mut stride = [1usize; N];
-        _ = stride.iter_mut().zip(shape.iter()).rev().fold(1, |v,(st,&d)| { *st = v; v*d });
-        //println!("shape = {:?}, stride = {:?}",shape,stride);
-        SparseIndexIterator{
-            stride,
-            sp,
-            i : 0
-        }
-    }
-}
-
-impl<'a, const N : usize> Iterator for SparseIndexIterator<'a,N> {
-    type Item = [usize; N];
-    fn next(& mut self) -> Option<Self::Item> {
-        if self.i < self.sp.len() {
-            let mut res = [0usize; N];
-            let v = unsafe{ *self.sp.get_unchecked(self.i) };
-            self.i += 1;
-            _ = res.iter_mut().zip(self.stride.iter()).fold(v,|v, (r,&s)| { *r = v / s; v % s });
-            Some(res)
-        }
-        else {
-            None
-        }
-    }
-}
+//->utils::iter -- ////////////////////////////////////////////////////////////
+//->utils::iter -- 
+//->utils::iter -- pub struct PermIter<'a,'b,T> {
+//->utils::iter --     data : & 'b [T],
+//->utils::iter --     perm : & 'a [usize],
+//->utils::iter --     i : usize
+//->utils::iter -- }
+//->utils::iter -- 
+//->utils::iter -- pub fn perm_iter<'a,'b,T>(perm : &'a [usize], data : &'b[T]) -> PermIter<'a,'b,T> {
+//->utils::iter --     if let Some(&v) = perm.iter().max() { if v >= data.len() { panic!("Permutation index out of bounds")} }
+//->utils::iter --     PermIter{ data,perm,i:0 }
+//->utils::iter -- }
+//->utils::iter -- 
+//->utils::iter -- impl<'a,'b,T> Iterator for PermIter<'a,'b,T> {
+//->utils::iter --     type Item = & 'b T;
+//->utils::iter --     fn next(&mut self) -> Option<Self::Item> {
+//->utils::iter --         if let Some(&i) = self.perm.get(self.i) {
+//->utils::iter --             self.i += 1;
+//->utils::iter --             Some(unsafe{self.data.get_unchecked(i)})
+//->utils::iter --         }
+//->utils::iter --         else {
+//->utils::iter --             None
+//->utils::iter --         }
+//->utils::iter --     }
+//->utils::iter -- }
+//->utils::iter -- 
+//->utils::iter -- 
+//->utils::iter -- pub trait PermuteByEx<'a,'b,T> {
+//->utils::iter --     fn permute_by(self,perm:&'a[usize]) -> PermIter<'a,'b,T>; 
+//->utils::iter -- }
+//->utils::iter -- 
+//->utils::iter -- pub trait PermuteByMutEx<'a,'b,T> {
+//->utils::iter --     fn permute_by_mut(self,perm:&'a[usize]) -> PermIterMut<'a,'b,T>; 
+//->utils::iter -- }
+//->utils::iter -- 
+//->utils::iter -- impl<'a,'b,T> PermuteByEx<'a,'b,T> for &'b [T] {
+//->utils::iter --     fn permute_by(self,perm:&'a [usize]) -> PermIter<'a,'b,T> {
+//->utils::iter --         if let Some(&v) = perm.iter().max() { if v >= self.len() { panic!("Permutation index out of bounds")} }
+//->utils::iter --         PermIter{ data: self,perm, i:0 }
+//->utils::iter --     }
+//->utils::iter -- }
+//->utils::iter -- 
+//->utils::iter -- ////////////////////////////////////////////////////////////
+//->utils::iter -- // Mutable permutation iterator
+//->utils::iter -- 
+//->utils::iter -- // Ideas stolen from implementation of std::iter::IterMut
+//->utils::iter -- pub struct PermIterMut<'a,'b,T : 'b> {
+//->utils::iter --     perm : & 'a [usize],
+//->utils::iter --     ptr  : NonNull<T>,
+//->utils::iter --     _marker : PhantomData<&'b T>,
+//->utils::iter --     i : usize
+//->utils::iter -- }
+//->utils::iter -- 
+//->utils::iter -- impl<'a,'b,T> Iterator for PermIterMut<'a,'b,T> {
+//->utils::iter --     type Item = & 'b mut T;
+//->utils::iter --     fn next(&mut self) -> Option<Self::Item> {
+//->utils::iter --         if let Some(&i) = self.perm.get(self.i) {
+//->utils::iter --             self.i += 1;
+//->utils::iter --             Some(unsafe{ & mut ( *self.ptr.add(i).as_mut()) })
+//->utils::iter --         }
+//->utils::iter --         else {
+//->utils::iter --             None
+//->utils::iter --         }
+//->utils::iter --     }
+//->utils::iter -- }
+//->utils::iter -- 
+//->utils::iter -- impl<'a,'b,T> PermuteByMutEx<'a,'b,T> for &'b mut [T] {
+//->utils::iter --     fn permute_by_mut(self,perm:&'a [usize]) -> PermIterMut<'a,'b,T> {
+//->utils::iter --         if let Some(&v) = perm.iter().max() { if v >= self.len() { panic!("Permutation index out of bounds")} }
+//->utils::iter --         PermIterMut{ 
+//->utils::iter --             perm, 
+//->utils::iter --             ptr : NonNull::from(self).cast(),
+//->utils::iter --             _marker : PhantomData,
+//->utils::iter --             i:0 }
+//->utils::iter --     }
+//->utils::iter -- }
 
 
-// /// Given a shape, and optionally a sparsity pattern, call a function
-// /// f with each index in the shape by lexicalic order.
-// ///
-// /// Arguments:
-// /// - shape The shape
-// /// - sp Optional sparsity pattern
-// /// - f Function called for each index in the shape
-// pub fn for_each_index<F>(shape : &[usize], sp : Option<&[usize]>, mut f : F) where F : FnMut(usize,&[usize]) {
-//     let mut idx = vec![0;shape.len()];
-// 
-//     if let Some(sp) = sp {
-//         let mut stride : Vec<usize> = vec![0; shape.len()];
-//         let _ = shape.iter().rev().zip(stride.iter_mut().rev()).fold(1,|k,(&d,s)| { *s = k; k*d });
-//         for &i in sp {
-//             let _ = idx.iter_mut().zip(stride.iter()).fold(i,|k,(ix,&s)| { *ix = k / s; k % s } );
-//             f(i,idx.as_slice());
-//         }
-//     }
-//     else {
-//         for i in 0..shape.iter().product() {
-//             f(i,idx.as_slice());
-//             let _ = shape.iter().zip(idx.iter_mut()).rev()
-//                 .fold(1,|carry,(&d,ix)| {
-//                     if carry == 0 { 0 }
-//                     else {
-//                         *ix += carry;
-//                         if *ix < d { 0 }
-//                         else { *ix = 0; 1 }
-//                     }
-//                 });
-//         }
-//     }
-// }
+
 
 ////////////////////////////////////////////////////////////
 
@@ -310,47 +237,7 @@ impl Iterator for ToDigit10Iter {
     }
 }
 
-////////////////////////////////////////////////////////////
 
-
-pub struct ChunksByIter<'a,'b,T,I>
-where
-    I:Iterator<Item = (&'b usize,&'b usize)>
-{
-    data : &'a [T],
-    ptr  : I
-}
-
-impl<'a,'b,T,I> Iterator for ChunksByIter<'a,'b,T,I>
-where
-    I:Iterator<Item = (&'b usize,&'b usize)>
-{
-    type Item = &'a[T];
-    fn next(& mut self) -> Option<Self::Item> {
-        if let Some((&p0,&p1)) = self.ptr.next() {
-            // Note: The constructor of the ChunksByIter object MUST ensure that all slices are
-            // valid!
-            Some(unsafe{ self.data.get_unchecked(p0..p1)})
-            //Some(&self.data[p0..p1])
-        }
-        else {
-            None
-        }
-    }
-}
-
-pub trait ChunksByIterExt<T> {
-    fn chunks_by<'a,'b>(&'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>>;
-}
-
-impl<T> ChunksByIterExt<T> for &[T] {
-    fn chunks_by<'a,'b>(& 'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>> {
-        if let Some(&p) = ptr.last() { if p > self.len() { panic!("Invalid ptr for chunks_by iterator") } }
-        if ptr.iter().zip(ptr[1..].iter()).any(|(p0,p1)| p1 < p0) { panic!("Invalid ptr for chunks_by iterator") }
-
-        ChunksByIter{ data : self, ptr:ptr.iter().zip(ptr[1..].iter()) }
-    }
-}
 
 //pub fn chunks_by_iterator<'a,'b,T,I>(items : &'a [T], i : I) 
 //where 
@@ -403,115 +290,6 @@ impl<T> SelectFromSliceExt<T> for &[T] {
     }
 }
 
-////////////////////////////////////////////////////////////
-
-#[derive(Debug)]
-pub struct IndexHashMap<'a,'b,'c,'d,T : Copy> {
-    data   : & 'a mut[T],
-    index  : & 'b mut[usize],
-    next   : & 'c mut[usize],
-    bucket : & 'd mut[usize],
-    dflt   : T,
-    n      : usize
-}
-
-fn hash(i : usize) -> usize { i }
-
-impl<'a,'b,'c,'d,T : Copy> IndexHashMap<'a,'b,'c,'d,T> {
-    pub fn new(data   : & 'a mut[T],
-               index  : & 'b mut[usize],
-               next   : & 'c mut[usize],
-               bucket : & 'd mut[usize],
-               dflt   : T) -> IndexHashMap<'a,'b,'c,'d,T> {
-        bucket.iter_mut().for_each(|h| *h = usize::MAX);
-        if next.len() != data.len() || next.len() != index.len() {
-            panic!("Mismatching array sizes");
-        }
-
-        IndexHashMap{
-            data,
-            index,
-            next,
-            bucket,
-            dflt,
-            n : 0
-        }
-    }
-
-    pub fn with_data(data   : & 'a mut[T],
-                     index  : & 'b mut[usize],
-                     next   : & 'c mut[usize],
-                     bucket : & 'd mut[usize],
-                     dflt : T) -> IndexHashMap<'a,'b,'c,'d,T> {
-        bucket.iter_mut().for_each(|h| *h = usize::MAX);
-        let n = data.len();
-        let m = bucket.len();
-
-        if next.len() != data.len() || next.len() != index.len() {
-            panic!("Mismatching array sizes");
-        }
-
-        // Assume that index and data contains data to be put in the map
-        for (i,&k,next) in izip!(0..n,index.iter(), next.iter_mut()) {
-            let b = unsafe { &mut *bucket.get_unchecked_mut(hash(k) % m) };
-            *next = *b;
-            *b = i;
-        }
-
-        IndexHashMap{
-            data,
-            index,
-            next,
-            bucket,
-            dflt,
-            n}
-    }
-
-    pub fn at(&self,i : usize) -> Option<&T> {
-        let mut index = unsafe { * self.bucket.get_unchecked(hash(i) % self.bucket.len()) };
-
-        while index < usize::MAX && i != unsafe { * self.index.get_unchecked(index) }  {
-            index = unsafe{ * self.next.get_unchecked(index) };
-        }
-
-        if index < usize::MAX {
-            Some(unsafe { self.data.get_unchecked(index) })
-        }
-        else {
-            None
-        }
-    }
-
-    pub fn at_mut(&mut self, i : usize) -> &mut T {
-        let key = hash(i) % self.bucket.len();
-        let head = unsafe { self.bucket.get_unchecked_mut(key) };
-        let mut index = *head;
-
-        //println!("IndexHashMap, lookup {}\n\thead = {}",i,index);
-        while index < usize::MAX && i != unsafe { * self.index.get_unchecked(index) } {
-            //println!("\tindex = {}",index);
-            index = unsafe{ * self.next.get_unchecked(index) };
-        }
-
-        if index < usize::MAX {
-            unsafe { &mut * self.data.get_unchecked_mut(index) }
-        }
-        else if self.n < self.next.len() {
-            index = self.n; self.n += 1;
-            unsafe { *self.next.get_unchecked_mut(index) = *head; }
-            unsafe { *self.index.get_unchecked_mut(index) = i; }
-            *head = index;
-
-            unsafe { *self.data.get_unchecked_mut(index) = self.dflt; }
-            unsafe { & mut *self.data.get_unchecked_mut(index) }
-        }
-        else {
-            panic!("Hashmap is full");
-        }
-    }
-
-    pub fn len(&self) -> usize { self.n }
-}
 
 
 ////////////////////////////////////////////////////////////

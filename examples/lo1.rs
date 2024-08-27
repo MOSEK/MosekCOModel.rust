@@ -18,7 +18,7 @@ extern crate mosekmodel;
 
 use mosekmodel::*;
 
-fn main() {
+fn lo1() -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>) {
     let a0 = vec![ 3.0, 1.0, 2.0, 0.0 ];
     let a1 = vec![ 2.0, 1.0, 3.0, 1.0 ];
     let a2 = vec![ 0.0, 2.0, 0.0, 3.0 ];
@@ -42,12 +42,33 @@ fn main() {
     m.write_problem("lo1-nosol.ptf");
     m.solve();
 
-    m.write_problem("lo1.ptf");
-
     // Get the solution values
     let (psta,dsta) = m.solution_status(SolutionType::Default);
     println!("Status = {:?}/{:?}",psta,dsta);
     let xx = m.primal_solution(SolutionType::Default,&x);
     println!("x = {:?}", xx);
+
+    (psta,dsta,m.primal_solution(SolutionType::Default,&x))
 }
 
+fn main() {
+    let (psta,dsta,xx) = lo1();
+    println!("Status = {:?}/{:?}",psta,dsta);
+    println!("x = {:?}", xx);
+}
+
+
+
+#[cfg(test)]
+#[test]
+fn test() {
+    let a0 = vec![ 3.0, 1.0, 2.0, 0.0 ];
+    let a1 = vec![ 2.0, 1.0, 3.0, 1.0 ];
+    let a2 = vec![ 0.0, 2.0, 0.0, 3.0 ];
+
+    let (_psta,_dsta,xx) = lo1();
+    let xx = xx.unwrap();
+    assert!((a0.iter().zip(xx.iter()).map(|(&a,&b)| a*b).sum::<f64>()-30.0).abs() < 1e-7);
+    assert!(a1.iter().zip(xx.iter()).map(|(&a,&b)| a*b).sum::<f64>() >= 15.0);
+    assert!(a2.iter().zip(xx.iter()).map(|(&a,&b)| a*b).sum::<f64>() <= 25.0);
+}

@@ -1,7 +1,8 @@
 //! This module provides basic array functionality.
 //!
-use itertools::izip;
+use itertools::{izip, EitherOrBoth};
 use crate::expr::{Expr, IntoExpr};
+use utils::*;
 
 
 /// This trait represents an 2-dimensional array, with a few functions specialized for matrixes on
@@ -284,6 +285,70 @@ impl<const N : usize> NDArray<N> {
                 self.data.clone())
         }
     }
+
+
+    pub fn add(self, rhs: Self) -> Self {
+        assert!(self.shape == rhs.shape);
+        let mut lhs = self;
+        let mut rhs = rhs;
+        NDArray{
+            shape : lhs.shape,
+            sp : 
+                match (&lhs.sp,&rhs.sp) {
+                    (Some(ref lsp),Some(ref rsp)) => 
+                        Some(itertools::merge_join_by(lsp.iter().zip(rhs.data.iter()), 
+                                                 rsp.iter().zip(rhs.data.iter()),
+                                                 |a,b| a.0.cmp(b.0))
+                            .map(|v| 
+                                 match v {
+                                     EitherOrBoth::Left((&i,_)) => i,
+                                     EitherOrBoth::Right((&i,_)) => i,
+                                     EitherOrBoth::Both((&il,_c),(&_ir,_)) => il
+                                 })
+                            .collect::<Vec<usize>>()),
+                        _ => None
+                },
+            data : 
+                match (&lhs.sp,&rhs.sp) {
+                    (None,None)           => { lhs.data.iter_mut().zip(rhs.data.iter()).for_each(|(t,&s)| *t += s); lhs.data },
+                    (Some(ref lsp),None)      => { lsp.iter().zip(lhs.data().iter()).for_each(|(&i,c)| rhs.data[i] += c); rhs.data },
+                    (None,Some(ref rsp))      => { rsp.iter().zip(rhs.data().iter()).for_each(|(&i,c)| lhs.data[i] += c); lhs.data },
+                    (Some(ref lsp),Some(ref rsp)) =>
+                        itertools::merge_join_by(lsp.iter().zip(rhs.data.iter()), 
+                                                 rsp.iter().zip(rhs.data.iter()),
+                                                 |a,b| a.0.cmp(b.0))
+                            .map(|v| 
+                                 match v {
+                                     EitherOrBoth::Left((_,&c)) => c,
+                                     EitherOrBoth::Right((_,&c)) => c,
+                                     EitherOrBoth::Both((_,&cl),(_,&cr)) => cl+cr
+                                 })
+                            .collect::<Vec<f64>>(),
+                }
+        }
+    }
+
+    pub fn mul_scalar(mut self, v : f64) -> Self {
+        self.data.iter_mut().for_each(|c| *c += v);
+        self
+    }
+}
+
+
+impl<const N : usize> std::ops::Add for NDArray<N> {
+    type Output = NDArray<N>;
+    fn add(self, rhs: Self) -> Self::Output {
+        (self as NDArray<N>).add(rhs)
+    }
+}
+
+impl<const N : usize> std::ops::Sub for NDArray<N> {
+    type Output = NDArray<N>;
+    fn sub(self, rhs: Self) -> Self::Output {
+        let mut rhs = rhs;
+        rhs.inplace_mul_scalar(-1.0);
+        self.add(rhs)
+    }
 }
 
 
@@ -368,10 +433,47 @@ pub fn dense<const N : usize,D>(shape : [usize;N], data : D) -> NDArray<N> where
     NDArray::new(shape,None,data.into()).unwrap()
 }
 
-/// Create a sparse [NDArray] from data.
-pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> where D : Into<Vec<f64>>, I : Into<Vec<usize>> {
-    NDArray::new(shape,Some(sp.into()),data.into()).unwrap()
+
+pub trait IntoIndexes<const N : usize> {
+    fn into_indexes(&self, shape : &[usize;N]) -> Vec<usize>;
 }
+
+impl<const N : usize> IntoIndexes<N> for [[usize;N]] {
+    fn into_indexes(&self, shape : &[usize;N]) -> Vec<usize> {
+        if self.iter().any(|idx| idx.iter().zip(shape.iter()).any(|(&i,&d)| i >= d)) {
+            panic!("Index out of bounds");
+        }
+        let strides = shape.to_strides();
+        self.iter().map(|index| strides.to_linear(&index)).collect()
+    }
+}
+
+impl<const N : usize> IntoIndexes<N> for Vec<[usize;N]> {
+    fn into_indexes(&self, shape : &[usize;N]) -> Vec<usize> {
+        if self.iter().any(|idx| idx.iter().zip(shape.iter()).any(|(&i,&d)| i >= d)) {
+            panic!("Index out of bounds");
+        }
+        let strides = shape.to_strides();
+        self.iter().map(|index| strides.to_linear(&index)).collect()
+    }
+}
+
+impl IntoIndexes<1> for [usize] {
+    fn into_indexes(&self, _shape : &[usize;1]) -> Vec<usize> { self.to_vec() }
+}
+
+pub fn zeros<const N : usize>(shape : [usize;N]) -> NDArray<N> {
+    NDArray::new(shape,Some(Vec::new()),Vec::new()).unwrap()
+}
+
+/// Create a sparse [NDArray] from data.
+pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> where D : Into<Vec<f64>>, I : IntoIndexes<N> {
+    let sparsity = sp.into_indexes(&shape);
+    NDArray::new(shape,Some(sparsity),data.into()).unwrap()
+}
+//pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> where D : Into<Vec<f64>>, I : Into<Vec<usize>> {
+//    NDArray::new(shape,Some(sp.into()),data.into()).unwrap()
+//}
 
 /// Create a sparse 2-dimensional diagonal matrix.
 pub fn diag<V>(data : V) -> NDArray<2> where V:Into<Vec<f64>> {

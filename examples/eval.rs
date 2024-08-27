@@ -132,11 +132,25 @@ pub extern "C"  fn permute_axes
   xs   : * mut WorkStack) 
 {
     unsafe {
-        eval::permute_axes(
-            std::slice::from_raw_parts(perm,nd),
-            &mut *rs,
-            &mut *ws,
-            &mut *xs);
+        match nd {
+            0 => { let p = [0usize; 0]; eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            1 => { let mut p = [0usize; 1]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            2 => { let mut p = [0usize; 2]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            3 => { let mut p = [0usize; 3]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            4 => { let mut p = [0usize; 4]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            5 => { let mut p = [0usize; 5]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            6 => { let mut p = [0usize; 6]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            7 => { let mut p = [0usize; 7]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            8 => { let mut p = [0usize; 8]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            9 => { let mut p = [0usize; 9]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            10 => { let mut p = [0usize; 10]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            11 => { let mut p = [0usize; 11]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            12 => { let mut p = [0usize; 12]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            13 => { let mut p = [0usize; 13]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            14 => { let mut p = [0usize; 14]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            15 => { let mut p = [0usize; 15]; p.copy_from_slice(std::slice::from_raw_parts(perm,nd)); eval::permute_axes(&p, &mut *rs, &mut *ws, &mut *xs); },
+            _ => unimplemented!("permute axes for N > 15")
+        }
     }
 }
 

@@ -4,22 +4,22 @@
 
 use std::iter::once;
 use super::*;
-use super::super::utils::*;
 use super::workstack::WorkStack;
+use utils::{*,iter::*};
 
 use itertools::{izip,iproduct};
 
-pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
+pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nd = shape.len();
 
     if nd != 2 || shape[0] != shape[1] {
-        panic!("Diagonals can only be taken from square matrixes");
+        return Err(ExprEvalError::new(file!(), line!(), "Diagonals can only be taken from square matrixes"));
     }
     let d = shape[0];
     if index.unsigned_abs() as usize >= d {
-        panic!("Diagonal index out of bounds");
+        return Err(ExprEvalError::new(file!(),line!(),"Diagonal index out of bounds"));
     }
 
     let absidx = index.unsigned_abs() as usize;
@@ -104,18 +104,19 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
                 nzi += p1-p0;
             });
         let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p } );
+
     }
+    rs.check();
+    Ok(())
 }
 
-pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
+pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-
-    //println!("triangular_part(upper:{}, with_diag:{},...)",upper,with_diag);
 
     let nd = shape.len();
 
     if nd != 2 || shape[0] != shape[1] {
-        panic!("Triangular parts can only be taken from square matrixes");
+        return Err(ExprEvalError::new(file!(), line!(), "Triangular parts can only be taken from square matrixes"));
     }
     let d = shape[0];
 
@@ -129,8 +130,8 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
             .sum();
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
 
-        izip!(subj.chunks_by(ptr),
-              cof.chunks_by(ptr),
+        izip!(subj.chunks_ptr(ptr),
+              cof.chunks_ptr(ptr),
               sp.iter().map(|i| (i/d,i%d)))
             .filter(|(_,_,(i,j))| (upper && i < j) || (! upper && i > j) || (with_diag && i == j))
             .flat_map(|(subj,cof,_)| subj.iter().zip(cof.iter()))
@@ -157,8 +158,8 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
 
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
 
-        izip!(subj.chunks_by(ptr),
-              cof.chunks_by(ptr),
+        izip!(subj.chunks_ptr(ptr),
+              cof.chunks_ptr(ptr),
               iproduct!(0..d,0..d))
             .filter(|(_,_,(i,j))| 
                 (upper     && i  < j) ||
@@ -182,20 +183,23 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
             });
         rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
     }
-    rs.validate_top().unwrap();
+    rs.check();
+    Ok(())
 }
 
-pub fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) { 
+pub fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
     let (rptr,_rsp,rsubj,rcof)    = rs.alloc_expr(&[],*ptr.last().unwrap(),1);
     rptr[0] = 0;
     rptr[1] = *ptr.last().unwrap();
     rsubj.clone_from_slice(subj);
     rcof.clone_from_slice(cof);
+    rs.check();
+    Ok(())
 }
 
 
-pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) { 
+pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nnz = *ptr.last().unwrap();
     let nelem = ptr.len()-1;
@@ -203,7 +207,9 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
 
     // check indexes
     assert!(n == begin.len() && n == end.len());
-    if shape.iter().zip(end.iter()).any(|(a,b)| a < b) { panic!("Index out of bounds") }
+    if shape.iter().zip(end.iter()).any(|(a,b)| a < b) { 
+        return Err(ExprEvalError::new(file!(),line!(),"Index out of bounds"));
+    }
 
     let (urest,fpart) = xs.alloc(n*5+nelem*2+1+nnz,nnz);
     let (strides,urest) = urest.split_at_mut(n); 
@@ -281,12 +287,14 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
         rsubj.clone_from_slice(&xsubj[..rnnz]);
         rcof.clone_from_slice(&xcof[..rnnz]);
     }
+    rs.check();
+    Ok(())
 }
 
-pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     if dim >= shape.len() {
-        panic!("Invalid stacking dimension");
+        return Err(ExprEvalError::new(file!(),line!(),"Invalid stacking dimension"));
     }
     let mut rshape = shape.to_vec();
     rshape[dim] *= num;
@@ -318,10 +326,10 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
         perm.sort_by_key(|&i| xsp[i]);
 
         rptr.iter_mut().for_each(|p| *p = 0);
-        rsp.iter_mut().zip(perm_iter(perm,xsp)).for_each(|(t,&s)| *t = s);
+        rsp.iter_mut().zip(xsp.permute_by(perm)).for_each(|(t,&s)| *t = s);
 
         let mut p = 0usize;
-        for (rptr,&i) in izip!(rptr[1..].iter_mut(), perm_iter(perm,xidx)) {
+        for (rptr,&i) in izip!(rptr[1..].iter_mut(), xidx.permute_by(perm)) {
             let ptrb = ptr[i];
             let ptre = ptr[i+1];
             let n = ptre-ptrb;
@@ -349,48 +357,48 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
 
         _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
     }
+    rs.check();
+    Ok(())
 }
 
 
-pub fn permute_axes(perm : &[usize],
-                    rs : & mut WorkStack,
-                    ws : & mut WorkStack,
-                    xs : & mut WorkStack) {
+pub fn permute_axes<const N : usize>(
+    perm : &[usize;N],
+    rs : & mut WorkStack,
+    ws : & mut WorkStack,
+    xs : & mut WorkStack) -> Result<(),ExprEvalError> 
+{
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nelem = ptr.len()-1;
-    let nd = shape.len();
 
-    if perm.len() != nd || *perm.iter().max().unwrap() >= nd {
-        panic!("Mismatching permutation and shape");
+    if shape.len() != N || *perm.iter().max().unwrap() >= N {
+        return Err(ExprEvalError::new(file!(),line!(),"Mismatching permutation and shape"));
     }
-    let mut rshape = vec![usize::MAX; shape.len()];
-    {
-        perm.iter().zip(rshape.iter_mut()).for_each(|(&i,d)| {
-            unsafe {
-                if i >= shape.len() || *d < usize::MAX  {
-                    panic!("Invalid permutation {:?}",perm);
-                }
-
-                *d = *shape.get_unchecked(i);
+    let shape = { let mut r = [0usize; N]; r.copy_from_slice(shape); r };
+    let mut rshape = [usize::MAX; N];
+    rshape.iter_mut().zip(shape.permute_by(perm))
+        .for_each(|(d,&s)| {
+            if *d < usize::MAX {
+                panic!("Invalid permutation {:?}",perm);
+            } 
+            else {
+                *d = s;
             }
         });
-    }
-    //println!("permute_axes: perm = {:?}, shape = {:?}, rshape = {:?}",perm,shape,rshape);
+    let nnz = subj.len();
 
-    let nd = shape.len();
-    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),subj.len(),*ptr.last().unwrap());
+    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape,nnz,nelem);
     rptr[0] = 0;
         
-    let (uslice,_)           = xs.alloc(nelem*2+shape.len()*3,0);
-    let (spx,uslice)         = uslice.split_at_mut(nelem);
-    let (elmperm,uslice)     = uslice.split_at_mut(nelem);
-    let (strides,uslice)     = uslice.split_at_mut(nd);
-    let (rstrides,prstrides) = uslice.split_at_mut(nd);
+    let (uslice,_)   = xs.alloc(nelem*2,0);
+    let (spx,uslice) = uslice.split_at_mut(nelem);
+    let (elmperm,_)  = uslice.split_at_mut(nelem);
 
+    let strides = shape.to_strides();
+    let rstrides = rshape.to_strides();
 
-    strides.iter_mut().rev().zip(shape.iter().rev().fold_map0(1usize,|cum,d| d*cum )).for_each(|(t,s)| *t = s);
-    rstrides.iter_mut().rev().zip(rshape.iter().rev().fold_map0(1,|cum,d| d*cum )).for_each(|(t,s)| *t = s);
-    prstrides.iter_mut().zip(perm.iter()).for_each(|(s,&p)| *s = rstrides[p] );
+    let mut prstrides = [0usize;N];
+    prstrides.permute_by_mut(perm).zip(rstrides.iter()).for_each(|(d,&s)| *d = s);
 
     if let Some(sp) = sp {
         spx.iter_mut().zip(sp.iter()).for_each(|(ix,&i)| {
@@ -403,7 +411,7 @@ pub fn permute_axes(perm : &[usize],
        
         // apply permutation
         if let Some(rsp) = rsp { 
-            for (t,&s) in rsp.iter_mut().zip(perm_iter(elmperm,sp)) {
+            for (t,&s) in rsp.iter_mut().zip(sp.permute_by(elmperm)) {
                 (_,*t) = izip!(strides.iter(),prstrides.iter()).fold((s,0),|(sv,r),(&s,&ps)| (sv % s,r + (sv/s)*ps)  );
             }
         };
@@ -412,24 +420,24 @@ pub fn permute_axes(perm : &[usize],
         { 
             let mut nzi = 0;
     
-            for (&p0,&p1,p) in izip!(perm_iter(elmperm,&ptr[0..nelem]),perm_iter(elmperm,&ptr[1..nelem+1]),rptr[1..].iter_mut()) {
+            for (&p0,&p1,p) in izip!(ptr[0..nelem].permute_by(elmperm),ptr[1..nelem+1].permute_by(elmperm),rptr[1..].iter_mut()) {
                 rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
                 rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
                 *p = p1-p0;
                 nzi += p1-p0;
             }
             _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p } );
-            //println!("permute_axes: sparse\n\trsubj = {:?}\n\trcof = {:?}\n\trptr = {:?}",rsubj,rcof,rptr);
         }
     }
     else {
+        rptr.iter_mut().for_each(|v| *v = 0);
         for (si,n) in ptr.iter().zip(ptr[1..].iter()).map(|(&p0,&p1)| p1-p0).enumerate() {
             let (_,ti) = strides.iter().zip(prstrides.iter()).fold((si,0),|(v,r),(&s,&rs)| (v%s,r+(v/s)*rs));
             rptr[ti+1] = n
         }
         let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
         
-        for (si,(ssubj,scof)) in izip!(subj.chunks_by(ptr),cof.chunks_by(ptr)).enumerate() {
+        for (si,(ssubj,scof)) in izip!(subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)).enumerate() {
             let (_,ti) = strides.iter().zip(prstrides.iter()).fold((si,0),|(v,r),(&s,&rs)| (v%s,r+(v/s)*rs));
             let n = ssubj.len();
             let nzi = rptr[ti];
@@ -438,14 +446,16 @@ pub fn permute_axes(perm : &[usize],
             rcof[nzi..nzi+n].clone_from_slice(scof);
         }
     }
-}
+    rs.check();
+    Ok(())
+} // fn permute_axes
 
 
 /// Add `n` expression residing on `ws`. Result pushed to `rs`.
 pub fn add(n  : usize,
                   rs : & mut WorkStack,
                   ws : & mut WorkStack,
-                  xs : & mut WorkStack) {
+                  xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     // check that shapes match
     let exprs = ws.pop_exprs(n);
 
@@ -483,8 +493,8 @@ pub fn add(n  : usize,
 
         for (_,ptr,sp,subj,cof) in exprs.iter() {
             if let Some(sp) = sp {
-                izip!(subj.chunks_by(ptr),
-                      cof.chunks_by(ptr),
+                izip!(subj.chunks_ptr(ptr),
+                      cof.chunks_ptr(ptr),
                       sp.iter())
                     .for_each(|(js,cs,&i)| {
                         let nnz = js.len();
@@ -496,8 +506,8 @@ pub fn add(n  : usize,
                     });
             }
             else {
-                izip!(subj.chunks_by(ptr),
-                      cof.chunks_by(ptr),
+                izip!(subj.chunks_ptr(ptr),
+                      cof.chunks_ptr(ptr),
                       rptr.iter())
                     .for_each(|(js,cs,&p0)| {
                         let nnz = js.len();
@@ -546,15 +556,15 @@ pub fn add(n  : usize,
             //println!("len rptr: {}, rsp: {}, perm: {}",rptr.len(),rsp.len(),perm.len());
             for (rp,ri,&si,&sd) in izip!(rptr[1..].iter_mut(),
                                          rsp.iter_mut(),
-                                         perm_iter(perm, hindex),
-                                         perm_iter(perm, hdata)) {
+                                         hindex.permute_by(perm),
+                                         hdata.permute_by(perm)) {
                 *ri = si;
                 *rp = sd;
             }
             hindex[..rnelm].clone_from_slice(rsp);
         }
         else {
-            for (rp,&sd) in izip!(rptr[1..].iter_mut(), perm_iter(perm, hdata)) {
+            for (rp,&sd) in izip!(rptr[1..].iter_mut(), hdata.permute_by(perm)) {
                 *rp = sd;
             }
             hindex[..rnelm].iter_mut().enumerate().for_each(|(i,x)| *x = i);
@@ -573,8 +583,8 @@ pub fn add(n  : usize,
         for (_,ptr,sp,subj,cof) in exprs.iter() {
             if let Some(sp) = sp {
                 for (&i,sj,sc) in izip!(sp.iter(),
-                                        subj.chunks_by(ptr),
-                                        cof.chunks_by(ptr)) {
+                                        subj.chunks_ptr(ptr),
+                                        cof.chunks_ptr(ptr)) {
                     let n = sj.len();
                     if let Some(index) = h.at(i) {
                         let rp = { let p = &mut rptr[*index]; *p += n; *p - n };
@@ -587,6 +597,8 @@ pub fn add(n  : usize,
         // Recompute ptr
         _ = rptr.iter_mut().fold(0,|v,p| { let tmp = *p; *p = v; tmp } );
     }
+    rs.check();
+    Ok(())
 } // add
 
 /// Evaluates `lhs` * expr.
@@ -595,14 +607,14 @@ pub fn mul_left_dense(mdata : &[f64],
                              mdimj : usize,
                              rs    : & mut WorkStack,
                              ws    : & mut WorkStack,
-                             _xs    : & mut WorkStack) {
+                             _xs    : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nd   = shape.len();
     let nnz  = subj.len();
 
-    if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
-    if mdimj != shape[0] { panic!("Mismatching shapes for multiplication") }
+    if nd != 2 && nd != 1{ return Err(ExprEvalError::new(file!(),line!(),"Invalid shape for multiplication")) }
+    if mdimj != shape[0] { return Err(ExprEvalError::new(file!(),line!(),"Mismatching shapes for multiplication")) }
 
     let rdimi = mdimi;
     let rdimj = if nd == 1 { 1 } else { shape[1] };
@@ -659,6 +671,7 @@ pub fn mul_left_dense(mdata : &[f64],
             }
         }
     }
+    Ok(())
 } // mul_left_dense
 
 pub fn mul_right_dense(mdata : &[f64],
@@ -666,13 +679,13 @@ pub fn mul_right_dense(mdata : &[f64],
                               mdimj : usize,
                               rs    : & mut WorkStack,
                               ws    : & mut WorkStack,
-                              _xs    : & mut WorkStack) {
+                              _xs    : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nd   = shape.len();
     let nnz  = subj.len();
     //let nelm = ptr.len()-1;
-    if nd != 2 && nd != 1{ panic!("Invalid shape for multiplication") }
+    if nd != 2 && nd != 1{ return Err(ExprEvalError::new(file!(),line!(),"Invalid shape for multiplication")) }
     let (edimi,edimj) = if let Some(d2) = shape.get(1) {
         (shape[0],*d2)
     }
@@ -680,7 +693,7 @@ pub fn mul_right_dense(mdata : &[f64],
         (1,shape[0])
     };
 
-    if mdimi != edimj { panic!("Mismatching shapes for multiplication") }
+    if mdimi != edimj { return Err(ExprEvalError::new(file!(),line!(),"Mismatching shapes for multiplication")) }
 
     let rdimi = edimi;
     let rdimj = mdimj;
@@ -731,6 +744,7 @@ pub fn mul_right_dense(mdata : &[f64],
             *rp = nzi;
         }
     }
+    Ok(())
 } // mul_right_dense
 
 
@@ -740,12 +754,12 @@ pub fn mul_left_sparse(mheight : usize,
                               mdata : &[f64],
                               rs : & mut WorkStack,
                               ws : & mut WorkStack,
-                              xs : & mut WorkStack) {
+                              xs : & mut WorkStack) -> Result<(),ExprEvalError> {
 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nd = shape.len();
     if nd != 1 && nd != 2 { panic!("Expression is incorrect shape for multiplication: {:?}",shape); }
-    if shape[0] != mwidth { panic!("Mismatching operand shapes for multiplication"); }
+    if shape[0] != mwidth { return Err(ExprEvalError::new(file!(),line!(),"Mismatching operand shapes for multiplication")); }
     let _eheight = shape[0];
     let ewidth = shape.get(1).copied().unwrap_or(1);
 
@@ -786,7 +800,7 @@ pub fn mul_left_sparse(mheight : usize,
 
         let numecols = {
             let mut colidx = 0; let mut coli = usize::MAX;
-            for (k,&ix) in perm_iter(perm,sp).enumerate() {
+            for (k,&ix) in sp.permute_by(perm).enumerate() {
                 let j = ix % ewidth;
                 if j != coli {
                     ecolptr[colidx] = k;
@@ -806,9 +820,9 @@ pub fn mul_left_sparse(mheight : usize,
         let mut rnnz  = 0;
         for (&mp0,&mp1) in izip!(mrowptr.iter(),mrowptr[1..].iter()) {
             for (&ep0,&ep1) in izip!(ecolptr.iter(),ecolptr[1..].iter()) {
-                let mut espi = izip!(perm_iter(&perm[ep0..ep1],sp),
-                                     perm_iter(&perm[ep0..ep1],ptr),
-                                     perm_iter(&perm[ep0..ep1],&ptr[1..])).peekable();
+                let mut espi = izip!(sp.permute_by(&perm[ep0..ep1]),
+                                     ptr.permute_by(&perm[ep0..ep1]),
+                                     ptr[1..].permute_by(&perm[ep0..ep1])).peekable();
                 let mut mspi = msparsity[mp0..mp1].iter().peekable();
 
                 let mut ijnnz = 0;
@@ -835,9 +849,9 @@ pub fn mul_left_sparse(mheight : usize,
         rptr[0] = 0;
         for (&i,&mp0,&mp1) in izip!(msubi.iter(),mrowptr.iter(),mrowptr[1..].iter()) {
             for (&j,&ep0,&ep1) in izip!(esubj.iter(),ecolptr.iter(),ecolptr[1..].iter()) {
-                let mut espi = izip!(perm_iter(&perm[ep0..ep1],sp),
-                                     perm_iter(&perm[ep0..ep1],ptr),
-                                     perm_iter(&perm[ep0..ep1],&ptr[1..])).peekable();
+                let mut espi = izip!(sp.permute_by(&perm[ep0..ep1]),
+                                     ptr.permute_by(&perm[ep0..ep1]),
+                                     ptr[1..].permute_by(&perm[ep0..ep1])).peekable();
                 let mut mspi = izip!(msparsity[mp0..mp1].iter(),
                                      mdata[mp0..mp1].iter()).peekable();
 
@@ -901,6 +915,7 @@ pub fn mul_left_sparse(mheight : usize,
             }
         }
     }
+    Ok(())
 }
 
 // expr x matrix
@@ -910,10 +925,10 @@ pub fn mul_right_sparse(mheight : usize,
                                mdata : &[f64],
                                rs : & mut WorkStack,
                                ws : & mut WorkStack,
-                               xs : & mut WorkStack) {
+                               xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     if shape.len() != 1 && shape.len() != 2 {
-        panic!("Invalid operand shapes: Expr is not 1- or 2-dimensional");
+        return Err(ExprEvalError::new(file!(),line!(),"Invalid operand shapes: Expr is not 1- or 2-dimensional"));
     }
 
     let (eheight,ewidth) =
@@ -1054,8 +1069,8 @@ pub fn mul_right_sparse(mheight : usize,
             for (&mp0,&mp1) in izip!(mcolptr.iter(),mcolptr[1..].iter()) {
 
                 let mcolsubi = &msubi[mp0..mp1];
-                rnnz += izip!(perm_iter(mcolsubi,p0s),
-                              perm_iter(mcolsubi,p1s)).map(|(&p0,&p1)| p1-p0).sum::<usize>();
+                rnnz += izip!(p0s.permute_by(mcolsubi),
+                              p1s.permute_by(mcolsubi)).map(|(&p0,&p1)| p1-p0).sum::<usize>();
             }
         }
 
@@ -1073,8 +1088,8 @@ pub fn mul_right_sparse(mheight : usize,
             .zip(rptr[1..].iter_mut())
             .for_each(|((p0s,p1s,&mp0,&mp1),rp)| {
                 let mcolsubi = &msubi[mp0..mp1];
-                izip!(perm_iter(mcolsubi,p0s),
-                      perm_iter(mcolsubi,p1s),
+                izip!(p0s.permute_by(mcolsubi),
+                      p1s.permute_by(mcolsubi),
                       mcof[mp0..mp1].iter()).for_each(|(&p0,&p1,&mv)| {
                           rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
                           rcof[nzi..nzi+p1-p0].iter_mut().zip(&cof[p0..p1]).for_each(|(rc,&c)| *rc = c * mv);
@@ -1087,29 +1102,30 @@ pub fn mul_right_sparse(mheight : usize,
                 .for_each(|(k,(i,&j))| { *k = i*mwidth+j; })
         }
     }
+    Ok(())
 }
 
 pub fn dot_sparse(_sparsity : &[usize],
                   _data     : &[f64],
                   _rs       : & mut WorkStack,
                   ws       : & mut WorkStack,
-                  _xs      : & mut WorkStack) {
+                  _xs      : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (_shape,_ptr,_sp,_subj,_cof) = ws.pop_expr();
    
-    panic!("TODO");
+    return Err(ExprEvalError::new(file!(),line!(),"TODO"));
 }
 
 pub fn dot_vec(data : &[f64],
                rs   : & mut WorkStack,
                ws   : & mut WorkStack,
-               _xs  : & mut WorkStack) {
+               _xs  : & mut WorkStack) -> Result<(),ExprEvalError> {
 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nd   = shape.len();
     let nnz  = subj.len();
 
     if nd != 1 || shape[0] != data.len() {
-        panic!("Mismatching operands");
+        return Err(ExprEvalError::new(file!(),line!(),"Mismatching operands"));
     }
 
     if let Some(sp) = sp {
@@ -1141,16 +1157,18 @@ pub fn dot_vec(data : &[f64],
             }
         }
     }
+    rs.check();
+    Ok(())
 } // dot_vec
 
-pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     // println!("{}:{}: eval::stack n={}, dim={}",file!(),line!(),n,dim);
     let exprs = ws.pop_exprs(n);
 
     // check shapes
     //println!("vec = {:?}",exprs.iter().map(|v| v.0).collect::<Vec<&[usize]>>());
-    if ! exprs.iter().zip(exprs[1..].iter()).any(|((s0,_,_,_,_),(s1,_,_,_,_))| shape_eq_except(s0,s1,dim)) {
-        panic!("Mismatching shapes or stacking dimension");
+    if ! exprs.iter().zip(exprs[1..].iter()).any(|((s0,_,_,_,_),(s1,_,_,_,_))| s0.iter().zip(s1.iter()).enumerate().all(|(i,(&d0,&d1))| i == dim || d0 == d1)) {
+        return Err(ExprEvalError::new(file!(),line!(),"Mismatching shapes or stacking dimension"));
     }
 
     let nd = (dim+1).max(exprs.iter().map(|(shape,_,_,_,_)| shape.len()).max().unwrap());
@@ -1279,7 +1297,7 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
         let mut ofs  : usize = 0;
         // Build the result ptr
         // println!("{}:{}: Stack: Dense, rshape = {:?}, stack dim = {}",file!(),line!(),rshape,dim);
-        rptr[0] = 0;
+        rptr.iter_mut().for_each(|v| *v = 0);
         for (shape,ptr,_,_,_) in exprs.iter() {
             let vd1 = shape.get(dim).copied().unwrap_or(1);
             let blocksize = vd1*d2;
@@ -1294,11 +1312,9 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
 
             ofs += vd1;
         }
-
         let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
         // Then copy nonzeros
         let mut ofs : usize = 0;
-        // println!("{}:{}: rptr = {:?}",file!(),line!(),rptr);
         rsubj.fill(0);
         for (shape,ptr,_,subj,cof) in exprs.iter() {
             let vd1 = shape.get(dim).copied().unwrap_or(1);
@@ -1310,9 +1326,6 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
                     let p0 = *p0s.first().unwrap();
                     let p1 = *p1s.last().unwrap();
 
-                    // println!("{}:{}:\n\trptr[...] = {:?}\n\tptr[...] = {:?}\n\tptr+1[...] = {:?}, ofs = {}",
-                    //          file!(),line!(),&rps,p0s,p1s,ofs);
-
                     let rp = rps[ofs];
                     rsubj[rp..rp+p1-p0].clone_from_slice(&subj[p0..p1]);
                     rcof[rp..rp+p1-p0].clone_from_slice(&cof[p0..p1]);
@@ -1322,9 +1335,11 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
             ofs += vd1;
         }
     }
+    rs.check();
+    Ok(())
 }
 
-pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) {
+pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let d = shape[shape.len()-num..].iter().product();
@@ -1375,6 +1390,8 @@ pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : &
         rcof.clone_from_slice(cof);
         rptr.iter_mut().zip(ptr.iter().step_by(d)).for_each(|(rp,&p)| *rp = p );
     }
+    rs.check();
+    Ok(())
 }
 
 pub fn mul_elem(datashape : &[usize],
@@ -1382,12 +1399,12 @@ pub fn mul_elem(datashape : &[usize],
                         data : &[f64],
                         rs : & mut WorkStack,
                         ws : & mut WorkStack,
-                        xs : & mut WorkStack) {
+                        xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let &nnz = ptr.last().unwrap();
     let nelm = ptr.len()-1;
 
-    if shape.iter().zip(datashape.iter()).any(|(&s0,&s1)| s0 != s1) { panic!("Mismatching operand shapes in mul_elm"); }
+    if shape.iter().zip(datashape.iter()).any(|(&s0,&s1)| s0 != s1) { return Err(ExprEvalError::new(file!(),line!(),"Mismatching operand shapes in mul_elm")); }
 
     match (datasparsity,sp) {
         (Some(msp),Some(esp)) => {
@@ -1482,6 +1499,8 @@ pub fn mul_elem(datashape : &[usize],
             }
         }
     } // match (sparsity,sp)
+    rs.check();
+    Ok(())
 }
 
 pub fn scalar_expr_mul
@@ -1490,7 +1509,7 @@ pub fn scalar_expr_mul
     data : &[f64],
     rs : & mut WorkStack, 
     ws : & mut WorkStack, 
-    _xs : & mut WorkStack) 
+    _xs : & mut WorkStack) -> Result<(),ExprEvalError> 
 {
     use std::iter::repeat;
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
@@ -1515,15 +1534,17 @@ pub fn scalar_expr_mul
               cof[0..nnz].iter().cycle())
             .for_each(| (r,s0,&s1)| *r = s0 * s1);
     }
+    rs.check();
+    Ok(())
 }
 
 
 
-pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     use std::iter::repeat;
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     // check
-    if dim + 2 > shape.len() { panic!("Invalid dimension for symmetrization"); }
+    if dim + 2 > shape.len() { return Err(ExprEvalError::new(file!(),line!(),"Invalid dimension for symmetrization")); }
     
     let n : usize = {
         let d = shape[dim]*shape[dim+1];
@@ -1533,7 +1554,7 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
 
         let n = (((1.0+8.0*d as f64).sqrt()-1.0)/2.0).floor() as usize;
         if n*(n+1)/2 != d {
-            panic!("Specified symmetrization dimensions do not match a symmetric size");
+            return Err(ExprEvalError::new(file!(),line!(),"Specified symmetrization dimensions do not match a symmetric size"));
         }
         n
     };
@@ -1589,20 +1610,20 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
         xperm[..rnelm].sort_by_key(|&i| xsp[i]);
 
         if let Some(rsp) = rsp {
-            perm_iter(xperm,xsp).zip(rsp.iter_mut()).for_each(|(&i,spi)| *spi = i);            
+            xsp.permute_by(xperm).zip(rsp.iter_mut()).for_each(|(&i,spi)| *spi = i);            
         }
         let xperm2 = xsp; 
-        perm_iter(xperm,xsrc).zip(xperm2.iter_mut()).for_each(|(&si,i)| *i = si);
+        xsrc.permute_by(xperm).zip(xperm2.iter_mut()).for_each(|(&si,i)| *i = si);
 
         rptr[0] = 0;
-        for (&pb,&pe,p) in izip!(perm_iter(xperm2, ptr),
-                                 perm_iter(xperm2, &ptr[1..]),
+        for (&pb,&pe,p) in izip!(ptr.permute_by(xperm2),
+                                 ptr[1..].permute_by(xperm2),
                                  rptr[1..].iter_mut()) {
             *p = pe-pb;
         }
         rptr.iter_mut().fold(0,|c,p| { *p += c; *p });
-        for (&pb,&pe,&rpb,&rpe) in izip!(perm_iter(xperm2, ptr),
-                                         perm_iter(xperm2, &ptr[1..]),
+        for (&pb,&pe,&rpb,&rpe) in izip!(ptr.permute_by(xperm2),
+                                         ptr[1..].permute_by(xperm2),
                                          rptr.iter(),
                                          rptr[1..].iter()) {
             rsubj[rpb..rpe].copy_from_slice(&subj[pb..pe]);
@@ -1668,10 +1689,12 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
 //
 //        `
     }
+    rs.check();
+    Ok(())
 }
 
 
-pub fn inplace_reduce_shape(m : usize,rs : & mut WorkStack, xs : & mut WorkStack) 
+pub fn inplace_reduce_shape(m : usize,rs : & mut WorkStack, xs : & mut WorkStack)  -> Result<(),ExprEvalError>
 {
     rs.validate_top().unwrap();
     let (rshape,_) = xs.alloc(m,0);
@@ -1686,12 +1709,14 @@ pub fn inplace_reduce_shape(m : usize,rs : & mut WorkStack, xs : & mut WorkStack
             rshape[shape.len()..].iter_mut().for_each(|s| *s = 1);
         }
     }
-    rs.inline_reshape_expr(rshape).unwrap()
+    rs.inline_reshape_expr(rshape).or_else(|s| Err(ExprEvalError::new(file!(),line!(),s)))?;
+    rs.check();
+    Ok(())
 }
 
-pub fn inplace_reshape_one_row(m : usize, dim : usize, rs : & mut WorkStack, xs : & mut WorkStack) 
+pub fn inplace_reshape_one_row(m : usize, dim : usize, rs : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> 
 {
-    if dim >= m { panic!("Invalid dimension given"); }
+    if dim >= m { return Err(ExprEvalError::new(file!(),line!(),"Invalid dimension given")); }
         
     let (newshape,_) = xs.alloc(m,0);
     newshape.iter_mut().for_each(|s| *s = 1 );
@@ -1700,26 +1725,30 @@ pub fn inplace_reshape_one_row(m : usize, dim : usize, rs : & mut WorkStack, xs 
         shp.iter().product()
     };
     rs.inline_reshape_expr(newshape).unwrap();
+    rs.check();
+    Ok(())
 }
 
-pub fn inplace_reshape(rshape : &[usize],rs : & mut WorkStack, _xs : & mut WorkStack) 
+pub fn inplace_reshape(rshape : &[usize],rs : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> 
 {
     rs.validate_top().unwrap();
     {
         let (shape,_,_,_,_) = rs.peek_expr();
         if shape.iter().product::<usize>() != rshape.iter().product() {
-            panic!("Cannot reshape expression into given shape");
+            return Err(ExprEvalError::new(file!(),line!(),"Cannot reshape expression into given shape"));
         }
     }
     rs.inline_reshape_expr(rshape).unwrap();
+    rs.check();
+    Ok(())
 }
 
-pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) 
+pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> 
 {
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
 
     if ptr.len()-1 != sparsity.len() {
-        panic!("Sparsity pattern does not match number of elements in expression");
+        return Err(ExprEvalError::new(file!(),line!(),"Sparsity pattern does not match number of elements in expression"));
     }
 
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape,ptr.len()-1,subj.len());
@@ -1731,14 +1760,16 @@ pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws 
     if let Some(rsp) = rsp {
         rsp.copy_from_slice(sparsity);
     }
+    rs.check();
+    Ok(())
 }
 
-pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) 
+pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> 
 {
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
 
     if ptr.len()-1 != rshape.iter().product::<usize>() {
-        panic!("Shape does not match number of elements in expression");
+        return Err(ExprEvalError::new(file!(),line!(),"Shape does not match number of elements in expression"));
     }
 
     let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(rshape,ptr.len()-1,subj.len());
@@ -1746,9 +1777,11 @@ pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs
     rptr.clone_from_slice(ptr);
     rsubj.clone_from_slice(subj);
     rcof.clone_from_slice(cof);
+    rs.check();
+    Ok(())
 }
 
-pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) {
+pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
     let rnelm = ptr.len()-1;
     let rnnz  = subj.len();        
@@ -1758,105 +1791,189 @@ pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut Wor
     rptr.clone_from_slice(ptr);
     rsubj.clone_from_slice(subj);
     rcof.clone_from_slice(cof);
+    Ok(())
 }
 
 
 
 
 
-pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
+pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
-
-    let nnz  = subj.len();
-    let nelm = shape.iter().product();
-    let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,nnz,nelm);
+    let rnnz  = subj.len();
+    let rnelm = shape.iter().product();
+    let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
  
-    let maxj = subj.iter().max().unwrap_or(&0);
-    let (jj,ff) = xs.alloc(maxj*2+2,maxj+1);
-    let (jj,jjind) = jj.split_at_mut(maxj+1);
+    let (urest,_frest) = xs.alloc(rnnz+ptr.len(),0);
+    let (perm,xptr) = urest.split_at_mut(rnnz); 
+    xptr[0] = 0;
+    perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
+    for (pp,xptr) in perm.chunks_ptr_mut(ptr, &ptr[1..]).zip(xptr[1..].iter_mut())
+    {
+        pp.sort_by_key(|&p| unsafe{ *subj.get_unchecked(p) });
+        *xptr = 
+            if pp.len() > 1 {
+                subj.permute_by(pp).zip(subj.permute_by(&pp[1..])).filter(|(&a,&b)| a != b ).count()+1
+            }
+            else {
+                pp.len()
+            };
+    }
+    xptr.iter_mut().fold(0usize,|c,p| { *p += c; *p });
+    //println!("subj = {:?}",subj);
+    //println!("ptr = {:?}",ptr);
+    //println!("xptr = {:?}",xptr);
+    //println!("xptr.last() = {}, rsubj.len() = {}",xptr.last().unwrap(),rsubj.len());
+    //println!("perm = {:?}",perm);
 
+    
 
-    let mut ii  = 0;
-    let mut nzi = 0;
-    rptr[0] = 0;
+    for (rsubj,rcof,perm) in izip!(rsubj.chunks_ptr_mut(xptr,&xptr[1..]),
+                                   rcof.chunks_ptr_mut(xptr,&xptr[1..]),
+                                   perm.chunks_ptr(ptr))
+    {
+        //println!("sub perm = {:?}",perm);
+        
+        let mut sit = subj.permute_by(perm).zip(cof.permute_by(perm));
+        let mut tit = rsubj.iter_mut().zip(rcof.iter_mut()).peekable();
+        
+        if let Some((j,c)) = sit.next() {
+            if let Some((jj,cc)) = tit.peek_mut() {
+                **jj = *j;
+                **cc = *c;
+            }
+        }
 
-    subj.iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
+        for (j,c) in sit {
+            if let Some((jj,cc)) = tit.peek_mut() {
+                if **jj == *j {
+                    **cc += *c;
+                }
+                else {
+                    _ = tit.next();
+                    if let Some((jj,cc)) = tit.peek_mut() {
+                        **jj = *j;
+                        **cc = *c;
+                    }
+                }
+            }
+        }
+    }
 
     if let Some(sp) = sp {
-        for (&i,&p0,&p1) in izip!(sp, ptr[0..ptr.len()-1].iter(), ptr[1..].iter()) {
-            if ii < i { rptr[ii+1..i+1].fill(nzi); ii = i; }
-
-            let mut rownzi : usize = 0;
-            subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
-            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
-                if c == 0.0 {}
-                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
-                    unsafe{
-                        *jjind.get_unchecked_mut(j)   = 1;
-                        *jj.get_unchecked_mut(rownzi) = j;
-                        *ff.get_unchecked_mut(j)      = c;
-                    }
-                    rownzi += 1;
-                }
-                else {
-                    unsafe{
-                        *ff.get_unchecked_mut(j) += c;
-                    }
-                }
-            });
-
-            izip!(jj[0..rownzi].iter(),
-                  rsubj[nzi..nzi+rownzi].iter_mut(),
-                  rcof[nzi..nzi+rownzi].iter_mut())
-                .for_each(|(&j,rj,rc)| {
-                    *rc = unsafe{ *ff.get_unchecked(j) };
-                    unsafe{ *jjind.get_unchecked_mut(j) = 0; };
-                    *rj = j;
-                });
-
-            nzi += rownzi;
-            // println!("ExprTrait::eval_finalize sparse: nzi = {}",nzi);
-            rptr[i+1] = nzi;
-            ii += 1;
+        rptr.iter_mut().for_each(|p| *p = 0);
+        for (i,ni) in sp.iter().zip(ptr.iter().zip(ptr[1..].iter()).map(|v| *v.1-*v.0)) {
+            rptr[i+1] = ni;
         }
+
+        rptr.iter_mut().fold(0usize,|c,p| { *p += c; *p } );
     }
     else {
-        for (&p0,&p1,rp) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),rptr[1..].iter_mut()) {
-
-            let mut rownzi : usize = 0;
-
-            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
-                // println!("-- j = {}, c = {}, ind = {}",j,c,jjind[j]);
-                if c == 0.0 {}
-                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
-                    unsafe{
-                        *jjind.get_unchecked_mut(j)   = 1;
-                        *jj.get_unchecked_mut(rownzi) = j;
-                        *ff.get_unchecked_mut(j)      = c;
-                    }
-                    rownzi += 1;
-                }
-                else {
-                    unsafe{ *ff.get_unchecked_mut(j) += c; }
-                }
-            });
-
-            izip!(jj[0..rownzi].iter(),
-                  rsubj[nzi..nzi+rownzi].iter_mut(),
-                  rcof[nzi..nzi+rownzi].iter_mut()).for_each(|(&j,rj,rc)| {
-                      *rc = unsafe{ *ff.get_unchecked(j) };
-                      unsafe{ *jjind.get_unchecked_mut(j) = 0; };
-                      *rj = j;
-                  });
-
-            jj[0..rownzi].fill(0);
-
-            nzi += rownzi;
-            // println!("ExprTrait::eval_finalize dense: nzi = {}",nzi);
-            *rp = nzi;
-            ii += 1;
-        }
+        rptr.copy_from_slice(xptr);
     }
-}
+
+//---
+//---
+//---    let maxj = subj.iter().max().unwrap_or(&0);
+//---    let (jj,ff) = xs.alloc(maxj*2+2,maxj+1);
+//---    let (jj,jjind) = jj.split_at_mut(maxj+1);
+//---
+//---
+//---    let mut ii  = 0;
+//---    let mut nzi = 0;
+//---    rptr[0] = 0;
+//---
+//---    subj.iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
+//---
+//---    if let Some(sp) = sp {
+//---        println!("eval_finalize(), Sparse");
+//---        
+//---        rsubj.copy_from_slice(subj);
+//---        rcof.copy_from_slice(cof);
+//---        
+//---        let (strides,_) = xs.alloc(nd,0);
+//---        strides.iter_mut().zip(shape.iter()).fold(1usize, |c,(s,&d)| { *s = c; d*c });
+//---
+//---
+//---
+//---
+//---
+//---        for (&i,&p0,&p1) in izip!(sp, ptr[0..ptr.len()-1].iter(), ptr[1..].iter()) {
+//---            if ii < i { rptr[ii+1..i+1].fill(nzi); ii = i; }
+//---
+//---            let mut rownzi : usize = 0;
+//---            subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
+//---            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
+//---                if c == 0.0 {}
+//---                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
+//---                    unsafe{
+//---                        *jjind.get_unchecked_mut(j)   = 1;
+//---                        *jj.get_unchecked_mut(rownzi) = j;
+//---                        *ff.get_unchecked_mut(j)      = c;
+//---                    }
+//---                    rownzi += 1;
+//---                }
+//---                else {
+//---                    unsafe{
+//---                        *ff.get_unchecked_mut(j) += c;
+//---                    }
+//---                }
+//---            });
+//---
+//---            izip!(jj[0..rownzi].iter(),
+//---                  rsubj[nzi..nzi+rownzi].iter_mut(),
+//---                  rcof[nzi..nzi+rownzi].iter_mut())
+//---                .for_each(|(&j,rj,rc)| {
+//---                    *rc = unsafe{ *ff.get_unchecked(j) };
+//---                    unsafe{ *jjind.get_unchecked_mut(j) = 0; };
+//---                    *rj = j;
+//---                });
+//---
+//---            nzi += rownzi;
+//---            // println!("ExprTrait::eval_finalize sparse: nzi = {}",nzi);
+//---            rptr[i+1] = nzi;
+//---            ii += 1;
+//---        }
+//---    }
+//---    else {
+//---        for (&p0,&p1,rp) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),rptr[1..].iter_mut()) {
+//---
+//---            let mut rownzi : usize = 0;
+//---
+//---            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
+//---                // println!("-- j = {}, c = {}, ind = {}",j,c,jjind[j]);
+//---                if c == 0.0 {}
+//---                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
+//---                    unsafe{
+//---                        *jjind.get_unchecked_mut(j)   = 1;
+//---                        *jj.get_unchecked_mut(rownzi) = j;
+//---                        *ff.get_unchecked_mut(j)      = c;
+//---                    }
+//---                    rownzi += 1;
+//---                }
+//---                else {
+//---                    unsafe{ *ff.get_unchecked_mut(j) += c; }
+//---                }
+//---            });
+//---
+//---            izip!(jj[0..rownzi].iter(),
+//---                  rsubj[nzi..nzi+rownzi].iter_mut(),
+//---                  rcof[nzi..nzi+rownzi].iter_mut()).for_each(|(&j,rj,rc)| {
+//---                      *rc = unsafe{ *ff.get_unchecked(j) };
+//---                      unsafe{ *jjind.get_unchecked_mut(j) = 0; };
+//---                      *rj = j;
+//---                  });
+//---
+//---            jj[0..rownzi].fill(0);
+//---
+//---            nzi += rownzi;
+//---            // println!("ExprTrait::eval_finalize dense: nzi = {}",nzi);
+//---            *rp = nzi;
+//---            ii += 1;
+//---        }
+//---    }
+    rs.check();
+    Ok(())
+} // eval_finalize
 
 

@@ -120,4 +120,8 @@ impl LeftMultipliable<2> for DenseMatrix {
 
 
 
+# Features
+
+- Update and modify constraints or parts of constraints
+
 

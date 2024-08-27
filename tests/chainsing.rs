@@ -295,7 +295,7 @@ pub fn chainsing4(n : usize) -> Model {
     model
 }
 
-const N : usize = 10000;
+//const N : usize = 10000;
 const NSMALL : usize = 100;
 
 #[test]

@@ -1,7 +1,8 @@
+use iter::PermuteByEx;
 use itertools::izip;
 
 use super::matrix::NDArray;
-use super::utils::perm_iter;
+use utils::*;
 
 pub enum LinearDomainType {
     NonNegative,
@@ -27,6 +28,7 @@ pub enum ParamConicDomainType {
     DualPowerCone
 }
 
+#[derive(Debug)]
 pub enum LinearDomainOfsType {
     Scalar(f64),
     M(Vec<f64>)
@@ -161,14 +163,14 @@ impl<const N : usize> LinearDomain<N> {
             // unsorted
             let mut perm : Vec<usize> = (0..sp.len()).collect();
             perm.sort_by_key(|&i| unsafe{ *sp.get_unchecked(i) });
-            if izip!(perm_iter(perm.as_slice(),sp.as_slice()),
-                     perm_iter(&perm[1..],sp.as_slice())).any(|(&i0,&i1)| i1 <= i0) {
+            if izip!(sp.permute_by(&perm),
+                     sp.permute_by(&perm[1..])).any(|(&i0,&i1)| i1 <= i0) {
                 panic!("Sparsity pattern contains duplicates");
             }
             
-            let rsp = perm_iter(perm.as_slice(),sp.as_slice()).cloned().collect::<Vec<usize>>();
+            let rsp = sp.permute_by(&perm).cloned().collect::<Vec<usize>>();
             let ofs = if let LinearDomainOfsType::M(ref ofs) = self.ofs {
-                LinearDomainOfsType::M(perm_iter(perm.as_slice(),ofs.as_slice()).cloned().collect())
+                LinearDomainOfsType::M(ofs.permute_by(&perm).cloned().collect())
             } else {
                 self.ofs
             };
@@ -226,6 +228,32 @@ impl<const N : usize> LinearDomain<N> {
                     let totalsize = self.shape.iter().product();
                     (self.dt,vec![s; totalsize],self.shape,None,self.is_integer)
                 }
+        }
+    }
+    pub fn into_dense(self) -> Self {
+        if let Some(ref sp) = self.sp {
+            let ofs = 
+                match self.ofs {
+                    LinearDomainOfsType::Scalar(v) => LinearDomainOfsType::Scalar(v),
+                    LinearDomainOfsType::M(data) => {
+                        let mut ofs : Vec<f64> = vec![0.0; self.shape.iter().product()];
+                        for (&i,&v) in sp.iter().zip(data.iter()) {
+                            ofs[i] = v;
+                        }
+                        LinearDomainOfsType::M(ofs)
+                    }
+                };
+            
+            LinearDomain{
+                dt : self.dt,
+                ofs,
+                shape : self.shape,
+                sp : None,
+                is_integer : self.is_integer
+            }
+        }
+        else {
+            self
         }
     }
 }

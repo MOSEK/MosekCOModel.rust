@@ -43,6 +43,7 @@ test:
     - curl -o mosek.lic http://files.mosek.intranet/docs/lic/mosek11-1.lic
     - cargo test --release
     - cargo test --release --examples 
+    - cargo test --release --benches
     - (cd examples/demos; cargo test --release && cargo test --release -p ellipsoids)
 
 doc:

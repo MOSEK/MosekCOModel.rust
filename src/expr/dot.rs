@@ -1,4 +1,4 @@
-use super::ExprTrait;
+use super::{ExprEvalError, ExprTrait};
 use super::matrix::NDArray;
 use super::workstack::WorkStack;
 use itertools::izip;
@@ -93,11 +93,11 @@ impl<E> Dot<E> for Vec<f64> where E : ExprTrait<1> {
 
 
 impl<const N : usize, E> ExprTrait<0> for ExprDot<N,E> where E : ExprTrait<N> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.expr.eval(ws,rs,xs);
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError>{
+        self.expr.eval(ws,rs,xs)?;
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
         if shape.iter().zip(self.shape.iter()).any(|(&a,&b)| a != b) {
-            panic!("Mismatching operand shapes for dot");
+            return Err(ExprEvalError::new(file!(),line!(),"Mismatching operand shapes for dot"));
         }
         let &nnz = ptr.last().unwrap();
 
@@ -132,7 +132,6 @@ impl<const N : usize, E> ExprTrait<0> for ExprDot<N,E> where E : ExprTrait<N> {
         let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[],rnnz,1);
         rptr[0] = 0;
         rptr[1] = rnnz;
-        //rsubj.clone_from_slice(subj);
         if let Some(ref msp) = self.sp {
             if let Some(esp) = sp {
                 let mut nzi = 0usize;
@@ -183,6 +182,7 @@ impl<const N : usize, E> ExprTrait<0> for ExprDot<N,E> where E : ExprTrait<N> {
                 rcof[p0..p1].iter_mut().for_each(|rc| *rc *= c );
             }
         }
+        Ok(())
     }
 }
 

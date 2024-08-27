@@ -15,17 +15,26 @@ readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = ["utils"]
+
 [dependencies]
 itertools = "0.10"
 mosek = "10.2"
+utils = { path = "utils" }
 #mosek = { path = "../Mosek.rust" }
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = { version = "0.5.1", features = [ "html_reports" ] }
+rand = "0.8.5"
 #bencher = "0.1"
 
+#[[bench]]
+#name="performance"
+#harness = false
+
 [[bench]]
-name="performance"
+name="exprs"
 harness = false
 
 [[example]]

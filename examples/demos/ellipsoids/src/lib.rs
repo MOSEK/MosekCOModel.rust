@@ -227,7 +227,10 @@ pub fn ellipsoid_contained<const N : usize>
 }
 
 
-
+/// For an elipsoid E add a constraint to the effect
+/// ```math
+/// { Zx+w : || x || ≤ 1 } ⊆ { x : Ax=b }
+/// ``` 
 #[allow(non_snake_case)]
 pub fn ellipsoid_subject_to<const N : usize> 
 (   M : &mut Model,

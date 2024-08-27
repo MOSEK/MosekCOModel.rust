@@ -1,6 +1,8 @@
 //! Module for Variable object and related implementations
 
-use crate::utils::shape_to_strides;
+use expr::ExprEvalError;
+use iter::IndexIteratorExt;
+use utils::*;
 
 use super::*;
 use itertools::{iproduct, izip};
@@ -195,8 +197,9 @@ impl<const N : usize> ModelItemIndex<Variable<N>> for [std::ops::Range<usize>; N
         if !self.iter().zip(v.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range is out of bounds in the the shape: {:?} in {:?}",self,v.shape) }
 
         let mut rshape = [0usize;N]; rshape.iter_mut().zip(self.iter()).for_each(|(rs,ra)| *rs = ra.end-ra.start);
-        let rstrides = shape_to_strides(&rshape);
-        let strides = shape_to_strides(&v.shape);
+        let rstrides = rshape.to_strides();
+        let strides = v.shape.to_strides();
+
 
         if let Some(ref sp) = v.sparsity {
             let mut rsp   = Vec::with_capacity(sp.len());
@@ -216,15 +219,24 @@ impl<const N : usize> ModelItemIndex<Variable<N>> for [std::ops::Range<usize>; N
                      shape    : rshape }
         }
         else {
-            let ridxs : Vec<usize> = (0..rshape.iter().product())
-                .map(|i| izip!(rshape.iter(),rstrides.iter(),self.iter(),strides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
-                .map(|i| v.idxs[i] /*TODO: unsafe get*/)
-                .collect();
-            println!("Variable.index(), shape : {:?} -> {:?}, idxs : {:?} -> {:?}",v.shape,rshape,v.idxs,ridxs);
+            fn addvec<const N : usize>(lhs : &[usize;N], rhs : &[usize;N]) -> [usize;N] {
+                let mut r = [0usize;N]; 
+                r.iter_mut().zip(lhs.iter().zip(rhs.iter())).for_each(|(d,(&s0,&s1))| *d = s0+s1 );
+                r
+            }
 
-            Variable{idxs : ridxs,
+            let mut offset = [0usize; N]; offset.iter_mut().zip(self.iter()).for_each(|(o,i)| *o = i.start);
+            let ridxs : Vec<usize> = 
+                rshape.index_iterator()
+                    .map(|index| strides.to_linear(&addvec(&index,&offset)))
+                //(0..rshape.iter().product())
+                //    .map(|i| izip!(rshape.iter(),rstrides.iter(),self.iter(),strides.iter()).map(|(&rsh,&rst,ra,&st)| (((i / rst) % rsh)+ra.start)*st ).sum::<usize>() )
+                    .map(|i| v.idxs[i] /*TODO: unsafe get*/)
+                    .collect();
+
+            Variable{idxs     : ridxs,
                      sparsity : None,
-                     shape : rshape}
+                     shape    : rshape}
         }
     }
 }
@@ -436,8 +448,8 @@ impl<const N : usize> Variable<N> {
 
     // }
     pub fn stack(dim : usize, xs : &[&Variable<N>]) -> Variable<N> {
-        if ! xs.iter().zip(xs[1..].iter())
-            .all(|(v0,v1)| utils::shape_eq_except(v0.shape.as_slice(),v1.shape.as_slice(),dim)) {
+        if xs.iter().zip(xs[1..].iter())
+            .any(|(v0,v1)| v0.shape.iter().zip(v1.shape.iter()).enumerate().all(|(i,(a,b))| i != dim && *a != *b)) {
                 panic!("Operands have mismatching shapes");
             }
 
@@ -579,7 +591,7 @@ impl<const N : usize> From<Variable<N>> for super::expr::Expr<N> {
 
 
 impl<const N : usize> Variable<N> {
-    fn eval_common(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) {
+    fn eval_common(&self,rs : & mut WorkStack, _ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError>{
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.shape,
                                                   self.idxs.len(),
                                                   self.idxs.len());
@@ -589,12 +601,13 @@ impl<const N : usize> Variable<N> {
         if let (Some(rsp),Some(sp)) = (rsp,&self.sparsity) {
             rsp.clone_from_slice(sp.as_slice())
         }
+        Ok(())
     }
 }
 
 impl<const N : usize> super::ExprTrait<N> for Variable<N> {
-    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) {
-        self.eval_common(rs,ws,xs);
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.eval_common(rs,ws,xs)
     }
 }
 

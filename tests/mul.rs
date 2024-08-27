@@ -3,7 +3,6 @@ extern crate mosekmodel;
 use matrix::NDArray;
 use mosekmodel::*;
 use mosekmodel::expr::workstack::WorkStack;
-use mosekmodel::expr::*;
 
 const N1 : usize = 100;
 const N2 : usize = 100;
@@ -116,7 +115,7 @@ fn dense_left_mul() {
 
     m.mul(es).eval(& mut rs, & mut ws, & mut xs);
     {
-        let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+        let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
 
         assert!(shape == [3,2]);
         assert!(ptr   == [0,4,8,12,16,20,24]);
@@ -148,13 +147,13 @@ fn basic_expr() {
                        vec![1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0]);
     // | x0+x1  x2+x3        |
     // |        x4+x5  x6+x7 |
-    let es = Expr::new(&[2,3],
+    let _es = Expr::new(&[2,3],
                        Some(vec![0,1,4,5]),
                        vec![0,2,4,6,8],
                        vec![0,1,2,3,4,5,6,7],
                        vec![1.0,1.0,2.0,2.0,3.0,3.0,4.0,4.0]);
 
-    let m = matrix::dense([3,3],vec![1.1,1.2,1.3,
+    let _m = matrix::dense([3,3],vec![1.1,1.2,1.3,
                                    2.1,2.2,2.3,
                                    3.1,3.2,3.3]);
     ed.eval(& mut rs, & mut ws, & mut xs);
@@ -366,14 +365,14 @@ fn sparse_right_mul() {
 
 #[test]
 fn bigmul() {
-    const n : usize = 128; 
+    const N : usize = 128; 
     
     let mut model = Model::new(None);
-    let v = model.variable(None,&[n,1]);
-    let mx = matrix::dense([n,n],vec![1.0; n*n]);
+    let v = model.variable(None,&[N,1]);
+    let mx = matrix::dense([N,N],vec![1.0; N*N]);
 
-    let _ = model.constraint(None, &mx.clone().mul(v.clone()).reshape(&[n]),equal_to(vec![100.0;n]));
-    let _ = model.constraint(None, &v.reshape(&[1,n]).mul(mx), equal_to(vec![100.0;n]).with_shape(&[1,n]));
+    let _ = model.constraint(None, &mx.clone().mul(v.clone()).reshape(&[N]),equal_to(vec![100.0;N]));
+    let _ = model.constraint(None, &v.reshape(&[1,N]).mul(mx), equal_to(vec![100.0;N]).with_shape(&[1,N]));
 }
 
 
