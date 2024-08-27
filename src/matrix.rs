@@ -440,6 +440,9 @@ pub trait IntoIndexes<const N : usize> {
 
 impl<const N : usize> IntoIndexes<N> for [[usize;N]] {
     fn into_indexes(&self, shape : &[usize;N]) -> Vec<usize> {
+        if self.iter().any(|idx| idx.iter().zip(shape.iter()).any(|(&i,&d)| i >= d)) {
+            panic!("Index out of bounds");
+        }
         let strides = shape.to_strides();
         self.iter().map(|index| strides.to_linear(&index)).collect()
     }
@@ -447,6 +450,9 @@ impl<const N : usize> IntoIndexes<N> for [[usize;N]] {
 
 impl<const N : usize> IntoIndexes<N> for Vec<[usize;N]> {
     fn into_indexes(&self, shape : &[usize;N]) -> Vec<usize> {
+        if self.iter().any(|idx| idx.iter().zip(shape.iter()).any(|(&i,&d)| i >= d)) {
+            panic!("Index out of bounds");
+        }
         let strides = shape.to_strides();
         self.iter().map(|index| strides.to_linear(&index)).collect()
     }
@@ -462,7 +468,8 @@ pub fn zeros<const N : usize>(shape : [usize;N]) -> NDArray<N> {
 
 /// Create a sparse [NDArray] from data.
 pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> where D : Into<Vec<f64>>, I : IntoIndexes<N> {
-    NDArray::new(shape,Some(sp.into_indexes(&shape)),data.into()).unwrap()
+    let sparsity = sp.into_indexes(&shape);
+    NDArray::new(shape,Some(sparsity),data.into()).unwrap()
 }
 //pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> where D : Into<Vec<f64>>, I : Into<Vec<usize>> {
 //    NDArray::new(shape,Some(sp.into()),data.into()).unwrap()

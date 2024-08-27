@@ -72,11 +72,13 @@ pub enum SolutionStatus {
 struct SolutionPart {
     status : SolutionStatus,
     var    : Vec<f64>,
-    con    : Vec<f64>
+    con    : Vec<f64>,
+    obj    : f64,
+
 }
 
 impl SolutionPart {
-    fn new(numvar : usize, numcon : usize) -> SolutionPart { SolutionPart{status : SolutionStatus::Unknown, var : vec![0.0; numvar], con : vec![0.0; numcon] } }
+    fn new(numvar : usize, numcon : usize) -> SolutionPart { SolutionPart{status : SolutionStatus::Unknown, var : vec![0.0; numvar], con : vec![0.0; numcon], obj : 0.0} }
     fn resize(& mut self,numvar : usize, numcon : usize) {
         self.var.resize(numvar, 0.0);
         self.con.resize(numcon, 0.0);
@@ -915,13 +917,17 @@ impl Model {
     fn linear_constraint<const N : usize>(& mut self,
                                           name : Option<&str>,
                                           dom  : LinearDomain<N>) -> Constraint<N> {
-        let (dt,b,dshape,_,_) = dom.extract();
+        let (dt,b,dshape,sp,_) = dom.into_dense().extract();
+        let (eshape,ptr,_sp,subj,cof) = self.rs.pop_expr();
+        let mut shape = [0usize; N]; shape.clone_from_slice(eshape);
 
-        let (shape_,ptr,_sp,subj,cof) = self.rs.pop_expr();
-        let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
-        if shape.len() != dshape.len() || shape.iter().zip(dshape.iter()).any(|(&a,&b)| a != b) {
+        if eshape.len() != N { 
+            panic!("Invalid expression shape {:?}",eshape);
+        }
+        else if izip!(eshape.iter(),eshape.iter()).any(|(&a,&b)| a != b) {
             panic!("Mismatching shapes of expression {:?} and domain {:?}",shape,dshape);
         }
+
         // let nnz = subj.len();
         let nelm = ptr.len()-1;
         if shape.iter().product::<usize>() != nelm {
@@ -979,7 +985,6 @@ impl Model {
                                       rhs.as_slice()).unwrap();
 
         if ! abarsubi.is_empty() {
-
             let mut p0 = 0usize;
             for (i,j,p) in izip!(abarsubi.iter(),
                                  abarsubi[1..].iter(),
@@ -1243,6 +1248,7 @@ impl Model {
 
                 if let SolutionStatus::Undefined = psta {}
                 else {
+                    sol.primal.obj = self.task.get_primal_obj(whichsol).unwrap_or(0.0);
                     sol.primal.resize(self.vars.len(),self.cons.len());
                     self.task.get_xx(whichsol,xx.as_mut_slice()).unwrap();
                     self.task.get_xc(whichsol,xc.as_mut_slice()).unwrap();
@@ -1275,6 +1281,7 @@ impl Model {
 
                 if let SolutionStatus::Undefined = dsta {}
                 else {
+                    self.task.get_dual_obj(whichsol, & mut sol.dual.obj).unwrap();
                     sol.dual.resize(self.vars.len(),self.cons.len());
                     self.task.get_slx(whichsol,slx.as_mut_slice()).unwrap();
                     self.task.get_sux(whichsol,sux.as_mut_slice()).unwrap();
@@ -1401,6 +1408,16 @@ impl Model {
         }
         else {
             (SolutionStatus::Undefined,SolutionStatus::Undefined)
+        }
+    }
+
+
+    pub fn primal_objective(&self, solid : SolutionType) -> Option<f64> { 
+        if let Some(sol) = self.select_sol(solid) {
+            Some(sol.primal.obj)
+        }
+        else {
+            None
         }
     }
 

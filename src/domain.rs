@@ -28,6 +28,7 @@ pub enum ParamConicDomainType {
     DualPowerCone
 }
 
+#[derive(Debug)]
 pub enum LinearDomainOfsType {
     Scalar(f64),
     M(Vec<f64>)
@@ -227,6 +228,32 @@ impl<const N : usize> LinearDomain<N> {
                     let totalsize = self.shape.iter().product();
                     (self.dt,vec![s; totalsize],self.shape,None,self.is_integer)
                 }
+        }
+    }
+    pub fn into_dense(self) -> Self {
+        if let Some(ref sp) = self.sp {
+            let ofs = 
+                match self.ofs {
+                    LinearDomainOfsType::Scalar(v) => LinearDomainOfsType::Scalar(v),
+                    LinearDomainOfsType::M(data) => {
+                        let mut ofs : Vec<f64> = vec![0.0; self.shape.iter().product()];
+                        for (&i,&v) in sp.iter().zip(data.iter()) {
+                            ofs[i] = v;
+                        }
+                        LinearDomainOfsType::M(ofs)
+                    }
+                };
+            
+            LinearDomain{
+                dt : self.dt,
+                ofs,
+                shape : self.shape,
+                sp : None,
+                is_integer : self.is_integer
+            }
+        }
+        else {
+            self
         }
     }
 }
