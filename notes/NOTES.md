@@ -11,10 +11,3 @@ Currently, we build Exprs by moving operands into the Expr structure. Consider u
   - More complicated lifetimes of expressions, especially in the helper
     functions for things like multiplication and addition
 
-## Matrixes
-
-We have a sparse and a dense matrix. Implementing these as Traits instead might
-be useful. This would allow things like:
-- Matrix objects that borrow data
-- Matrix objects that generate the data instead of storing it.
-
