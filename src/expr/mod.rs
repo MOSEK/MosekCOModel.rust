@@ -1543,11 +1543,6 @@ pub trait IntoExpr<const N : usize> {
     fn into(self) -> Self::Result;
 }
 
-impl IntoExpr<0> for f64 {
-    type Result = Expr<0>;
-    fn into(self) -> Self::Result { Expr::from(self) }
-}
-    
 impl IntoExpr<1> for &[f64] {
     type Result = Expr<1>;
     fn into(self) -> Self::Result { Expr::from(self) }
@@ -1558,9 +1553,20 @@ impl IntoExpr<1> for Vec<f64> {
     fn into(self) -> Self::Result { Expr::from(self) }
 }
     
-impl<const N : usize, E> IntoExpr<N> for E where E : ExprTrait<N> {
+impl<const N : usize, E> IntoExpr<N> for E where E : ExprTrait<N>+Sized {
     type Result = E;
     fn into(self) -> Self::Result { self }
+}
+
+impl ExprTrait<0> for f64 {
+    fn eval(&self, rs : &mut WorkStack, _ws : &mut WorkStack, _xs : &mut WorkStack) -> Result<(),ExprEvalError> {
+        let (aptr,_,asubj,acof) = rs.alloc_expr(&[],1,1);
+        aptr[0] = 0;
+        aptr[1] = 1;
+        asubj[0] = 0;
+        acof[0] = *self;
+        Ok(())
+    }
 }
 
 
