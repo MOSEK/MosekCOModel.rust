@@ -3,20 +3,21 @@
 * Expressions:
   * Pick: Given an expression, pick a subset of elements into a vector
     expression
-  * Tril,Triu: For square matrix, select lower triangular or upper triangular,
+  * [Done] Tril,Triu: For square matrix, select lower triangular or upper triangular,
     zeroing all other elements.
-  * TrilIntoVec, TriuIntoVec: For square matrix, select lower triangular, upper
+  * [Done] TrilIntoVec, TriuIntoVec: For square matrix, select lower triangular, upper
     triangular and put then into a diagonal in row-major order
-  * Diag: For a matrix where all dimensions are the same, select diagonal
+  * [Done] Diag: For a matrix where all dimensions are the same, select diagonal
     elements. Special case for diag(A*B).
-  * Permute (and transpose): Permute dimensions of expressions
+  * [Done] Permute (and transpose): Permute dimensions of expressions
+* Parameters? 
 
 
 
 
 # Overloading
 
-Direct overloading is not possible. We have to use Threads. 
+Direct overloading is not possible. We have to use traits.
 
 For example we would like to support combinations expression multiplication:
 
