@@ -106,6 +106,39 @@ impl NameAppender for usize {
 
 
 
+#[derive(Clone,Copy)]
+pub struct Permutation<'b> {
+    perm : &'b [usize],
+    max  : usize
+}
+
+pub struct AppliedPermutation<'a, 'b, T> {
+    data : &'a [T],
+    perm : Permutation<'b>
+}
+
+impl<'b> Permutation<'b> {
+    pub fn from(perm : & 'b[usize]) -> Permutation<'b> {
+        Permutation{
+            perm,
+            max : perm.iter().max().map(|&v| v+1).unwrap_or(0)
+        }
+    }
+    pub fn apply<'a,T>(&self, data : &'a[T]) -> Option<AppliedPermutation<'a,'b,T>> {
+        if data.len() < self.max { None }
+        else { Some(AppliedPermutation{ data, perm : *self }) }
+    }
+}
+
+impl<'a,'b,T> std::ops::Index<usize> for AppliedPermutation<'a,'b,T> {
+    type Output = T;
+    fn index(&self, i : usize) -> &T {
+        unsafe {
+            self.data.get_unchecked(self.perm.perm[i])
+        }
+    }
+}
+
 
 
 
