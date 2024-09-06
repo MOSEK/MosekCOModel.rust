@@ -274,10 +274,86 @@ pub struct Constraint<const N : usize> {
 }
 
 impl<const N : usize> Constraint<N> {
-    pub fn index<I>(&self, idx : I) -> I::Output where I : ModelItemIndex<Self>, Self:Sized {
+    pub fn index<I>(&self, idx : I) -> I::Output where I : ModelItemIndex<Self> {
         idx.index(self)
     }
+    pub fn reshape<const M : usize>(self, shape : &[usize; M]) -> Constraint<M> {
+        if shape.iter().product::<usize>() != self.shape.iter().product::<usize>() {
+            panic!("Mismatching shapes");
+        }
+        Constraint{
+            idxs : self.idxs,
+            shape : *shape
+        }
+    }
 }
+
+impl ModelItemIndex<Constraint<1>> for usize {
+    type Output = Constraint<0>;
+    fn index(self, v : &Constraint<1>) -> Constraint<0> {
+        if v.shape.len() != 1 { panic!("Cannot index into multi-dimensional variable"); }
+        Constraint{
+            idxs     : vec![v.idxs[self]],
+            shape    : []
+        }
+    }
+}
+
+impl<const N : usize> ModelItemIndex<Constraint<N>> for [usize; N] {
+    type Output = Constraint<0>;
+    fn index(self, v : &Constraint<N>) -> Constraint<0> {
+        let index = v.shape.iter().zip(self.iter()).fold(0,|v,(&d,&i)| v*d+i);
+        Constraint{
+            idxs     : vec![v.idxs[index]],
+            shape    : []
+        }
+    }
+}
+
+impl ModelItemIndex<Constraint<1>> for std::ops::Range<usize> {
+    type Output = Constraint<1>;
+    fn index(self, v : &Constraint<1>) -> Constraint<1> {
+        let n = self.len();
+        Constraint{
+            idxs     : v.idxs[self].to_vec(),
+            shape    : [n]
+        }
+    }
+}
+
+impl<const N : usize> ModelItemIndex<Constraint<N>> for [std::ops::Range<usize>; N] {
+    type Output = Constraint<N>;
+    fn index(self, v : &Constraint<N>) -> Constraint<N> {
+        if !self.iter().zip(v.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range is out of bounds in the the shape: {:?} in {:?}",self,v.shape) }
+
+        let mut rshape = [0usize;N]; rshape.iter_mut().zip(self.iter()).for_each(|(rs,ra)| *rs = ra.end-ra.start);
+        let strides = v.shape.to_strides();
+
+        fn addvec<const N : usize>(lhs : &[usize;N], rhs : &[usize;N]) -> [usize;N] {
+            let mut r = [0usize;N]; 
+            r.iter_mut().zip(lhs.iter().zip(rhs.iter())).for_each(|(d,(&s0,&s1))| *d = s0+s1 );
+            r
+        }
+
+        let mut offset = [0usize; N]; offset.iter_mut().zip(self.iter()).for_each(|(o,i)| *o = i.start);
+        let ridxs : Vec<usize> = 
+            rshape.index_iterator()
+                .map(|index| strides.to_linear(&addvec(&index,&offset)))
+                .map(|i| v.idxs[i] /*TODO: unsafe get*/)
+                .collect();
+
+        Constraint{idxs     : ridxs,
+                 shape    : rshape}
+    }
+}
+
+
+
+
+
+
+
+
 
 impl<const N : usize> ModelItem<N> for Constraint <N> {
     fn len(&self) -> usize { return self.shape.iter().product(); }
@@ -1133,7 +1209,7 @@ impl Model {
 
             // check that there are not dups.
             let mut perm = (0..idxs.len()).collect::<Vec<usize>>();
-            perm.sort_by_key(|&i| unsafe{ *idxs.get_unchecked(i) } );
+            perm.sort_by_key(|&i| unsafe{ *idxs.get_unchecked(i) });
             if idxs.permute_by(&perm).zip(idxs.permute_by(&perm[1..])).any(|(&a,&b)| a == b) {
                 panic!("Invalid constraint contains duplicatesindexes: Out of bounds");
             }
@@ -1221,105 +1297,104 @@ impl Model {
                 }
                 conic_ptr.iter_mut().fold(0,|c,p| { *p += c; *p });
                 lin_ptr.iter_mut().fold(0,|c,p| { *p += c; *p });
+            }
+            if nlin > 0 {
+                let (asubj,
+                     acof,
+                     aptr,
+                     afix,
+                     abarsubi,
+                     abarsubj,
+                     abarsubk,
+                     abarsubl,
+                     abarcof) = split_expr(&lin_ptr,&lin_subj,&lin_cof,self.vars.as_slice());
 
-                if nlin > 0 {
-                    let (asubj,
-                         acof,
-                         aptr,
-                         afix,
-                         abarsubi,
-                         abarsubj,
-                         abarsubk,
-                         abarsubl,
-                         abarcof) = split_expr(&lin_ptr,&lin_subj,&lin_cof,self.vars.as_slice());
-
-                    if !asubj.is_empty() {
-                        self.task.put_a_row_list(
-                            lin_subi.as_slice(),
-                            &aptr[0..aptr.len()-1],
-                            &aptr[1..],
-                            asubj.as_slice(),
-                            acof.as_slice()).unwrap();
-                    }
-
-                    lin_rhs.iter_mut().zip(afix.iter()).for_each(|(r,&f)| *r -= f);
-                    self.task.put_con_bound_list(lin_subi.as_slice(),
-                                                 lin_bk.as_slice(),
-                                                 lin_rhs.as_slice(),
-                                                 lin_rhs.as_slice()).unwrap();
-
-                    if ! abarsubi.is_empty() {
-                        izip!(0..,
-                              abarsubi.iter(),
-                              abarsubj.iter())
-                            .chain(std::iter::once((abarsubi.len(),&i64::MAX,&i32::MAX)))
-                            .scan((0usize,i64::MAX,i32::MAX),|(p0,previ,prevj),(k,i,j)|
-                                if *previ != *i || *prevj != *j {
-                                    let oldp0 = *p0;
-                                    *p0 = k;
-                                    Some((*previ,*prevj,oldp0,k))
-                                }
-                                else {
-                                    Some((*i,*j,*p0,*p0))
-                                })
-                            .filter(|(_,_,p0,p1)| p0 != p1)
-                            .for_each(|(_i,j,p0,p1)| {
-                           
-                            let subk = &abarsubk[p0..p1];
-                            let subl = &abarsubl[p0..p1];
-                            let cof  = &abarcof[p0..p1];
-                            let afei = conic_afe[abarsubi[p0] as usize];
-
-                            let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
-                            let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
-                            self.task.put_afe_barf_entry(afei, j,&[matidx],&[1.0]).unwrap();
-                        });
-                    }
+                if !asubj.is_empty() {
+                    self.task.put_a_row_list(
+                        lin_subi.as_slice(),
+                        &aptr[0..aptr.len()-1],
+                        &aptr[1..],
+                        asubj.as_slice(),
+                        acof.as_slice()).unwrap();
                 }
 
-                // change conic elements
-                if nconic > 0 {
-                    let (asubj,
-                         acof,
-                         aptr,
-                         afix,
-                         abarsubi,
-                         abarsubj,
-                         abarsubk,
-                         abarsubl,
-                         abarcof) = split_expr(&conic_ptr,&conic_subj,&conic_cof,self.vars.as_slice());
-                    let nelm = aptr.len()-1;
+                lin_rhs.iter_mut().zip(afix.iter()).for_each(|(r,&f)| *r -= f);
+                self.task.put_con_bound_list(lin_subi.as_slice(),
+                                             lin_bk.as_slice(),
+                                             lin_rhs.as_slice(),
+                                             lin_rhs.as_slice()).unwrap();
 
-                    if ! asubj.is_empty() {
-                        self.task.put_afe_f_row_list(conic_afe.as_slice(),
-                                                     aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
-                                                     &aptr[..nelm],
-                                                     asubj.as_slice(),
-                                                     acof.as_slice()).unwrap();
-                    }
-                    self.task.put_afe_g_list(conic_afe.as_slice(),afix.as_slice()).unwrap();
-                    if ! abarsubi.is_empty() {
-                        self.task.empty_afe_barf_row_list(conic_afe.as_slice()).unwrap();
-                        let mut p0 = 0usize;
-                        for (i,j,p) in izip!(abarsubi.iter(),
-                                             abarsubi[1..].iter(),
-                                             abarsubj.iter(),
-                                             abarsubj[1..].iter())
-                            .enumerate()
-                            .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
-                            .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
-                           
-                            let subk = &abarsubk[p0..p];
-                            let subl = &abarsubl[p0..p];
-                            let cof  = &abarcof[p0..p];
+                if ! abarsubi.is_empty() {
+                    izip!(0..,
+                          abarsubi.iter(),
+                          abarsubj.iter())
+                        .chain(std::iter::once((abarsubi.len(),&i64::MAX,&i32::MAX)))
+                        .scan((0usize,i64::MAX,i32::MAX),|(p0,previ,prevj),(k,i,j)|
+                            if *previ != *i || *prevj != *j {
+                                let oldp0 = *p0;
+                                *p0 = k;
+                                Some((*previ,*prevj,oldp0,k))
+                            }
+                            else {
+                                Some((*i,*j,*p0,*p0))
+                            })
+                        .filter(|(_,_,p0,p1)| p0 != p1)
+                        .for_each(|(_i,j,p0,p1)| {
+                       
+                        let subk = &abarsubk[p0..p1];
+                        let subl = &abarsubl[p0..p1];
+                        let cof  = &abarcof[p0..p1];
+                        let afei = conic_afe[abarsubi[p0] as usize];
 
-                            let afei = conic_afe[i as usize];
-                            p0 = p;
+                        let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
+                        let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
+                        self.task.put_afe_barf_entry(afei, j,&[matidx],&[1.0]).unwrap();
+                    });
+                }
+            }
 
-                            let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
-                            let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
-                            self.task.put_afe_barf_entry(afei,j,&[matidx],&[1.0]).unwrap();
-                        }
+            // change conic elements
+            if nconic > 0 {
+                let (asubj,
+                     acof,
+                     aptr,
+                     afix,
+                     abarsubi,
+                     abarsubj,
+                     abarsubk,
+                     abarsubl,
+                     abarcof) = split_expr(&conic_ptr,&conic_subj,&conic_cof,self.vars.as_slice());
+                let nelm = aptr.len()-1;
+
+                if ! asubj.is_empty() {
+                    self.task.put_afe_f_row_list(conic_afe.as_slice(),
+                                                 aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
+                                                 &aptr[..nelm],
+                                                 asubj.as_slice(),
+                                                 acof.as_slice()).unwrap();
+                }
+                self.task.put_afe_g_list(conic_afe.as_slice(),afix.as_slice()).unwrap();
+                if ! abarsubi.is_empty() {
+                    self.task.empty_afe_barf_row_list(conic_afe.as_slice()).unwrap();
+                    let mut p0 = 0usize;
+                    for (i,j,p) in izip!(abarsubi.iter(),
+                                         abarsubi[1..].iter(),
+                                         abarsubj.iter(),
+                                         abarsubj[1..].iter())
+                        .enumerate()
+                        .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
+                        .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+                       
+                        let subk = &abarsubk[p0..p];
+                        let subl = &abarsubl[p0..p];
+                        let cof  = &abarcof[p0..p];
+
+                        let afei = conic_afe[i as usize];
+                        p0 = p;
+
+                        let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
+                        let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
+                        self.task.put_afe_barf_entry(afei,j,&[matidx],&[1.0]).unwrap();
                     }
                 }
             }

@@ -93,13 +93,17 @@ impl<T> NameAppender for [T] where T : NameAppender {
 
 impl NameAppender for usize {
     fn append_to_string(&self, s : & mut String) {
-        let mut v = *self;
-        let w = *self/10;
-        let mut n = 1usize; while n < w { n *= 10; }
-        while n > 0 {
-            s.push(((v / n) + '0' as usize) as u8 as char);
-            v %= n;
-            n /= 10;
+        if *self == 0 {
+            s.push('0');
+        }
+        else {
+            let mut buf = [0u8; 20];
+            let n = buf.iter_mut().rev().scan(*self,|v,b| if *v > 0 { let r = (*v%10) as u8; *v = *v/10; *b = r; Some(r) } else { None }).count();
+            //println!("buf = {:?}",&buf[20-n..]);
+            for c in &buf[20-n..] {
+                s.push((*c + b'0') as char);
+            }
+
         }
     }
 }
