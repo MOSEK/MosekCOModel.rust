@@ -93,18 +93,55 @@ impl<T> NameAppender for [T] where T : NameAppender {
 
 impl NameAppender for usize {
     fn append_to_string(&self, s : & mut String) {
-        let mut v = *self;
-        let w = *self/10;
-        let mut n = 1usize; while n < w { n *= 10; }
-        while n > 0 {
-            s.push(((v / n) + '0' as usize) as u8 as char);
-            v %= n;
-            n /= 10;
+        if *self == 0 {
+            s.push('0');
+        }
+        else {
+            let mut buf = [0u8; 20];
+            let n = buf.iter_mut().rev().scan(*self,|v,b| if *v > 0 { let r = (*v%10) as u8; *v = *v/10; *b = r; Some(r) } else { None }).count();
+            //println!("buf = {:?}",&buf[20-n..]);
+            for c in &buf[20-n..] {
+                s.push((*c + b'0') as char);
+            }
+
         }
     }
 }
 
 
+
+#[derive(Clone,Copy)]
+pub struct Permutation<'b> {
+    perm : &'b [usize],
+    max  : usize
+}
+
+pub struct AppliedPermutation<'a, 'b, T> {
+    data : &'a [T],
+    perm : Permutation<'b>
+}
+
+impl<'b> Permutation<'b> {
+    pub fn from(perm : & 'b[usize]) -> Permutation<'b> {
+        Permutation{
+            perm,
+            max : perm.iter().max().map(|&v| v+1).unwrap_or(0)
+        }
+    }
+    pub fn apply<'a,T>(&self, data : &'a[T]) -> Option<AppliedPermutation<'a,'b,T>> {
+        if data.len() < self.max { None }
+        else { Some(AppliedPermutation{ data, perm : *self }) }
+    }
+}
+
+impl<'a,'b,T> std::ops::Index<usize> for AppliedPermutation<'a,'b,T> {
+    type Output = T;
+    fn index(&self, i : usize) -> &T {
+        unsafe {
+            self.data.get_unchecked(self.perm.perm[i])
+        }
+    }
+}
 
 
 

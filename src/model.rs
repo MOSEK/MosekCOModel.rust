@@ -28,9 +28,9 @@ enum VarAtom {
 #[derive(Clone,Copy,Debug)]
 enum ConAtom {
     // Conic constraint element (acci, offset)
-    ConicElm(i64,usize), 
-    BarElm(i32,i32,usize),
-    Linear(i32)
+    ConicElm{acci : i64, afei : i64, accoffset : usize},
+    BarElm{acci : i64, accoffset : i64, afei : i64, barj : i32, offset : usize},
+    Linear(i32,f64,i32) // (coni, rhs,bk)
 }
 
 /// Solution type selector
@@ -274,10 +274,86 @@ pub struct Constraint<const N : usize> {
 }
 
 impl<const N : usize> Constraint<N> {
-    pub fn index<I>(&self, idx : I) -> I::Output where I : ModelItemIndex<Self>, Self:Sized {
+    pub fn index<I>(&self, idx : I) -> I::Output where I : ModelItemIndex<Self> {
         idx.index(self)
     }
+    pub fn reshape<const M : usize>(self, shape : &[usize; M]) -> Constraint<M> {
+        if shape.iter().product::<usize>() != self.shape.iter().product::<usize>() {
+            panic!("Mismatching shapes");
+        }
+        Constraint{
+            idxs : self.idxs,
+            shape : *shape
+        }
+    }
 }
+
+impl ModelItemIndex<Constraint<1>> for usize {
+    type Output = Constraint<0>;
+    fn index(self, v : &Constraint<1>) -> Constraint<0> {
+        if v.shape.len() != 1 { panic!("Cannot index into multi-dimensional variable"); }
+        Constraint{
+            idxs     : vec![v.idxs[self]],
+            shape    : []
+        }
+    }
+}
+
+impl<const N : usize> ModelItemIndex<Constraint<N>> for [usize; N] {
+    type Output = Constraint<0>;
+    fn index(self, v : &Constraint<N>) -> Constraint<0> {
+        let index = v.shape.iter().zip(self.iter()).fold(0,|v,(&d,&i)| v*d+i);
+        Constraint{
+            idxs     : vec![v.idxs[index]],
+            shape    : []
+        }
+    }
+}
+
+impl ModelItemIndex<Constraint<1>> for std::ops::Range<usize> {
+    type Output = Constraint<1>;
+    fn index(self, v : &Constraint<1>) -> Constraint<1> {
+        let n = self.len();
+        Constraint{
+            idxs     : v.idxs[self].to_vec(),
+            shape    : [n]
+        }
+    }
+}
+
+impl<const N : usize> ModelItemIndex<Constraint<N>> for [std::ops::Range<usize>; N] {
+    type Output = Constraint<N>;
+    fn index(self, v : &Constraint<N>) -> Constraint<N> {
+        if !self.iter().zip(v.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range is out of bounds in the the shape: {:?} in {:?}",self,v.shape) }
+
+        let mut rshape = [0usize;N]; rshape.iter_mut().zip(self.iter()).for_each(|(rs,ra)| *rs = ra.end-ra.start);
+        let strides = v.shape.to_strides();
+
+        fn addvec<const N : usize>(lhs : &[usize;N], rhs : &[usize;N]) -> [usize;N] {
+            let mut r = [0usize;N]; 
+            r.iter_mut().zip(lhs.iter().zip(rhs.iter())).for_each(|(d,(&s0,&s1))| *d = s0+s1 );
+            r
+        }
+
+        let mut offset = [0usize; N]; offset.iter_mut().zip(self.iter()).for_each(|(o,i)| *o = i.start);
+        let ridxs : Vec<usize> = 
+            rshape.index_iterator()
+                .map(|index| strides.to_linear(&addvec(&index,&offset)))
+                .map(|i| v.idxs[i] /*TODO: unsafe get*/)
+                .collect();
+
+        Constraint{idxs     : ridxs,
+                 shape    : rshape}
+    }
+}
+
+
+
+
+
+
+
+
 
 impl<const N : usize> ModelItem<N> for Constraint <N> {
     fn len(&self) -> usize { return self.shape.iter().product(); }
@@ -616,7 +692,7 @@ impl Model {
         iproduct!(0..d0,0..d1,0..d2).enumerate()
             .for_each(|(i,(i0,i1,i2))| {
                 self.vars.push(VarAtom::ConicElm(vari+i as i32,self.cons.len()));
-                self.cons.push(ConAtom::ConicElm(acci+(i0*d2+i2) as i64,i1))
+                self.cons.push(ConAtom::ConicElm{acci : acci+(i0*d2+i2) as i64, afei: afei+i as i64,accoffset : i1})
             } );
 
         Variable::new((firstvar..firstvar+n).collect(),
@@ -694,7 +770,6 @@ impl Model {
         // Pop expression and validate 
         let (expr_shape,ptr,expr_sp,subj,cof) = self.rs.pop_expr();
         let nelm = ptr.len()-1;
-        let nelmi32 : i32 = nelm.try_into().unwrap();
         let nnz  = ptr.last().unwrap();
         
         let shape = dom.shape;
@@ -799,24 +874,27 @@ impl Model {
         let nelm : usize = conesize*numcone;
 
         let barvar0 = self.task.get_num_barvar().unwrap();
-        let con0    = self.task.get_num_con().unwrap();
+            
+        let acc0 = self.task.get_num_acc().unwrap();
+        let afe0 = self.task.get_num_afe().unwrap();
         self.task.append_barvars(vec![conedim.try_into().unwrap(); numcone].as_slice()).unwrap();
-        self.task.append_cons(rnelm.try_into().unwrap()).unwrap();
-
+        let dom = self.task.append_rzero_domain(rnelm as i64).unwrap();
+        
+        self.task.append_afes(rnelm as i64).unwrap();
 
         // Input linear non-zeros and bounds
+        let afeidxs : Vec<i64> = (afe0..afe0+rnelm as i64).collect();
+        let rownumnz : Vec<i32> = aptr.iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| i32::try_from(p1-p0).unwrap()).collect();
         
-        self.task.put_a_row_slice(con0,con0+i32::try_from(rnelm).unwrap(),
-                                  &aptr[0..rnelm],
-                                  &aptr[1..],
-                                  asubj.as_slice(),
-                                  acof.as_slice()).unwrap();
+        self.task.put_afe_f_row_list(&afeidxs, &rownumnz, &aptr, &asubj, &acof).unwrap();
+
         let dim : i32 = shape[conedim0].try_into().unwrap();
         let mxs : Vec<i64> = (0..dim).flat_map(|i| std::iter::repeat(i).zip(0..i+1))
             .map(|(i,j)| self.task.append_sparse_sym_mat(dim,&[i],&[j],&[1.0]).unwrap())
             .collect::<Vec<i64>>();
 
-        self.task.put_con_bound_slice(con0,con0+i32::try_from(rnelm).unwrap(),&vec![mosek::Boundkey::FX; nelm],&afix,&afix).unwrap();
+        self.task.append_acc_seq(dom, afe0, &afix).unwrap();
+        //self.task.put_con_bound_slice(con0,con0+i32::try_from(rnelm).unwrap(),&vec![mosek::Boundkey::FX; nelm],&afix,&afix).unwrap();
 
         if ! abarsubi.is_empty() {
             let mut p0 = 0usize;
@@ -835,7 +913,7 @@ impl Model {
 
                 let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
                 let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
-                self.task.put_bara_ij(con0+i as i32, j,&[matidx],&[1.0]).unwrap();
+                self.task.put_afe_barf_entry(afe0+i as i64, j,&[matidx],&[1.0]).unwrap();
             }
         }
 
@@ -858,29 +936,30 @@ impl Model {
         let firstcon = self.cons.len();
         shape.index_iterator()
             .filter(|index| index[conedim0] >= index[conedim1])
-            .zip(con0..con0+nelmi32)
+            .zip(0..rnelm as i64)
             .for_each(| (index,coni) | {
                 let barvari : i32 = barvar0 + i32::try_from(xstride.iter().zip(index.iter()).map(|(&a,&b)| a * b).sum::<usize>()).unwrap();
                 let ii = index[conedim0];
                 let jj = index[conedim1];
                 let mi = mxs[ii*(ii+1)/2+jj];
-                self.task.put_bara_ij(coni,barvari,&[mi], &[-1.0]).unwrap();
-                self.cons.push(ConAtom::BarElm(coni,barvari, ii*(ii+1)/2+jj));
+                self.task.put_afe_barf_entry(afe0+coni,barvari,&[mi], &[-1.0]).unwrap();
+                self.cons.push(ConAtom::BarElm{acci : acc0, accoffset : coni, afei : afe0+coni, barj : barvari, offset : ii*(ii+1)/2+jj});
             });
 
         if let Some(name) = name {
-            shape.index_iterator()
-                .filter(|index| index[conedim0] >= index[conedim1])
-                .zip(con0..con0+nelmi32)
-                .for_each(| (index,coni) | {
-                    self.task.put_con_name(coni,format!("{}{:?}",name,index).as_str()).unwrap();
-                });
-            let mut xshape = [1usize;N]; (0..).zip(shape.iter()).filter_map(|(i,s)| if i == conedim0 || i == conedim1 { None } else { Some(s) }).zip(xshape.iter_mut()).for_each(|(a,b)| *b = *a);
-            xshape.index_iterator()
-                .zip(barvar0..barvar0+i32::try_from(numcone).unwrap())
-                .for_each(| (index,barvari) | {
-                    self.task.put_barvar_name(barvari,format!("{}{:?}",name,&index[..N-2]).as_str()).unwrap();
-                });
+            self.task.put_acc_name(acc0, name).unwrap();
+//            shape.index_iterator()
+//                .filter(|index| index[conedim0] >= index[conedim1])
+//                .zip(con0..con0+nelmi32)
+//                .for_each(| (index,coni) | {
+//                    self.task.put_con_name(coni,format!("{}{:?}",name,index).as_str()).unwrap();
+//                });
+//            let mut xshape = [1usize;N]; (0..).zip(shape.iter()).filter_map(|(i,s)| if i == conedim0 || i == conedim1 { None } else { Some(s) }).zip(xshape.iter_mut()).for_each(|(a,b)| *b = *a);
+//            xshape.index_iterator()
+//                .zip(barvar0..barvar0+i32::try_from(numcone).unwrap())
+//                .for_each(| (index,barvari) | {
+//                    self.task.put_barvar_name(barvari,format!("{}{:?}",name,&index[..N-2]).as_str()).unwrap();
+//                });
         }
 
         
@@ -917,8 +996,8 @@ impl Model {
     fn linear_constraint<const N : usize>(& mut self,
                                           name : Option<&str>,
                                           dom  : LinearDomain<N>) -> Constraint<N> {
-        let (dt,b,dshape,sp,_) = dom.into_dense().extract();
-        let (eshape,ptr,_sp,subj,cof) = self.rs.pop_expr();
+        let (dt,b,dshape,_,_) = dom.into_dense().extract();
+        let (eshape,ptr,_,subj,cof) = self.rs.pop_expr();
         let mut shape = [0usize; N]; shape.clone_from_slice(eshape);
 
         if eshape.len() != N { 
@@ -944,17 +1023,17 @@ impl Model {
         if let Some(name) = name {
             Self::con_names(& mut self.task,name,coni,&shape);
         }
-
-        self.cons.reserve(nelm);
-        let firstcon = self.cons.len();
-        (coni..coni+nelm as i32).for_each(|i| self.cons.push(ConAtom::Linear(i)));
-
+        
         let bk = match dt {
             LinearDomainType::NonNegative => mosek::Boundkey::LO,
             LinearDomainType::NonPositive => mosek::Boundkey::UP,
             LinearDomainType::Zero        => mosek::Boundkey::FX,
             LinearDomainType::Free        => mosek::Boundkey::FR
         };
+
+        self.cons.reserve(nelm);
+        let firstcon = self.cons.len();
+        (coni..coni+nelm as i32).zip(b.iter()).for_each(|(i,&c)| self.cons.push(ConAtom::Linear(i,c,bk)));
 
         self.cons.reserve(nelm);
 
@@ -1014,7 +1093,7 @@ impl Model {
     fn conic_constraint<const N : usize>(& mut self,
                         name : Option<&str>,
                         dom  : ConicDomain<N>) -> Constraint<N> {
-        let (shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
+        let (shape,ptr,_,subj,cof) = self.rs.pop_expr();
         if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
             panic!("Mismatching shapes of expression and domain: {:?} vs {:?}",shape,dom.shape);
         }
@@ -1112,13 +1191,225 @@ impl Model {
 
         let coni = self.cons.len();
         self.cons.reserve(nelm);
-        iproduct!(0..d0,0..d1,0..d2)
-            .for_each(|(i0,i1,i2)| self.cons.push(ConAtom::ConicElm(acci+(i0*d2+i2) as i64,i1)));
+        iproduct!(0..d0,0..d1,0..d2).enumerate() 
+            .for_each(|(k,(i0,i1,i2))| self.cons.push(ConAtom::ConicElm{acci:acci+(i0*d2+i2) as i64, afei : afei+k as i64,accoffset : i1}));
 
         Constraint{
             idxs : (coni..coni+nelm).collect(),
             shape : dom.shape
         }
+    }
+
+    fn update_internal(&mut self, idxs : &[usize]) {
+        let (_,ptr,_,subj,cof) = self.rs.pop_expr();
+        if let Some(maxidx) = idxs.iter().max() {
+            if *maxidx >= self.cons.len() {
+                panic!("Invalid constraint indexes: Out of bounds");
+            }
+
+            // check that there are not dups.
+            let mut perm = (0..idxs.len()).collect::<Vec<usize>>();
+            perm.sort_by_key(|&i| unsafe{ *idxs.get_unchecked(i) });
+            if idxs.permute_by(&perm).zip(idxs.permute_by(&perm[1..])).any(|(&a,&b)| a == b) {
+                panic!("Invalid constraint contains duplicatesindexes: Out of bounds");
+            }
+
+            let (nconic,nnzconic,nbar,nnzbar,nlin,nnzlin) = izip!(self.cons.permute_by(idxs),ptr.iter(),ptr[1..].iter())
+                .fold((0,0,0,0,0,0),
+                      | (nconic,nnzconic,nbar,nnzbar,nlin,nnzlin), (c,&p0,&p1) | 
+                          match c {
+                              ConAtom::ConicElm{..} => (nconic+1,nnzconic+p1-p0,nbar,nnzbar,nlin,nnzlin),
+                              ConAtom::BarElm{..} => (nconic,nnzconic,nbar+1,nnzbar+p1-p0,nlin,nnzlin),
+                              ConAtom::Linear(..) => (nconic,nnzconic,nbar,nnzbar,nlin+1,nnzlin+p1-p0),
+                          });
+           
+            let mut conic_ptr  = Vec::new();
+            let mut conic_subj = Vec::new();
+            let mut conic_cof  = Vec::new();
+            let mut conic_afe  = Vec::new();
+            let mut lin_ptr    = Vec::new();
+            let mut lin_subj   = Vec::new();
+            let mut lin_cof    = Vec::new();
+            let mut lin_subi   = Vec::new();
+            let mut lin_rhs    = Vec::new();
+            let mut lin_bk     = Vec::new();
+
+            if nlin == 0 || nconic == 0 {
+                if nlin == 0 {
+                    conic_ptr.extend_from_slice(ptr);
+                    conic_subj.extend_from_slice(subj);
+                    conic_cof.extend_from_slice(cof);
+                    conic_afe.reserve(nconic+nbar);
+                }
+                else {
+                    lin_ptr.extend_from_slice(ptr);
+                    lin_subj.extend_from_slice(subj);
+                    lin_cof.extend_from_slice(cof);
+                    lin_subi.reserve(nlin);
+                    lin_rhs.reserve(nlin);
+                    lin_bk.reserve(nlin);
+                }
+                for c in self.cons.permute_by(idxs) {
+                    match c {
+                      ConAtom::ConicElm{afei,..} => conic_afe.push(*afei),
+                      ConAtom::BarElm{afei,..} => conic_afe.push(*afei),
+                      ConAtom::Linear(coni,rhs,bk) => { lin_subi.push(*coni); lin_rhs.push(*rhs); lin_bk.push(*bk); },
+                     }
+                }
+            }
+            else {
+                conic_ptr.reserve(nconic+nbar+1); conic_ptr.push(0usize);
+                conic_subj.reserve(nnzconic+nnzbar);
+                conic_cof.reserve(nnzconic+nnzbar);
+                conic_afe.reserve(nnzconic+nnzbar);
+                lin_ptr.reserve(nlin+1);   lin_ptr.push(0usize);
+                lin_subj.reserve(nnzlin);
+                lin_cof.reserve(nnzlin);
+                lin_subi.reserve(nlin);
+                lin_rhs.reserve(nlin);
+                lin_bk.reserve(nlin);
+
+                for (c,jj,cc) in izip!(self.cons.permute_by(idxs),
+                                       subj.chunks_ptr(ptr),
+                                       cof.chunks_ptr(ptr)) {
+                    match c {
+                      ConAtom::ConicElm{afei,..} => {
+                          conic_ptr.push(jj.len());
+                          conic_subj.extend_from_slice(jj);
+                          conic_cof.extend_from_slice(cc);
+                          conic_afe.push(*afei);
+                      }
+                      ConAtom::BarElm{afei,..}   => {
+                          conic_ptr.push(jj.len());
+                          conic_subj.extend_from_slice(jj);
+                          conic_cof.extend_from_slice(cc);
+                          conic_afe.push(*afei);
+                      }
+                      ConAtom::Linear(coni,rhs,bk)       => {
+                          lin_ptr.push(jj.len());
+                          lin_subj.extend_from_slice(jj);
+                          lin_cof.extend_from_slice(cc);
+                          lin_subi.push(*coni);
+                          lin_rhs.push(*rhs);
+                          lin_bk.push(*bk);
+                      }
+                    }
+                }
+                conic_ptr.iter_mut().fold(0,|c,p| { *p += c; *p });
+                lin_ptr.iter_mut().fold(0,|c,p| { *p += c; *p });
+            }
+            if nlin > 0 {
+                let (asubj,
+                     acof,
+                     aptr,
+                     afix,
+                     abarsubi,
+                     abarsubj,
+                     abarsubk,
+                     abarsubl,
+                     abarcof) = split_expr(&lin_ptr,&lin_subj,&lin_cof,self.vars.as_slice());
+
+                if !asubj.is_empty() {
+                    self.task.put_a_row_list(
+                        lin_subi.as_slice(),
+                        &aptr[0..aptr.len()-1],
+                        &aptr[1..],
+                        asubj.as_slice(),
+                        acof.as_slice()).unwrap();
+                }
+
+                lin_rhs.iter_mut().zip(afix.iter()).for_each(|(r,&f)| *r -= f);
+                self.task.put_con_bound_list(lin_subi.as_slice(),
+                                             lin_bk.as_slice(),
+                                             lin_rhs.as_slice(),
+                                             lin_rhs.as_slice()).unwrap();
+
+                if ! abarsubi.is_empty() {
+                    izip!(0..,
+                          abarsubi.iter(),
+                          abarsubj.iter())
+                        .chain(std::iter::once((abarsubi.len(),&i64::MAX,&i32::MAX)))
+                        .scan((0usize,i64::MAX,i32::MAX),|(p0,previ,prevj),(k,i,j)|
+                            if *previ != *i || *prevj != *j {
+                                let oldp0 = *p0;
+                                *p0 = k;
+                                Some((*previ,*prevj,oldp0,k))
+                            }
+                            else {
+                                Some((*i,*j,*p0,*p0))
+                            })
+                        .filter(|(_,_,p0,p1)| p0 != p1)
+                        .for_each(|(_i,j,p0,p1)| {
+                       
+                        let subk = &abarsubk[p0..p1];
+                        let subl = &abarsubl[p0..p1];
+                        let cof  = &abarcof[p0..p1];
+                        let afei = conic_afe[abarsubi[p0] as usize];
+
+                        let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
+                        let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
+                        self.task.put_afe_barf_entry(afei, j,&[matidx],&[1.0]).unwrap();
+                    });
+                }
+            }
+
+            // change conic elements
+            if nconic > 0 {
+                let (asubj,
+                     acof,
+                     aptr,
+                     afix,
+                     abarsubi,
+                     abarsubj,
+                     abarsubk,
+                     abarsubl,
+                     abarcof) = split_expr(&conic_ptr,&conic_subj,&conic_cof,self.vars.as_slice());
+                let nelm = aptr.len()-1;
+
+                if ! asubj.is_empty() {
+                    self.task.put_afe_f_row_list(conic_afe.as_slice(),
+                                                 aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
+                                                 &aptr[..nelm],
+                                                 asubj.as_slice(),
+                                                 acof.as_slice()).unwrap();
+                }
+                self.task.put_afe_g_list(conic_afe.as_slice(),afix.as_slice()).unwrap();
+                if ! abarsubi.is_empty() {
+                    self.task.empty_afe_barf_row_list(conic_afe.as_slice()).unwrap();
+                    let mut p0 = 0usize;
+                    for (i,j,p) in izip!(abarsubi.iter(),
+                                         abarsubi[1..].iter(),
+                                         abarsubj.iter(),
+                                         abarsubj[1..].iter())
+                        .enumerate()
+                        .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
+                        .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+                       
+                        let subk = &abarsubk[p0..p];
+                        let subl = &abarsubl[p0..p];
+                        let cof  = &abarcof[p0..p];
+
+                        let afei = conic_afe[i as usize];
+                        p0 = p;
+
+                        let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
+                        let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
+                        self.task.put_afe_barf_entry(afei,j,&[matidx],&[1.0]).unwrap();
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : &E) where E : expr::ExprTrait<N> {
+        e.eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).unwrap();
+        {
+            let (shape,_,_,_,_) = self.rs.peek_expr();
+            if shape.iter().zip(item.shape.iter()).any(|(&a,&b)| a != b) {
+                panic!("Shape of constraint ({:?}) does not match shape of expression ({:?})",item.shape,shape);
+            }
+        }
+        self.update_internal(&item.idxs);
     }
 
     //======================================================
@@ -1267,14 +1558,11 @@ impl Model {
                     //println!("{}:{}: accptr = {:?}",file!(),line!(),accptr);
                     self.cons.iter().zip(sol.primal.con.iter_mut()).for_each(|(&v,r)| {
                         *r = match v {
-                            ConAtom::ConicElm(acci,ofs) => { 
-                                //println!("{}:{}: acci = {}",file!(),line!(),acci);
-                                //println!("{}:{}: accptr[{}] = {}",file!(),line!(),acci,accptr[acci as usize]);
-                                //println!("{}:{}: accx = {:?}",file!(),line!(),accx);
-                                accx[accptr[acci as usize]+ofs]
+                            ConAtom::ConicElm{acci,accoffset,..}=> { 
+                                accx[accptr[acci as usize]+accoffset]
                             },
-                            ConAtom::Linear(i) => xc[i as usize],
-                            ConAtom::BarElm(_,j,ofs) => barx[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                            ConAtom::Linear(i,..) => xc[i as usize],
+                            ConAtom::BarElm{barj:j,offset:ofs,..} => barx[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                         };
                     });
                 }
@@ -1297,18 +1585,18 @@ impl Model {
                             VarAtom::BarElm(j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                             VarAtom::ConicElm(_j,coni) => {
                                 match self.cons[coni] {
-                                    ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs],
-                                    ConAtom::Linear(i) => y[i as usize],
-                                    ConAtom::BarElm(_,j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                                    ConAtom::ConicElm{acci,accoffset:ofs,..} => doty[accptr[acci as usize]+ofs],
+                                    ConAtom::Linear(i,..) => y[i as usize],
+                                    ConAtom::BarElm{barj:j,offset:ofs,..} => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                                 }
                             }
                         };
                     });
                     self.cons.iter().zip(sol.dual.con.iter_mut()).for_each(|(&v,r)| {
                         *r = match v {
-                            ConAtom::ConicElm(acci,ofs) => doty[accptr[acci as usize]+ofs],
-                            ConAtom::Linear(i) => y[i as usize],
-                            ConAtom::BarElm(_,j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                            ConAtom::ConicElm{acci,accoffset:ofs,..} => doty[accptr[acci as usize]+ofs],
+                            ConAtom::Linear(i,..) => y[i as usize],
+                            ConAtom::BarElm{barj:j,offset:ofs,..} => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                         };
                     });
                 }
