@@ -233,9 +233,9 @@ impl<'a, const N : usize> Iterator for SparseIndexIterator<'a,N> {
 
 ////////////////////////////////////////////////////////////
 
-pub struct ChunksByIter<'a,'b,T,I>
+pub struct ChunksByIter<'a,'b1,'b2,T,I>
 where
-    I:Iterator<Item = (&'b usize,&'b usize)>
+    I:Iterator<Item = (&'b1 usize,&'b2 usize)>
 {
     data : &'a [T],
     ptr  : I
@@ -260,15 +260,22 @@ where
 }
 
 pub trait ChunksByIterExt<T> {
-    fn chunks_ptr<'a,'b>(&'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>>;
+    fn chunks_ptr<'a,'b>(&'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>>;
+    fn chunks_ptr2<'a,'b1,'b2>(&'a self, ptrb : &'b1[usize],ptre : &'b2[usize]) -> ChunksByIter<'a,'b1,'b2,T,std::iter::Zip<std::slice::Iter<'b1,usize>,std::slice::Iter<'b2,usize>>>;
 }
 
 impl<T> ChunksByIterExt<T> for [T] {
-    fn chunks_ptr<'a,'b>(& 'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>> {
+    fn chunks_ptr<'a,'b>(& 'a self, ptr : &'b[usize]) -> ChunksByIter<'a,'b,'b,T,std::iter::Zip<std::slice::Iter<'b,usize>,std::slice::Iter<'b,usize>>> {
         if let Some(&p) = ptr.last() { if p > self.len() { panic!("Invalid ptr for chunks_ptr iterator") } }
         if ptr.iter().zip(ptr[1..].iter()).any(|(p0,p1)| p1 < p0) { panic!("Invalid ptr for chunks_ptr iterator") }
 
         ChunksByIter{ data : self, ptr:ptr.iter().zip(ptr[1..].iter()) }
+    }
+    fn chunks_ptr2<'a,'b1,'b2>(& 'a self, ptrb : &'b1[usize], ptre : &'b2[usize]) -> ChunksByIter<'a,'b1,'b2,T,std::iter::Zip<std::slice::Iter<'b1,usize>,std::slice::Iter<'b2,usize>>> {
+        if let Some(&p) = ptre.last() { if p > self.len() { panic!("Invalid ptr for chunks_ptr iterator") } }
+        if ptrb.iter().zip(ptre.iter()).any(|(p0,p1)| p1 < p0) { panic!("Invalid ptrb/ptre for chunks_ptr iterator") }
+
+        ChunksByIter{ data : self, ptr:ptrb.iter().zip(ptre.iter()) }
     }
 }
 

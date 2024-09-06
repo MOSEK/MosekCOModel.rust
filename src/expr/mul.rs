@@ -8,6 +8,14 @@ pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
     pub(super) lhs  : f64
 }
 
+
+pub struct ExprMulMEt<E:ExprTrait<2>> {
+    pub(super) item : E,
+    pub(super) shape : [usize;2],
+    pub(super) data  : Vec<f64>,
+    pub(super) sp    : Option<Vec<usize>>
+}
+
 pub struct ExprMulLeft<E:ExprTrait<2>> {
     pub(super) item : E,
     
@@ -136,6 +144,7 @@ impl<const N : usize, E> ExprLeftMultipliable<N,E> for f64
         }
     }
 }
+
 
 
 
@@ -426,6 +435,17 @@ impl<E> ExprRightElmMultipliable<1,E> for &[f64]
 // ExprMulScalar
 // ExprMulElm
 ///////////////////////////////////////////////////////////////////////////////
+
+impl<E> ExprTrait<2> for ExprMulMEt<E> where E:ExprTrait<2> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(ws,rs,xs)?;
+        super::eval::mul_matrix_expr_transpose(
+            (self.shape[0],self.shape[1]),
+            self.sp.as_deref(),
+            self.data.as_slice(),
+            rs,ws,xs)
+    }
+}
 
 
 impl<E> ExprTrait<2> for ExprMulLeft<E> where E:ExprTrait<2> {
