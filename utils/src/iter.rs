@@ -241,9 +241,9 @@ where
     ptr  : I
 }
 
-impl<'a,'b,T,I> Iterator for ChunksByIter<'a,'b,T,I>
+impl<'a,'b1,'b2,T,I> Iterator for ChunksByIter<'a,'b1,'b2,T,I>
 where
-    I:Iterator<Item = (&'b usize,&'b usize)>
+    I:Iterator<Item = (&'b1 usize,&'b2 usize)>
 {
     type Item = &'a[T];
     fn next(& mut self) -> Option<Self::Item> {

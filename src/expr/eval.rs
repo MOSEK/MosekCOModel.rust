@@ -2,7 +2,7 @@
 // evaluation part that is not concerned with expression sub-part
 // types.
 
-use std::{iter::once, ptr::metadata};
+use std::{iter::once};
 use super::*;
 use super::workstack::WorkStack;
 use utils::{*,iter::*};
@@ -609,7 +609,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                                  _xs    : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nd = shape.len();
-    let nnz = ptr.last().unwrap();
+    let nnz = *ptr.last().unwrap();
     let nelem = ptr.len()-1;
     if nd != 2 || shape[1] != mshape.1 {
         panic!("Mismatching operand shapes");
@@ -617,141 +617,131 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
     let shape = [shape[0],shape[1]];
     let rshape = [mshape.0,shape[0]];
 
-    let (rnelm,rnnz) = {
-        match (msp,sp) {
-            (None,None) => {
-                (rshape[0]*rshape[1],nnz * mshape.0)
-            },
-            (Some(msp),None) => {
-                if msp.is_empty() {
-                    (0,0) 
-                }
-                else {
-                    // For each matrix row
-                    msp.iter().chain(std::iter::once(&usize::MAX)).enumerate() 
-                        .scan((0usize,usize::MAX), |(previ,prev),(i,&spi)| Some(if *prev == spi/mshape.1 { (*previ,*previ) } else { *prev = spi/mshape.1; (previ.swap_out(i),i) }) )
-                        .filter(|(p0,p1)| *p0 < *p1 )
-                        .fold((0,0), |(rnelem,rnnz),(p0,p1)| {
-                            let msp = unsafe{ msp.get_unchecked(p0..p1) };
-                
-                            let rownnz : usize = iproduct!(ptr.chunks(shape[1]).zip(ptr[1..].chunks(shape[1])), msp.iter())
-                                .map(|((ptrbs,ptres),&spi)| {
-                                    let j = spi%shape[1];
-                                    unsafe{ *ptres.get_unchecked(j) - *ptrbs.get_unchecked(j) } })
-                                .sum();
-                            
-                            (rnelem+1,rnnz+rownnz)
-                        })
-                }
-            },
-            (None,Some(sp)) => {
-                if sp.is_empty() {
-                    (0,0) 
-                }
-                else {
-                    let nonempty_rows = 1+sp.iter().zip(sp[1..].iter()).filter(|(&i0,&i1)| i0 / shape[1] != i1/shape[1]).count();
-                    (mshape.0*nonempty_rows,mshape.0*nnz)
-                }
-            },
-            (Some(msp),Some(sp)) => {
-                if msp.is_empty() || sp.is_empty() {
-                    (0,0)
-                }
-                else {
-                    let mut rnelem = 0usize;
-                    let mut rnnz = 0usize;
-                    // For each matrix row
-                    for (p0,p1) in 
-                        msp.iter().chain(std::iter::once(&usize::MAX)).enumerate() 
-                            .scan((0usize,usize::MAX), |(previ,prev),(i,&spi)| Some(if *prev == spi/mshape.1 { (*previ,*previ) } else { *prev = spi/mshape.1; (previ.swap_out(i),i) }) )
-                            .filter(|(p0,p1)| *p0 < *p1 )
-                    {
-                        let msp = unsafe{ msp.get_unchecked(p0..p1) };
-
-                        // For each expression row
-                        for (ep0,ep1) in 
-                            sp.iter().chain(std::iter::once(&usize::MAX)).enumerate() 
-                                .scan((0usize,usize::MAX), |(previ,prev),(i,&spi)| Some(if *prev == spi/shape[1] { (*previ,*previ) } else { *prev = spi/shape[1]; (previ.swap_out(i),i) }) )
-                                .filter(|(p0,p1)| *p0 < *p1 )
-                        {
-                            // row intersection
-                            let esp = unsafe{ sp.get_unchecked(ep0..ep1) };
-                            let eptr = unsafe{ ptr.get_unchecked(ep0..ep1+1) };
-                            
-                            let (mit,eit) = (msp.iter().peekable(),izip!(esp.iter(),eptr.iter(),eptr[1..].iter()).peekable());
-                            while let (Some(&&mi),Some((&ei,&ep0,&ep1))) = (mit.peek(),eit.peek()) {
-                                match (&(mi % mshape.1)).cmp(&(ei % shape[1])) {
-                                    std::cmp::Ordering::Less => { _ = mit.next(); },
-                                    std::cmp::Ordering::Greater => { _ = eit.next(); },
-                                    std::cmp::Ordering::Equal => {
-                                        rnelem += 1;
-                                        rnnz += ep1-ep0
-                                    }
-                                }
-                            }
-
-                        }
-                    }
-                    (rnelem,rnnz)
-                }
-            }
-        }
-    };
-
-    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelm);
-    rptr[0] = 0;
-    
-
+    // compute size
     match (msp,sp) {
         (None,None) => {
-            ptr.chunks(mshape.mdim1)
-                .zip(ptr[1..].chunks(mshape.mdim1))
+            let (rnelm, rnnz) = (rshape[0]*rshape[1],nnz * mshape.0);
+
+            let (rptr,_,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelm);
+
+            // build rptr
+            rptr[0] = 0;
+            ptr.iter().step_by(mshape.1).zip(ptr[mshape.1..].iter().step_by(mshape.1))
                 .cycle()
                 .zip(rptr[1..].iter_mut())
                 .fold(0,|v,((p0,p1),rp)| { *rp = v+p1-p0; *rp });
-
-            izip!(iproduct!(mdata.chunks(mshape.mdim1),
-                            ptr.chunks(mshape.1).zip(ptr[1..].chunks(mshape.1))),
-                  rsubj.chunks_ptr_mut(&rptr[..nelem],&rptr[1..]),
-                  rcof.chunks_ptr_mut(&rptr[..nelem],&rptr[1..]))
-                .for_each(|((mrow,(ptrb,ptre)),rsubj,rcof)| {
-                    izip!(subj.chunks_ptr2(ptrb,ptre),
-                          cof.chunks_ptr2(ptrb,ptre),
-                          mrow.iter())
-                        .flat_map(|(&jj,&cc,&m)| jj.iter().zip(cc.iter().map(|&c| (c*m))))
-                        .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
-                        .for_each(|((j,c),(rj,rc))| { *rj = j; *rc = c; })
-                });
+    
+            // build rsubj
+            for jj in rsubj.chunks_mut(nnz) { jj.copy_from_slice(subj); }
+            // build cof
+            izip!(mdata.chunks(mshape.1).flat_map(|mrow| std::iter::repeat(mrow).take(shape[0])),
+                  ptr.chunks(mshape.1).zip(ptr[1..].chunks(mshape.1)).cycle())
+                .flat_map(|(mrow,(ptrbs,ptres))| izip!(mrow.iter(), ptrbs.iter(),ptres.iter()))
+                .flat_map(|(mc,&p0,&p1)| izip!(std::iter::repeat(mc).take(p1-p0)))
+                .zip(rcof.iter_mut().zip(cof.iter().cycle()))
+                .for_each(|(mc,(rc,&c))| *rc = c*mc);
         },
         (Some(msp),None) => {
-            if ! msp.is_empty() {
+            if msp.is_empty() {
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, 0,0);
+                rptr[0] = 0;
+            }
+            else {
+                assert!(msp.len() == mdata.len());
 
+                // count nonzero data rows
+                let mnzrows = msp.chunk_by(|a,b| *a / mshape.1 == *b / mshape.1).count();
+                let rnelem = mnzrows * shape[0];
 
-.........................
+                // count nonzeros and elements
+                let rnnz = msp.chunk_by(|a,b| *a / mshape.1 == *b / mshape.1)
+                    //.scan(0,|p,msprow| { let (p0,p1) = (*p,*p+msprow.len()); Some((msprow, unsafe{ mdata.get_unchecked(p0..p1)})) })
+                    .flat_map(|item| std::iter::repeat(item).take(shape[0]))
+                    .zip(ptr.chunks(shape[1]).zip(ptr[1..].chunks(shape[1])).cycle())
+                    .fold(0,|rnnz,(msprow,(ptrbs,ptres))| rnnz + msprow.iter().map(|i| unsafe{ *ptres.get_unchecked(i % shape[1]) * *ptrbs.get_unchecked(i % shape[1]) }).sum::<usize>());
 
-                // For each matrix row
-                msp.iter().chain(std::iter::once(&usize::MAX)).enumerate() 
-                    .scan((0usize,usize::MAX), |(previ,prev),(i,&spi)| Some(if *prev == spi/mshape.1 { (*previ,*previ) } else { *prev = spi/mshape.1; (previ.swap_out(i),i) }) )
-                    .filter(|(p0,p1)| *p0 < *p1 )
-                    .fold((0,0), |(rnelem,rnnz),(p0,p1)| {
-                        let msp = unsafe{ msp.get_unchecked(p0..p1) };
-            
-                        let rownnz : usize = iproduct!(ptr.chunks(shape[1]).zip(ptr[1..].chunks(shape[1])), msp.iter())
-                            .map(|((ptrbs,ptres),&spi)| {
-                                let j = spi%shape[1];
-                                unsafe{ *ptres.get_unchecked(j) - *ptrbs.get_unchecked(j) } })
-                            .sum();
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+                rptr[0] = 0;
+
+                izip!(
+                    msp.chunk_by(|a,b| *a / mshape.1 == *b / mshape.1)
+                        .scan(0,|p,msprow| { let (p0,p1) = (*p,*p+msprow.len()); Some((msprow, unsafe{ mdata.get_unchecked(p0..p1)})) })
+                        .flat_map(|item| std::iter::repeat(item).take(shape[0])),
+                        ptr.chunks(shape[1]).zip(ptr[1..].chunks(shape[1])).cycle(),
+                        rptr[1..].iter_mut())
+                    .flat_map(|((msprow,mcofrow),(ptrbs,ptres),rp)| {
+                        *rp = msprow.iter().map(|i| unsafe{ *ptres.get_unchecked(i % shape[1]) * *ptrbs.get_unchecked(i % shape[1]) }).sum();
+
+                        msprow.iter().zip(mcofrow.iter())
+                            .map(|(i,mc)| (mc, unsafe{*ptrbs.get_unchecked(i % shape[1])}, unsafe{*ptres.get_unchecked(i % shape[1])}))
+                    })
+                    .flat_map(|(mc,p0,p1)| izip!(std::iter::repeat(mc),unsafe{ subj.get_unchecked(p0..p1)}, unsafe{ cof.get_unchecked(p0..p1)}))
+                    .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
+                    .for_each(|((mc,&j,&c),(rj,rc))| {
+                        *rj = j;
+                        *rc = c*mc;
                     });
+
+                if let Some(rsp) = rsp {
+                    msp.chunk_by(|a,b| *a / mshape.1 == *b / mshape.1)
+                        .flat_map(|item| std::iter::repeat(item).take(shape[0]).enumerate())
+                        .zip(rsp.iter_mut())
+                        .for_each(|((j,sprow),rsp)| *rsp = (*sprow.last().unwrap() / mshape.1) + j)
+                        ;
+                }
             }
         },
         (None,Some(sp)) => {
             if sp.is_empty() {
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, 0,0);
+                rptr[0] = 0;
             }
             else {
+                let nonempty_rows = 1+sp.iter().zip(sp[1..].iter()).filter(|(&i0,&i1)| i0 / shape[1] != i1/shape[1]).count();
+                let rnelem = mshape.0*nonempty_rows;
+                let rnnz = mshape.0*nnz;
+                
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+                
+                // build rptr
+                rptr[0] = 0;
+                (0..shape[0]).flat_map(|_| sp.chunk_by(|i0,i1| i0/shape[1] == i1/shape[1]))
+                    .scan(0,|p,esprow| {
+                        let (p0,p1) = (*p,*p+esprow.len());
+                        *p = p1;
+                        Some(unsafe{ *ptr.get_unchecked(p1) - *ptr.get_unchecked(p0) })
+                    })
+                    .zip(rptr[1..].iter_mut())
+                    .fold(0, |c,(nnz,rp)| { *rp = c+nnz; *rp });
+
+                // build subj
+                rsubj.chunks_mut(nnz).for_each(|jj| jj.copy_from_slice(subj));
+
+                // build subj, cof
+                mdata.chunks(mshape.1)
+                    .flat_map(|mrow| std::iter::repeat(mrow).take(shape[0]))
+                    .zip(
+                        (0..shape[0]).flat_map(|_| sp.chunk_by(|i0,i1| i0/shape[1] == i1/shape[1]))
+                            .scan(0,|p,esprow| {
+                                let (p0,p1) = (*p,*p+esprow.len());
+                                *p = p1;
+                                Some((esprow, unsafe{ ptr.get_unchecked(p0..=p1) }))
+                            }))
+                    .flat_map(|(mrow, (esprow,eptr))| {
+                        izip!(esprow.iter().map(|i| unsafe{ *mrow.get_unchecked(i % mshape.1) }),
+                              eptr.iter(),
+                              eptr[1..].iter())
+                    })
+                    .flat_map(|(mc,&p0,&p1)| izip!(std::iter::repeat(mc),unsafe{cof.get_unchecked(p0..p1)}.iter()))
+                    .zip(rcof.iter_mut())
+                    .for_each(|((mc,c),rc)| *rc = mc*c)
+                    ;
             }
         },
         (Some(msp),Some(sp)) => {
             if msp.is_empty() || sp.is_empty() {
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, 0,0);
+                rptr[0] = 0;
             }
             else {
                 let mut rnelem = 0usize;
@@ -774,7 +764,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                         let esp = unsafe{ sp.get_unchecked(ep0..ep1) };
                         let eptr = unsafe{ ptr.get_unchecked(ep0..ep1+1) };
                         
-                        let (mit,eit) = (msp.iter().peekable(),izip!(esp.iter(),eptr.iter(),eptr[1..].iter()).peekable());
+                        let (mut mit,mut eit) = (msp.iter().peekable(),izip!(esp.iter(),eptr.iter(),eptr[1..].iter()).peekable());
                         while let (Some(&&mi),Some((&ei,&ep0,&ep1))) = (mit.peek(),eit.peek()) {
                             match (&(mi % mshape.1)).cmp(&(ei % shape[1])) {
                                 std::cmp::Ordering::Less => { _ = mit.next(); },
@@ -788,13 +778,11 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
 
                     }
                 }
+
+
             }
         }
-    }
-
-
-
-
+    };
 
     Ok(())
 }
