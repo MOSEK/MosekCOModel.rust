@@ -705,28 +705,37 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                 
                 // build rptr
                 rptr[0] = 0;
-                (0..shape[0]).flat_map(|_| sp.chunk_by(|i0,i1| i0/shape[1] == i1/shape[1]))
-                    .scan(0,|p,esprow| {
-                        let (p0,p1) = (*p,*p+esprow.len());
-                        *p = p1;
-                        Some(unsafe{ *ptr.get_unchecked(p1) - *ptr.get_unchecked(p0) })
-                    })
+                (0..mshape.0)
+                    .flat_map(|_| sp.chunk_by(|i0,i1| i0/shape[1] == i1/shape[1])
+                                      .scan(0,|p, row| { let (p0,p1) = (*p,*p+row.len()); *p = p1; Some((p0,p1)) }))
                     .zip(rptr[1..].iter_mut())
-                    .fold(0, |c,(nnz,rp)| { *rp = c+nnz; *rp });
+                    .fold(0usize,|p,((p0,p1),rp)| { *rp = p+(p1-p0); *rp });
+
+                if let Some(rsp) = rsp {
+                    (0..mshape.0)
+                        .flat_map(|i| std::iter::repeat(i).zip(sp.chunk_by(|i0,i1| i0/shape[1] == i1/shape[1]).enumerate()))
+                        .map(|(i,(j,_))| i*shape[1]+j )
+                        .zip(rsp.iter_mut())
+                        .for_each(|(idx,rsp)| *rsp = idx)
+                        ;
+                }
 
                 // build subj
                 rsubj.chunks_mut(nnz).for_each(|jj| jj.copy_from_slice(subj));
 
                 // build subj, cof
                 mdata.chunks(mshape.1)
-                    .flat_map(|mrow| std::iter::repeat(mrow).take(shape[0]))
+                    .flat_map(|mrow| std::iter::repeat(mrow).take(shape[0])) // repeat each matrix
+                                                                             // row shape[0] times.
                     .zip(
-                        (0..shape[0]).flat_map(|_| sp.chunk_by(|i0,i1| i0/shape[1] == i1/shape[1]))
-                            .scan(0,|p,esprow| {
-                                let (p0,p1) = (*p,*p+esprow.len());
-                                *p = p1;
-                                Some((esprow, unsafe{ ptr.get_unchecked(p0..=p1) }))
-                            }))
+                        (0..shape[0]).flat_map(|_| {
+                            sp.chunk_by(|i0,i1| i0/shape[1] == i1/shape[1])
+                                .scan(0,|p,esprow| {
+                                    let (p0,p1) = (*p,*p+esprow.len());
+                                    *p = p1;
+                                    println!("ptr = {:?}, p0 = {}, p1 = {}",ptr,p0,p1);
+                                    Some((esprow, unsafe{ ptr.get_unchecked(p0..=p1) }))
+                                })}))
                     .flat_map(|(mrow, (esprow,eptr))| {
                         izip!(esprow.iter().map(|i| unsafe{ *mrow.get_unchecked(i % mshape.1) }),
                               eptr.iter(),
@@ -770,6 +779,8 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                                 std::cmp::Ordering::Less => { _ = mit.next(); },
                                 std::cmp::Ordering::Greater => { _ = eit.next(); },
                                 std::cmp::Ordering::Equal => {
+                                    _ = eit.next();
+                                    _ = mit.next();
                                     rnelem += 1;
                                     rnnz += ep1-ep0
                                 }
@@ -2162,4 +2173,107 @@ pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut Work
     Ok(())
 } // eval_finalize
 
+
+
+
+
+#[cfg(test)]
+mod test {
+    use crate::expr::workstack::WorkStack;
+    #[test]
+    fn test_mul_matrix_expr_transpose_dd() {
+        let mut rs = WorkStack::new(1024);
+        let mut ws = WorkStack::new(1024);
+        let mut xs = WorkStack::new(1024);
+   
+        println!("Dense x Dense");
+        {
+            let (ptr,_sp,subj,cof) = ws.alloc_expr(&[3,3], 18, 9);
+            ptr.iter_mut().zip((0..20).step_by(2)).for_each(|(p,i)| *p = i);
+            subj.iter_mut().step_by(2).zip(0..9).for_each(|(j,i)| *j = i);
+            subj[1..].iter_mut().step_by(2).zip(9..18).for_each(|(j,i)| *j = i);
+            cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i+1) as f64);
+
+            super::mul_matrix_expr_transpose(
+                (3,3),
+                None,
+                &[1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,3.3],
+                & mut rs,& mut ws,&mut xs).unwrap();
+            let (rshape,rptr,rsp,rsubj,rcof) = rs.pop_expr();
+            // | 1.1 1.2 1.3 |   | 1(x0+x9)  2(x1+x10) 3(x2+x11) | 
+            // | 2.1 2.2 2.3 | x | 4(x3+x12) 5(x4+x13) 6(x5+x14) |
+            // | 3.1 3.2 3.3 |   | 7(x6+x15) 8(x7+x16) 9(x8+x17) |
+
+            assert_eq!(rshape.len(),2);
+            assert_eq!(rshape[0],3);
+            assert_eq!(rshape[1],3);
+            assert_eq!(rptr.len(),10);
+            assert_eq!(rsubj.len(),6*9);
+            assert!(rsubj)
+        }
+    }
+    #[test]
+    fn test_mul_matrix_expr_transpose_sd() {
+        let mut rs = WorkStack::new(1024);
+        let mut ws = WorkStack::new(1024);
+        let mut xs = WorkStack::new(1024);
+   
+        println!("Sparse x Dense");
+        {
+            let (ptr,_sp,subj,cof) = ws.alloc_expr(&[3,3], 18, 9);
+            ptr.iter_mut().zip((0..20).step_by(2)).for_each(|(p,i)| *p = i);
+            subj.iter_mut().step_by(2).zip(0..9).for_each(|(j,i)| *j = i);
+            subj[1..].iter_mut().step_by(2).zip(9..18).for_each(|(j,i)| *j = i);
+            cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i+1) as f64);
+
+            super::mul_matrix_expr_transpose(
+                (3,3),
+                Some(&[0,2,7]),
+                &[1.1,1.3,3.2],
+                & mut rs,& mut ws,&mut xs).unwrap();
+        }
+    }
+    #[test]
+    fn test_mul_matrix_expr_transpose_ds() {
+        let mut rs = WorkStack::new(1024);
+        let mut ws = WorkStack::new(1024);
+        let mut xs = WorkStack::new(1024);
+   
+        println!("Dense x Sparse");
+        {
+            let (ptr,sp,subj,cof) = ws.alloc_expr(&[3,3], 6, 3);
+            ptr.copy_from_slice(&[0,2,4,6]);
+            sp.unwrap().copy_from_slice(&[0,2,7]);
+            subj.copy_from_slice(&[0,9,2,11,7,16]);
+            cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i+1) as f64);
+
+            super::mul_matrix_expr_transpose(
+                (3,3),
+                None,
+                &[1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,3.3],
+                & mut rs,& mut ws,&mut xs).unwrap();
+        }
+    }
+    #[test]
+    fn test_mul_matrix_expr_transpose_ss() {
+        let mut rs = WorkStack::new(1024);
+        let mut ws = WorkStack::new(1024);
+        let mut xs = WorkStack::new(1024);
+   
+        println!("Sparse x Sparse");
+        {
+            let (ptr,sp,subj,cof) = ws.alloc_expr(&[3,3], 6, 3);
+            ptr.copy_from_slice(&[0,2,4,6]);
+            sp.unwrap().copy_from_slice(&[0,2,7]);
+            subj.copy_from_slice(&[0,9,2,11,7,16]);
+            cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i+1) as f64);
+
+            super::mul_matrix_expr_transpose(
+                (3,3),
+                Some(&[0,2,4,57]),
+                &[1.1,1.3,2.2,2.3,3.2],
+                & mut rs,& mut ws,&mut xs).unwrap();
+        }
+    }
+}
 
