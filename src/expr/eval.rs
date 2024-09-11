@@ -2209,7 +2209,7 @@ mod test {
             assert_eq!(rshape[1],3);
             assert_eq!(rptr.len(),10);
             assert_eq!(rsubj.len(),6*9);
-            assert!(rsubj)
+            //assert!(rsubj)
         }
     }
     #[test]
