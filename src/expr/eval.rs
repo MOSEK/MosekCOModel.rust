@@ -808,7 +808,6 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                     })
                     .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
                     .for_each(|((&j,c),(rj,rc))| { *rj = j; *rc = c; });
-                println!("rptr = {:?}",rptr);
                 // compute ptr
                 let mut it = 
                     izip!(
@@ -826,7 +825,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                               mrowi.iter().zip(mrowc.iter()).inner_join_by(|a,b| (a.0%mshape.1).cmp(&(b.0%shape[1])), izip!(erowi.iter(),erowptrs.iter(),erowptrs[1..].iter())).map(|(a,b)| b.2-b.1).sum::<usize>() ) })
                         .filter(|(_,nnz)| *nnz > 0);
                 // compute sp
-                if let Some(rsp) = rsp {
+                if let Some(rsp) = &rsp {
                     izip!(it,rptr[1..].iter_mut(),rsp.iter_mut())
                         .fold(0,|p,((spi,nnz),rptri,rspi)| { *rptri = p+nnz; *rspi = spi; p+nnz });
                 }
@@ -834,6 +833,10 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                     izip!(it,rptr[1..].iter_mut())
                         .fold(0,|p,((_,nnz),rptri)| { *rptri = p+nnz; p+nnz });
                 }
+                println!("rptr  = {:?}",rptr);
+                if let Some(rsp) { println!("rsp   = {:?}",rsp); }
+                println!("rsubj = {:?}",rsubj);
+                println!("rcof  = {:?}",rcof);
             }
         }
     };
