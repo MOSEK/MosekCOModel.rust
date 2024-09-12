@@ -787,6 +787,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                         })
                         .fold((0,0),|(rnelm,rnnz),(rspi, nnz)| if nnz > 0 { (rnelm+1,rnnz+nnz) } else { (rnelm,rnnz) });
 
+                println!("rnelem = {}, rnnz = {}",rnelem,rnnz);
                 let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
                 rptr[0] = 0;
                 // compute subj/cof
@@ -807,6 +808,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                     })
                     .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
                     .for_each(|((&j,c),(rj,rc))| { *rj = j; *rc = c; });
+                println!("rptr = {:?}",rptr);
                 // compute ptr
                 let mut it = 
                     izip!(
