@@ -339,6 +339,68 @@ impl<T> ChunksByIterMutExt<T> for [T] {
     }
 }
 
+////////////////////////////////////////////////////////////
+
+pub struct InnerJoinBy<I1,I2,F> 
+    where 
+        I1:Iterator, 
+        I2:Iterator, 
+        F:FnMut(&I1::Item,&I2::Item) -> std::cmp::Ordering 
+{
+    i1 : std::iter::Peekable<I1>,
+    i2 : std::iter::Peekable<I2>,
+    f : F
+}
+
+pub trait InnerJoinByExt<I2,F> 
+    where 
+        Self:Iterator+Sized, 
+        I2:Iterator, 
+        F:FnMut(&Self::Item,&I2::Item) -> std::cmp::Ordering 
+{
+    fn inner_join_by(self, f : F, other : I2) -> InnerJoinBy<Self,I2,F> {
+        InnerJoinBy{
+            i1 : self.peekable(),
+            i2 : other.peekable(),
+            f
+        }
+    }
+}
+
+impl<I1,I2,F> InnerJoinByExt<I2,F> for I1
+    where 
+        I1:Iterator, 
+        I2:Iterator, 
+        F:FnMut(&I1::Item,&I2::Item) -> std::cmp::Ordering
+{
+}
+
+impl<T1,T2,I1,I2,F> Iterator for InnerJoinBy<I1,I2,F> 
+    where 
+        T1:Copy,
+        T2:Copy,
+        I1:Iterator<Item=T1>, 
+        I2:Iterator<Item=T2>, 
+        F:FnMut(&I1::Item,&I2::Item) -> std::cmp::Ordering 
+{
+    type Item = (I1::Item,I2::Item);
+    fn next(&mut self) -> Option<Self::Item> {
+        while let (Some(a),Some(b)) = (self.i1.peek(),self.i2.peek()) {
+            match (self.f)(a,b) {
+                std::cmp::Ordering::Less    => { _ = self.i1.next(); }
+                std::cmp::Ordering::Greater => { _ = self.i2.next(); }
+                std::cmp::Ordering::Equal   => { break }
+            }
+        }
+        if let (Some(a),Some(b)) = (self.i1.next(),self.i2.next()) {
+            Some((a,b))
+        }
+        else {
+            None
+        }
+    }
+
+}
 
 ////////////////////////////////////////////////////////////
 

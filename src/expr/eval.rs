@@ -650,15 +650,18 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                 assert!(msp.len() == mdata.len());
 
                 // count nonzero data rows
-                let mnzrows = msp.chunk_by(|a,b| *a / mshape.1 == *b / mshape.1).count();
-                let rnelem = mnzrows * shape[0];
+                let num_nonempty_rows = msp.chunk_by(|a,b| *a / mshape.1 == *b / mshape.1).count();
+                let rnelem = num_nonempty_rows * shape[0];
 
                 // count nonzeros and elements
                 let rnnz = msp.chunk_by(|a,b| *a / mshape.1 == *b / mshape.1)
                     //.scan(0,|p,msprow| { let (p0,p1) = (*p,*p+msprow.len()); Some((msprow, unsafe{ mdata.get_unchecked(p0..p1)})) })
                     .flat_map(|item| std::iter::repeat(item).take(shape[0]))
                     .zip(ptr.chunks(shape[1]).zip(ptr[1..].chunks(shape[1])).cycle())
-                    .fold(0,|rnnz,(msprow,(ptrbs,ptres))| rnnz + msprow.iter().map(|i| unsafe{ *ptres.get_unchecked(i % shape[1]) * *ptrbs.get_unchecked(i % shape[1]) }).sum::<usize>());
+                    .fold(0,|rnnz,(msprow,(ptrbs,ptres))| {
+                        let elmnz = msprow.iter().map(|i| { let i = i % shape[1]; unsafe{ *ptres.get_unchecked(i) - *ptrbs.get_unchecked(i) } }).sum::<usize>();
+                        rnnz + elmnz
+                    });
 
                 let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
                 rptr[0] = 0;
@@ -670,7 +673,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                         ptr.chunks(shape[1]).zip(ptr[1..].chunks(shape[1])).cycle(),
                         rptr[1..].iter_mut())
                     .flat_map(|((msprow,mcofrow),(ptrbs,ptres),rp)| {
-                        *rp = msprow.iter().map(|i| unsafe{ *ptres.get_unchecked(i % shape[1]) * *ptrbs.get_unchecked(i % shape[1]) }).sum();
+                        *rp = msprow.iter().map(|i| unsafe{ *ptres.get_unchecked(i % shape[1]) - *ptrbs.get_unchecked(i % shape[1]) }).sum();
 
                         msprow.iter().zip(mcofrow.iter())
                             .map(|(i,mc)| (mc, unsafe{*ptrbs.get_unchecked(i % shape[1])}, unsafe{*ptres.get_unchecked(i % shape[1])}))
@@ -681,13 +684,17 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                         *rj = j;
                         *rc = c*mc;
                     });
+                rptr.iter_mut().fold(0usize, |p,rp| { *rp += p; *rp });
+
 
                 if let Some(rsp) = rsp {
                     msp.chunk_by(|a,b| *a / mshape.1 == *b / mshape.1)
-                        .flat_map(|item| std::iter::repeat(item).take(shape[0]).enumerate())
+                        .map(|row| unsafe{*row.get_unchecked(0)/mshape.1})
+                        .flat_map(|i| std::iter::repeat(i).zip(0..shape[0]))
                         .zip(rsp.iter_mut())
-                        .for_each(|((j,sprow),rsp)| *rsp = (*sprow.last().unwrap() / mshape.1) + j)
-                        ;
+                        .for_each(|((i,j),rsp)| {
+                            *rsp = i*shape[0]+j;
+                        }) ;
                 }
             }
         },
@@ -697,23 +704,31 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                 rptr[0] = 0;
             }
             else {
-                let nonempty_rows = 1+sp.iter().zip(sp[1..].iter()).filter(|(&i0,&i1)| i0 / shape[1] != i1/shape[1]).count();
+                let nonempty_rows = sp.chunk_by(|&i0,&i1| i0 / shape[1] == i1 / shape[1]).count();
                 let rnelem = mshape.0*nonempty_rows;
                 let rnnz = mshape.0*nnz;
                 
                 let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
-                
+        
                 // build rptr
                 rptr[0] = 0;
                 (0..mshape.0)
-                    .flat_map(|_| sp.chunk_by(|i0,i1| i0/shape[1] == i1/shape[1])
-                                      .scan(0,|p, row| { let (p0,p1) = (*p,*p+row.len()); *p = p1; Some((p0,p1)) }))
+                    .flat_map(|_| {
+                        sp.chunk_by(|i0,i1| i0/shape[1] == i1/shape[1])
+                            .scan(0,|p, row| { 
+                                let (p0,p1) = (*p,*p+row.len()); 
+                                *p = p1;
+                                Some(unsafe{ (ptr.get_unchecked(p0),ptr.get_unchecked(p1)) })
+                            })})
                     .zip(rptr[1..].iter_mut())
-                    .fold(0usize,|p,((p0,p1),rp)| { *rp = p+(p1-p0); *rp });
+                    .fold(0usize,|p,((p0,p1),rp)| {
+                        *rp = p+(p1-p0); 
+                        *rp 
+                    });
 
                 if let Some(rsp) = rsp {
                     (0..mshape.0)
-                        .flat_map(|i| std::iter::repeat(i).zip(sp.chunk_by(|i0,i1| i0/shape[1] == i1/shape[1]).enumerate()))
+                        .flat_map(|i| std::iter::repeat(i).zip(sp.chunk_by(|i0,i1| i0/shape[1] == i1/shape[1]).map(|row| (unsafe{*row.get_unchecked(0)/shape[1]},row))))
                         .map(|(i,(j,_))| i*shape[1]+j )
                         .zip(rsp.iter_mut())
                         .for_each(|(idx,rsp)| *rsp = idx)
@@ -756,41 +771,67 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                 let mut rnelem = 0usize;
                 let mut rnnz = 0usize;
                 // For each matrix row
-                for (p0,p1) in 
-                    msp.iter().chain(std::iter::once(&usize::MAX)).enumerate() 
-                        .scan((0usize,usize::MAX), |(previ,prev),(i,&spi)| Some(if *prev == spi/mshape.1 { (*previ,*previ) } else { *prev = spi/mshape.1; (previ.swap_out(i),i) }) )
-                        .filter(|(p0,p1)| *p0 < *p1 )
-                {
-                    let msp = unsafe{ msp.get_unchecked(p0..p1) };
+                let (rnelem,rnnz) = 
+                    izip!(
+                        msp.chunk_by(|&a,&b| a/mshape.1 == b/mshape.1)
+                            .scan(0,|p,row| { let (p0,p1) = (*p,*p+row.len()); *p = p1; Some((row,unsafe{mdata.get_unchecked(p0..p1)})) } )
+                            .flat_map(|item| std::iter::repeat(item).take(shape[0])),
+                        (0..mshape.0)
+                            .flat_map(|_| sp.chunk_by(|&a,&b| a/shape[1] == b/shape[1])
+                                            .scan(0,|p,row| { let (p0,p1) = (*p,*p+row.len()); *p = p1; Some((row,unsafe{ptr.get_unchecked(p0..p1+1)})) })))
+                        .map(|((mrowi,mrowc),(erowi,erowptrs))| {
+                            let i = unsafe{ *mrowi.get_unchecked(0) } / mshape.1;
+                            let j = unsafe{ *erowi.get_unchecked(0) } / shape[1];
+                            ( i * shape[0] + j,
+                              mrowi.iter().inner_join_by(|&a,b| (a%mshape.1).cmp(&(b.0%shape[1])), izip!(erowi.iter(),erowptrs.iter(),erowptrs[1..].iter())).map(|(_,(_,epb,epe))| epe-epb ).sum::<usize>()) 
+                        })
+                        .fold((0,0),|(rnelm,rnnz),(rspi, nnz)| if nnz > 0 { (rnelm+1,rnnz+nnz) } else { (rnelm,rnnz) });
 
-                    // For each expression row
-                    for (ep0,ep1) in 
-                        sp.iter().chain(std::iter::once(&usize::MAX)).enumerate() 
-                            .scan((0usize,usize::MAX), |(previ,prev),(i,&spi)| Some(if *prev == spi/shape[1] { (*previ,*previ) } else { *prev = spi/shape[1]; (previ.swap_out(i),i) }) )
-                            .filter(|(p0,p1)| *p0 < *p1 )
-                    {
-                        // row intersection
-                        let esp = unsafe{ sp.get_unchecked(ep0..ep1) };
-                        let eptr = unsafe{ ptr.get_unchecked(ep0..ep1+1) };
-                        
-                        let (mut mit,mut eit) = (msp.iter().peekable(),izip!(esp.iter(),eptr.iter(),eptr[1..].iter()).peekable());
-                        while let (Some(&&mi),Some((&ei,&ep0,&ep1))) = (mit.peek(),eit.peek()) {
-                            match (&(mi % mshape.1)).cmp(&(ei % shape[1])) {
-                                std::cmp::Ordering::Less => { _ = mit.next(); },
-                                std::cmp::Ordering::Greater => { _ = eit.next(); },
-                                std::cmp::Ordering::Equal => {
-                                    _ = eit.next();
-                                    _ = mit.next();
-                                    rnelem += 1;
-                                    rnnz += ep1-ep0
-                                }
-                            }
-                        }
-
-                    }
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+                rptr[0] = 0;
+                // compute subj/cof
+                izip!(
+                    msp.chunk_by(|&a,&b| a/mshape.1 == b/mshape.1)
+                        .scan(0,|p,row| { let (p0,p1) = (*p,*p+row.len()); *p = p1; Some((row,unsafe{mdata.get_unchecked(p0..p1)})) } )
+                        .flat_map(|item| std::iter::repeat(item).take(shape[0])),
+                    (0..mshape.0)
+                        .flat_map(|_| sp.chunk_by(|&a,&b| a/shape[1] == b/shape[1])
+                                        .scan(0,|p,row| { let (p0,p1) = (*p,*p+row.len()); *p = p1; Some((row,unsafe{ptr.get_unchecked(p0..p1+1)})) })))
+                    // for each conbination matrix row/expr row
+                    .flat_map(|((mrowi,mrowc),(erowi,erowptrs))| {
+                        mrowi.iter().zip(mrowc.iter()).inner_join_by(|a,b| (a.0%mshape.1).cmp(&(b.0%shape[1])), izip!(erowi.iter(),erowptrs.iter(),erowptrs[1..].iter()))
+                            .flat_map(|((_,&mc),(_,&pb,&pe))| {
+                                let mc : f64 = mc;
+                                unsafe{subj.get_unchecked(pb..pe)}.iter().zip(unsafe{cof.get_unchecked(pb..pe)}.iter().map(move |&c| c * mc))
+                            })
+                    })
+                    .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
+                    .for_each(|((&j,c),(rj,rc))| { *rj = j; *rc = c; });
+                // compute ptr
+                let mut it = 
+                    izip!(
+                        msp.chunk_by(|&a,&b| a/mshape.1 == b/mshape.1)
+                            .scan(0,|p,row| { let (p0,p1) = (*p,*p+row.len()); *p = p1; Some((row,unsafe{mdata.get_unchecked(p0..p1)})) } )
+                            .flat_map(|item| std::iter::repeat(item).take(shape[0])),
+                        (0..mshape.0)
+                            .flat_map(|_| sp.chunk_by(|&a,&b| a/shape[1] == b/shape[1])
+                                            .scan(0,|p,row| { let (p0,p1) = (*p,*p+row.len()); *p = p1; Some((row,unsafe{ptr.get_unchecked(p0..p1+1)})) })))
+                        // for each conbination matrix row/expr row
+                        .map(|((mrowi,mrowc),(erowi,erowptrs))| {
+                            let i = unsafe{ *mrowi.get_unchecked(0) } / mshape.1;
+                            let j = unsafe{ *erowi.get_unchecked(0) } / shape[1];
+                            ( i * shape[0] + j, 
+                              mrowi.iter().zip(mrowc.iter()).inner_join_by(|a,b| (a.0%mshape.1).cmp(&(b.0%shape[1])), izip!(erowi.iter(),erowptrs.iter(),erowptrs[1..].iter())).map(|(a,b)| b.2-b.1).sum::<usize>() ) })
+                        .filter(|(_,nnz)| *nnz > 0);
+                // compute sp
+                if let Some(rsp) = rsp {
+                    izip!(it,rptr[1..].iter_mut(),rsp.iter_mut())
+                        .fold(0,|p,((spi,nnz),rptri,rspi)| { *rptri = p+nnz; *rspi = spi; p+nnz });
                 }
-
-
+                else {
+                    izip!(it,rptr[1..].iter_mut())
+                        .fold(0,|p,((_,nnz),rptri)| { *rptri = p+nnz; p+nnz });
+                }
             }
         }
     };
@@ -2209,7 +2250,8 @@ mod test {
             assert_eq!(rshape[1],3);
             assert_eq!(rptr.len(),10);
             assert_eq!(rsubj.len(),6*9);
-            //assert!(rsubj)
+            assert!(rsubj[0..18].iter().zip([0,9,1,10,2,11,3,12,4,13,5,14,6,15,7,16,8,17].iter()).all(|(&a,&b)| a == b));
+            //assert!(rcof[0..18].iter().step_by(2).zip([1.1,1.2*2.0,1.3*3.0, 1.1*4.0,1.2*5.0,1.3*6.0, 1.1*7.0,1.2*8.0,1.3*9.0 ].iter()).all(|(&a,&b)| (a-b).abs() < 1e-8));
         }
     }
     #[test]
@@ -2226,11 +2268,23 @@ mod test {
             subj[1..].iter_mut().step_by(2).zip(9..18).for_each(|(j,i)| *j = i);
             cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i+1) as f64);
 
+            // | 1.1     1.3 |   | 1(x0+x9)  2(x1+x10) 3(x2+x11) | 
+            // |             | x | 4(x3+x12) 5(x4+x13) 6(x5+x14) |
+            // |     3.2     |   | 7(x6+x15) 8(x7+x16) 9(x8+x17) |
+
             super::mul_matrix_expr_transpose(
                 (3,3),
                 Some(&[0,2,7]),
                 &[1.1,1.3,3.2],
                 & mut rs,& mut ws,&mut xs).unwrap();
+            
+            let (rshape,rptr,rsp,rsubj,rcof) = rs.pop_expr();
+
+            assert_eq!(rshape,&[3,3]);
+            assert_eq!(rptr,&[0,4,8,12,14,16,18]);
+            assert_eq!(rsubj,&[0,9,2,11,3,12,5,14,6,15,8,17, 1,10,4,13,7,16]);
+            assert_eq!(rsp.unwrap(),&[0,1,2,6,7,8]);
+            //assert!(rcof.iter().step_by(2).zip([1.1, 1.3*3.0, 1.1*4.0, 1.3*6.0, 3.2*2.0, 3.2*5.0, 3.2*8.0].iter()).all(|(&a,&b)| (a-b).abs() < 1e-8));
         }
     }
     #[test]
@@ -2247,11 +2301,27 @@ mod test {
             subj.copy_from_slice(&[0,9,2,11,7,16]);
             cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i+1) as f64);
 
+            // | 1.1 1.2 1.3 |   | 1(x0+x9)            2(x2+x11) | 
+            // | 2.1 2.2 2.3 | x |                               |
+            // | 3.1 3.2 3.3 |   |           3(x7+x16)           |
+
             super::mul_matrix_expr_transpose(
                 (3,3),
                 None,
                 &[1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,3.3],
                 & mut rs,& mut ws,&mut xs).unwrap();
+            
+            let (rshape,rptr,rsp,rsubj,rcof) = rs.pop_expr();
+
+            assert_eq!(rshape.len(),2);
+            assert_eq!(rshape[0],3);
+            assert_eq!(rshape[1],3);
+            assert_eq!(rptr,&[0,4,6,10,12,16,18]);
+            let expect_subj = &[0,9,2,11, 7,16, 0,9,2,11, 7,16, 0,9,2,11, 7,16];
+            println!("rsubj = {:?}\n        {:?}",rsubj,expect_subj);
+            assert_eq!(rsp.unwrap(),&[0,2,3,5,6,8]);
+            assert_eq!(rsubj,expect_subj);
+            //assert!(rcof.iter().step_by(2).zip([1.1,1.3*2.0, 1.2*3.0, 2.1*1.0, 2.3*2.0, 2.2*3.0, 3.1*1.0, 3.3*2.0, 3.2*3.0].iter()).all(|(&a,&b)| (a-b).abs() < 1e-8));
         }
     }
     #[test]
@@ -2270,9 +2340,23 @@ mod test {
 
             super::mul_matrix_expr_transpose(
                 (3,3),
-                Some(&[0,2,4,57]),
+                Some(&[0,2,4,5,7]),
                 &[1.1,1.3,2.2,2.3,3.2],
                 & mut rs,& mut ws,&mut xs).unwrap();
+            
+            let (rshape,rptr,rsp,rsubj,rcof) = rs.pop_expr();
+            // | 1.1     1.3 |   | 1(x0+x9)            2(x2+x11) | 
+            // |             | x |           3(x4+x13) 4(x5+x14) |
+            // |     3.2     |   |           5(x7+x16)           |
+
+            assert_eq!(rshape.len(),2);
+            assert_eq!(rshape[0],3);
+            assert_eq!(rshape[1],3);
+            assert_eq!(rptr.len(),5);
+            assert_eq!(rsubj.len(),10);
+            assert!(rsp.unwrap().iter().zip([0,1,7,8].iter()).all(|(&a,&b)| a==b));
+            assert!(rsubj.iter().zip([0,9,2,11, 5,14, 4,13, 7,16].iter()).all(|(&a,&b)| a==b));
+            //assert!(rcof.iter().step_by(2).zip([1.1, 1.3*2.0, 1.3*4.0, 3.2*3.0, 3.2*5.0].iter()).all(|(&a,&b)| (a-b).abs() < 1e-8));
         }
     }
 }
