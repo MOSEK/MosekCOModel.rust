@@ -11,8 +11,8 @@ periodic_hold = JobStatus == 2 && (CurrentTime - EnteredCurrentStatus) > 8100
 
 nice_user     = True
 request_cpus  = TotalCpus
-#Requirements  = regexp("vo",machine) == true
-Requirements  = regexp("espe",machine) == true
+Requirements  = regexp("vo",machine) == true
+#Requirements  = regexp("espe",machine) == true
 
 #arguments     = test
 log           = condor/job.log
