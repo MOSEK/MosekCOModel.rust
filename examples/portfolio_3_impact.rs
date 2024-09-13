@@ -69,7 +69,6 @@ fn markowitz_impact(n : usize,
 
 #[allow(non_upper_case_globals)]
 #[allow(non_snake_case)]
-#[test]
 fn main() {
     const n : usize = 8;
     let w = 1.0;
@@ -98,3 +97,5 @@ fn main() {
              m.iter().zip(tsol.iter()).map(|(&m,&t)| m*t).sum::<f64>());
     println!("Optimal portfolio: {:?}", xsol);
 }
+#[test]
+fn test() { main() }
