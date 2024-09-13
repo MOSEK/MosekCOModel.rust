@@ -98,7 +98,7 @@ impl<E, M> ExprLeftMultipliable<1,E> for M
         let (shape,sp,data) = self.dissolve();
         ExprReshapeOneRow{
             item : ExprMulMEt{
-                item : ExprReshapeOneRow{ item: rhs, dim : 0 },
+                item : ExprReshapeOneRow{ item: rhs, dim : 1 },
                 shape,
                 data,
                 sp},
