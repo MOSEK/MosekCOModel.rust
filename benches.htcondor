@@ -1,0 +1,20 @@
+initial_dir   = /home/ulfw/Projects/MosekModel.rs
+
+executable            = condor/run_benchmarks.sh
+batch_name            = some-batch-name
+should_transfer_files = FALSE
+transfer_executable   = False
+universe              = vanilla
+request_memory        = 31872MB
+
+periodic_hold = JobStatus == 2 && (CurrentTime - EnteredCurrentStatus) > 8100
+
+nice_user     = True
+request_cpus  = TotalCpus
+#Requirements  = regexp("vo",machine) == true
+Requirements  = regexp("espe",machine) == true
+
+#arguments     = test
+log           = condor/job.log
+
+queue
