@@ -1,4 +1,4 @@
-use super::{eval, ExprEvalError, ExprReshapeOneRow, ExprTrait};
+use super::{eval, ExprEvalError, ExprPermuteAxes, ExprReshapeOneRow, ExprTrait};
 use super::workstack::WorkStack;
 use super::matrix::Matrix;
 
@@ -64,32 +64,40 @@ pub trait ExprLeftMultipliable<const N : usize,E>
     fn mul(self,other : E) -> Self::Result;
 }
 
+// Multiply matrix and 2D expression
 impl<E, M> ExprLeftMultipliable<2,E> for M 
     where 
         M : Matrix,
         E : ExprTrait<2>
 {
-    type Result = ExprMulLeft<E>;
+    type Result = ExprMulMEt<ExprPermuteAxes<2,E>>;
     fn mul(self,rhs : E) -> Self::Result {
         let (shape,sp,data) = self.dissolve();
-        ExprMulLeft{
-            item : rhs,
+        ExprMulMEt{ 
+            item : ExprPermuteAxes{ item:rhs, perm: [1,0] },
             shape,
-            data,
-            sp}
+            sp,
+            data
+        }
+        //ExprMulLeft{
+        //    item : rhs,
+        //    shape,
+        //    data,
+        //    sp}
     }
 }
 
+// Multiply matrix and vector expression
 impl<E, M> ExprLeftMultipliable<1,E> for M 
     where 
         M : Matrix,
         E : ExprTrait<1>
 {
-    type Result = ExprReshapeOneRow<2,1,ExprMulLeft<ExprReshapeOneRow<1,2,E>>>;
+    type Result = ExprReshapeOneRow<2,1,ExprMulMEt<ExprReshapeOneRow<1,2,E>>>;
     fn mul(self,rhs : E) -> Self::Result {
         let (shape,sp,data) = self.dissolve();
         ExprReshapeOneRow{
-            item : ExprMulLeft{
+            item : ExprMulMEt{
                 item : ExprReshapeOneRow{ item: rhs, dim : 0 },
                 shape,
                 data,
@@ -99,17 +107,18 @@ impl<E, M> ExprLeftMultipliable<1,E> for M
     }
 }
 
+// multiply vector and 2D Expression
 impl<E> ExprLeftMultipliable<2,E> for Vec<f64>
     where 
         E : ExprTrait<2>
 {
-    type Result = ExprReshapeOneRow<2,1,ExprMulLeft<E>>;
+    type Result = ExprReshapeOneRow<2,1,ExprMulMEt<ExprPermuteAxes<2,E>>>;
     fn mul(self,rhs : E) -> Self::Result {
         let shape = [1,self.len()];
         let data = self;
         ExprReshapeOneRow{
-            item : ExprMulLeft{
-                item : rhs,
+            item : ExprMulMEt{
+                item : ExprPermuteAxes{ item : rhs, perm : [1,0] },
                 shape,
                 data,
                 sp : None},
@@ -117,19 +126,14 @@ impl<E> ExprLeftMultipliable<2,E> for Vec<f64>
     }
 }
 
+// multiply vector and 2D Expression
 impl<E> ExprLeftMultipliable<2,E> for &[f64]
     where 
         E : ExprTrait<2>
 {
-    type Result = ExprReshapeOneRow<2,1,ExprMulLeft<E>>;
+    type Result = ExprReshapeOneRow<2,1,ExprMulMEt<ExprPermuteAxes<2,E>>>;
     fn mul(self,rhs : E) -> Self::Result {
-        ExprReshapeOneRow{
-            item : ExprMulLeft{
-                item : rhs,
-                shape : [1,self.len()],
-                data : self.to_vec(),
-                sp : None},
-            dim : 0 }
+        self.to_vec().mul(rhs)
     }
 }
 

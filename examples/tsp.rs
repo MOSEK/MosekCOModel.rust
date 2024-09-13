@@ -74,6 +74,7 @@ fn tsp(n : usize, A : & NDArray<2>, C : &NDArray<2>, remove_selfloops: bool, rem
     (vec![],vec![])
 }
 
+#[test]
 #[allow(non_snake_case)]
 fn main() {
     let A_ij : &[[usize;2]] = &[[0,1],[0,2],[0,3],[1,0],[1,2],[2,1],[2,3],[3,0]];

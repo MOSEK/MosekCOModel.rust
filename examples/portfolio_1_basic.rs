@@ -45,6 +45,7 @@ fn basic_markowitz( n : usize,
 }
 
 ///  The example. Reads in data and solves the portfolio models.
+#[test]
 #[allow(non_upper_case_globals)]
 #[allow(non_snake_case)]
 fn main() {

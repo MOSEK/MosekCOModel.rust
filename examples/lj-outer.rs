@@ -100,7 +100,7 @@ fn lowner_john_outer<const N : usize>(x : &[[f64;N]]) -> Option<(SolutionStatus,
     }
 }
 
-
+#[test]
 #[allow(non_snake_case)]
 fn main() {
     let points = &[[0., 0.], [1., 3.], [5.5, 4.5], [7., 4.], [7., 1.], [3., -2.]];

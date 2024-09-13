@@ -127,6 +127,7 @@ impl Node {
     }
 }
 
+#[test]
 fn main() {
     let nodes = &[ Node::new(None, 20.0),
                    Node::new(None, 0.0),

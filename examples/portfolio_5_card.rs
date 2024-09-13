@@ -81,6 +81,7 @@ fn markowitz_with_cardinality(mu : &[f64],
 
 #[allow(non_upper_case_globals)]
 #[allow(non_snake_case)]
+#[test]
 fn main() {
     const n : usize = 8;
     const m : usize = 8;

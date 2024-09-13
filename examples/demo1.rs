@@ -2,6 +2,7 @@ extern crate mosekmodel;
 
 use mosekmodel::*;
 
+#[test]
 fn main() -> Result<(),String> {
     let mut m = Model::new(Some("SuperModel"));
 

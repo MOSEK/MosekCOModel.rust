@@ -23,6 +23,7 @@
 extern crate mosekmodel;
 use mosekmodel::*;
 
+#[test]
 fn main() {
     let mut m = Model::new(Some("sdo1"));
     // Setting up the variables

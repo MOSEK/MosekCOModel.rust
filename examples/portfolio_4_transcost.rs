@@ -86,6 +86,7 @@ fn markowitz_with_transactions_cost( mu : &[f64],
       model.primal_solution(SolutionType::Integer, &z).unwrap() )
 }
 
+#[test]
 #[allow(non_snake_case)]
 #[allow(non_upper_case_globals)]
 fn main() {

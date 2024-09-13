@@ -13,6 +13,7 @@
 extern crate mosekmodel;
 use mosekmodel::*;
 
+#[test]
 fn main() {
     //TAG:begin-create-model
     let mut m = Model::new(Some("ceo1"));

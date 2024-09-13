@@ -1908,30 +1908,6 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
             *p = nzi;
         });
 
-//        let d01 = d * (d+1) / 2;
-//        let num : usize = tshape[0..tshape.len()-2].product();
-//
-//        let rnelm = d01 * num;
-//        let rnnz = izip!(ptr.chunks(d01),
-//                         ptr[1..].chunks(d01))
-//            .map(|(pb,pe)| 
-//                 izip!((0..d).flat_map(|i| std::iter::repeat(i).zip(0..i+1)), 
-//                       pb.iter(),
-//                       pe.iter())
-//                    .map(|((i,j),&b,&e)| if i==j { e-b } else { 2*(e-b) }))
-//            .sum();
-//        let (rptr,rsp,rsubj,rval) = rs.alloc_expr(tshape,rnnz, rnelm);
-//        rptr[0] = 0;
-//        izip!(ptr.chunks(d01),
-//              ptr[1..].chunks(d01),
-//              rptr[1..].dchunks(d*d))
-//            .map(|(pb,pe)| 
-//                 izip!(pb.iter(),
-//                       pe.iter())
-//                    .map(|((i,j),&b,&e)| if i==j { e-b } else { 2*(e-b) }))
-//            .sum();
-//
-//        `
     }
     rs.check();
     Ok(())
@@ -2116,106 +2092,6 @@ pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut Work
         rptr.copy_from_slice(xptr);
     }
 
-//---
-//---
-//---    let maxj = subj.iter().max().unwrap_or(&0);
-//---    let (jj,ff) = xs.alloc(maxj*2+2,maxj+1);
-//---    let (jj,jjind) = jj.split_at_mut(maxj+1);
-//---
-//---
-//---    let mut ii  = 0;
-//---    let mut nzi = 0;
-//---    rptr[0] = 0;
-//---
-//---    subj.iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
-//---
-//---    if let Some(sp) = sp {
-//---        println!("eval_finalize(), Sparse");
-//---        
-//---        rsubj.copy_from_slice(subj);
-//---        rcof.copy_from_slice(cof);
-//---        
-//---        let (strides,_) = xs.alloc(nd,0);
-//---        strides.iter_mut().zip(shape.iter()).fold(1usize, |c,(s,&d)| { *s = c; d*c });
-//---
-//---
-//---
-//---
-//---
-//---        for (&i,&p0,&p1) in izip!(sp, ptr[0..ptr.len()-1].iter(), ptr[1..].iter()) {
-//---            if ii < i { rptr[ii+1..i+1].fill(nzi); ii = i; }
-//---
-//---            let mut rownzi : usize = 0;
-//---            subj[p0..p1].iter().for_each(|&j| unsafe{ *jjind.get_unchecked_mut(j) = 0; });
-//---            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
-//---                if c == 0.0 {}
-//---                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
-//---                    unsafe{
-//---                        *jjind.get_unchecked_mut(j)   = 1;
-//---                        *jj.get_unchecked_mut(rownzi) = j;
-//---                        *ff.get_unchecked_mut(j)      = c;
-//---                    }
-//---                    rownzi += 1;
-//---                }
-//---                else {
-//---                    unsafe{
-//---                        *ff.get_unchecked_mut(j) += c;
-//---                    }
-//---                }
-//---            });
-//---
-//---            izip!(jj[0..rownzi].iter(),
-//---                  rsubj[nzi..nzi+rownzi].iter_mut(),
-//---                  rcof[nzi..nzi+rownzi].iter_mut())
-//---                .for_each(|(&j,rj,rc)| {
-//---                    *rc = unsafe{ *ff.get_unchecked(j) };
-//---                    unsafe{ *jjind.get_unchecked_mut(j) = 0; };
-//---                    *rj = j;
-//---                });
-//---
-//---            nzi += rownzi;
-//---            // println!("ExprTrait::eval_finalize sparse: nzi = {}",nzi);
-//---            rptr[i+1] = nzi;
-//---            ii += 1;
-//---        }
-//---    }
-//---    else {
-//---        for (&p0,&p1,rp) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),rptr[1..].iter_mut()) {
-//---
-//---            let mut rownzi : usize = 0;
-//---
-//---            subj[p0..p1].iter().zip(cof[p0..p1].iter()).for_each(|(&j,&c)| {
-//---                // println!("-- j = {}, c = {}, ind = {}",j,c,jjind[j]);
-//---                if c == 0.0 {}
-//---                else if (unsafe{ *jjind.get_unchecked(j) } == 0 ) {
-//---                    unsafe{
-//---                        *jjind.get_unchecked_mut(j)   = 1;
-//---                        *jj.get_unchecked_mut(rownzi) = j;
-//---                        *ff.get_unchecked_mut(j)      = c;
-//---                    }
-//---                    rownzi += 1;
-//---                }
-//---                else {
-//---                    unsafe{ *ff.get_unchecked_mut(j) += c; }
-//---                }
-//---            });
-//---
-//---            izip!(jj[0..rownzi].iter(),
-//---                  rsubj[nzi..nzi+rownzi].iter_mut(),
-//---                  rcof[nzi..nzi+rownzi].iter_mut()).for_each(|(&j,rj,rc)| {
-//---                      *rc = unsafe{ *ff.get_unchecked(j) };
-//---                      unsafe{ *jjind.get_unchecked_mut(j) = 0; };
-//---                      *rj = j;
-//---                  });
-//---
-//---            jj[0..rownzi].fill(0);
-//---
-//---            nzi += rownzi;
-//---            // println!("ExprTrait::eval_finalize dense: nzi = {}",nzi);
-//---            *rp = nzi;
-//---            ii += 1;
-//---        }
-//---    }
     rs.check();
     Ok(())
 } // eval_finalize

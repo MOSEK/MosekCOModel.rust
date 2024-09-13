@@ -48,6 +48,7 @@ fn total_var(sigma : f64, f : &NDArray<2>) -> (Model,Variable<2>,Constraint<0>) 
 }
 
 
+#[test]
 #[allow(non_snake_case)]
 fn main() {
     let n : usize = 10;

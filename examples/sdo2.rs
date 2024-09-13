@@ -19,6 +19,7 @@ use mosekmodel::*;
 
 
 #[allow(non_snake_case)]
+#[test]
 fn main() {
     // Since the value of infinity is ignored, we define it solely
     // for symbolic purposes
