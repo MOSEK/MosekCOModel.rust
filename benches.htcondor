@@ -1,7 +1,7 @@
 initial_dir   = /home/ulfw/Projects/MosekModel.rs
 
 executable            = condor/run_benchmarks.sh
-batch_name            = some-batch-name
+batch_name            = RUST Rusion Benchmarks
 should_transfer_files = FALSE
 transfer_executable   = False
 universe              = vanilla
