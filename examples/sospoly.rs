@@ -185,7 +185,6 @@ fn fitpoly(data : & NDArray<2>, n : usize) -> Vec<f64> {
 }
 
 
-#[test]
 fn main() {
     let data = matrix::dense([3,2],
                              vec![ -1.0, 1.0,
@@ -200,3 +199,5 @@ fn main() {
     println!("fitpoly(data,4) -> {:?}",x4);
     println!("fitpoly(data,8) -> {:?}",x8);
 }
+#[test]
+fn test() { main() }

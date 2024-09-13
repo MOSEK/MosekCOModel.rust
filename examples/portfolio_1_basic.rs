@@ -45,7 +45,6 @@ fn basic_markowitz( n : usize,
 }
 
 ///  The example. Reads in data and solves the portfolio models.
-#[test]
 #[allow(non_upper_case_globals)]
 #[allow(non_snake_case)]
 fn main() {
@@ -72,4 +71,6 @@ fn main() {
       println!("Expected return: {:.4e} Std. deviation: {:.4e}", expret, gamma);
     }
 }
+#[test]
+fn test() { main() }
 

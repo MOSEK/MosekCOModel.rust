@@ -86,7 +86,6 @@ fn markowitz_with_transactions_cost( mu : &[f64],
       model.primal_solution(SolutionType::Integer, &z).unwrap() )
 }
 
-#[test]
 #[allow(non_snake_case)]
 #[allow(non_upper_case_globals)]
 fn main() {
@@ -118,3 +117,5 @@ fn main() {
              gamma,
              f.iter().zip(zsol.iter()).map(|(&a,&b)| a*b).sum::<f64>()+g.iter().zip(zsol.iter()).map(|(&a,&b)| a*b).sum::<f64>());
 }
+#[test]
+fn test() { main() }

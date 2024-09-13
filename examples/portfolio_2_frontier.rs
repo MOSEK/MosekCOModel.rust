@@ -56,7 +56,6 @@ fn efficient_frontier( n : usize,
 
 /// The example. Reads in data and solves the portfolio models.
 #[allow(non_snake_case)]
-#[test]
 fn main() {
     let n : usize = 8;
     let w  = 1.0;
@@ -85,3 +84,5 @@ fn main() {
       println!("\t{:-12.4}  {:-12.4e}  {:-12.4e}", alpha, fmux, s.sqrt());
     }
 }
+#[test]
+fn test() { main() }

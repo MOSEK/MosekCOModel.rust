@@ -29,7 +29,6 @@ fn rand_matrix(shape : [usize;2]) -> NDArray<2> {
 
 
 #[allow(non_snake_case)]
-#[test]
 fn main() {
     // Sample input data
     const n :usize = 100;
@@ -74,3 +73,5 @@ fn main() {
     }
 }
 
+#[test]
+fn test() { main() }

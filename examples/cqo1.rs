@@ -22,7 +22,6 @@
 extern crate mosekmodel;
 use mosekmodel::*;
 
-#[test]
 fn main() {
     let mut m = Model::new(Some("cqo1"));
     let x = m.variable(Some("x"), greater_than(vec![0.0;3]));
@@ -73,3 +72,5 @@ fn main() {
     println!("qc1 dual conic var levels = {:?}", qc1sn);
 }
 
+#[test]
+fn test() { main() }
