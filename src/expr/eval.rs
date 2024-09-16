@@ -2226,7 +2226,7 @@ mod test {
             ptr.copy_from_slice(&[0,2,4,6]);
             sp.unwrap().copy_from_slice(&[0,2,7]);
             subj.copy_from_slice(&[0,9,2,11,7,16]);
-            cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i+1) as f64);
+            cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i/2+1) as f64);
 
             super::mul_matrix_expr_transpose(
                 (3,3),
@@ -2237,7 +2237,7 @@ mod test {
             let (rshape,rptr,rsp,rsubj,rcof) = rs.pop_expr();
             // | 1.1     1.3 |   | 1(x0+x9)            2(x2+x11) | 
             // |     2.2 2.3 | x |                               |
-            // |     3.2     |   |           5(x7+x16)           |
+            // |     3.2     |   |           3(x7+x16)           |
 
             //   | A11*B11+A13*B13  .  .       |
             // = | A23*B13          .  A22*B32 |
@@ -2247,7 +2247,7 @@ mod test {
             assert_eq!(rptr,&[0,4,6,8,10]);
             assert_eq!(rsp.unwrap(),&[0,3,5,8]);
             assert_eq!(rsubj,&[0,9,2,11, 2,11, 7,16, 7,16]);
-            assert_eq!(rcof, &[1.1,1.1, 1.3*2.0,1.3*2.0,   2.3*2.0,2.3*2.0,  2.2*5.0,2.2*5.0,   3.2*5.0,3.2*5.0]);
+            assert_eq!(rcof, &[1.1,1.1, 1.3*2.0,1.3*2.0,   2.3*2.0,2.3*2.0,  2.2*3.0,2.2*3.0,   3.2*3.0,3.2*3.0]);
             //assert!(rcof.iter().step_by(2).zip([1.1, 1.3*2.0, 1.3*4.0, 3.2*3.0, 3.2*5.0].iter()).all(|(&a,&b)| (a-b).abs() < 1e-8));
         }
     }
