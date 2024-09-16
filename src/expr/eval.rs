@@ -634,15 +634,12 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
             // build rsubj
             for jj in rsubj.chunks_mut(nnz) { jj.copy_from_slice(subj); }
             // build cof
-            println!("cof = {:?}",cof);
-            println!("mdata = {:?}",mdata);
             izip!(mdata.chunks(mshape.1).flat_map(|mrow| std::iter::repeat(mrow).take(shape[0])),
                   ptr.chunks(mshape.1).zip(ptr[1..].chunks(mshape.1)).cycle())
                 .flat_map(|(mrow,(ptrbs,ptres))| izip!(mrow.iter(), ptrbs.iter(),ptres.iter()))
                 .flat_map(|(mc,&p0,&p1)| izip!(std::iter::repeat(mc).take(p1-p0)))
                 .zip(rcof.iter_mut().zip(cof.iter().cycle()))
                 .for_each(|(mc,(rc,&c))| {
-                    println!("rc : {} * {} = {}",c,mc,*rc);
                     *rc = c*mc;
                 });
         },
@@ -715,7 +712,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                 let rnnz = mshape.0*nnz;
                 
                 let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
-        
+       
                 // build rptr
                 rptr[0] = 0;
                 (0..mshape.0)
@@ -747,9 +744,9 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                 // build subj, cof
                 mdata.chunks(mshape.1)
                     .flat_map(|mrow| std::iter::repeat(mrow).take(nonempty_rows)) // repeat each matrix
-                                                                             // row shape[0] times.
+                                                                                  // row shape[0] times.
                     .zip(
-                        (0..shape[0]).flat_map(|_| {
+                        (0..mshape.0).flat_map(|_| {
                             sp.chunk_by(|i0,i1| i0/shape[1] == i1/shape[1])
                                 .scan(0,|p,esprow| {
                                     let (p0,p1) = (*p,*p+esprow.len());
@@ -762,8 +759,8 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                               eptr[1..].iter())
                     })
                     .flat_map(|(mc,&p0,&p1)| izip!(std::iter::repeat(mc),unsafe{cof.get_unchecked(p0..p1)}.iter()))
-                    .zip(rcof.iter_mut())
-                    .for_each(|((mc,c),rc)| { 
+                    .zip(rcof.iter_mut().enumerate())
+                    .for_each(|((mc,c),(i,rc))| { 
                         *rc = mc*c; 
                     })
                     ;
