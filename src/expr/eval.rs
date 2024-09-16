@@ -634,6 +634,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
             // build rsubj
             for jj in rsubj.chunks_mut(nnz) { jj.copy_from_slice(subj); }
             // build cof
+            println!("cof = {:?}",cof);
             izip!(mdata.chunks(mshape.1).flat_map(|mrow| std::iter::repeat(mrow).take(shape[0])),
                   ptr.chunks(mshape.1).zip(ptr[1..].chunks(mshape.1)).cycle())
                 .flat_map(|(mrow,(ptrbs,ptres))| izip!(mrow.iter(), ptrbs.iter(),ptres.iter()))
@@ -806,7 +807,6 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                             .flat_map(|((_,&mc),(_,&pb,&pe))| {
                                 let mc : f64 = mc;
                                 //println!("i,j = {},{}, pb = {}, pe = {}",mi%mshape.1,ei%shape[1],pb,pe);
-                                println!("cof row = {:?} mc = {}",&cof[pb..pe],mc);
                                 unsafe{subj.get_unchecked(pb..pe)}.iter().zip(unsafe{cof.get_unchecked(pb..pe)}.iter().map(move |&c| c * mc))
                             })
                     })
