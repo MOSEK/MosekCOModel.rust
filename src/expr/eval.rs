@@ -668,15 +668,16 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
 
                 izip!(
                     msp.chunk_by(|a,b| *a / mshape.1 == *b / mshape.1)
-                        .scan(0,|p,msprow| { let (p0,p1) = (*p,*p+msprow.len()); Some((msprow, unsafe{ mdata.get_unchecked(p0..p1)})) })
+                        .scan(0,|p,msprow| { let (p0,p1) = (*p,*p+msprow.len()); *p = p1; Some((msprow, unsafe{ mdata.get_unchecked(p0..p1)})) })
                         .flat_map(|item| std::iter::repeat(item).take(shape[0])),
                         ptr.chunks(shape[1]).zip(ptr[1..].chunks(shape[1])).cycle(),
                         rptr[1..].iter_mut())
                     .flat_map(|((msprow,mcofrow),(ptrbs,ptres),rp)| {
                         *rp = msprow.iter().map(|i| unsafe{ *ptres.get_unchecked(i % shape[1]) - *ptrbs.get_unchecked(i % shape[1]) }).sum();
-
                         msprow.iter().zip(mcofrow.iter())
-                            .map(|(i,mc)| (mc, unsafe{*ptrbs.get_unchecked(i % shape[1])}, unsafe{*ptres.get_unchecked(i % shape[1])}))
+                            .map(move |(i,mc)| {
+                                (mc, unsafe{*ptrbs.get_unchecked(i % shape[1])}, unsafe{*ptres.get_unchecked(i % shape[1])})
+                            })
                     })
                     .flat_map(|(mc,p0,p1)| izip!(std::iter::repeat(mc),unsafe{ subj.get_unchecked(p0..p1)}, unsafe{ cof.get_unchecked(p0..p1)}))
                     .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
@@ -740,7 +741,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
 
                 // build subj, cof
                 mdata.chunks(mshape.1)
-                    .flat_map(|mrow| std::iter::repeat(mrow).take(shape[0])) // repeat each matrix
+                    .flat_map(|mrow| std::iter::repeat(mrow).take(nonempty_rows)) // repeat each matrix
                                                                              // row shape[0] times.
                     .zip(
                         (0..shape[0]).flat_map(|_| {
@@ -757,13 +758,15 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                     })
                     .flat_map(|(mc,&p0,&p1)| izip!(std::iter::repeat(mc),unsafe{cof.get_unchecked(p0..p1)}.iter()))
                     .zip(rcof.iter_mut())
-                    .for_each(|((mc,c),rc)| *rc = mc*c)
+                    .for_each(|((mc,c),rc)| { 
+                        *rc = mc*c; 
+                    })
                     ;
             }
         },
         (Some(msp),Some(sp)) => {
             if msp.is_empty() || sp.is_empty() {
-                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, 0,0);
+                let (rptr,_rsp,_rsubj,_rcof) = rs.alloc_expr(&rshape, 0,0);
                 rptr[0] = 0;
             }
             else {
@@ -799,11 +802,11 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                                         .scan(0,|p,row| { let (p0,p1) = (*p,*p+row.len()); *p = p1; Some((row,unsafe{ptr.get_unchecked(p0..p1+1)})) })))
                     // for each conbination matrix row/expr row
                     .flat_map(|((mrowi,mrowc),(erowi,erowptrs))| {
-
                         mrowi.iter().zip(mrowc.iter()).inner_join_by(|a,b| (a.0%mshape.1).cmp(&(b.0%shape[1])), izip!(erowi.iter(),erowptrs.iter(),erowptrs[1..].iter()))
                             .flat_map(|((&mi,&mc),(&ei,&pb,&pe))| {
                                 let mc : f64 = mc;
                                 //println!("i,j = {},{}, pb = {}, pe = {}",mi%mshape.1,ei%shape[1],pb,pe);
+                                println!("cof row = {:?} mc = {}",&cof[pb..pe],mc);
                                 unsafe{subj.get_unchecked(pb..pe)}.iter().zip(unsafe{cof.get_unchecked(pb..pe)}.iter().map(move |&c| c * mc))
                             })
                     })
@@ -2115,7 +2118,7 @@ mod test {
             ptr.iter_mut().zip((0..20).step_by(2)).for_each(|(p,i)| *p = i);
             subj.iter_mut().step_by(2).zip(0..9).for_each(|(j,i)| *j = i);
             subj[1..].iter_mut().step_by(2).zip(9..18).for_each(|(j,i)| *j = i);
-            cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i+1) as f64);
+            cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i/2+1) as f64);
 
             super::mul_matrix_expr_transpose(
                 (3,3),
@@ -2133,7 +2136,9 @@ mod test {
             assert_eq!(rsubj,&[0,9,1,10,2,11, 3,12,4,13,5,14, 6,15,7,16,8,17,
                                0,9,1,10,2,11, 3,12,4,13,5,14, 6,15,7,16,8,17,
                                0,9,1,10,2,11, 3,12,4,13,5,14, 6,15,7,16,8,17]);
-            //assert!(rcof[0..18].iter().step_by(2).zip([1.1,1.2*2.0,1.3*3.0, 1.1*4.0,1.2*5.0,1.3*6.0, 1.1*7.0,1.2*8.0,1.3*9.0 ].iter()).all(|(&a,&b)| (a-b).abs() < 1e-8));
+            assert_eq!(rcof, &[ 1.1, 1.1, 1.2*2.0,1.2*2.0, 1.3*3.0,1.3*3.0,   1.1*4.0,1.1*4.0, 1.2*5.0,1.2*5.0, 1.3*6.0,1.3*6.0,   1.1*7.0,1.1*7.0, 1.2*8.0,1.2*8.0, 1.3*9.0,1.3*9.0,
+                                2.1, 2.1, 2.2*2.0,2.2*2.0, 2.3*3.0,2.3*3.0,   2.1*4.0,2.1*4.0, 2.2*5.0,2.2*5.0, 2.3*6.0,2.3*6.0,   2.1*7.0,2.1*7.0, 2.2*8.0,2.2*8.0, 2.3*9.0,2.3*9.0,
+                                3.1, 3.1, 3.2*2.0,3.2*2.0, 3.3*3.0,3.3*3.0,   3.1*4.0,3.1*4.0, 3.2*5.0,3.2*5.0, 3.3*6.0,3.3*6.0,   3.1*7.0,3.1*7.0, 3.2*8.0,3.2*8.0, 3.3*9.0,3.3*9.0 ])
         }
     }
     #[test]
@@ -2148,7 +2153,7 @@ mod test {
             ptr.iter_mut().zip((0..20).step_by(2)).for_each(|(p,i)| *p = i);
             subj.iter_mut().step_by(2).zip(0..9).for_each(|(j,i)| *j = i);
             subj[1..].iter_mut().step_by(2).zip(9..18).for_each(|(j,i)| *j = i);
-            cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i+1) as f64);
+            cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i/2+1) as f64);
 
             // | 1.1     1.3 |   | 1(x0+x9)  2(x1+x10) 3(x2+x11) | 
             // |             | x | 4(x3+x12) 5(x4+x13) 6(x5+x14) |
@@ -2166,7 +2171,8 @@ mod test {
             assert_eq!(rptr,&[0,4,8,12,14,16,18]);
             assert_eq!(rsubj,&[0,9,2,11,3,12,5,14,6,15,8,17, 1,10,4,13,7,16]);
             assert_eq!(rsp.unwrap(),&[0,1,2,6,7,8]);
-            //assert!(rcof.iter().step_by(2).zip([1.1, 1.3*3.0, 1.1*4.0, 1.3*6.0, 3.2*2.0, 3.2*5.0, 3.2*8.0].iter()).all(|(&a,&b)| (a-b).abs() < 1e-8));
+            assert_eq!(rcof, &[1.1,1.1, 1.3*3.0,1.3*3.0,   1.1*4.0,1.1*4.0, 1.3*6.0,1.3*6.0,   1.1*7.0,1.1*7.0, 1.3*9.0,1.3*9.0,
+                               3.2*2.0,3.2*2.0,   3.2*5.0,3.2*5.0,  3.2*8.0,3.2*8.0 ]);
         }
     }
     #[test]
@@ -2181,7 +2187,7 @@ mod test {
             ptr.copy_from_slice(&[0,2,4,6]);
             sp.unwrap().copy_from_slice(&[0,2,7]);
             subj.copy_from_slice(&[0,9,2,11,7,16]);
-            cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i+1) as f64);
+            cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i/2+1) as f64);
 
             // | 1.1 1.2 1.3 |   | 1(x0+x9)            2(x2+x11) | 
             // | 2.1 2.2 2.3 | x |                               |
@@ -2203,7 +2209,9 @@ mod test {
             println!("rsubj = {:?}\n        {:?}",rsubj,expect_subj);
             assert_eq!(rsp.unwrap(),&[0,2,3,5,6,8]);
             assert_eq!(rsubj,expect_subj);
-            //assert!(rcof.iter().step_by(2).zip([1.1,1.3*2.0, 1.2*3.0, 2.1*1.0, 2.3*2.0, 2.2*3.0, 3.1*1.0, 3.3*2.0, 3.2*3.0].iter()).all(|(&a,&b)| (a-b).abs() < 1e-8));
+            assert_eq!(rcof, &[1.1,1.1, 1.3*2.0,1.3*2.0,   1.2*3.0,1.2*3.0,
+                               2.1,2.1, 2.3*2.0,2.3*2.0,   2.2*3.0,2.2*3.0,
+                               3.1,3.1, 3.3*2.0,3.3*2.0,   3.2*3.0,3.2*3.0 ]);
         }
     }
     #[test]
@@ -2239,6 +2247,7 @@ mod test {
             assert_eq!(rptr,&[0,4,6,8,10]);
             assert_eq!(rsp.unwrap(),&[0,3,5,8]);
             assert_eq!(rsubj,&[0,9,2,11, 2,11, 7,16, 7,16]);
+            assert_eq!(rcof, &[1.1,1.1, 1.3*2.0,1.3*2.0,   2.3*2.0,2.3*2.0,  2.2*5.0,2.2*5.0,   3.2*5.0,3.2*5.0]);
             //assert!(rcof.iter().step_by(2).zip([1.1, 1.3*2.0, 1.3*4.0, 3.2*3.0, 3.2*5.0].iter()).all(|(&a,&b)| (a-b).abs() < 1e-8));
         }
     }

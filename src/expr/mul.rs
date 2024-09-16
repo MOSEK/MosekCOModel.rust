@@ -179,14 +179,21 @@ impl<E, M> ExprRightMultipliable<2,E> for M
         M : Matrix,
         E : ExprTrait<2>
 {
-    type Result = ExprMulRight<E>;
+    type Result = ExprPermuteAxes<2,ExprMulMEt<E>>;
     fn mul_right(self,rhs : E) -> Self::Result {
-        let (shape,sp,data) = self.dissolve();
-        ExprMulRight{
-            item : rhs,
-            shape,
-            data,
-            sp}
+        let (shape,sp,data) = self.transpose().dissolve();
+        ExprPermuteAxes{
+            item : ExprMulMEt{
+                item:rhs,
+                shape,
+                data,
+                sp},
+            perm : [1,0] }
+        //ExprMulRight{
+        //    item : rhs,
+        //    shape,
+        //    data,
+        //    sp}
     }
 }
 
@@ -195,11 +202,11 @@ impl<E, M> ExprRightMultipliable<1,E> for M
         M : Matrix,
         E : ExprTrait<1>
 {
-    type Result = ExprReshapeOneRow<2,1,ExprMulRight<ExprReshapeOneRow<1,2,E>>>;
+    type Result = ExprReshapeOneRow<2,1,ExprMulMEt<ExprReshapeOneRow<1,2,E>>>;
     fn mul_right(self,rhs : E) -> Self::Result {
-        let (shape,sp,data) = self.dissolve();
+        let (shape,sp,data) = self.transpose().dissolve();
         ExprReshapeOneRow{
-            item : ExprMulRight{
+            item : ExprMulMEt{
                 item : ExprReshapeOneRow{ item: rhs, dim : 0 },
                 shape,
                 data,
@@ -213,12 +220,12 @@ impl<E> ExprRightMultipliable<2,E> for Vec<f64>
     where 
         E : ExprTrait<2>
 {
-    type Result = ExprReshapeOneRow<2,1,ExprMulRight<E>>;
+    type Result = ExprReshapeOneRow<2,1,ExprMulMEt<E>>;
     fn mul_right(self,rhs : E) -> Self::Result {
         let shape = [1,self.len()];
         let data = self;
         ExprReshapeOneRow{
-            item : ExprMulRight{
+            item : ExprMulMEt{
                 item : rhs,
                 shape,
                 data,
@@ -231,15 +238,9 @@ impl<E> ExprRightMultipliable<2,E> for &[f64]
     where 
         E : ExprTrait<2>
 {
-    type Result = ExprReshapeOneRow<2,1,ExprMulRight<E>>;
+    type Result = ExprReshapeOneRow<2,1,ExprMulMEt<E>>;
     fn mul_right(self,rhs : E) -> Self::Result {
-        ExprReshapeOneRow{
-            item : ExprMulRight{
-                item : rhs,
-                shape : [1,self.len()],
-                data : self.to_vec(),
-                sp : None},
-            dim : 0 }
+        self.to_vec().mul_right(rhs)
     }
 }
 
