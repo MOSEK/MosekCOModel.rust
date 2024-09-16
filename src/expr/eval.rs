@@ -635,12 +635,16 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
             for jj in rsubj.chunks_mut(nnz) { jj.copy_from_slice(subj); }
             // build cof
             println!("cof = {:?}",cof);
+            println!("mdata = {:?}",mdata);
             izip!(mdata.chunks(mshape.1).flat_map(|mrow| std::iter::repeat(mrow).take(shape[0])),
                   ptr.chunks(mshape.1).zip(ptr[1..].chunks(mshape.1)).cycle())
                 .flat_map(|(mrow,(ptrbs,ptres))| izip!(mrow.iter(), ptrbs.iter(),ptres.iter()))
                 .flat_map(|(mc,&p0,&p1)| izip!(std::iter::repeat(mc).take(p1-p0)))
                 .zip(rcof.iter_mut().zip(cof.iter().cycle()))
-                .for_each(|(mc,(rc,&c))| *rc = c*mc);
+                .for_each(|(mc,(rc,&c))| {
+                    println!("rc : {} * {} = {}",c,mc,*rc);
+                    *rc = c*mc;
+                });
         },
         (Some(msp),None) => {
             if msp.is_empty() {
