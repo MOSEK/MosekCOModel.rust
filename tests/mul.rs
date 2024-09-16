@@ -20,7 +20,7 @@ fn mul_dense_matrix_x_dense_expr() {
                       vec![1.0; N1*N1*2]); // cof
 
     let m = matrix::dense([N1,N1], vec![1.0; N1*N1]);
-    m.mul(e).eval(& mut rs, & mut ws, & mut xs);
+    m.mul(e).eval(& mut rs, & mut ws, & mut xs).unwrap();
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn mul_dense_matrix_x_sparse_expr() {
                       vec![1.0; (N2*N2/7+1)*2]); // cof
 
     let m = matrix::dense([N2,N2], vec![1.0; N2*N2]);
-    m.mul(e).eval(& mut rs, & mut ws, & mut xs);
+    m.mul(e).eval(& mut rs, & mut ws, & mut xs).unwrap();
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn mul_dense_expr_x_dense_matrix() {
                       vec![1.0; N1*N1*2]); // cof
 
     let m = matrix::dense([N1,N1], vec![1.0; N1*N1]);
-    e.mul(m).eval(& mut rs, & mut ws, & mut xs);
+    e.mul(m).eval(& mut rs, & mut ws, & mut xs).unwrap();
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn mul_sparse_expr_x_dense_matrix() {
                       vec![1.0; (N2*N2/7+1)*2]); // cof
 
     let m = matrix::dense([N2,N2], vec![1.0; N2*N2]);
-    e.mul(m).eval(& mut rs, & mut ws, & mut xs);
+    e.mul(m).eval(& mut rs, & mut ws, & mut xs).unwrap();
 }
 
 
@@ -99,7 +99,7 @@ fn dense_left_mul() {
                                    2.1,2.2,2.3,
                                    3.1,3.2,3.3]);
 
-    m.clone().mul(ed).eval(& mut rs, & mut ws, & mut xs);
+    m.clone().mul(ed).eval(& mut rs, & mut ws, & mut xs).unwrap();
     {
         let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
 
@@ -113,7 +113,7 @@ fn dense_left_mul() {
     assert!(rs.is_empty());
     assert!(ws.is_empty());
 
-    m.mul(es).eval(& mut rs, & mut ws, & mut xs);
+    m.mul(es).eval(& mut rs, & mut ws, & mut xs).unwrap();
     {
         let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
 
@@ -156,7 +156,7 @@ fn basic_expr() {
     let _m = matrix::dense([3,3],vec![1.1,1.2,1.3,
                                    2.1,2.2,2.3,
                                    3.1,3.2,3.3]);
-    ed.eval(& mut rs, & mut ws, & mut xs);
+    ed.eval(& mut rs, & mut ws, & mut xs).unwrap();
     println!("Workstack = {}",rs);
     _ = rs.pop_expr();
     //es.eval(& mut rs, & mut ws, & mut xs);
@@ -186,7 +186,7 @@ fn dense_right_mul() {
     let m = matrix::dense([3,3],vec![1.1,1.2,1.3,
                                    2.1,2.2,2.3,
                                    3.1,3.2,3.3]);
-    ed.mul(m.clone()).eval(& mut rs, & mut ws, & mut xs);
+    ed.mul(m.clone()).eval(& mut rs, & mut ws, & mut xs).unwrap();
     {
         let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
 
@@ -204,7 +204,7 @@ fn dense_right_mul() {
     assert!(ws.is_empty());
 
 
-    es.mul(m).eval(& mut rs, & mut ws, & mut xs);
+    es.mul(m).eval(& mut rs, & mut ws, & mut xs).unwrap();
     {
         let (shape,ptr,sp,subj,cof) = rs.pop_expr();
 
@@ -257,7 +257,7 @@ fn sparse_left_mul() {
     let m = NDArray::from_tuples([3,3],
                            &[[0,0],[0,2],[1,2],[2,0],[2,1]],
                            &[1.1,1.3,2.3,3.1,3.2]).unwrap();
-    m.clone().mul(ed).eval(& mut rs, & mut ws, & mut xs);
+    m.clone().mul(ed).eval(& mut rs, & mut ws, & mut xs).unwrap();
     // | 1.1(x0+x1)
     {
         let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
@@ -272,7 +272,7 @@ fn sparse_left_mul() {
     assert!(rs.is_empty());
     assert!(ws.is_empty());
 
-    m.mul(es).eval(& mut rs, & mut ws, & mut xs);
+    m.mul(es).eval(& mut rs, & mut ws, & mut xs).unwrap();
     {
         let (shape,ptr,sp,subj,cof) = rs.pop_expr();
 
@@ -323,7 +323,7 @@ fn sparse_right_mul() {
                                  &[[0,0],[0,2],[1,2],[2,0],[2,1]],
                                  &[1.1,1.3,2.3,3.1,3.2]).unwrap();
 
-    ed.mul(m.clone()).eval(& mut rs, & mut ws, & mut xs);
+    ed.mul(m.clone()).eval(& mut rs, & mut ws, & mut xs).unwrap();
     {
         let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
 
@@ -342,7 +342,7 @@ fn sparse_right_mul() {
     assert!(ws.is_empty());
 
 
-    es.mul(m).eval(& mut rs, & mut ws, & mut xs);
+    es.mul(m).eval(& mut rs, & mut ws, & mut xs).unwrap();
     // | 1.1(x0+x1)            3.2(x2+x3) |
     // | 3.1(x6+x7) 3.2(x6+x7) 2.3(x4+x6) |
     {

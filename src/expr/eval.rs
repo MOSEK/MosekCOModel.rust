@@ -610,7 +610,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nd = shape.len();
     let nnz = *ptr.last().unwrap();
-    let nelem = ptr.len()-1;
+    //let nelem = ptr.len()-1;
     if nd != 2 || shape[1] != mshape.1 {
         panic!("Mismatching operand shapes");
     }
@@ -643,7 +643,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
         },
         (Some(msp),None) => {
             if msp.is_empty() {
-                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, 0,0);
+                let (rptr,_rsp,_rsubj,_rcof) = rs.alloc_expr(&rshape, 0,0);
                 rptr[0] = 0;
             }
             else {
@@ -701,7 +701,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
         },
         (None,Some(sp)) => {
             if sp.is_empty() {
-                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, 0,0);
+                let (rptr,_rsp,_rsubj,_rcof) = rs.alloc_expr(&rshape, 0,0);
                 rptr[0] = 0;
             }
             else {
@@ -782,13 +782,13 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                         (0..mnum_nnz_rows)
                             .flat_map(|_| sp.chunk_by(|&a,&b| a/shape[1] == b/shape[1])
                                             .scan(0,|p,row| { let (p0,p1) = (*p,*p+row.len()); *p = p1; Some((row,unsafe{ptr.get_unchecked(p0..p1+1)})) })))
-                        .map(|((mrowi,mrowc),(erowi,erowptrs))| {
+                        .map(|((mrowi,_mrowc),(erowi,erowptrs))| {
                             let i = unsafe{ *mrowi.get_unchecked(0) } / mshape.1;
                             let j = unsafe{ *erowi.get_unchecked(0) } / shape[1];
                             ( i * shape[0] + j,
                               mrowi.iter().inner_join_by(|&a,b| (a%mshape.1).cmp(&(b.0%shape[1])), izip!(erowi.iter(),erowptrs.iter(),erowptrs[1..].iter())).map(|(_,(_,epb,epe))| epe-epb ).sum::<usize>()) 
                         })
-                        .fold((0,0),|(rnelm,rnnz),(rspi, nnz)| if nnz > 0 { (rnelm+1,rnnz+nnz) } else { (rnelm,rnnz) });
+                        .fold((0,0),|(rnelm,rnnz),(_, nnz)| if nnz > 0 { (rnelm+1,rnnz+nnz) } else { (rnelm,rnnz) });
 
                 let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
                 rptr[0] = 0;
@@ -803,7 +803,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                     // for each conbination matrix row/expr row
                     .flat_map(|((mrowi,mrowc),(erowi,erowptrs))| {
                         mrowi.iter().zip(mrowc.iter()).inner_join_by(|a,b| (a.0%mshape.1).cmp(&(b.0%shape[1])), izip!(erowi.iter(),erowptrs.iter(),erowptrs[1..].iter()))
-                            .flat_map(|((&mi,&mc),(&ei,&pb,&pe))| {
+                            .flat_map(|((_,&mc),(_,&pb,&pe))| {
                                 let mc : f64 = mc;
                                 //println!("i,j = {},{}, pb = {}, pe = {}",mi%mshape.1,ei%shape[1],pb,pe);
                                 println!("cof row = {:?} mc = {}",&cof[pb..pe],mc);
@@ -813,7 +813,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                     .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
                     .for_each(|((&j,c),(rj,rc))| { *rj = j; *rc = c; });
                 // compute ptr
-                let mut it = 
+                let it = 
                     izip!(
                         msp.chunk_by(|&a,&b| a/mshape.1 == b/mshape.1)
                             .scan(0,|p,row| { let (p0,p1) = (*p,*p+row.len()); *p = p1; Some((row,unsafe{mdata.get_unchecked(p0..p1)})) } )
@@ -828,7 +828,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                             let nnz = 
                                 mrowi.iter().zip(mrowc.iter())
                                     .inner_join_by(|a,b| (a.0%mshape.1).cmp(&(b.0%shape[1])), izip!(erowi.iter(),erowptrs.iter(),erowptrs[1..].iter()))
-                                    .map(|(a,b)| b.2-b.1)
+                                    .map(|(_,b)| b.2-b.1)
                                     .sum::<usize>();
                             ( i * shape[0] + j, nnz)})
                         .filter(|(_,nnz)| *nnz > 0);
