@@ -117,3 +117,5 @@ fn main() {
              gamma,
              f.iter().zip(zsol.iter()).map(|(&a,&b)| a*b).sum::<f64>()+g.iter().zip(zsol.iter()).map(|(&a,&b)| a*b).sum::<f64>());
 }
+#[test]
+fn test() { main() }

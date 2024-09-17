@@ -71,3 +71,6 @@ fn main() {
     println!("qc1 levels = {:?}", qc1lvl);
     println!("qc1 dual conic var levels = {:?}", qc1sn);
 }
+
+#[test]
+fn test() { main() }

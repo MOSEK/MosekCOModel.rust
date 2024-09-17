@@ -89,3 +89,5 @@ fn main() {
 
     }
 }
+#[test]
+fn test() { main() }

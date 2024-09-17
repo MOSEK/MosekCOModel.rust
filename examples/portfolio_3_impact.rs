@@ -97,3 +97,5 @@ fn main() {
              m.iter().zip(tsol.iter()).map(|(&m,&t)| m*t).sum::<f64>());
     println!("Optimal portfolio: {:?}", xsol);
 }
+#[test]
+fn test() { main() }

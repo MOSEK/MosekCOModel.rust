@@ -12,3 +12,5 @@ fn main() -> Result<(),String> {
     let _z  = m.variable(Some("z"),  greater_than(vec![1.0,4.0]).with_shape_and_sparsity(&[2,2],&[[0,0],[1,1]]));
     Ok(())
 }
+#[test]
+fn test() { main().unwrap(); }

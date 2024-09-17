@@ -24,25 +24,40 @@ fn make_6d_variable(m : & mut Model, sp : bool, n : usize) -> Variable<6> {
 
 
 // ExprTrait::axispermute
-fn axis_permute(sp : bool, n : usize) {
+fn bench_axis_permute(c : & mut Criterion, sp : bool, n : usize) {
     let mut m = Model::new(None);
-    let shape = [n,n,n,n,n,n];
-    let v = make_6d_variable(&mut m, sp, n);
-    _ = m.  constraint(None, &v.axispermute(&[3,2,1,0,4,5]).axispermute(&[2,0,1,4,3,5]).axispermute(&[5,4,3,2,1,0]),unbounded().with_shape(&shape));
-}
+    let mut rs = WorkStack::new(1024);
+    let mut ws = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
 
-fn bench_axis_permute( c : &mut Criterion, sp : bool, n : usize) { c.bench_function(format!("axis-permute-{}-{}",if sp {"sparse"} else {"dense"}, n).as_str(), |b| b.iter(|| axis_permute(sp,n))); }
+    let v = make_6d_variable(&mut m, sp, n);
+
+    c.bench_function(
+        format!("axispermute-{}-{}",if sp {"sparse"} else {"dense"},n).as_str(), 
+        |b| b.iter(|| {
+            rs.clear(); ws.clear(); xs.clear();
+            let v = v.clone();
+            v.axispermute(&[3,2,1,0,4,5]).axispermute(&[2,0,1,4,3,5]).axispermute(&[5,4,3,2,1,0])
+                .eval_finalize(&mut rs,&mut ws,&mut xs).unwrap()
+        }));
+}
 
 // ExprTrait::sum_on 
-fn sum_on(sp : bool, n : usize, dims : [usize;3]) {
+fn bench_sum_on( c : &mut Criterion, sp : bool, n : usize, axes : [usize;3]) {
     let mut m = Model::new(None);
+    let mut rs = WorkStack::new(1024);
+    let mut ws = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
     let v = make_6d_variable(&mut m, sp, n);
-    let e = v.clone().add(v.clone().axispermute(&[3,2,1,0,4,5])).add(v.clone().axispermute(&[2,0,1,4,3,5]));
-
-    _ = m.constraint(None, &e.sum_on(&dims),unbounded().with_shape(&[n,n,n]));
+    
+    c.bench_function(
+        format!("sumon-{}-{}-{}{}{}",if sp {"sparse"} else {"dense"},n,axes[0],axes[1],axes[2]).as_str(),
+        |b| b.iter(|| {
+            rs.clear(); ws.clear(); xs.clear();
+            let e = v.clone().add(v.clone().axispermute(&[3,2,1,0,4,5])).add(v.clone().axispermute(&[2,0,1,4,3,5]));
+            e.sum_on(&axes).eval_finalize(& mut rs, &mut ws, &mut xs).unwrap();
+        }));
 }
-
-fn bench_sum_on( c : &mut Criterion,sp : bool, n : usize, axes : [usize;3]) { c.bench_function(format!("sum-on-{}-{}-{}{}{}",if sp {"sparse"} else {"dense"},n,axes[0],axes[1],axes[2]).as_str(), |b| b.iter(|| sum_on(sp,n,axes))); }
 
 
 fn bench_stack(c : & mut Criterion, d : usize, sp : bool, n : usize) {
@@ -169,6 +184,7 @@ const N : usize = 10;
 
 fn bench_axis_permute_dense_10( c : & mut Criterion) { bench_axis_permute(c,false,N)}
 fn bench_axis_permute_sparse_10(c : & mut Criterion) { bench_axis_permute(c,true,N) }
+
 fn bench_sum_on_dense_10_012(   c : & mut Criterion) { bench_sum_on(c,false,N,[0,1,2]) }
 fn bench_sum_on_dense_10_345(   c : & mut Criterion) { bench_sum_on(c,false,N,[3,4,5]) }
 fn bench_sum_on_dense_10_135(   c : & mut Criterion) { bench_sum_on(c,false,N,[1,3,5]) }
@@ -179,49 +195,61 @@ fn bench_sum_on_sparse_10_135(c : & mut Criterion) { bench_sum_on(c,true,N,[1,3,
 fn bench_stack_dense_0_256(c : & mut Criterion) { bench_stack(c,0,false,256) }
 fn bench_stack_dense_1_256(c : & mut Criterion) { bench_stack(c,1,false,256) }
 fn bench_stack_dense_2_256(c : & mut Criterion) { bench_stack(c,2,false,256) }
-fn bench_stack_sparse_0_768(c : & mut Criterion) { bench_stack(c,0,true,768) }
-fn bench_stack_sparse_1_768(c : & mut Criterion) { bench_stack(c,1,true,768) }
-fn bench_stack_sparse_2_768(c : & mut Criterion) { bench_stack(c,2,true,768) }
+fn bench_stack_sparse_0_375(c : & mut Criterion) { bench_stack(c,0,true,375) }
+fn bench_stack_sparse_1_375(c : & mut Criterion) { bench_stack(c,1,true,375) }
+fn bench_stack_sparse_2_375(c : & mut Criterion) { bench_stack(c,2,true,375) }
 
 fn bench_repeat_dense_0_256(c : & mut Criterion)  { bench_repeat(c,false,0,256,3) }
 fn bench_repeat_dense_1_256(c : & mut Criterion)  { bench_repeat(c,false,1,256,3) }
 fn bench_repeat_dense_2_256(c : & mut Criterion)  { bench_repeat(c,false,2,256,3) }
-fn bench_repeat_sparse_0_768(c : & mut Criterion) { bench_repeat(c,true, 0,768,3) }
-fn bench_repeat_sparse_1_768(c : & mut Criterion) { bench_repeat(c,true, 1,768,3) }
-fn bench_repeat_sparse_2_768(c : & mut Criterion) { bench_repeat(c,true, 2,768,3) }
+fn bench_repeat_sparse_0_374(c : & mut Criterion) { bench_repeat(c,true, 0,374,3) }
+fn bench_repeat_sparse_1_374(c : & mut Criterion) { bench_repeat(c,true, 1,374,3) }
+fn bench_repeat_sparse_2_374(c : & mut Criterion) { bench_repeat(c,true, 2,374,3) }
 
-fn bench_mul_dense_dense_fwd(c : & mut Criterion)   { bench_mul(c,Sparsity::Dense, Sparsity::Dense, false,1024) }
-fn bench_mul_dense_dense_rev(c : & mut Criterion)   { bench_mul(c,Sparsity::Dense, Sparsity::Dense, true, 1024) }
-fn bench_mul_dense_sparse_fwd(c : & mut Criterion)  { bench_mul(c,Sparsity::Dense, Sparsity::Sparse,false,1024) }
-fn bench_mul_dense_sparse_rev(c : & mut Criterion)  { bench_mul(c,Sparsity::Dense, Sparsity::Sparse,true, 1024) }
-fn bench_mul_sparse_dense_fwd(c : & mut Criterion)  { bench_mul(c,Sparsity::Sparse,Sparsity::Dense, false,1024) }
-fn bench_mul_sparse_dense_rev(c : & mut Criterion)  { bench_mul(c,Sparsity::Sparse,Sparsity::Dense, true, 1024) }
-fn bench_mul_sparse_sparse_fwd(c : & mut Criterion) { bench_mul(c,Sparsity::Sparse,Sparsity::Sparse,false,1024) }
-fn bench_mul_sparse_sparse_rev(c : & mut Criterion) { bench_mul(c,Sparsity::Sparse,Sparsity::Sparse,true, 1024) }
+fn bench_mul_dense_dense_fwd(c : & mut Criterion)   { bench_mul(c,Sparsity::Dense, Sparsity::Dense, false,512) }
+fn bench_mul_dense_dense_rev(c : & mut Criterion)   { bench_mul(c,Sparsity::Dense, Sparsity::Dense, true, 512) }
+fn bench_mul_dense_sparse_fwd(c : & mut Criterion)  { bench_mul(c,Sparsity::Dense, Sparsity::Sparse,false,512) }
+fn bench_mul_dense_sparse_rev(c : & mut Criterion)  { bench_mul(c,Sparsity::Dense, Sparsity::Sparse,true, 512) }
+fn bench_mul_sparse_dense_fwd(c : & mut Criterion)  { bench_mul(c,Sparsity::Sparse,Sparsity::Dense, false,512) }
+fn bench_mul_sparse_dense_rev(c : & mut Criterion)  { bench_mul(c,Sparsity::Sparse,Sparsity::Dense, true, 512) }
+fn bench_mul_sparse_sparse_fwd(c : & mut Criterion) { bench_mul(c,Sparsity::Sparse,Sparsity::Sparse,false,512) }
+fn bench_mul_sparse_sparse_rev(c : & mut Criterion) { bench_mul(c,Sparsity::Sparse,Sparsity::Sparse,true, 512) }
 
 
-criterion_group!(benches,
-    bench_axis_permute_dense_10,
-    bench_axis_permute_sparse_10,
-    bench_sum_on_dense_10_012,
-    bench_sum_on_dense_10_345,
-    bench_sum_on_dense_10_135,
-    bench_sum_on_sparse_10_012,
-    bench_sum_on_sparse_10_345,
-    bench_sum_on_sparse_10_135,
+criterion_group!(
+    name=benches;
+    config=Criterion::default().sample_size(10);
+    targets=
+        bench_axis_permute_dense_10,
+        bench_axis_permute_sparse_10,
+        bench_sum_on_dense_10_012,
+        bench_sum_on_dense_10_345,
+        bench_sum_on_dense_10_135,
+        bench_sum_on_sparse_10_012,
+        bench_sum_on_sparse_10_345,
+        bench_sum_on_sparse_10_135,
 
-    bench_stack_dense_0_256,
-    bench_stack_dense_1_256,
-    bench_stack_dense_2_256,
-    bench_stack_sparse_0_768,
-    bench_stack_sparse_1_768,
-    bench_stack_sparse_2_768,
+        bench_stack_dense_0_256,
+        bench_stack_dense_1_256,
+        bench_stack_dense_2_256,
+        bench_stack_sparse_0_375,
+        bench_stack_sparse_1_375,
+        bench_stack_sparse_2_375,
 
-    bench_repeat_dense_0_256, 
-    bench_repeat_dense_1_256, 
-    bench_repeat_dense_2_256, 
-    bench_repeat_sparse_0_768,
-    bench_repeat_sparse_1_768,
-    bench_repeat_sparse_2_768,
+        bench_repeat_dense_0_256, 
+        bench_repeat_dense_1_256, 
+        bench_repeat_dense_2_256, 
+        bench_repeat_sparse_0_374,
+        bench_repeat_sparse_1_374,
+        bench_repeat_sparse_2_374,
+
+        bench_mul_dense_dense_fwd,
+        bench_mul_dense_dense_rev,
+        bench_mul_dense_sparse_fwd,
+        bench_mul_dense_sparse_rev,
+        bench_mul_sparse_dense_fwd,
+        bench_mul_sparse_dense_rev,
+        bench_mul_sparse_sparse_fwd,
+        bench_mul_sparse_sparse_rev
     );
 criterion_main!(benches);

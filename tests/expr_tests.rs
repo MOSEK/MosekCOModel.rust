@@ -38,7 +38,7 @@ fn add_test() {
     {
         rs.clear(); ws.clear(); xs.clear();
             
-        dv.clone().add(dw.clone()).eval(&mut rs,&mut ws,&mut xs);
+        dv.clone().add(dw.clone()).eval(&mut rs,&mut ws,&mut xs).unwrap();
         let (shape,ptr,sp,subj,_cof) = rs.pop_expr();        
 
         assert_eq!(shape,&[3,3]); 
@@ -51,7 +51,7 @@ fn add_test() {
     {
         rs.clear(); ws.clear(); xs.clear();
         
-        dv.clone().add(sw.clone()).eval(&mut rs,&mut ws,&mut xs);
+        dv.clone().add(sw.clone()).eval(&mut rs,&mut ws,&mut xs).unwrap();
         let (shape,ptr,sp,subj,_cof) = rs.pop_expr();        
 
         assert_eq!(shape,&[3,3]); 
@@ -63,7 +63,7 @@ fn add_test() {
     {
         rs.clear(); ws.clear(); xs.clear();
         
-        sv.clone().add(sw.clone()).eval(&mut rs,&mut ws,&mut xs);
+        sv.clone().add(sw.clone()).eval(&mut rs,&mut ws,&mut xs).unwrap();
         let (shape,ptr,sp,subj,_cof) = rs.pop_expr();        
 
         assert_eq!(shape,&[3,3]); 
@@ -92,7 +92,7 @@ fn add_test() {
         //let e = &z.clone().mul_elem(mx.clone()).dynamic().add(x.clone().dynamic()).sub(mx.clone()).gather();
         //let e = &z.clone().mul_elem(mx.clone()).dynamic().add(x.clone().dynamic()).gather();
         let e = &z.clone().mul_elem(mx.clone()).dynamic().add(x.clone()).gather();
-        e.eval(&mut rs,&mut ws,&mut xs);
+        e.eval(&mut rs,&mut ws,&mut xs).unwrap();
 
         let (_shape,ptr,_sp,_subj,_cof) = rs.pop_expr();
         assert_eq!(ptr.len()-1,mx.nnz());
@@ -121,7 +121,7 @@ fn sum_on_test2() {
         let e1 = &z.clone().mul_elem(mx.clone()).sum_on(&[0]);
         let e2 = &z.clone().mul_elem(mx.clone()).sum_on(&[1]);
 
-        e0.eval(&mut rs,&mut ws,&mut xs);        
+        e0.eval(&mut rs,&mut ws,&mut xs).unwrap();        
         let (shape,ptr,sp,_subj,_cof) = rs.pop_expr();
         //println!("shape = {:?}, ptr = {:?}, sp = {:?}",shape,ptr,sp);
         assert_eq!(shape.len(),2);
@@ -130,7 +130,7 @@ fn sum_on_test2() {
         assert!(sp.is_some());
         assert_eq!(ptr,&[0,1,2,3,4,5]);
 
-        e1.eval(&mut rs,&mut ws,&mut xs);        
+        e1.eval(&mut rs,&mut ws,&mut xs).unwrap();        
         let (shape,ptr,sp,_subj,_cof) = rs.pop_expr();
         //println!("shape = {:?}, ptr = {:?}, sp = {:?}",shape,ptr,sp);
         assert_eq!(shape.len(),1);
@@ -142,7 +142,7 @@ fn sum_on_test2() {
 
         rs.clear(); ws.clear(); xs.clear();
         
-        e2.eval(&mut rs,&mut ws,&mut xs);
+        e2.eval(&mut rs,&mut ws,&mut xs).unwrap();
         let (shape,ptr,sp,_subj,_cof) = rs.pop_expr();
         assert!(sp.is_some());
         assert_eq!(shape.len(),1);
@@ -182,12 +182,12 @@ fn mul_left() {
     let e1_1 = m2.clone().mul(e1.clone());
     let e1_2 = e1.clone().mul(2.0);
 
-    e0.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
-    e1.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
-    e0_1.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
-    e0_2.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
-    e1_1.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
-    e1_2.eval(& mut rs,& mut ws,& mut xs); assert!(ws.is_empty()); rs.clear();
+    e0.eval(& mut rs,& mut ws,& mut xs).unwrap(); assert!(ws.is_empty()); rs.clear();
+    e1.eval(& mut rs,& mut ws,& mut xs).unwrap(); assert!(ws.is_empty()); rs.clear();
+    e0_1.eval(& mut rs,& mut ws,& mut xs).unwrap(); assert!(ws.is_empty()); rs.clear();
+    e0_2.eval(& mut rs,& mut ws,& mut xs).unwrap(); assert!(ws.is_empty()); rs.clear();
+    e1_1.eval(& mut rs,& mut ws,& mut xs).unwrap(); assert!(ws.is_empty()); rs.clear();
+    e1_2.eval(& mut rs,& mut ws,& mut xs).unwrap(); assert!(ws.is_empty()); rs.clear();
 }
 
 

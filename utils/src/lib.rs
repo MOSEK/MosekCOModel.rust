@@ -99,7 +99,6 @@ impl NameAppender for usize {
         else {
             let mut buf = [0u8; 20];
             let n = buf.iter_mut().rev().scan(*self,|v,b| if *v > 0 { let r = (*v%10) as u8; *v = *v/10; *b = r; Some(r) } else { None }).count();
-            //println!("buf = {:?}",&buf[20-n..]);
             for c in &buf[20-n..] {
                 s.push((*c + b'0') as char);
             }
@@ -144,6 +143,16 @@ impl<'a,'b,T> std::ops::Index<usize> for AppliedPermutation<'a,'b,T> {
 }
 
 
+pub trait SwapEx where Self : Copy {
+    /// Assign a new value to a reference and return the old value.
+    fn swap_out(&mut self, v : Self) -> Self {
+        let tmp = *self;
+        *self = v;
+        tmp
+    }
+}
+
+impl<T> SwapEx for T where T : Copy { }
 
 
 ////////////////////////////////////////////////////////////

@@ -199,3 +199,5 @@ fn main() {
     println!("fitpoly(data,4) -> {:?}",x4);
     println!("fitpoly(data,8) -> {:?}",x8);
 }
+#[test]
+fn test() { main() }

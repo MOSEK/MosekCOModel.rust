@@ -113,3 +113,5 @@ fn main() {
                  xsol.as_slice());
     }
 }
+#[test]
+fn test() { main() }

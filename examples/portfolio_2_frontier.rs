@@ -84,3 +84,5 @@ fn main() {
       println!("\t{:-12.4}  {:-12.4e}  {:-12.4e}", alpha, fmux, s.sqrt());
     }
 }
+#[test]
+fn test() { main() }

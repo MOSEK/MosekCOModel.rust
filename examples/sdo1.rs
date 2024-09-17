@@ -52,3 +52,5 @@ fn main() {
     println!("X = {:?}",barx_sol);
     println!("x = {:?}",x_sol);
 }
+#[test]
+fn test() { main() }

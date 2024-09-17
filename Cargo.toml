@@ -2,7 +2,7 @@
 name = "mosekmodel"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.69.0"
+rust-version = "1.77.0"
 description = "Library for conic optimization modeling with Mosek"
 authors = [ "Ulf Worsøe <ulf.worsoe@mosek.com>" ]
 keywords = ["mosek","optimization","conic_optimization","linear_optimization","integer_optimization","conic_modeling"]

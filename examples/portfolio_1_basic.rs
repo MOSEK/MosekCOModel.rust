@@ -71,4 +71,6 @@ fn main() {
       println!("Expected return: {:.4e} Std. deviation: {:.4e}", expret, gamma);
     }
 }
+#[test]
+fn test() { main() }
 

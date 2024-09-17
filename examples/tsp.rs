@@ -92,3 +92,5 @@ fn main() {
         println!("x = {:?}, c = {:?}",x,c);
     }
 }
+#[test]
+fn test() { main() }

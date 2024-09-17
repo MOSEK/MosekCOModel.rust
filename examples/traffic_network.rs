@@ -146,3 +146,5 @@ fn main() {
       println!("\tflow node {} -> node {} = {:.4}", ij[0],ij[1],f);
     }
 }
+#[test]
+fn test() { main() }

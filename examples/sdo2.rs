@@ -67,3 +67,5 @@ fn main() {
         println!("X2: {:?}",X2);
     }
 }
+#[test]
+fn test() { main() }

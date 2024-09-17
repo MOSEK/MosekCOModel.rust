@@ -61,3 +61,6 @@ fn main() {
 }
 //TAG:end-ceo1
 
+
+#[test]
+fn test() { main() }
