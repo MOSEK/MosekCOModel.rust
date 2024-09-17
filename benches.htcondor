@@ -15,6 +15,6 @@ Requirements  = regexp("vo",machine) == true
 #Requirements  = regexp("espe",machine) == true
 
 #arguments     = test
-log           = condor/job.log
+log           = condor/job-$(JobId).log
 
 queue
