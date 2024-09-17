@@ -206,8 +206,8 @@ fn bench_repeat_sparse_0_374(c : & mut Criterion) { bench_repeat(c,true, 0,374,3
 fn bench_repeat_sparse_1_374(c : & mut Criterion) { bench_repeat(c,true, 1,374,3) }
 fn bench_repeat_sparse_2_374(c : & mut Criterion) { bench_repeat(c,true, 2,374,3) }
 
-fn bench_mul_dense_dense_fwd(c : & mut Criterion)   { bench_mul(c,Sparsity::Dense, Sparsity::Dense, false,512) }
-fn bench_mul_dense_dense_rev(c : & mut Criterion)   { bench_mul(c,Sparsity::Dense, Sparsity::Dense, true, 512) }
+fn bench_mul_dense_dense_fwd(c : & mut Criterion)   { bench_mul(c,Sparsity::Dense, Sparsity::Dense, false,256) }
+fn bench_mul_dense_dense_rev(c : & mut Criterion)   { bench_mul(c,Sparsity::Dense, Sparsity::Dense, true, 128) }
 fn bench_mul_dense_sparse_fwd(c : & mut Criterion)  { bench_mul(c,Sparsity::Dense, Sparsity::Sparse,false,512) }
 fn bench_mul_dense_sparse_rev(c : & mut Criterion)  { bench_mul(c,Sparsity::Dense, Sparsity::Sparse,true, 512) }
 fn bench_mul_sparse_dense_fwd(c : & mut Criterion)  { bench_mul(c,Sparsity::Sparse,Sparsity::Dense, false,512) }
