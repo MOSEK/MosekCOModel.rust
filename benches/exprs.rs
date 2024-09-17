@@ -135,13 +135,15 @@ fn bench_mul(c : & mut Criterion, vsp : Sparsity, dsp : Sparsity, rev : bool, n 
             let mut m = Model::new(None);
             let shape = [n,n];
             let st = shape.to_strides();
-            let v = 
+            let (v,w) = 
                 match vsp {
                     Sparsity::Sparse => {
                         let sp = (0..shape.iter().product()).step_by(10).map(|i| st.to_index(i)).collect::<Vec<[usize;2]>>();
-                        m.variable(None, unbounded().with_shape_and_sparsity(&shape, sp.as_slice()))
+                        (m.variable(None, unbounded().with_shape_and_sparsity(&shape, sp.as_slice())),
+                         m.variable(None, unbounded().with_shape_and_sparsity(&shape, sp.as_slice())).transpose())
                     },
-                    Sparsity::Dense => m.variable(None,&shape),
+                    Sparsity::Dense => (m.variable(None,&shape),
+                                        m.variable(None,&shape).transpose()),
                 };
             let mx = 
                 match dsp {
@@ -161,13 +163,60 @@ fn bench_mul(c : & mut Criterion, vsp : Sparsity, dsp : Sparsity, rev : bool, n 
             if rev {
                 b.iter(|| {
                     rs.clear(); ws.clear(); xs.clear();
-                    v.clone().mul(mx.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+                    v.clone().add(w.clone()).mul(mx.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
                 });
             }
             else {
                 b.iter(|| {
                     rs.clear(); ws.clear(); xs.clear();
-                    mx.clone().mul(v.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+                    mx.clone().mul(v.clone().add(w.clone())).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+                });
+            }
+        });
+}
+
+fn bench_mul_diag(c : & mut Criterion, vsp : Sparsity, dsp : Sparsity, rev : bool, n : usize) {
+    use utils::ShapeToStridesEx;
+    c.bench_function(
+        format!("mul-diag-{:?}-{:?}-{}-{}",vsp,dsp,if rev {"rev"} else {"fwd"},n).as_str(), 
+        |b| {
+            let mut m = Model::new(None);
+            let shape = [n,n];
+            let st = shape.to_strides();
+            let (v,w) = 
+                match vsp {
+                    Sparsity::Sparse => {
+                        let sp = (0..shape.iter().product()).step_by(10).map(|i| st.to_index(i)).collect::<Vec<[usize;2]>>();
+                        (m.variable(None, unbounded().with_shape_and_sparsity(&shape, sp.as_slice())),
+                         m.variable(None, unbounded().with_shape_and_sparsity(&shape, sp.as_slice())).transpose())
+                    },
+                    Sparsity::Dense => (m.variable(None,&shape),
+                                        m.variable(None,&shape).transpose()),
+                };
+            let mx = 
+                match dsp {
+                    Sparsity::Sparse =>  {
+                        let sp = (0..n*n).step_by(7).map(|i| st.to_index(i)).collect::<Vec<[usize;2]>>();
+                        let num = sp.len();
+                        matrix::sparse( [n,n], sp, vec![1.0; num])
+                    },
+                    Sparsity::Dense => matrix::dense([n,n], vec![1.0;n*n]),
+                };
+
+            let mut rs = WorkStack::new(1024);
+            let mut ws = WorkStack::new(1024);
+            let mut xs = WorkStack::new(1024);
+
+            if rev {
+                b.iter(|| {
+                    rs.clear(); ws.clear(); xs.clear();
+                    v.clone().add(w.clone()).mul(mx.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+                });
+            }
+            else {
+                b.iter(|| {
+                    rs.clear(); ws.clear(); xs.clear();
+                    mx.clone().mul(v.clone().add(w.clone())).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
                 });
             }
         });
