@@ -264,6 +264,14 @@ fn bench_mul_sparse_dense_rev(c : & mut Criterion)  { bench_mul(c,Sparsity::Spar
 fn bench_mul_sparse_sparse_fwd(c : & mut Criterion) { bench_mul(c,Sparsity::Sparse,Sparsity::Sparse,false,512) }
 fn bench_mul_sparse_sparse_rev(c : & mut Criterion) { bench_mul(c,Sparsity::Sparse,Sparsity::Sparse,true, 512) }
 
+fn bench_mul_diag_dense_dense_fwd(c : & mut Criterion)   { bench_mul_diag(c,Sparsity::Dense, Sparsity::Dense, false,256) }
+fn bench_mul_diag_dense_dense_rev(c : & mut Criterion)   { bench_mul_diag(c,Sparsity::Dense, Sparsity::Dense, true, 128) }
+fn bench_mul_diag_dense_sparse_fwd(c : & mut Criterion)  { bench_mul_diag(c,Sparsity::Dense, Sparsity::Sparse,false,512) }
+fn bench_mul_diag_dense_sparse_rev(c : & mut Criterion)  { bench_mul_diag(c,Sparsity::Dense, Sparsity::Sparse,true, 512) }
+fn bench_mul_diag_sparse_dense_fwd(c : & mut Criterion)  { bench_mul_diag(c,Sparsity::Sparse,Sparsity::Dense, false,512) }
+fn bench_mul_diag_sparse_dense_rev(c : & mut Criterion)  { bench_mul_diag(c,Sparsity::Sparse,Sparsity::Dense, true, 512) }
+fn bench_mul_diag_sparse_sparse_fwd(c : & mut Criterion) { bench_mul_diag(c,Sparsity::Sparse,Sparsity::Sparse,false,512) }
+fn bench_mul_diag_sparse_sparse_rev(c : & mut Criterion) { bench_mul_diag(c,Sparsity::Sparse,Sparsity::Sparse,true, 512) }
 
 criterion_group!(
     name=benches;
@@ -299,6 +307,15 @@ criterion_group!(
         bench_mul_sparse_dense_fwd,
         bench_mul_sparse_dense_rev,
         bench_mul_sparse_sparse_fwd,
-        bench_mul_sparse_sparse_rev
+        bench_mul_sparse_sparse_rev,
+
+        bench_mul_diag_dense_dense_fwd,
+        bench_mul_diag_dense_dense_rev,
+        bench_mul_diag_dense_sparse_fwd,
+        bench_mul_diag_dense_sparse_rev,
+        bench_mul_diag_sparse_dense_fwd,
+        bench_mul_diag_sparse_dense_rev,
+        bench_mul_diag_sparse_sparse_fwd,
+        bench_mul_diag_sparse_sparse_rev
     );
 criterion_main!(benches);
