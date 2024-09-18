@@ -760,7 +760,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                     })
                     .flat_map(|(mc,&p0,&p1)| izip!(std::iter::repeat(mc),unsafe{cof.get_unchecked(p0..p1)}.iter()))
                     .zip(rcof.iter_mut().enumerate())
-                    .for_each(|((mc,c),(i,rc))| { 
+                    .for_each(|((mc,c),(_i,rc))| { 
                         *rc = mc*c; 
                     })
                     ;

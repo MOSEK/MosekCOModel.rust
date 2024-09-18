@@ -672,7 +672,88 @@ impl<const N : usize> Expr<N> {
 }
 
 
+pub struct ExprDotRows<E> where E : ExprTrait<2> {
+    mshape : [usize;2],
+    msp    : Option<Vec<usize>>,
+    mdata  : Vec<f64>,
+    item   : E
+}
 
+impl<E> ExprDotRows<E> where E : ExprTrait<2> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(ws,rs,xs)?;
+
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+        if shape != self.mshape { panic!("Mismatching shapes"); }
+        let (nelem,nnz) = (ptr.len()-1,subj.len());
+        let rshape = [self.mshape[0]];
+        let shape = self.mshape;
+
+        match (&self.msp,sp) {
+            (None,None) => {
+                let (rnelem,rnnz) = (self.mshape[0],nnz);
+                let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+                rptr.iter_mut().zip(ptr.iter().step_by(shape[1])).for_each(|(rp,&p)| *rp = p);
+
+                rsubj.copy_from_slice(subj);
+                cof.chunks_ptr(ptr).zip(self.mdata.iter())
+                    .flat_map(|(crow,&m)| crow.iter().map(move |&c| c * m) )
+                    .zip(rcof.iter_mut())
+                    .for_each(|(c,rc)| *rc = c);
+            },
+            (None,Some(sp)) => {
+                let num_expr_rows = sp.chunk_by(|a,b| a/shape[1] == b/shape[1]).count();
+                let (rnelem,rnnz) = (num_expr_rows,nnz);
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+
+                if let Some(rsp) = rsp {
+                    sp.chunk_by(|a,b| a/shape[1] == b/shape[1]).zip(rsp.iter_mut()).for_each(|(ii,ri)| *ri = ii[0] / shape[1]);
+                }
+               
+                rptr[0] = 0;
+                sp.chunk_by(|a,b| a/shape[1] == b/shape[1])
+                    .zip(rptr[1..].iter_mut())
+                    .fold(0,|p,(eii,rp)| { let p1 = p+eii.len(); *rp = unsafe{ *ptr.get_unchecked(p1) }; p1 } ) ;
+
+                rsubj.copy_from_slice(subj);
+
+                cof.chunks_ptr(ptr).zip(self.mdata.permute_by(sp))
+                    .flat_map(|(crow,&m)| crow.iter().map(move |&c| c * m) )
+                    .zip(rcof.iter_mut())
+                    .for_each(|(c,rc)| *rc = c);
+            },
+            (Some(msp),None) => {
+                let num_m_rows = msp.chunk_by(|a,b| a/shape[1] == b/shape[1]).count();
+                let rnelem = num_m_rows;
+                let rnnz = ptr.permute_by(msp).zip(ptr[1..].permute_by(msp)).map(|(p0,p1)| p1-p0).sum();
+
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+
+                rptr[0] = 0;
+
+                msp.chunk_by(|a,b| a/shape[1] == b/shape[1])
+                    .scan(0,|p,ii| { let (p0,p1) = (*p,*p+ii.len()); *p = p1; Some((ii,unsafe{ ptr.get_unchecked(p0..=p1)}))})
+                    .zip(rptr[1..].iter())
+                    .fold(0,|p,((eirow,eprow),rp)| {
+                        let rownnz = *eprow.last().unwrap() - eprow[0];                        
+                        *rp = p + rownnz;
+.....
+
+                        *rp
+                    });
+
+
+
+                ()              
+            },
+            (Some(msp),Some(sp)) => {
+            }
+        }
+
+
+        Ok(())
+    }
+}
 
 
 pub struct ExprScalarList<E> where E : ExprTrait<0> {
