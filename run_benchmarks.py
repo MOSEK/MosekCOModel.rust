@@ -11,13 +11,21 @@ import csv
 if __name__ == '__main__':
     P = argparse.ArgumentParser()
     P.add_argument('--rerun', default=False, action="store_true")
+    P.add_argument('--no-rebuild', default=False, action="store_true")
     P.add_argument('--output','-o',default=Path(__file__).parent.joinpath('target','benchmark-data.json'))
     P.add_argument('--summary','-s',default=Path(__file__).parent.joinpath('target','benchmark-summary.csv'))
 
     a = P.parse_args()
 
     if a.rerun:
-        subprocess.check_call(['cargo','bench'],cwd=str(Path(__file__).parent))
+        if a.no_rebuild:
+            blddir = Path(__file__).parent.joinpath('target','release','deps')
+            candidates = [ (blddir.joinpath(f),os.stat(blddir.joinpath(f)).st_ctime) for f in os.listdir(blddir) if f.startswith('exprs-') and not f.endswith('.d') ]
+            candidates.sort(key=lambda v: v[1])
+            executable = candidates[-1][0]
+            subprocess.check_call([executable,'--bench'],cwd=str(Path(__file__).parent))
+        else:
+            subprocess.check_call(['cargo','bench'],cwd=str(Path(__file__).parent))
 
     estimates = {}
     
