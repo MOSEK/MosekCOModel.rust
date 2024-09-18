@@ -207,24 +207,37 @@ pub trait ExprTrait<const N : usize> {
     ///
     /// # Arguments
     /// - `other` Matrix operand.
-    fn dot_rows<M>(self, other : M) -> ExprReduceShape<2,1,ExprSumLastDims<2,ExprMulElm<2,Self>>>
+    fn dot_rows<M>(self, other : M) -> ExprDotRows<Self> 
         where 
-            Self : Sized+ExprTrait<2>, 
-            M : Matrix
-    { 
-        let (shape,sparsity,data) = other.dissolve();
-        ExprReduceShape{
-            item : ExprSumLastDims{
-                num : 1,
-                item : ExprMulElm{
-                    datashape : shape,
-                    datasparsity : sparsity,
-                    data,
-                    expr : self,
-                }
-            }
+            Self : ExprTrait<2>+Sized,
+            M : Matrix 
+    {
+        let (mshape,msp,mdata) = other.dissolve();
+        ExprDotRows{
+            item : self,
+            mshape,
+            msp,
+            mdata
         }
     }
+//    fn dot_rows<M>(self, other : M) -> ExprReduceShape<2,1,ExprSumLastDims<2,ExprMulElm<2,Self>>>
+//        where 
+//            Self : Sized+ExprTrait<2>, 
+//            M : Matrix
+//    { 
+//        let (shape,sparsity,data) = other.dissolve();
+//        ExprReduceShape{
+//            item : ExprSumLastDims{
+//                num : 1,
+//                item : ExprMulElm{
+//                    datashape : shape,
+//                    datasparsity : sparsity,
+//                    data,
+//                    expr : self,
+//                }
+//            }
+//        }
+//    }
 
     //TODO: Generalized dot_rows that perform summing in an arbitrary dimension.
 
@@ -679,13 +692,13 @@ pub struct ExprDotRows<E> where E : ExprTrait<2> {
     item   : E
 }
 
-impl<E> ExprDotRows<E> where E : ExprTrait<2> {
+impl<E> ExprTrait<1> for ExprDotRows<E> where E : ExprTrait<2> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
         self.item.eval(ws,rs,xs)?;
 
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
         if shape != self.mshape { panic!("Mismatching shapes"); }
-        let (nelem,nnz) = (ptr.len()-1,subj.len());
+        let (_nelem,nnz) = (ptr.len()-1,subj.len());
         let rshape = [self.mshape[0]];
         let shape = self.mshape;
 
@@ -732,21 +745,72 @@ impl<E> ExprDotRows<E> where E : ExprTrait<2> {
                 rptr[0] = 0;
 
                 msp.chunk_by(|a,b| a/shape[1] == b/shape[1])
-                    .scan(0,|p,ii| { let (p0,p1) = (*p,*p+ii.len()); *p = p1; Some((ii,unsafe{ ptr.get_unchecked(p0..=p1)}))})
-                    .zip(rptr[1..].iter())
-                    .fold(0,|p,((eirow,eprow),rp)| {
+                    .scan(0,|p,ii| { let (p0,p1) = (*p,*p+ii.len()); *p = p1; Some(unsafe{ ptr.get_unchecked(p0..=p1)})})
+                    .zip(rptr[1..].iter_mut())
+                    .fold(0,|p,(eprow,rp)| {
                         let rownnz = *eprow.last().unwrap() - eprow[0];                        
                         *rp = p + rownnz;
-.....
-
                         *rp
                     });
+                if let Some(rsp) = rsp { 
+                    msp.iter()
+                        .scan(usize::MAX,|prev,mi| { let oldp = *prev; *prev = mi/shape[1]; Some((oldp,*prev)) })
+                        .filter(|(a,b)| *a != *b)
+                        .zip(rsp.iter_mut())
+                        .for_each(|((_,i),ri)| *ri = i);
+                    
+                }
 
-
-
-                ()              
+                izip!(self.mdata.iter(),
+                      ptr.permute_by(msp),
+                      ptr[1..].permute_by(msp))
+                    .flat_map(|(&mc,&p0,&p1)| izip!(std::iter::repeat(mc),unsafe{subj.get_unchecked(p0..p1)},unsafe{cof.get_unchecked(p0..p1)}) )
+                    .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
+                    .for_each(|((mc,&j,&c),(rj,rc))| {
+                        *rj = j;
+                        *rc = c * mc;
+                    });
             },
             (Some(msp),Some(sp)) => {
+                // compute number of elements and nonzeros
+                let (rnelem,rnnz,_) = msp.iter().peekable()
+                    .inner_join_by(|a,b| a.cmp(&b.0), izip!(sp.iter(),ptr.iter(),ptr[1..].iter()).peekable())
+                    .fold((0,0,usize::MAX),|(nelem,nnz,prev),(&mi,(_,&p0,&p1))| {
+                        if mi/shape[1] != prev { (nelem+1,nnz+p1-p0,mi/shape[1]) }
+                        else { (nelem, nnz+p1-p0,prev) }
+                    });
+
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+                // build rptr
+                *rptr.last_mut().unwrap() = rnnz;
+                msp.iter()
+                   .inner_join_by(|a,b| a.cmp(&b.0), izip!(sp.iter(),ptr.iter(),ptr[1..].iter()))
+                    .zip(rptr.iter_mut())
+                    .fold((0,usize::MAX),|(p,prev),((&mi,(_,p0,p1)),rp)| {
+                        if prev != mi { 
+                            *rp = p;
+                            (p+p1-p0,mi/shape[1])
+                        }
+                        else {
+                            (p + p1-p0,prev)
+                        }
+                    });
+                // build rsp
+                if let Some(rsp) = rsp {
+                    msp.iter()
+                       .inner_join_by(|a,b| a.cmp(b), izip!(sp.iter()))
+                       .scan(usize::MAX,|prev,(&mi,_)| { let oldp = *prev; *prev = mi/shape[1]; Some((oldp,*prev)) })
+                       .filter(|(a,b)| a != b)
+                       .zip(rsp.iter_mut())
+                       .for_each(|((_,rowi),ri)| *ri = rowi);
+                }
+                // build subj and cof
+                msp.iter().zip(self.mdata.iter())
+                    .inner_join_by(|a,b| a.0.cmp(&b.0), izip!(sp.iter(),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)))
+                    .map(|((_,mc),(_,js,cs))| (mc,js,cs)) 
+                    .flat_map(|(&mc,js,cs)| js.iter().zip(cs.iter().map(move |&v| v * mc)))
+                    .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
+                    .for_each(|((&j,c),(rj,rc))| { *rj = j; *rc = c;} );
             }
         }
 

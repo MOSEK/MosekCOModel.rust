@@ -403,6 +403,21 @@ impl<T1,T2,I1,I2,F> Iterator for InnerJoinBy<I1,I2,F>
 }
 
 ////////////////////////////////////////////////////////////
+//
+//trait CopyFromIterEx<I,T> where T:Copy, I : Iterator<Item=T> {
+//    fn copy_from_iter(&mut self, it : I);
+//}
+//trait CloneFromIterEx<I,T> where T:Clone, I : Iterator<Item=T> {
+//    fn clone_from_iter(&mut self, it : I);
+//}
+//
+//impl<I,T> CopyFromIterEx<I,T> for [T] where T:Copy, I:Iterator<Item=T> {
+//    fn copy_from_iter(&mut self, it : I) {
+//        for (t,s)
+//    }
+//}
+//
+////////////////////////////////////////////////////////////
 
 
 
