@@ -872,6 +872,146 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
     Ok(())
 }
 
+pub fn dot_rows(mshape : [usize;2],
+                msp    : Option<&[usize]>,
+                mdata  : &[f64],
+                rs     : & mut WorkStack,
+                ws     : & mut WorkStack,
+                _xs    : & mut WorkStack) -> Result<(),ExprEvalError> {
+
+    let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+    if shape != mshape { panic!("Mismatching shapes"); }
+    let (_nelem,nnz) = (ptr.len()-1,subj.len());
+    let rshape = [mshape[0]];
+    let shape = mshape;
+
+    match (&msp,sp) {
+        (None,None) => {
+            let (rnelem,rnnz) = (mshape[0],nnz);
+            let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+            rptr.iter_mut().zip(ptr.iter().step_by(shape[1])).for_each(|(rp,&p)| *rp = p);
+
+            rsubj.copy_from_slice(subj);
+            cof.chunks_ptr(ptr).zip(mdata.iter())
+                .flat_map(|(crow,&m)| crow.iter().map(move |&c| c * m) )
+                .zip(rcof.iter_mut())
+                .for_each(|(c,rc)| *rc = c);
+        },
+        (None,Some(sp)) => {
+            let num_expr_rows = sp.chunk_by(|a,b| a/shape[1] == b/shape[1]).count();
+            let (rnelem,rnnz) = (num_expr_rows,nnz);
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+
+            if let Some(rsp) = rsp {
+                sp.chunk_by(|a,b| a/shape[1] == b/shape[1]).zip(rsp.iter_mut()).for_each(|(ii,ri)| *ri = ii[0] / shape[1]);
+            }
+           
+            rptr[0] = 0;
+            sp.chunk_by(|a,b| a/shape[1] == b/shape[1])
+                .zip(rptr[1..].iter_mut())
+                .fold(0,|p,(eii,rp)| { let p1 = p+eii.len(); *rp = unsafe{ *ptr.get_unchecked(p1) }; p1 } ) ;
+
+            rsubj.copy_from_slice(subj);
+
+            cof.chunks_ptr(ptr).zip(mdata.permute_by(sp))
+                .flat_map(|(crow,&m)| crow.iter().map(move |&c| c * m) )
+                .zip(rcof.iter_mut())
+                .for_each(|(c,rc)| *rc = c);
+        },
+        (Some(msp),None) => {
+            let num_m_rows = msp.chunk_by(|a,b| a/shape[1] == b/shape[1]).count();
+            let rnelem = num_m_rows;
+            let rnnz = ptr.permute_by(msp).zip(ptr[1..].permute_by(msp)).map(|(p0,p1)| p1-p0).sum();
+
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+
+            rptr[0] = 0;
+
+            msp.chunk_by(|a,b| a/shape[1] == b/shape[1])
+                .scan(0,|p,ii| { let (p0,p1) = (*p,*p+ii.len()); *p = p1; Some(unsafe{ ptr.get_unchecked(p0..=p1)})})
+                .zip(rptr[1..].iter_mut())
+                .fold(0,|p,(eprow,rp)| {
+                    let rownnz = *eprow.last().unwrap() - eprow[0];                        
+                    *rp = p + rownnz;
+                    *rp
+                });
+            if let Some(rsp) = rsp { 
+                msp.iter()
+                    .scan(usize::MAX,|prev,mi| { let oldp = *prev; *prev = mi/shape[1]; Some((oldp,*prev)) })
+                    .filter(|(a,b)| *a != *b)
+                    .zip(rsp.iter_mut())
+                    .for_each(|((_,i),ri)| *ri = i);
+                
+            }
+
+            izip!(mdata.iter(),
+                  ptr.permute_by(msp),
+                  ptr[1..].permute_by(msp))
+                .flat_map(|(&mc,&p0,&p1)| izip!(std::iter::repeat(mc),unsafe{subj.get_unchecked(p0..p1)},unsafe{cof.get_unchecked(p0..p1)}) )
+                .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
+                .for_each(|((mc,&j,&c),(rj,rc))| {
+                    *rj = j;
+                    *rc = c * mc;
+                });
+        },
+        (Some(msp),Some(sp)) => {
+            // compute number of elements and nonzeros
+            let (rnelem,rnnz,_) = msp.iter().peekable()
+                .inner_join_by(|a,b| a.cmp(&b.0), izip!(sp.iter(),ptr.iter(),ptr[1..].iter()).peekable())
+                .fold((0,0,usize::MAX),|(nelem,nnz,prev),(&mi,(_,&p0,&p1))| {
+                    if mi/shape[1] != prev { 
+                        (nelem+1, nnz+p1-p0, mi/shape[1]) 
+                    }
+                    else {
+                        (nelem, nnz+p1-p0, prev) 
+                    }
+                });
+
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+            // build rptr
+            *rptr.last_mut().unwrap() = rnnz;
+            msp.iter()
+                .inner_join_by(|a,b| a.cmp(&b.0), izip!(sp.iter(),ptr.iter(),ptr[1..].iter()))
+                .scan((0,usize::MAX),|(p,prev),(&mi,(_,p0,p1))| {
+                    let oldprev = *prev;
+                    let oldp = *p;
+                    *prev = mi/shape[1];
+                    *p += p1-p0;
+                    Some((oldprev,*prev,oldp))
+                })
+                .filter(|(i0,i1,_)| i0 != i1)
+                .zip(rptr.iter_mut())
+                .for_each(|((_,_,p),rp)| *rp = p);
+
+            // build rsp
+            if let Some(rsp) = rsp {
+                msp.iter()
+                   .inner_join_by(|a,b| a.cmp(b), izip!(sp.iter()))
+                   .scan(usize::MAX,|prev,(&mi,_)| { let oldp = *prev; *prev = mi/shape[1]; Some((oldp,*prev)) })
+                   .filter(|(a,b)| a != b)
+                   .zip(rsp.iter_mut())
+                   .for_each(|((_,rowi),ri)| *ri = rowi);
+            }
+            // build subj and cof
+            msp.iter().zip(mdata.iter())
+                .inner_join_by(|a,b| a.0.cmp(&b.0), izip!(sp.iter(),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)))
+                .map(|((_,mc),(_,js,cs))| (mc,js,cs)) 
+                .flat_map(|(&mc,js,cs)| js.iter().zip(cs.iter().map(move |&v| v * mc)))
+                .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
+                .for_each(|((&j,c),(rj,rc))| { *rj = j; *rc = c;} );
+        }
+    }
+
+
+    Ok(())
+
+    
+
+}
+
+
+
+
 /// Evaluates `lhs` * expr.
 pub fn mul_left_dense(mdata : &[f64],
                              mdimi : usize,
@@ -1679,6 +1819,12 @@ pub fn mul_elem(datashape : &[usize],
 
     match (datasparsity,sp) {
         (Some(msp),Some(esp)) => {
+
+
+
+
+
+
             let (upart,xcof) = xs.alloc(esp.len()*2+1+subj.len(),subj.len());
             let (xsp,upart) = upart.split_at_mut(esp.len());
             let (xptr,xsubj) = upart.split_at_mut(esp.len()+1);
