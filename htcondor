@@ -1,9 +1,11 @@
-executable            = /home/ulfw/Project/MosekModel/condor/run_benchmarks.sh
+executable            = condor/run_benchmarks.sh
 batch_name            = Rust not-Fusion
 should_transfer_files = FALSE
 transfer_executable   = False
 universe              = vanilla
 request_memory        = 31872MB
+output                = condor/stdout-$(JobId).txt
+error                 = condor/stderr-$(JobId).txt
 
 periodic_hold = JobStatus == 2 && (CurrentTime - EnteredCurrentStatus) > 8100
 
@@ -13,6 +15,8 @@ Requirements  = regexp("vo",machine) == true
 #Requirements  = regexp("espe",machine) == true
 
 
-initial_dir   = /home/ulfw/Project/MosekModel
+initial_dir   = /home/ulfw/Projects/MosekModel.rs
 
-log           = /home/ulfw/Project/MosekModel/condor/job.log
+log           = condor/job-$(JobId).log
+
+queue

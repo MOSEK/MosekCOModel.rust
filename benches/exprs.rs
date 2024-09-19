@@ -135,13 +135,15 @@ fn bench_mul(c : & mut Criterion, vsp : Sparsity, dsp : Sparsity, rev : bool, n 
             let mut m = Model::new(None);
             let shape = [n,n];
             let st = shape.to_strides();
-            let v = 
+            let (v,w) = 
                 match vsp {
                     Sparsity::Sparse => {
                         let sp = (0..shape.iter().product()).step_by(10).map(|i| st.to_index(i)).collect::<Vec<[usize;2]>>();
-                        m.variable(None, unbounded().with_shape_and_sparsity(&shape, sp.as_slice()))
+                        (m.variable(None, unbounded().with_shape_and_sparsity(&shape, sp.as_slice())),
+                         m.variable(None, unbounded().with_shape_and_sparsity(&shape, sp.as_slice())).transpose())
                     },
-                    Sparsity::Dense => m.variable(None,&shape),
+                    Sparsity::Dense => (m.variable(None,&shape),
+                                        m.variable(None,&shape).transpose()),
                 };
             let mx = 
                 match dsp {
@@ -161,13 +163,60 @@ fn bench_mul(c : & mut Criterion, vsp : Sparsity, dsp : Sparsity, rev : bool, n 
             if rev {
                 b.iter(|| {
                     rs.clear(); ws.clear(); xs.clear();
-                    v.clone().mul(mx.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+                    v.clone().add(w.clone()).mul(mx.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
                 });
             }
             else {
                 b.iter(|| {
                     rs.clear(); ws.clear(); xs.clear();
-                    mx.clone().mul(v.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+                    mx.clone().mul(v.clone().add(w.clone())).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+                });
+            }
+        });
+}
+
+fn bench_mul_diag(c : & mut Criterion, vsp : Sparsity, dsp : Sparsity, rev : bool, n : usize) {
+    use utils::ShapeToStridesEx;
+    c.bench_function(
+        format!("mul-diag-{:?}-{:?}-{}-{}",vsp,dsp,if rev {"rev"} else {"fwd"},n).as_str(), 
+        |b| {
+            let mut m = Model::new(None);
+            let shape = [n,n];
+            let st = shape.to_strides();
+            let (v,w) = 
+                match vsp {
+                    Sparsity::Sparse => {
+                        let sp = (0..shape.iter().product()).step_by(10).map(|i| st.to_index(i)).collect::<Vec<[usize;2]>>();
+                        (m.variable(None, unbounded().with_shape_and_sparsity(&shape, sp.as_slice())),
+                         m.variable(None, unbounded().with_shape_and_sparsity(&shape, sp.as_slice())).transpose())
+                    },
+                    Sparsity::Dense => (m.variable(None,&shape),
+                                        m.variable(None,&shape).transpose()),
+                };
+            let mx = 
+                match dsp {
+                    Sparsity::Sparse =>  {
+                        let sp = (0..n*n).step_by(7).map(|i| st.to_index(i)).collect::<Vec<[usize;2]>>();
+                        let num = sp.len();
+                        matrix::sparse( [n,n], sp, vec![1.0; num])
+                    },
+                    Sparsity::Dense => matrix::dense([n,n], vec![1.0;n*n]),
+                };
+
+            let mut rs = WorkStack::new(1024);
+            let mut ws = WorkStack::new(1024);
+            let mut xs = WorkStack::new(1024);
+
+            if rev {
+                b.iter(|| {
+                    rs.clear(); ws.clear(); xs.clear();
+                    v.clone().add(w.clone()).mul(mx.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+                });
+            }
+            else {
+                b.iter(|| {
+                    rs.clear(); ws.clear(); xs.clear();
+                    mx.clone().mul(v.clone().add(w.clone())).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
                 });
             }
         });
@@ -206,8 +255,8 @@ fn bench_repeat_sparse_0_374(c : & mut Criterion) { bench_repeat(c,true, 0,374,3
 fn bench_repeat_sparse_1_374(c : & mut Criterion) { bench_repeat(c,true, 1,374,3) }
 fn bench_repeat_sparse_2_374(c : & mut Criterion) { bench_repeat(c,true, 2,374,3) }
 
-fn bench_mul_dense_dense_fwd(c : & mut Criterion)   { bench_mul(c,Sparsity::Dense, Sparsity::Dense, false,512) }
-fn bench_mul_dense_dense_rev(c : & mut Criterion)   { bench_mul(c,Sparsity::Dense, Sparsity::Dense, true, 512) }
+fn bench_mul_dense_dense_fwd(c : & mut Criterion)   { bench_mul(c,Sparsity::Dense, Sparsity::Dense, false,256) }
+fn bench_mul_dense_dense_rev(c : & mut Criterion)   { bench_mul(c,Sparsity::Dense, Sparsity::Dense, true, 128) }
 fn bench_mul_dense_sparse_fwd(c : & mut Criterion)  { bench_mul(c,Sparsity::Dense, Sparsity::Sparse,false,512) }
 fn bench_mul_dense_sparse_rev(c : & mut Criterion)  { bench_mul(c,Sparsity::Dense, Sparsity::Sparse,true, 512) }
 fn bench_mul_sparse_dense_fwd(c : & mut Criterion)  { bench_mul(c,Sparsity::Sparse,Sparsity::Dense, false,512) }
@@ -215,6 +264,14 @@ fn bench_mul_sparse_dense_rev(c : & mut Criterion)  { bench_mul(c,Sparsity::Spar
 fn bench_mul_sparse_sparse_fwd(c : & mut Criterion) { bench_mul(c,Sparsity::Sparse,Sparsity::Sparse,false,512) }
 fn bench_mul_sparse_sparse_rev(c : & mut Criterion) { bench_mul(c,Sparsity::Sparse,Sparsity::Sparse,true, 512) }
 
+fn bench_mul_diag_dense_dense_fwd(c : & mut Criterion)   { bench_mul_diag(c,Sparsity::Dense, Sparsity::Dense, false,512) }
+fn bench_mul_diag_dense_dense_rev(c : & mut Criterion)   { bench_mul_diag(c,Sparsity::Dense, Sparsity::Dense, true, 512) }
+fn bench_mul_diag_dense_sparse_fwd(c : & mut Criterion)  { bench_mul_diag(c,Sparsity::Dense, Sparsity::Sparse,false,512) }
+fn bench_mul_diag_dense_sparse_rev(c : & mut Criterion)  { bench_mul_diag(c,Sparsity::Dense, Sparsity::Sparse,true, 512) }
+fn bench_mul_diag_sparse_dense_fwd(c : & mut Criterion)  { bench_mul_diag(c,Sparsity::Sparse,Sparsity::Dense, false,512) }
+fn bench_mul_diag_sparse_dense_rev(c : & mut Criterion)  { bench_mul_diag(c,Sparsity::Sparse,Sparsity::Dense, true, 512) }
+fn bench_mul_diag_sparse_sparse_fwd(c : & mut Criterion) { bench_mul_diag(c,Sparsity::Sparse,Sparsity::Sparse,false,512) }
+fn bench_mul_diag_sparse_sparse_rev(c : & mut Criterion) { bench_mul_diag(c,Sparsity::Sparse,Sparsity::Sparse,true, 512) }
 
 criterion_group!(
     name=benches;
@@ -250,6 +307,15 @@ criterion_group!(
         bench_mul_sparse_dense_fwd,
         bench_mul_sparse_dense_rev,
         bench_mul_sparse_sparse_fwd,
-        bench_mul_sparse_sparse_rev
+        bench_mul_sparse_sparse_rev,
+
+        bench_mul_diag_dense_dense_fwd,
+        bench_mul_diag_dense_dense_rev,
+        bench_mul_diag_dense_sparse_fwd,
+        bench_mul_diag_dense_sparse_rev,
+        bench_mul_diag_sparse_dense_fwd,
+        bench_mul_diag_sparse_dense_rev,
+        bench_mul_diag_sparse_sparse_fwd,
+        bench_mul_diag_sparse_sparse_rev
     );
 criterion_main!(benches);
