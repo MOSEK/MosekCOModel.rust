@@ -293,6 +293,9 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
 
 pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+    let nnz = subj.len();
+    let nelem = ptr.len()-1;
+    let nd = shape.len();
     if dim >= shape.len() {
         return Err(ExprEvalError::new(file!(),line!(),"Invalid stacking dimension"));
     }
@@ -301,7 +304,6 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
     let nelm = ptr.len()-1;
     let rnnz = ptr.last().unwrap()*num;
     let rnelm = (ptr.len()-1)*num;
-
 
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(), rnnz, rnelm);
 
@@ -345,17 +347,36 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
         let d1 : usize = shape[dim..].iter().product();
         rptr[0] = 0;
         let mut rptr_pos = 0usize;
-        for ((ptrb,ptre),rptr) in izip!(ptr.chunks(d1),ptr[1..].chunks(d1)).map(|v| std::iter::repeat(v).take(num)).flatten().zip(rptr[1..].chunks_mut(d1)) {
-            izip!(rptr.iter_mut(),ptrb.iter(),ptre.iter()).for_each(|(r,&pb,&pe)| *r = pe-pb);
-            let pb = ptrb[0];
-            let pe = *ptre.last().unwrap();
-            let n = pe-pb;
-            rsubj[rptr_pos..rptr_pos+n].copy_from_slice(&subj[pb..pe]);
-            rcof[rptr_pos..rptr_pos+n].copy_from_slice(&cof[pb..pe]);
-            rptr_pos += n;
-        }
 
-        _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+        // special case: stack in top dimension, amounting to repeating the expression n times.
+        if dim == 0 {
+            rsubj.chunks_mut(nnz).for_each(|rj| rj.copy_from_slice(subj));
+            rcof.chunks_mut(nnz).for_each(|rc| rc.copy_from_slice(cof));
+            ptr.iter().zip(ptr[1..].iter())
+                .cycle()
+                .zip(rptr[1..].iter_mut())
+                .for_each(|((p0,p1),rp)| *rp = p1-p0);
+            rptr.iter_mut().fold(0,|p,rp| { *rp += p; *rp });
+        }
+        // special case: stack in bottom dimension, the dimension being size 1, amounting to
+        // repeating each element n times
+        else if dim == nd-1 && shape[nd-1] == 1 {
+            _ = rptr.iter_mut().fold(0,|p,rp| { *rp = p; *rp+num });
+            subj.iter().flat_map(|j| std::iter::repeat(*j).take(num)).zip(rsubj.iter_mut()).for_each(|(j,rj)| *rj = j);
+            cof.iter().flat_map(|c| std::iter::repeat(*c).take(num)).zip(rcof.iter_mut()).for_each(|(c,rc)| *rc = c);
+        }
+        else {
+            for ((ptrb,ptre),rptr) in izip!(ptr.chunks(d1),ptr[1..].chunks(d1)).map(|v| std::iter::repeat(v).take(num)).flatten().zip(rptr[1..].chunks_mut(d1)) {
+                izip!(rptr.iter_mut(),ptrb.iter(),ptre.iter()).for_each(|(r,&pb,&pe)| *r = pe-pb);
+                let pb = ptrb[0];
+                let pe = *ptre.last().unwrap();
+                let n = pe-pb;
+                rsubj[rptr_pos..rptr_pos+n].copy_from_slice(&subj[pb..pe]);
+                rcof[rptr_pos..rptr_pos+n].copy_from_slice(&cof[pb..pe]);
+                rptr_pos += n;
+            }
+            _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+        }
     }
     rs.check();
     Ok(())
