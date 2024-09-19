@@ -356,26 +356,28 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
                 .cycle()
                 .zip(rptr[1..].iter_mut())
                 .for_each(|((p0,p1),rp)| *rp = p1-p0);
+
             rptr.iter_mut().fold(0,|p,rp| { *rp += p; *rp });
         }
         // special case: stack in bottom dimension, the dimension being size 1, amounting to
         // repeating each element n times
         else if dim == nd-1 && shape[nd-1] == 1 {
-            _ = rptr.iter_mut().fold(0,|p,rp| { *rp = p; *rp+num });
+            rptr.iter_mut().enumerate().for_each(|(i,rp)| *rp = i);
             subj.iter().flat_map(|j| std::iter::repeat(*j).take(num)).zip(rsubj.iter_mut()).for_each(|(j,rj)| *rj = j);
             cof.iter().flat_map(|c| std::iter::repeat(*c).take(num)).zip(rcof.iter_mut()).for_each(|(c,rc)| *rc = c);
         }
         else {
-            for ((ptrb,ptre),rptr) in izip!(ptr.chunks(d1),ptr[1..].chunks(d1)).map(|v| std::iter::repeat(v).take(num)).flatten().zip(rptr[1..].chunks_mut(d1)) {
-                izip!(rptr.iter_mut(),ptrb.iter(),ptre.iter()).for_each(|(r,&pb,&pe)| *r = pe-pb);
-                let pb = ptrb[0];
-                let pe = *ptre.last().unwrap();
-                let n = pe-pb;
-                rsubj[rptr_pos..rptr_pos+n].copy_from_slice(&subj[pb..pe]);
-                rcof[rptr_pos..rptr_pos+n].copy_from_slice(&cof[pb..pe]);
-                rptr_pos += n;
-            }
-            _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+            izip!(ptr.chunks(d1),ptr[1..].chunks(d1)).flat_map(|item| std::iter::repeat(item).take(num))
+                .flat_map(|(pb,pe)| pb.iter().zip(pe)) 
+                .zip(rptr[1..].iter_mut())
+                .fold(0,|p,((p0,p1),rp)| { *rp = p+p1-p0; *rp });
+
+
+            izip!(ptr.chunks(d1),ptr[1..].chunks(d1)).flat_map(|item| std::iter::repeat(item).take(num))
+                .flat_map(|(ptrb,ptre)| ptrb.iter().zip(ptre)) 
+                .flat_map(|(&pb,&pe)| unsafe{subj.get_unchecked(pb..pe)}.iter().zip(unsafe{cof.get_unchecked(pb..pe)}.iter()))
+                .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
+                .for_each(|((&j,&c),(rj,rc))| { *rj = j; *rc = c; });
         }
     }
     rs.check();
