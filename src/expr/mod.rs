@@ -2252,6 +2252,23 @@ mod test {
 
     #[allow(non_snake_case)]
     #[test]
+    fn dot_rows_x() {
+        let dmx = NDArray::new([512,512], None, vec![1.0; 512*512]).unwrap();
+
+        let mut M = Model::new(None);
+        let dv = M.variable(None, unbounded().with_shape(&[512,512])); // 1,2,...,9
+        let dw = M.variable(None, unbounded().with_shape(&[512,512])); // 10,...,18
+
+        let mut rs = WorkStack::new(1024);
+        let mut ws = WorkStack::new(1024);
+        let mut xs = WorkStack::new(1024);
+
+        dv.clone().add(dw.clone()).dot_rows(dmx.clone()).eval(&mut rs, &mut ws, &mut xs).unwrap();
+    }
+
+
+    #[allow(non_snake_case)]
+    #[test]
     fn dot_rows() {
         let dmx = NDArray::new([3,3], None, vec![1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,3.3]).unwrap();
         let smx = NDArray::new([3,3], Some(vec![0,2,7]), vec![1.1,1.3,3.2]).unwrap();

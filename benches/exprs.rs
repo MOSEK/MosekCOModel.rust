@@ -63,7 +63,7 @@ fn bench_sum_on( c : &mut Criterion, sp : bool, n : usize, axes : [usize;3]) {
 fn bench_stack(c : & mut Criterion, d : usize, sp : bool, n : usize) {
     use utils::ShapeToStridesEx;
     c.bench_function(
-        format!("stack-{}-{}-{}",if sp {"sparse"} else {"dense"},d,n).as_str(), 
+        format!("stack-{}-{}",if sp {"sparse"} else {"dense"},d).as_str(), 
         |b| {
             let mut m = Model::new(None);
             let shape = [n,n,n];
@@ -130,7 +130,7 @@ enum Sparsity {
 fn bench_mul(c : & mut Criterion, vsp : Sparsity, dsp : Sparsity, rev : bool, n : usize) {
     use utils::ShapeToStridesEx;
     c.bench_function(
-        format!("mul-{:?}-{:?}-{}-{}",vsp,dsp,if rev {"rev"} else {"fwd"},n).as_str(), 
+        format!("mul-{:?}-{:?}-{}",vsp,dsp,if rev {"rev"} else {"fwd"}).as_str(), 
         |b| {
             let mut m = Model::new(None);
             let shape = [n,n];
@@ -178,7 +178,7 @@ fn bench_mul(c : & mut Criterion, vsp : Sparsity, dsp : Sparsity, rev : bool, n 
 fn bench_mul_diag(c : & mut Criterion, vsp : Sparsity, dsp : Sparsity, rev : bool, n : usize) {
     use utils::ShapeToStridesEx;
     c.bench_function(
-        format!("mul-diag-{:?}-{:?}-{}-{}",vsp,dsp,if rev {"rev"} else {"fwd"},n).as_str(), 
+        format!("mul-diag-{:?}-{:?}-{}",vsp,dsp,if rev {"rev"} else {"fwd"}).as_str(), 
         |b| {
             let mut m = Model::new(None);
             let shape = [n,n];
@@ -210,13 +210,13 @@ fn bench_mul_diag(c : & mut Criterion, vsp : Sparsity, dsp : Sparsity, rev : boo
             if rev {
                 b.iter(|| {
                     rs.clear(); ws.clear(); xs.clear();
-                    v.clone().add(w.clone()).mul(mx.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+                    v.clone().add(w.clone()).dot_rows(mx.clone().transpose()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
                 });
             }
             else {
                 b.iter(|| {
                     rs.clear(); ws.clear(); xs.clear();
-                    mx.clone().mul(v.clone().add(w.clone())).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+                    v.clone().add(w.clone()).transpose().dot_rows(mx.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
                 });
             }
         });

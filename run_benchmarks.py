@@ -106,6 +106,11 @@ if __name__ == '__main__':
                 w.writerow([k.lower(),est['mean']['point_estimate']*1e-9, est['std_dev']['point_estimate']*1e-9])
             else:
                 w.writerow([k.lower(),'',''])
+        w.writerow(['-------------'])
+        for k in estimates:
+            if k not in allexamp:
+                (est,samp) = estimates[k]
+                w.writerow([k.lower(),est['mean']['point_estimate']*1e-9, est['std_dev']['point_estimate']*1e-9])
 
         
     

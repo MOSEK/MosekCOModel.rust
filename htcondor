@@ -1,4 +1,5 @@
 executable            = condor/run_benchmarks.sh
+arguments             = condor/result-$(JobId).tab
 batch_name            = Rust not-Fusion
 should_transfer_files = FALSE
 transfer_executable   = False
