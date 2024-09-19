@@ -88,7 +88,7 @@ if __name__ == '__main__':
                 est = json.load(f)
             with open(Path(base).joinpath('benchmark.json'),'rb') as f:
                 bm = json.load(f)
-            estimates[bm['title']] = [est,samp]
+            estimates[bm['title'].lower()] = [est,samp]
 
     with open(a.output,'wt') as f:
         json.dump(estimates,f)
@@ -107,7 +107,7 @@ if __name__ == '__main__':
             else:
                 w.writerow([k.lower(),'',''])
         w.writerow(['-------------'])
-        for k in estimates:
+        for k in sorted(estimates):
             if k not in allexamp:
                 (est,samp) = estimates[k]
                 w.writerow([k.lower(),est['mean']['point_estimate']*1e-9, est['std_dev']['point_estimate']*1e-9])

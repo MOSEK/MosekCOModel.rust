@@ -63,7 +63,7 @@ fn bench_sum_on( c : &mut Criterion, sp : bool, n : usize, axes : [usize;3]) {
 fn bench_stack(c : & mut Criterion, d : usize, sp : bool, n : usize) {
     use utils::ShapeToStridesEx;
     c.bench_function(
-        format!("stack-{}-{}",if sp {"sparse"} else {"dense"},d).as_str(), 
+        format!("stack-{}-{}-{}",if sp {"sparse"} else {"dense"},d,n).as_str(), 
         |b| {
             let mut m = Model::new(None);
             let shape = [n,n,n];
