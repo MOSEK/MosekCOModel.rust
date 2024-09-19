@@ -776,25 +776,30 @@ impl<E> ExprTrait<1> for ExprDotRows<E> where E : ExprTrait<2> {
                 let (rnelem,rnnz,_) = msp.iter().peekable()
                     .inner_join_by(|a,b| a.cmp(&b.0), izip!(sp.iter(),ptr.iter(),ptr[1..].iter()).peekable())
                     .fold((0,0,usize::MAX),|(nelem,nnz,prev),(&mi,(_,&p0,&p1))| {
-                        if mi/shape[1] != prev { (nelem+1,nnz+p1-p0,mi/shape[1]) }
-                        else { (nelem, nnz+p1-p0,prev) }
+                        if mi/shape[1] != prev { 
+                            (nelem+1, nnz+p1-p0, mi/shape[1]) 
+                        }
+                        else {
+                            (nelem, nnz+p1-p0, prev) 
+                        }
                     });
 
                 let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
                 // build rptr
                 *rptr.last_mut().unwrap() = rnnz;
                 msp.iter()
-                   .inner_join_by(|a,b| a.cmp(&b.0), izip!(sp.iter(),ptr.iter(),ptr[1..].iter()))
+                    .inner_join_by(|a,b| a.cmp(&b.0), izip!(sp.iter(),ptr.iter(),ptr[1..].iter()))
+                    .scan((0,usize::MAX),|(p,prev),(&mi,(_,p0,p1))| {
+                        let oldprev = *prev;
+                        let oldp = *p;
+                        *prev = mi/shape[1];
+                        *p += p1-p0;
+                        Some((oldprev,*prev,oldp))
+                    })
+                    .filter(|(i0,i1,_)| i0 != i1)
                     .zip(rptr.iter_mut())
-                    .fold((0,usize::MAX),|(p,prev),((&mi,(_,p0,p1)),rp)| {
-                        if prev != mi { 
-                            *rp = p;
-                            (p+p1-p0,mi/shape[1])
-                        }
-                        else {
-                            (p + p1-p0,prev)
-                        }
-                    });
+                    .for_each(|((_,_,p),rp)| *rp = p);
+
                 // build rsp
                 if let Some(rsp) = rsp {
                     msp.iter()
@@ -2241,6 +2246,95 @@ mod test {
             let v = v.clone();
             let w = w.clone();
             m.constraint(None, &u.add(v.axispermute(&[1,0,1,0])).add(w.axispermute(&[1,0,2,3])).sum_on(&[2]), unbounded().with_shape(&[3]));
+        }
+    }
+
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn dot_rows() {
+        let dmx = NDArray::new([3,3], None, vec![1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,3.3]).unwrap();
+        let smx = NDArray::new([3,3], Some(vec![0,2,7]), vec![1.1,1.3,3.2]).unwrap();
+
+        let mut M = Model::new(None);
+        let dv = M.variable(None, unbounded().with_shape(&[3,3])); // 1,2,...,9
+        let dw = M.variable(None, unbounded().with_shape(&[3,3])); // 10,...,18
+        let sv = M.variable(None, unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[0,1],[0,2],[2,0],[2,1],[2,2]])); // 19,...,24
+        let sw = M.variable(None, unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[0,2],[2,1]])); // 25,26,27
+
+        let mut rs = WorkStack::new(1024);
+        let mut ws = WorkStack::new(1024);
+        let mut xs = WorkStack::new(1024);
+
+        {
+            dw.clone().add(dv.clone()).dot_rows(dmx.clone()).eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            
+            // ⎡ x1+x10  x2+x11  x3+x12 ⎤   ⎡ 1.1 1.2 1.3 ⎤
+            // ⎢ x4+x13  x5+x14  x6+x15 ⎥ x ⎢ 2.1 2.2 2.3 ⎥
+            // ⎣ x7+x16  x8+x17  x9+x18 ⎦   ⎣ 3.1 3.2 3.3 ⎦
+
+            assert_eq!(shape,[3]);
+            assert!(sp.is_none());
+            assert_eq!(ptr,[0,6,12,18]);
+            assert_eq!(subj,[1,10,2,11,3,12,4,13,5,14,6,15,7,16,8,17,9,18]);
+            assert_eq!(cof,[1.1,1.1,1.2,1.2,1.3,1.3,2.1,2.1,2.2,2.2,2.3,2.3,3.1,3.1,3.2,3.2,3.3,3.3]);
+        }
+        {
+            rs.clear(); ws.clear(); xs.clear();
+
+            dw.clone().add(dv.clone()).dot_rows(smx.clone()).eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            
+            // ⎡ x1+x10  x2+x11  x3+x12 ⎤   ⎡ 1.1     1.3 ⎤   ⎡ 1.1(x1+x10) + 1.3(x3+x12) ⎤ 
+            // ⎢ x4+x13  x5+x14  x6+x15 ⎥ x ⎢             ⎥ = ⎢                           ⎥
+            // ⎣ x7+x16  x8+x17  x9+x18 ⎦   ⎣     3.2     ⎦   ⎣ 3.2(x8+x17)               ⎦
+
+            assert_eq!(shape,[3]);
+            assert!(sp.is_some());
+            assert_eq!(sp.unwrap(),[0,2]);
+            assert_eq!(ptr,[0,4,6]);
+            assert_eq!(subj,[1,10,3,12,8,17]);
+            assert_eq!(cof,[1.1,1.1,1.3,1.3,3.2,3.2]);
+        }
+        {
+            rs.clear(); ws.clear(); xs.clear();
+
+            sw.clone().add(sv.clone()).dot_rows(dmx.clone()).eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            
+            // ⎡ x19+x25  x20     x21+x26 ⎤   ⎡ 1.1 1.2 1.3 ⎤   ⎡ 1.1(x19+x25) + 1.2 x20 + 1.3(x21+x26 ⎤ 
+            // ⎢                          ⎥ x ⎢ 2.1 2.2 2.3 ⎥ = ⎢                                      ⎥
+            // ⎣ x22      x23+x27 x24     ⎦   ⎣ 3.1 3.2 3.3 ⎦   ⎣ 3.1 x22 + 3.2(x23+x27) + 3.3 x24     ⎦
+
+            assert_eq!(shape,[3]);
+            assert!(sp.is_some());
+            assert_eq!(sp.unwrap(),[0,2]);
+            assert_eq!(ptr,[0,5,9]);
+            assert_eq!(subj,[19,25,20,21,26,22,23,27,24]);
+            assert_eq!(cof,[1.1,1.1,1.2,1.3,1.3,3.1,3.2,3.2,3.3]);
+        }
+        {
+            rs.clear(); ws.clear(); xs.clear();
+
+            sw.clone().add(sv.clone()).dot_rows(smx.clone()).eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            
+            // ⎡ x19+x25  x20     x21+x26 ⎤   ⎡ 1.1     1.3 ⎤   ⎡ 1.1(x19+x25) + 1.3(x21+x26) ⎤ 
+            // ⎢                          ⎥ x ⎢             ⎥ = ⎢                             ⎥
+            // ⎣ x22      x23+x27 x24     ⎦   ⎣     3.2     ⎦   ⎣ 3.2(x23+x27)                ⎦
+
+            println!("ptr  = {:?}",ptr);
+            println!("sp   = {:?}",sp);
+            println!("subj = {:?}",subj);
+            println!("cof  = {:?}",cof);
+
+            assert_eq!(shape,[3]);
+            assert!(sp.is_some());
+            assert_eq!(sp.unwrap(),[0,2]);
+            assert_eq!(ptr,[0,4,6]);
+            assert_eq!(subj,[19,25,21,26,23,27]);
+            assert_eq!(cof,[1.1,1.1,1.3,1.3,3.2,3.2]);
         }
     }
 }
