@@ -2232,4 +2232,86 @@ mod test {
             assert_eq!(cof,[1.1,1.1,1.3,1.3,3.2,3.2]);
         }
     }
+    #[allow(non_snake_case)]
+    #[test]
+    fn mul_elem() {
+        let dmx = NDArray::new([3,3], None, vec![1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,3.3]).unwrap();
+        let smx = NDArray::new([3,3], Some(vec![0,2,7]), vec![1.1,1.3,3.2]).unwrap();
+
+        let mut M = Model::new(None);
+        let dv = M.variable(None, unbounded().with_shape(&[3,3])); // 1,2,...,9
+        let dw = M.variable(None, unbounded().with_shape(&[3,3])); // 10,...,18
+        let sv = M.variable(None, unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[0,1],[0,2],[2,0],[2,1],[2,2]])); // 19,...,24
+        let sw = M.variable(None, unbounded().with_shape_and_sparsity(&[3,3],&[[0,0],[0,2],[2,1]])); // 25,26,27
+
+        let mut rs = WorkStack::new(1024);
+        let mut ws = WorkStack::new(1024);
+        let mut xs = WorkStack::new(1024);
+
+        {
+            dw.clone().add(dv.clone()).mul_elem(dmx.clone()).eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            
+            // ⎡ x1+x10  x2+x11  x3+x12 ⎤   ⎡ 1.1 1.2 1.3 ⎤
+            // ⎢ x4+x13  x5+x14  x6+x15 ⎥ x ⎢ 2.1 2.2 2.3 ⎥
+            // ⎣ x7+x16  x8+x17  x9+x18 ⎦   ⎣ 3.1 3.2 3.3 ⎦
+
+            assert_eq!(shape,[3,3]);
+            assert!(sp.is_none());
+            assert_eq!(ptr,[0,2,4,6,8,10,12,14,16,18]);
+            assert_eq!(subj,[1,10,2,11,3,12,4,13,5,14,6,15,7,16,8,17,9,18]);
+            assert_eq!(cof,[1.1,1.1,1.2,1.2,1.3,1.3,2.1,2.1,2.2,2.2,2.3,2.3,3.1,3.1,3.2,3.2,3.3,3.3]);
+        }
+        {
+            rs.clear(); ws.clear(); xs.clear();
+
+            dw.clone().add(dv.clone()).mul_elem(smx.clone()).eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            
+            // ⎡ x1+x10  x2+x11  x3+x12 ⎤   ⎡ 1.1     1.3 ⎤   ⎡ 1.1(x1+x10)             1.3(x3+x12) ⎤ 
+            // ⎢ x4+x13  x5+x14  x6+x15 ⎥ x ⎢             ⎥ = ⎢                                     ⎥
+            // ⎣ x7+x16  x8+x17  x9+x18 ⎦   ⎣     3.2     ⎦   ⎣             3.2(x8+x17)             ⎦
+
+            assert_eq!(shape,[3,3]);
+            assert!(sp.is_some());
+            assert_eq!(sp.unwrap(),[0,2,7]);
+            assert_eq!(ptr,[0,2,4,6]);
+            assert_eq!(subj,[1,10,3,12,8,17]);
+            assert_eq!(cof,[1.1,1.1,1.3,1.3,3.2,3.2]);
+        }
+        {
+            rs.clear(); ws.clear(); xs.clear();
+
+            sw.clone().add(sv.clone()).mul_elem(dmx.clone()).eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            
+            // ⎡ x19+x25  x20     x21+x26 ⎤   ⎡ 1.1 1.2 1.3 ⎤   ⎡ 1.1(x19+x25)   1.2 x20   1.3(x21+x26 ⎤ 
+            // ⎢                          ⎥ x ⎢ 2.1 2.2 2.3 ⎥ = ⎢                                      ⎥
+            // ⎣ x22      x23+x27 x24     ⎦   ⎣ 3.1 3.2 3.3 ⎦   ⎣ 3.1 x22      3.2(x23+x27)   3.3 x24  ⎦
+
+            assert_eq!(shape,[3,3]);
+            assert!(sp.is_some());
+            assert_eq!(sp.unwrap(),[0,1,2,6,7,8]);
+            assert_eq!(ptr,[0,2,3,5,6,8,9]);
+            assert_eq!(subj,[19,25,20,21,26,22,23,27,24]);
+            assert_eq!(cof,[1.1,1.1,1.2,1.3,1.3,3.1,3.2,3.2,3.3]);
+        }
+        {
+            rs.clear(); ws.clear(); xs.clear();
+
+            sw.clone().add(sv.clone()).mul_elem(smx.clone()).eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            
+            // ⎡ x19+x25  x20     x21+x26 ⎤   ⎡ 1.1     1.3 ⎤   ⎡ 1.1(x19+x25)         1.3(x21+x26) ⎤ 
+            // ⎢                          ⎥ x ⎢             ⎥ = ⎢                                   ⎥
+            // ⎣ x22      x23+x27 x24     ⎦   ⎣     3.2     ⎦   ⎣            3.2(x23+x27)           ⎦
+
+            assert_eq!(shape,[3,3]);
+            assert!(sp.is_some());
+            assert_eq!(sp.unwrap(),[0,2,7]);
+            assert_eq!(ptr,[0,2,4,6]);
+            assert_eq!(subj,[19,25,21,26,23,27]);
+            assert_eq!(cof,[1.1,1.1,1.3,1.3,3.2,3.2]);
+        }
+    }
 }

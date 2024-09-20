@@ -1805,62 +1805,57 @@ pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : &
     Ok(())
 }
 
-pub fn mul_elem(datashape : &[usize],
-                        datasparsity : Option<&[usize]>,
-                        data : &[f64],
-                        rs : & mut WorkStack,
-                        ws : & mut WorkStack,
-                        xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+pub fn mul_elem(mshape: &[usize],
+                msp: Option<&[usize]>,
+                mdata : &[f64],
+                rs : & mut WorkStack,
+                ws : & mut WorkStack,
+                xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let &nnz = ptr.last().unwrap();
     let nelm = ptr.len()-1;
 
-    if shape.iter().zip(datashape.iter()).any(|(&s0,&s1)| s0 != s1) { return Err(ExprEvalError::new(file!(),line!(),"Mismatching operand shapes in mul_elm")); }
+    if shape != mshape {
+        return Err(ExprEvalError::new(file!(),line!(),"Mismatching operand shapes"));
+    }
 
-    match (datasparsity,sp) {
-        (Some(msp),Some(esp)) => {
-
-
-
-
-
-
-            let (upart,xcof) = xs.alloc(esp.len()*2+1+subj.len(),subj.len());
-            let (xsp,upart) = upart.split_at_mut(esp.len());
-            let (xptr,xsubj) = upart.split_at_mut(esp.len()+1);
-
-            xptr[0] = 0;
-            let mut mit   = msp.iter().zip(data.iter()).peekable();
-            let mut eit   = izip!(esp.iter(),ptr.iter(),ptr[1..].iter()).peekable();
-            let mut rnelm = 0usize;
-            let mut rnnz  = 0usize;
-
-            while let (Some((&mi,&mc)),Some((ei,&p0,&p1))) = (mit.peek(),eit.peek()) {
-                match mi.cmp(ei) {
-                    std::cmp::Ordering::Less => _ = mit.next(),
-                    std::cmp::Ordering::Greater => _ = eit.next(),
-                    std::cmp::Ordering::Equal => {
-                        xsp[rnelm] = mi;                            
-                        xsubj[rnnz..rnnz+p1-p0].copy_from_slice(&subj[p0..p1]);                            
-                        xcof[rnnz..rnnz+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(tc,&sc)| *tc = sc * mc);
-
-                        rnelm += 1;
-                        rnnz += p1-p0;
-                        xptr[rnelm] = rnnz;
-
-                        _ = mit.next();
-                        _ = eit.next();
-                    }
-                }
+    if let Some(msp) = msp {
+        if msp.iter().zip(msp.iter()).any(|(&s0,&s1)| s0 != s1) { return Err(ExprEvalError::new(file!(),line!(),"Mismatching operand shapes in mul_elm")); }
+        let msz = mshape.iter().product::<usize>();
+        if let Some(&i) = msp.iter().max() {
+            if i >= msz {
+                return Err(ExprEvalError::new(file!(),line!(),"Invalid sparsity pattern"));
             }
+        }
+    }
 
-            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape, rnnz, rnelm);
-            rptr.copy_from_slice(&xptr[..rnelm+1]);
-            assert!(rptr[0] == 0);
-            if let Some(rsp) = rsp { rsp.copy_from_slice(&xsp[..rnelm]) };
-            rsubj.copy_from_slice(&xsubj[..rnnz]);
-            rcof.copy_from_slice(&xcof[..rnnz]);
-            xs.clear();
+    match (msp,sp) {
+        (Some(msp),Some(esp)) => {
+            
+            let (rnelem,rnnz) = 
+                msp.iter()
+                    .inner_join_by(|&mi,(&ei,_,_)| mi.cmp(&ei), izip!(esp.iter(),ptr.iter(),ptr[1..].iter()))
+                    .fold((0,0),|(elmi,nzi),(_,(_,p0,p1))| (elmi+1,nzi+p1-p0));
+
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape, rnnz, rnelem);
+            rptr[0] = 0;
+
+            // build rptr and rsp
+            msp.iter()
+                .inner_join_by(|mi,(ei,_,_)| mi.cmp(ei), izip!(esp.iter(),ptr.iter(),ptr[1..].iter()))
+                .zip(rptr[1..].iter_mut().zip(rsp.unwrap().iter_mut()))
+                .fold(0,|p, ((&mi,(_,&p0,&p1)),(rp,ri))| { 
+                    *rp = p + p1-p0; 
+                    *ri = mi;
+                    *rp 
+                });
+
+            // build subj, cof
+            msp.iter().zip(mdata.iter())
+                .inner_join_by(|(mi,_),(ei,_,_)| mi.cmp(ei), izip!(esp.iter(),ptr.iter(),ptr[1..].iter()))
+                .flat_map(|((_,&mc),(_,&p0,&p1))| unsafe{subj.get_unchecked(p0..p1)}.iter().zip(unsafe{cof.get_unchecked(p0..p1)}.iter().map(move |v| v*mc)))
+                .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
+                .for_each(|((&j,c),(rj,rc))| { *rj = j; *rc = c; });
         }
         (Some(msp),None) =>  {
             // count result size
@@ -1876,7 +1871,7 @@ pub fn mul_elem(datashape : &[usize],
             for (ri,rp,&i,&mc) in izip!(rsp.iter_mut(),
                                         rptr[1..].iter_mut(),
                                         msp.iter(),
-                                        data.iter()) {
+                                        mdata.iter()) {
                 let p0 = ptr[i];
                 let p1 = ptr[i+1];
 
@@ -1902,7 +1897,7 @@ pub fn mul_elem(datashape : &[usize],
             rptr.copy_from_slice(ptr);
             rcof.copy_from_slice(cof);
             for (&p0,&p1,&i) in izip!(ptr.iter(),ptr[1..].iter(),esp.iter()) {
-                let mc = data[i];
+                let mc = mdata[i];
                 rcof[p0..p1].iter_mut().for_each(|c| *c *= mc);
             }
         }
@@ -1911,7 +1906,7 @@ pub fn mul_elem(datashape : &[usize],
             rptr.copy_from_slice(ptr);
             rsubj.copy_from_slice(subj);
             rcof.copy_from_slice(cof);
-            for (&p0,&p1,&c) in izip!(ptr.iter(),ptr[1..].iter(),data.iter()) {
+            for (&p0,&p1,&c) in izip!(ptr.iter(),ptr[1..].iter(),mdata.iter()) {
                 rcof[p0..p1].iter_mut().for_each(|t| *t *= c );
             }
         }
