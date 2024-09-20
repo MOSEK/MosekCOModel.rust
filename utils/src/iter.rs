@@ -399,8 +399,30 @@ impl<T1,T2,I1,I2,F> Iterator for InnerJoinBy<I1,I2,F>
             None
         }
     }
-
 }
+////////////////////////////////////////////////////////////
+
+pub struct Interleave<I1,I2,T> 
+where 
+    I1 : Iterator<Item=T>,
+    I2 : Iterator<Item=T>
+{
+    i1 : I1,
+    i2 : I2,
+    which : bool
+}
+
+pub trait InterleaveEx<I1> where I1 : Iterator<Item=T>,  {
+    fn interleave(self, other : I2) -> Interleave<I1,I2,T> where I2 : Iterator<Item=T> {
+        Interleave{
+            i1 : self,
+            i2 : other,
+            which : false
+        }
+    }
+}
+
+impl<I1
 
 ////////////////////////////////////////////////////////////
 //

@@ -244,9 +244,9 @@ fn bench_sum_on_sparse_10_135(c : & mut Criterion) { bench_sum_on(c,true,N,[1,3,
 fn bench_stack_dense_0_256(c : & mut Criterion) { bench_stack(c,0,false,256) }
 fn bench_stack_dense_1_256(c : & mut Criterion) { bench_stack(c,1,false,256) }
 fn bench_stack_dense_2_256(c : & mut Criterion) { bench_stack(c,2,false,256) }
-fn bench_stack_sparse_0_375(c : & mut Criterion) { bench_stack(c,0,true,375) }
-fn bench_stack_sparse_1_375(c : & mut Criterion) { bench_stack(c,1,true,375) }
-fn bench_stack_sparse_2_375(c : & mut Criterion) { bench_stack(c,2,true,375) }
+fn bench_stack_sparse_0_374(c : & mut Criterion) { bench_stack(c,0,true,374) }
+fn bench_stack_sparse_1_374(c : & mut Criterion) { bench_stack(c,1,true,374) }
+fn bench_stack_sparse_2_374(c : & mut Criterion) { bench_stack(c,2,true,374) }
 
 fn bench_repeat_dense_0_256(c : & mut Criterion)  { bench_repeat(c,false,0,256,3) }
 fn bench_repeat_dense_1_256(c : & mut Criterion)  { bench_repeat(c,false,1,256,3) }
@@ -289,9 +289,9 @@ criterion_group!(
         bench_stack_dense_0_256,
         bench_stack_dense_1_256,
         bench_stack_dense_2_256,
-        bench_stack_sparse_0_375,
-        bench_stack_sparse_1_375,
-        bench_stack_sparse_2_375,
+        bench_stack_sparse_0_374,
+        bench_stack_sparse_1_374,
+        bench_stack_sparse_2_374,
 
         bench_repeat_dense_0_256, 
         bench_repeat_dense_1_256, 

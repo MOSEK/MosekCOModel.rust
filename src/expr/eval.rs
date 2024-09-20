@@ -294,7 +294,7 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
 pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nnz = subj.len();
-    let nelem = ptr.len()-1;
+    let _nelem = ptr.len()-1;
     let nd = shape.len();
     if dim >= shape.len() {
         return Err(ExprEvalError::new(file!(),line!(),"Invalid stacking dimension"));
@@ -346,7 +346,6 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
         let _d0 : usize = num * shape[..dim].iter().product::<usize>();
         let d1 : usize = shape[dim..].iter().product();
         rptr[0] = 0;
-        let mut rptr_pos = 0usize;
 
         // special case: stack in top dimension, amounting to repeating the expression n times.
         if dim == 0 {
@@ -362,19 +361,20 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
         // special case: stack in bottom dimension, the dimension being size 1, amounting to
         // repeating each element n times
         else if dim == nd-1 && shape[nd-1] == 1 {
+            println!("repeat dense, dim = {}, dim size = {}",dim,shape[nd-1]);
             rptr.iter_mut().enumerate().for_each(|(i,rp)| *rp = i);
             subj.iter().flat_map(|j| std::iter::repeat(*j).take(num)).zip(rsubj.iter_mut()).for_each(|(j,rj)| *rj = j);
             cof.iter().flat_map(|c| std::iter::repeat(*c).take(num)).zip(rcof.iter_mut()).for_each(|(c,rc)| *rc = c);
         }
         else {
-            izip!(ptr.chunks(d1),ptr[1..].chunks(d1)).flat_map(|item| std::iter::repeat(item).take(num))
+            izip!(ptr.chunks(d1),ptr[1..].chunks(d1))
+                .flat_map(|item| std::iter::repeat(item).take(num))
                 .flat_map(|(pb,pe)| pb.iter().zip(pe)) 
                 .zip(rptr[1..].iter_mut())
                 .fold(0,|p,((p0,p1),rp)| { *rp = p+p1-p0; *rp });
-
-
-            izip!(ptr.chunks(d1),ptr[1..].chunks(d1)).flat_map(|item| std::iter::repeat(item).take(num))
-                .flat_map(|(ptrb,ptre)| ptrb.iter().zip(ptre)) 
+            izip!(ptr.chunks(d1),ptr[1..].chunks(d1))
+                .flat_map(|item| std::iter::repeat(item).take(num))
+                .flat_map(|(ptrb,ptre)| ptrb.iter().zip(ptre.iter())) 
                 .flat_map(|(&pb,&pe)| unsafe{subj.get_unchecked(pb..pe)}.iter().zip(unsafe{cof.get_unchecked(pb..pe)}.iter()))
                 .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
                 .for_each(|((&j,&c),(rj,rc))| { *rj = j; *rc = c; });
@@ -1587,7 +1587,7 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
     let mut rshape = exprs.first().unwrap().0.to_vec();
     rshape[dim] = ddim;
 
-    let (rptr,mut rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),rnnz,rnelm);
+    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),rnnz,rnelm);
 
     // Stacking in any number of dimensions can always be reduced to
     // stacking in 3 dimensions, with the dimension sizes computed as:
@@ -1600,37 +1600,74 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
     // product up to the stacking dimension are all 1, so effectively
     // that means stacking in the first (non-one) dimension.
     if d0 == 1 {
-        // println!("{}:{}: eval::stack CASE 1",file!(),line!());
-        let mut elmi : usize = 0;
-        let mut nzi  : usize = 0;
-        let mut ofs  : usize = 0;
+        if let Some(rsp) = rsp {
+            let (irest,_) = xs.alloc(3*(n+1),0);
+            let (chunkp,irest) = irest.split_at_mut(n+1);
+            let (nnzp,offsets) = irest.split_at_mut(n+1);
+            chunkp[0]  = 0; 
+            nnzp[0]    = 0;
+            offsets[0] = 0;
+            izip!(chunkp[1..].iter_mut(),
+                  nnzp[1..].iter_mut(),
+                  offsets[1..].iter_mut(),
+                  exprs.iter())
+                .fold((0,0,0),|(elmi,nzi,ofsi),(elmptr,nzptr,offset,(shape,ptr,_,subj,_))| {
+                    *elmptr = elmi+ptr.len()-1;
+                    *nzptr  = nzi+subj.len();
+                    *offset = ofsi+shape.iter().product::<usize>();
+                    (*elmptr,*nzptr,*offset)
+                });
+            println!("offsets = {:?}",offsets);
+            
+            rptr[0] = 0;
+            izip!(
+                nnzp.iter(),
+                offsets.iter(),
+                rptr[1..].chunks_ptr_mut(&chunkp[..n], &chunkp[1..]),
+                rsp.chunks_ptr_mut(&chunkp[..n],&chunkp[1..]),
+                rsubj.chunks_ptr_mut(&nnzp[..n], &nnzp[1..]),
+                rcof.chunks_ptr_mut(&nnzp[..n], &nnzp[1..]),
+                exprs.iter())
+                .for_each(|(nzi,ofs,rps,rsp,rjs,rcs,(_,ptr,sp,subj,cof))| {
+                    rps.iter_mut().zip(ptr[1..].iter()).for_each(|(rp,&p)| *rp = nzi+p );
+                    if let Some(sp) = sp {
+                        rsp.iter_mut().zip(sp.iter()).for_each(|(ri,&i)| *ri = i + ofs);
+                    }
+                    else {
+                        rsp.iter_mut().enumerate().for_each(|(i,ri)| *ri = i+*ofs);
+                    }
 
-        rptr[0] = 0;
-        for (shape,ptr,sp,subj,cof) in exprs.iter() {
-            // println!("{}:{}: shape = {:?}",file!(),line!(),shape);
-            let nnz = ptr.last().unwrap();
-            let nelm = ptr.len()-1;
-            rsubj[nzi..nzi+nnz].copy_from_slice(subj);
-            rcof[nzi..nzi+nnz].copy_from_slice(cof);
-            izip!(rptr[elmi+1..elmi+nelm+1].iter_mut(),
-                  ptr.iter(),
-                  ptr[1..].iter()).for_each(|(rp,&p0,&p1)| *rp = p1-p0);
-
-            if let Some(ref mut rsp) = rsp {
-                if let Some(sp) = sp {
-                    rsp[elmi..elmi+nelm].iter_mut().zip(sp.iter()).for_each(|(rsp,&sp)| *rsp = sp+ofs);
-                }
-                else {
-                    rsp[elmi..elmi+nelm].iter_mut().zip(0..nelm).for_each(|(rsp,sp)| *rsp = sp+ofs);
-                }
-                ofs += shape.iter().product::<usize>();
-            }
-            nzi += ptr.last().unwrap();
-
-            elmi += ptr.len()-1;
+                    rjs.copy_from_slice(subj);
+                    rcs.copy_from_slice(cof);
+                });
         }
-        //println!("{}:{}: rptr = {:?}",file!(),line!(),rptr);
-        let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+        else {
+            let (irest,_) = xs.alloc(2*(n+1),0);
+            let (chunkp,nnzp) = irest.split_at_mut(n+1);
+            chunkp[0]  = 0; 
+            nnzp[0]    = 0;
+            izip!(chunkp[1..].iter_mut(),
+                  nnzp[1..].iter_mut(),
+                  exprs.iter())
+                .fold((0,0),|(elmi,nzi),(elmptr,nzptr,(_,ptr,_,subj,_))| {
+                    *elmptr = elmi+ptr.len()-1;
+                    *nzptr  = nzi+subj.len();
+                    (*elmptr,*nzptr)
+                });
+            
+            rptr[0] = 0;
+            izip!(
+                nnzp.iter(),
+                rptr[1..].chunks_ptr_mut(&chunkp[..n], &chunkp[1..]),
+                rsubj.chunks_ptr_mut(&nnzp[..n], &nnzp[1..]),
+                rcof.chunks_ptr_mut(&nnzp[..n], &nnzp[1..]),
+                exprs.iter())
+                .for_each(|(nzi,rps,rjs,rcs,(_,ptr,_,subj,cof))| {
+                    rps.iter_mut().zip(ptr[1..].iter()).for_each(|(rp,&p)| *rp = nzi+p );
+                    rjs.copy_from_slice(subj);
+                    rcs.copy_from_slice(cof);
+                });
+        }
     }
     // Case 2: The result is sparse, implying that at least one
     // operand is sparse. Strategy:
@@ -1810,7 +1847,7 @@ pub fn mul_elem(mshape: &[usize],
                 mdata : &[f64],
                 rs : & mut WorkStack,
                 ws : & mut WorkStack,
-                xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+                _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let &nnz = ptr.last().unwrap();
     let nelm = ptr.len()-1;

@@ -2232,6 +2232,7 @@ mod test {
             assert_eq!(cof,[1.1,1.1,1.3,1.3,3.2,3.2]);
         }
     }
+
     #[allow(non_snake_case)]
     #[test]
     fn mul_elem() {
