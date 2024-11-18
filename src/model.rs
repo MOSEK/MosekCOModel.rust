@@ -1,7 +1,7 @@
 use itertools::{merge_join_by, EitherOrBoth};
 use itertools::{iproduct, izip};
 use std::{iter::once, path::Path};
-use crate::expr;
+use crate::{disjunction, expr};
 use utils::iter::*;
 use utils::*;
 use crate::domain::*;
@@ -205,6 +205,14 @@ pub struct Model {
     /// Vector of scalar constraint atoms
     cons : Vec<ConAtom>,
 
+    djc_temp_cur_termsize : i64,
+    djc_temp_b        : Vec<f64>,
+    djc_temp_termsize : Vec<i64>,
+    djc_temp_domidx   : Vec<i64>,
+    djc_temp_afeidx   : Vec<i64>,
+    
+
+
     /// Basis solution
     sol_bas : Solution,
     /// Interior solution
@@ -348,6 +356,10 @@ impl<const N : usize> ModelItemIndex<Constraint<N>> for [std::ops::Range<usize>;
 }
 
 
+#[derive(Clone)]
+pub struct Disjunction {
+    index : i64
+}
 
 
 
@@ -414,6 +426,13 @@ impl Model {
             task,
             vars    : vec![VarAtom::Linear(-1)],
             cons    : Vec::new(),
+
+            djc_temp_b : Vec::new(),
+            djc_temp_domidx : Vec::new(),
+            djc_temp_afeidx : Vec::new(),
+            djc_temp_termsize : Vec::new(),
+            djc_temp_cur_termsize : 0,
+
             sol_bas : Solution::new(),
             sol_itr : Solution::new(),
             sol_itg : Solution::new(),
@@ -659,6 +678,10 @@ impl Model {
             ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain().unwrap(),
             ConicDomainType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(),alpha.as_slice()).unwrap(),
             ConicDomainType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(),alpha.as_slice()).unwrap(),
+            ConicDomainType::Zero                  => self.task.append_rzero_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::NonPositive           => self.task.append_rplus_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::NonNegative           => self.task.append_rminus_domain(conesize.try_into().unwrap()).unwrap(),
         };
 
         self.task.append_afes(n as i64).unwrap();
@@ -1122,6 +1145,10 @@ impl Model {
         let numcone  = shape.iter().product::<usize>() / conesize;
 
         let domidx = match dom.dt {
+            ConicDomainType::NonNegative           => self.task.append_rplus_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::NonPositive           => self.task.append_rminus_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::Zero                  => self.task.append_rzero_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
@@ -1198,6 +1225,126 @@ impl Model {
             idxs : (coni..coni+nelm).collect(),
             shape : dom.shape
         }
+    }
+
+
+    pub(crate) fn add_disjunction_clause<const N : usize, E>(&mut self, e : &E, dom : &ConicDomain<N>) where E : expr::ExprTrait<N> {
+        e.eval(& mut self.rs, & mut self.ws, & mut self.xs);
+
+        let (shape,ptr,_,subj,cof) = self.rs.pop_expr();
+        if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
+            panic!("Mismatching shapes of expression and domain: {:?} vs {:?}",shape,dom.shape);
+        }
+        let nelm = ptr.len()-1;
+
+        if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
+            panic!("Invalid subj index in evaluated expression");
+        }
+        if ! shape.iter().zip(dom.shape.iter()).all(|(&d0,&d1)| d0==d1 ) {
+            panic!("Mismatching domain/expression shapes: {:?} vs {:?}",shape,dom.shape);
+        }
+
+        let acci = self.task.get_num_acc().unwrap();
+        let afei = self.task.get_num_afe().unwrap();
+
+        let (asubj,
+             acof,
+             aptr,
+             afix,
+             abarsubi,
+             abarsubj,
+             abarsubk,
+             abarsubl,
+             abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
+        let conesize = shape[dom.conedim];
+        let numcone  = shape.iter().product::<usize>() / conesize;
+
+        let domidx = match dom.dt {
+            ConicDomainType::NonNegative           => self.task.append_rplus_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::NonPositive           => self.task.append_rminus_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::Zero                  => self.task.append_rzero_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::ExponentialCone       => self.task.append_primal_exp_cone_domain().unwrap(),
+            ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain().unwrap(),
+            ConicDomainType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice()).unwrap(),
+            ConicDomainType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice()).unwrap(),
+        };
+
+        self.task.append_afes(nelm as i64).unwrap();
+
+        let dstafe0 = self.djc_temp_afeidx.len();
+        let dstdom0 = self.djc_temp_domidx.len();
+        self.djc_temp_afeidx.resize(dstafe0+nelm,0);
+        self.djc_temp_b.resize(dstafe0+nelm,0.0);
+        self.djc_temp_domidx.resize(dstdom0+numcone,domidx);
+
+        self.djc_temp_b[dstafe0..].copy_from_slice(dom.ofs.as_slice());
+        self.djc_temp_afeidx[dstafe0..].iter_mut().zip(afei..afei+nelm as i64).for_each(|(d,s)| *d = s);
+
+        let d0 : usize = shape[0..dom.conedim].iter().product();
+        let d1 : usize = shape[dom.conedim];
+        let d2 : usize = shape[dom.conedim+1..].iter().product();
+        let afeidxs : Vec<i64> = iproduct!(0..d0,0..d2,0..d1)
+            .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64)
+            .collect();
+
+        if asubj.len() > 0 {
+            self.task.put_afe_f_row_list(afeidxs.as_slice(),
+                                         aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
+                                         &aptr[..nelm],
+                                         asubj.as_slice(),
+                                         acof.as_slice()).unwrap();
+        }
+        self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
+        if abarsubi.len() > 0 {
+            let mut p0 = 0usize;
+            for (i,j,p) in izip!(abarsubi.iter(),
+                                 abarsubi[1..].iter(),
+                                 abarsubj.iter(),
+                                 abarsubj[1..].iter())
+                .enumerate()
+                .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
+                .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+               
+                let subk = &abarsubk[p0..p];
+                let subl = &abarsubl[p0..p];
+                let cof  = &abarcof[p0..p];
+                p0 = p;
+
+                let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
+                let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
+                self.task.put_afe_barf_entry(afei+i,j,&[matidx],&[1.0]).unwrap();
+            }
+        }
+    }
+    pub(crate) fn start_term(& mut self) { self.djc_temp_cur_termsize = 0; }
+    pub(crate) fn end_term(& mut self) { self.djc_temp_termsize.push(self.djc_temp_cur_termsize); self.djc_temp_cur_termsize = 0 }    
+
+    /// Add a disjunctive constraint to the model.
+    ///
+    /// # Arguments
+    /// - `name` Name of the disjunction
+    /// - `terms` Structure defining the terms of the disjunction.
+    pub fn disjunction<D>(& mut self, name : Option<&str>, terms : & D) -> Disjunction where D : disjunction::DisjunctionTrait {
+        self.djc_temp_termsize.clear();
+        self.djc_temp_domidx.clear();
+        self.djc_temp_afeidx.clear();
+
+        terms.add_to_model(self);
+
+        let djci = self.task.get_num_djc().unwrap();
+        self.task.append_djcs(1).unwrap();
+        if let Some(name) = name {
+            self.task.put_djc_name(djci,name).unwrap();
+        }
+        self.task.put_djc(djci, &self.djc_temp_domidx,&self.djc_temp_afeidx, &self.djc_temp_b, &self.djc_temp_termsize).unwrap();
+        
+        Disjunction{ index : djci }
     }
 
     fn update_internal(&mut self, idxs : &[usize]) {
@@ -1569,7 +1716,7 @@ impl Model {
 
                 if let SolutionStatus::Undefined = dsta {}
                 else {
-                    self.task.get_dual_obj(whichsol, & mut sol.dual.obj).unwrap();
+                    sol.dual.obj = self.task.get_dual_obj(whichsol).unwrap();
                     sol.dual.resize(self.vars.len(),self.cons.len());
                     self.task.get_slx(whichsol,slx.as_mut_slice()).unwrap();
                     self.task.get_sux(whichsol,sux.as_mut_slice()).unwrap();

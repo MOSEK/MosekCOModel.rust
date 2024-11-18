@@ -169,6 +169,7 @@ pub mod domain;
 pub mod matrix;
 pub mod expr;
 pub mod model;
+pub mod disjunction;
 
 use expr::workstack::WorkStack;
 
@@ -226,3 +227,4 @@ pub use domain::{LinearDomain,
                  in_psd_cone,
                  in_psd_cones 
                  };
+pub use disjunction::{ClauseTrait,DisjunctionTrait,term};
