@@ -71,9 +71,9 @@ impl<const N : usize> ConicDomainTrait<N> for LinearDomain<N> {
     }
 }
 
-//pub struct DisjunctionList {
-//    terms : Vec<Box<dyn DisjunctionTrait>>
-//}
+pub struct DisjunctionList {
+    terms : Vec<Box<dyn DisjunctionTrait>>
+}
 
 impl<const N : usize,E> ClauseTrait for (E,ConicDomain<N>) where E : ExprTrait<N> {
     fn add_to_model(&self, model : & mut Model) {
@@ -134,18 +134,28 @@ impl<T1,T2> DisjunctionTrait for DisjunctionOrDisjunction<T1,T2> where T1 : Disj
     }
 }
 
-//impl DisjunctionTrait for DisjunctionList {
-//    fn add_to_model(&self, model : & mut Model) {
-//        for t in self.terms.iter() {
-//            t.add_to_model(model);
-//        }
-//    }
-//`}
+impl DisjunctionList {
+    pub fn append<D>(&mut self, c : D) -> & mut Self where D : 'static+DisjunctionTrait{
+        self.terms.push(Box::new(c));
+        self
+    }
+}
+
+impl DisjunctionTrait for DisjunctionList {
+    fn add_to_model(&self, model : & mut Model) {
+        for t in self.terms.iter() {
+            t.add_to_model(model);
+        }
+    }
+}
 
 pub fn term<const N : usize, E,D>(expr : E, dom : D) -> Clause<N,E,D> where E : ExprTrait<N>, D : ConicDomainTrait<N> {
     Clause{ expr, dom}
 }
-pub fn terms() -> ClauseList {
+pub fn clauses() -> ClauseList {
     ClauseList{ clauses : Vec::new() }
 }
 
+pub fn terms() -> DisjunctionList {
+    DisjunctionList{ terms : Vec::new() }
+}

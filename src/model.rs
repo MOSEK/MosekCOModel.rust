@@ -822,7 +822,7 @@ impl Model {
         let (urest,rcof) = self.xs.alloc(nnz*2+rnelm+1,nnz*2);
         let (rptr,rsubj) = urest.split_at_mut(rnelm+1);
         
-        println!("---- \n\tptr = {:?}\n\tsubj = {:?}\n\tcof = {:?}",ptr,subj,cof);
+        //println!("---- \n\tptr = {:?}\n\tsubj = {:?}\n\tcof = {:?}",ptr,subj,cof);
 
         //----------------------------------------
         // Compute number of non-zeros per element of the lower triangular part if 1/2 (E+E')
@@ -1256,7 +1256,7 @@ impl Model {
              abarsubk,
              abarsubl,
              abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
-        let conesize = shape[dom.conedim];
+        let conesize = if N == 0 { 1 } else { shape[dom.conedim] };
         let numcone  = shape.iter().product::<usize>() / conesize;
 
         let domidx = match dom.dt {
@@ -1286,9 +1286,9 @@ impl Model {
         self.djc_temp_b[dstafe0..].copy_from_slice(dom.ofs.as_slice());
         self.djc_temp_afeidx[dstafe0..].iter_mut().zip(afei..afei+nelm as i64).for_each(|(d,s)| *d = s);
 
-        let d0 : usize = shape[0..dom.conedim].iter().product();
-        let d1 : usize = shape[dom.conedim];
-        let d2 : usize = shape[dom.conedim+1..].iter().product();
+        let d0 : usize = if N == 0 { 1 } else { shape[0..dom.conedim].iter().product() };
+        let d1 : usize = if N == 0 { 1 } else { shape[dom.conedim] };
+        let d2 : usize = if N == 0 { 1 } else { shape[dom.conedim+1..].iter().product() };
         let afeidxs : Vec<i64> = iproduct!(0..d0,0..d2,0..d1)
             .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64)
             .collect();
@@ -1321,6 +1321,7 @@ impl Model {
                 self.task.put_afe_barf_entry(afei+i,j,&[matidx],&[1.0]).unwrap();
             }
         }
+        self.djc_temp_cur_termsize += 1;
     }
     pub(crate) fn start_term(& mut self) { self.djc_temp_cur_termsize = 0; }
     pub(crate) fn end_term(& mut self) { self.djc_temp_termsize.push(self.djc_temp_cur_termsize); self.djc_temp_cur_termsize = 0 }    
@@ -1342,6 +1343,7 @@ impl Model {
         if let Some(name) = name {
             self.task.put_djc_name(djci,name).unwrap();
         }
+        //println!("append djc: domidx={:?}, afeidx={:?}, b={:?}, termsize={:?}",self.djc_temp_domidx,self.djc_temp_afeidx,self.djc_temp_b,self.djc_temp_termsize);
         self.task.put_djc(djci, &self.djc_temp_domidx,&self.djc_temp_afeidx, &self.djc_temp_b, &self.djc_temp_termsize).unwrap();
         
         Disjunction{ index : djci }
@@ -1680,7 +1682,7 @@ impl Model {
                 sol.dual.status   = SolutionStatus::Undefined;
             }
             else {
-                let (psta,dsta) = split_sol_sta(self.task.get_sol_sta(whichsol).unwrap());
+                let (psta,dsta) = split_sol_sta(whichsol,self.task.get_sol_sta(whichsol).unwrap());
                 sol.primal.status = psta;
                 sol.dual.status   = dsta;
 
@@ -1964,19 +1966,27 @@ fn split_expr(eptr    : &[usize],
      barcof)
 }
 
-fn split_sol_sta(solsta : i32) -> (SolutionStatus,SolutionStatus) {
-    match solsta {
-        mosek::Solsta::UNKNOWN => (SolutionStatus::Unknown,SolutionStatus::Unknown),
-        mosek::Solsta::OPTIMAL => (SolutionStatus::Optimal,SolutionStatus::Optimal),
-        mosek::Solsta::PRIM_FEAS => (SolutionStatus::Feasible,SolutionStatus::Unknown),
-        mosek::Solsta::DUAL_FEAS => (SolutionStatus::Feasible,SolutionStatus::Unknown),
-        mosek::Solsta::PRIM_AND_DUAL_FEAS => (SolutionStatus::Unknown,SolutionStatus::Feasible),
-        mosek::Solsta::PRIM_INFEAS_CER => (SolutionStatus::Undefined,SolutionStatus::CertInfeas),
-        mosek::Solsta::DUAL_INFEAS_CER => (SolutionStatus::CertInfeas,SolutionStatus::Undefined),
-        mosek::Solsta::PRIM_ILLPOSED_CER => (SolutionStatus::Undefined,SolutionStatus::CertIllposed),
-        mosek::Solsta::DUAL_ILLPOSED_CER => (SolutionStatus::CertIllposed,SolutionStatus::Undefined),
-        mosek::Solsta::INTEGER_OPTIMAL => (SolutionStatus::Optimal,SolutionStatus::Undefined),
-        _ => (SolutionStatus::Unknown,SolutionStatus::Unknown)
+fn split_sol_sta(whichsol : i32, solsta : i32) -> (SolutionStatus,SolutionStatus) {
+    let (psta,dsta) = 
+        match solsta {
+            mosek::Solsta::UNKNOWN => (SolutionStatus::Unknown,SolutionStatus::Unknown),
+            mosek::Solsta::OPTIMAL => (SolutionStatus::Optimal,SolutionStatus::Optimal),
+            mosek::Solsta::PRIM_FEAS => (SolutionStatus::Feasible,SolutionStatus::Unknown),
+            mosek::Solsta::DUAL_FEAS => (SolutionStatus::Feasible,SolutionStatus::Unknown),
+            mosek::Solsta::PRIM_AND_DUAL_FEAS => (SolutionStatus::Unknown,SolutionStatus::Feasible),
+            mosek::Solsta::PRIM_INFEAS_CER => (SolutionStatus::Undefined,SolutionStatus::CertInfeas),
+            mosek::Solsta::DUAL_INFEAS_CER => (SolutionStatus::CertInfeas,SolutionStatus::Undefined),
+            mosek::Solsta::PRIM_ILLPOSED_CER => (SolutionStatus::Undefined,SolutionStatus::CertIllposed),
+            mosek::Solsta::DUAL_ILLPOSED_CER => (SolutionStatus::CertIllposed,SolutionStatus::Undefined),
+            mosek::Solsta::INTEGER_OPTIMAL => (SolutionStatus::Optimal,SolutionStatus::Undefined),
+            _ => (SolutionStatus::Unknown,SolutionStatus::Unknown)
+        };
+
+    if whichsol == mosek::Soltype::ITG {
+        (psta,SolutionStatus::Undefined)
+    }
+    else {
+        (psta,dsta)
     }
 }
 
