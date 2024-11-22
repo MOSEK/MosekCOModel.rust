@@ -49,7 +49,7 @@ impl<const N : usize,F,R> ExprTrait<N> for GeneratorExpr<N,F,R>
             } else {
                 self.shape.iter().product()
             };
-        let mut spx = Vec::new();
+        let mut spx = Vec::with_capacity(maxnelm);
         //let (spx,_) = xs.alloc(maxnelm,0);
         let mut nelm : usize = 0;
 
@@ -61,7 +61,7 @@ impl<const N : usize,F,R> ExprTrait<N> for GeneratorExpr<N,F,R>
                     spx[nelm] = *i;
                     nelm += 1;
 
-                    e.eval(ws,rs,xs);
+                    e.eval(ws,rs,xs)?;
                 }
             }
         }
@@ -71,21 +71,25 @@ impl<const N : usize,F,R> ExprTrait<N> for GeneratorExpr<N,F,R>
                     spx[nelm] = i;
                     nelm += 1;
 
-                    e.eval(ws,rs,xs);
+                    e.eval(ws,rs,xs)?;
                 }
             }
         }
 
         let exprs = ws.pop_exprs(nelm);
         
-        let nnz = exprs.iter().map(|(_,_,sp,subj,_)| subj.len()).sum::<usize>();
+        let nnz = exprs.iter().map(|(_,_,_,subj,_)| subj.len()).sum::<usize>();
         
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.shape, nnz, nelm);
 
         rptr[0] = 0;
-        rptr[1..].iter_mut().zip(exprs.iter()).fold(0,|p,(rp,(_,_,subj,_))| { *rp = p + subj.len(); *rp });
-        rsubj.iter_mut().zip(exprs.iter().flat_map(|(_,_,subj,_)| subj.iter());
-        rcofiter_mut().zip(exprs.iter().flat_map(|(_,_,subj,_)| subj.iter());
+        rptr[1..].iter_mut().zip(exprs.iter()).fold(0,|p,(rp,(_,_,_,subj,_))| { *rp = p + subj.len(); *rp });
+        rsubj.iter_mut().zip(exprs.iter().flat_map(|(_,_,_,subj,_)| subj.iter())).for_each(|(rj,&j)| *rj = j);
+        rcof.iter_mut().zip(exprs.iter().flat_map(|(_,_,_,_,cof)| cof.iter())).for_each(|(rc,&c)| *rc = c);
+
+        if let Some(rsp) = rsp {
+            rsp.copy_from_slice(spx.as_slice());
+        }
 
         Ok(())
     }

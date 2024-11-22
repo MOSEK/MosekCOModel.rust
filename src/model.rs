@@ -459,9 +459,9 @@ impl Model {
         self.task.write_data(path.to_str().unwrap()).unwrap();
     }
 
-    pub fn write_problem_to<S>(&self, s S) where S : std::io::Write {
-        self.task.write_data_stream()
-    }
+    //pub fn write_problem_to<S>(&self, s : S) where S : std::io::Write {
+    //    self.task.write_data_stream()
+    //}
 
     //======================================================
     // Variable interface
@@ -1233,7 +1233,7 @@ impl Model {
 
 
     pub(crate) fn add_disjunction_clause<const N : usize, E>(&mut self, e : &E, dom : &ConicDomain<N>) where E : expr::ExprTrait<N> {
-        e.eval(& mut self.rs, & mut self.ws, & mut self.xs);
+        e.eval(& mut self.rs, & mut self.ws, & mut self.xs).unwrap();
 
         let (shape,ptr,_,subj,cof) = self.rs.pop_expr();
         if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
