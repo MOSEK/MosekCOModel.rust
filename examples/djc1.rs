@@ -46,7 +46,6 @@ fn djc1() -> (SolutionStatus,Result<Vec<f64>,String>) {
     model.objective(None, Sense::Minimize, &x.clone().dot(vec![2.0,1.0,3.0,1.0]));
 
     // Useful for debugging
-    model.write_problem("djc1.ptf");                                 // Save to a readable file
     //model.setLogHandler(new java.io.PrintWriter(System.out));   // Enable log output
 
     // Solve the problem

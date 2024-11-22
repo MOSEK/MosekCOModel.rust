@@ -459,6 +459,10 @@ impl Model {
         self.task.write_data(path.to_str().unwrap()).unwrap();
     }
 
+    pub fn write_problem_to<S>(&self, s S) where S : std::io::Write {
+        self.task.write_data_stream()
+    }
+
     //======================================================
     // Variable interface
 

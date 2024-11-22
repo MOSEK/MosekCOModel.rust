@@ -170,6 +170,7 @@ pub mod matrix;
 pub mod expr;
 pub mod model;
 pub mod disjunction;
+pub mod experimental;
 
 use expr::workstack::WorkStack;
 

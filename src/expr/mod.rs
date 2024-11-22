@@ -57,7 +57,7 @@ pub trait ExprTrait<const N : usize> {
     /// flattened expression from this (basically, coefficients and subscripts of the expression).
     /// Upon return, the `rs` stack must hold the result of the evaluation.
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError>;
-   
+  
     /// Evaluate the expression, then clean it up and put
     /// it on the `rs` stack. The result will guarantee that
     /// - non-zeros in each row are sorted by `subj`
