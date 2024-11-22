@@ -1,4 +1,4 @@
-use iter::PermuteByEx;
+use iter::{PermuteByEx,PermuteByMutEx};
 use itertools::izip;
 
 use super::matrix::NDArray;
@@ -20,7 +20,12 @@ pub enum ConicDomainType {
     ExponentialCone,
     DualExponentialCone,
     PrimalPowerCone(Vec<f64>),
-    DualPowerCone(Vec<f64>)
+    DualPowerCone(Vec<f64>),
+    // linear types
+    NonNegative,
+    NonPositive,
+    Zero,
+    Free
 }
 
 pub enum ParamConicDomainType {
@@ -33,6 +38,8 @@ pub enum LinearDomainOfsType {
     Scalar(f64),
     M(Vec<f64>)
 }
+
+
 
 /// A Linear domain defines bounds, shape and sparsity for a model item.
 pub struct LinearDomain<const N : usize> {
@@ -84,6 +91,36 @@ impl<const N :usize> ConicDomain<N> {
     }
 }
 impl<const N : usize> LinearDomain<N> {
+    pub fn to_conic(&self) -> ConicDomain<N> {
+        let conedim = if self.shape.len() > 0 { self.shape.len() - 1} else { 0 };
+        let dt = match self.dt {
+            LinearDomainType::Zero => ConicDomainType::Zero,
+            LinearDomainType::Free => ConicDomainType::Free,
+            LinearDomainType::NonPositive => ConicDomainType::NonPositive,
+            LinearDomainType::NonNegative => ConicDomainType::NonNegative
+        };
+        let ofs = match &self.ofs {
+            LinearDomainOfsType::M(v) => {
+                match &self.sp {
+                    None => v.clone(),
+                    Some(sp) => {
+                        let mut ofs = vec![0.0; self.shape.iter().product() ];
+                        ofs.permute_by_mut(sp.as_slice()).zip(v.iter()).for_each(|(ofs,&spofs)| *ofs = spofs);
+                        ofs
+                    }
+                }
+            },
+            LinearDomainOfsType::Scalar(v) => vec![*v; self.shape.iter().product()]
+        };
+        ConicDomain {
+            dt,
+            ofs,
+            shape : self.shape,
+            conedim,
+            is_integer : self.is_integer
+        }
+    }
+
     /// Reshape the domain. The new shape must "match" the domain, meaning that if 
     /// - if `sparsity` is present, the shape must contain all sparsity elements, otherwise
     /// - if `ofs` is a scalar, any shape goes, otherwise
