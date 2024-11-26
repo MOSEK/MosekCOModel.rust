@@ -191,16 +191,14 @@ impl<const N : usize,F,R> ExprTrait<N> for GeneratorExpr<N,F,R>
                 self.shape.iter().product()
             };
         let mut spx = Vec::with_capacity(maxnelm);
-        //let (spx,_) = xs.alloc(maxnelm,0);
-        let mut nelm : usize = 0;
+        //let (spx,_) = xs.alloc(maxnelm,0);dd
 
         if let Some(sp) = &self.sp {
             for i in sp.iter() {
                 let mut ii = [0usize;N];
                 _ = ii.iter_mut().zip(self.shape.iter()).rev().fold(*i,|i,(k,&d)| { *k = i%d; i/d });
                 if let Some(e) = (self.f)(&ii) {
-                    spx[nelm] = *i;
-                    nelm += 1;
+                    spx.push(*i);
 
                     e.eval(ws,rs,xs)?;
                 }
@@ -209,13 +207,13 @@ impl<const N : usize,F,R> ExprTrait<N> for GeneratorExpr<N,F,R>
         else {
             for (i,ii) in self.shape.index_iterator().enumerate() {
                 if let Some(e) = (self.f)(&ii) {
-                    spx[nelm] = i;
-                    nelm += 1;
+                    spx.push(i);
 
                     e.eval(ws,rs,xs)?;
                 }
             }
         }
+        let nelm = spx.len();
 
         let exprs = ws.pop_exprs(nelm);
         
@@ -224,9 +222,9 @@ impl<const N : usize,F,R> ExprTrait<N> for GeneratorExpr<N,F,R>
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.shape, nnz, nelm);
 
         rptr[0] = 0;
-        rptr[1..].iter_mut().zip(exprs.iter()).fold(0,|p,(rp,(_,_,_,subj,_))| { *rp = p + subj.len(); *rp });
-        rsubj.iter_mut().zip(exprs.iter().flat_map(|(_,_,_,subj,_)| subj.iter())).for_each(|(rj,&j)| *rj = j);
-        rcof.iter_mut().zip(exprs.iter().flat_map(|(_,_,_,_,cof)| cof.iter())).for_each(|(rc,&c)| *rc = c);
+        rptr[1..].iter_mut().zip(exprs.iter().rev()).fold(0,|p,(rp,(_,_,_,subj,_))| { *rp = p + subj.len(); *rp });
+        rsubj.iter_mut().zip(exprs.iter().rev().flat_map(|(_,_,_,subj,_)| subj.iter())).for_each(|(rj,&j)| *rj = j);
+        rcof.iter_mut().zip(exprs.iter().rev().flat_map(|(_,_,_,_,cof)| cof.iter())).for_each(|(rc,&c)| *rc = c);
 
         if let Some(rsp) = rsp {
             rsp.copy_from_slice(spx.as_slice());
@@ -236,13 +234,84 @@ impl<const N : usize,F,R> ExprTrait<N> for GeneratorExpr<N,F,R>
     }
 }
 
-//#[cfg(test)]
-//mod test {
-//    use super::*;
-//    use crate::*;
-//    #[test]
-//    fn test_gen1() {
-//        let mut model = Model::new(None);
-//        let x = 
-//    }
-//}
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::*;
+    #[test]
+    fn test_gen1() {
+        let mut model = Model::new(None);
+        let x = model.variable(None, unbounded().with_shape(&[5,5]));
+        
+        {
+            let mut rs = WorkStack::new(1024);
+            let mut ws = WorkStack::new(1024);
+            let mut xs = WorkStack::new(1024);
+
+            hstack![ x.clone().index([0..1,0..1]),
+                     x.clone().index([1..2,1..2]),
+                     x.clone().index([2..3,2..3]),
+                     x.clone().index([3..4,3..4]),
+                     x.clone().index([4..5,4..5]) ].eval(&mut rs,&mut ws,&mut xs).unwrap();
+            let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+            assert_eq!(shape, &[1,5]);
+            assert!(sp.is_none());
+            assert_eq!(ptr,&[0,1,2,3,4,5]);
+            assert_eq!(subj,&[1,7,13,19,25]);
+        }
+
+        {
+            let mut rs = WorkStack::new(1024);
+            let mut ws = WorkStack::new(1024);
+            let mut xs = WorkStack::new(1024);
+
+            genexpr([5,5], None, |i| {
+                println!("gen : ({},{})",i[0],i[1]);
+                if i[0] >= i[1] {
+                    Some(x.clone().index(*i))
+                }
+                else {
+                    None
+                }
+            }).eval(&mut rs, &mut ws, &mut xs).unwrap();
+            let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+            assert_eq!(shape, &[5,5]);
+            assert!(sp.is_some());
+            assert_eq!(sp.unwrap(),&[0, 5,6, 10,11,12, 15,16,17,18, 20,21,22,23,24]);
+            assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]);
+            assert_eq!(subj,&[1, 6,7, 11,12,13, 16,17,18,19, 21,22,23,24,25]);
+        }
+    }
+    #[test]
+    fn test_gen2() {
+        let mut model = Model::new(None);
+        let x = model.variable(None, unbounded().with_shape(&[5,5]));
+        {
+            let mut rs = WorkStack::new(1024);
+            let mut ws = WorkStack::new(1024);
+            let mut xs = WorkStack::new(1024);
+
+            genexpr([5,5], None, |i| {
+                match i[0].cmp(&i[1]) {
+                    std::cmp::Ordering::Equal   => Some(EitherExpr::Left(x.clone().index(*i))),
+                    std::cmp::Ordering::Greater => Some(EitherExpr::Right(x.clone().index(*i).add(x.clone().index([i[1],i[0]])))),
+                    std::cmp::Ordering::Less => Some(EitherExpr::Right(x.clone().index([i[1],i[0]]).add(x.clone().index(*i)))),
+                }
+            }).eval(&mut rs, &mut ws, &mut xs).unwrap();
+            let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+            assert_eq!(shape, &[5,5]);
+            assert!(sp.is_none());
+            assert_eq!(ptr,&[0,1,3,5,7,9, 11,12,14,16,18, 20,22,23,25,27, 29,31,33,34,36, 38,40,42,44,45 ]);
+            assert_eq!(subj,&[ 1,     2,6,    3,11,  4,16,  5,21, 
+                               2,6,   7,      8,12,  9,17, 10,22,
+                               3,11,  8,12,  13,    14,18, 15,23,
+                               4,16,  9,17,  14,18, 19,    20,24,
+                               5,21, 10,22,  15,23, 20,24, 25 ]);
+            //  1   2   3   4   5 
+            //  6   7   8   9  10 
+            // 11  12  13  14  15
+            // 16  17  18  19  20
+            // 21  22  23  24  25
+        }
+    }
+}
