@@ -2219,6 +2219,35 @@ pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut Wor
     Ok(())
 }
 
+/// Compose a list of scalar expressions on the stack into an N-dimensional expression.
+///
+/// # Arguments
+/// - `rshape` The shape of the result expression
+/// - `spx` The (optional) sparsity pattern of the the result. If not `None`, the length defines
+///   the number of scalar expressions to pop, otherwise the number of scalar expressions is
+///   defined by the size of the shape.
+pub fn stack_scalars(rshape : &[usize], spx : Option<&[usize]>, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+    let nelm = spx.map(|v| v.len()).unwrap_or(rshape.iter().product());
+
+    let exprs = ws.pop_exprs(nelm);
+    
+    let nnz = exprs.iter().map(|(_,_,_,subj,_)| subj.len()).sum::<usize>();
+    
+    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape, nnz, nelm);
+
+    rptr[0] = 0;
+    rptr[1..].iter_mut().zip(exprs.iter().rev()).fold(0,|p,(rp,(_,_,_,subj,_))| { *rp = p + subj.len(); *rp });
+    rsubj.iter_mut().zip(exprs.iter().rev().flat_map(|(_,_,_,subj,_)| subj.iter())).for_each(|(rj,&j)| *rj = j);
+    rcof.iter_mut().zip(exprs.iter().rev().flat_map(|(_,_,_,_,cof)| cof.iter())).for_each(|(rc,&c)| *rc = c);
+
+    if let (Some(spx),Some(rsp)) = (spx,rsp) {
+        rsp.copy_from_slice(spx);
+    }
+    
+    Ok(())
+}
+
+
 
 
 

@@ -1,4 +1,5 @@
 use expr::ExprEvalError;
+use itertools::iproduct;
 use utils::iter::*;
 use crate::*;
 
@@ -103,8 +104,6 @@ impl<const N : usize,E1,E2,E3,E4,E5> ExprTrait<N> for EitherExpr5<N,E1,E2,E3,E4,
     }
 }
 
-
-
 pub struct GeneratorExpr<const N : usize,F,R> 
     where 
         F : Fn(&[usize; N]) -> Option<R>,
@@ -114,6 +113,7 @@ pub struct GeneratorExpr<const N : usize,F,R>
     sp    : Option<Vec<usize>>,
     f : F
 }
+
 
 
 /// Generative expression. Generate expression as one scalar expression per index. Note that by
@@ -234,8 +234,173 @@ impl<const N : usize,F,R> ExprTrait<N> for GeneratorExpr<N,F,R>
     }
 }
 
+
+
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+
+pub struct ExprGenerator1<F,E,T,I> 
+    where 
+        T : IntoIterator<IntoIter = I>,
+        I : ExactSizeIterator,
+        F : Fn(usize, I::Item) -> Option<E>,
+        E : ExprTrait<0>
+{
+    idx : T, 
+    f : F
+}
+
+impl<F,E,T,I> ExprTrait<1> for ExprGenerator1<F,E,T,I> where 
+        T : IntoIterator<IntoIter = I>+Clone,
+        I : ExactSizeIterator,
+        F : Fn(usize, I::Item) -> Option<E>,
+        E : ExprTrait<0>
+{
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> 
+    {
+        let it = self.idx.clone().into_iter();
+        let shape = [ it.len() ];
+        let totsize = shape[0];
+        let mut spx = Vec::with_capacity(totsize);
+        
+        for (i,v) in it.enumerate() {
+            if let Some(e) = (self.f)(i,v) {
+                spx.push(i);
+                e.eval(ws,rs,xs)?;
+            }
+        }
+
+        if spx.len() < totsize {
+            expr::eval::stack_scalars(&shape, Some(spx.as_slice()), rs, ws, xs)
+        }
+        else {
+            expr::eval::stack_scalars(&shape, None, rs, ws, xs)
+        }
+    }
+}
+
+pub trait ExprGenerator1Ex<F,E,T,I>
+    where 
+        T : IntoIterator<IntoIter = I>+Clone,
+        I : ExactSizeIterator+Clone,
+        I::Item : Clone,
+        E : ExprTrait<0>,
+        F : Fn(usize,I::Item) -> Option<E>
+{
+    fn genexpr(self,f : F) -> ExprGenerator1<F,E,T,I>;
+}
+
+
+// This should allow us to write stuff like `(["alpha","beta","gamma"]).genexpr(|i,n| x.clone().index(j))`
+impl<F,E,T,I> ExprGenerator1Ex<F,E,T,I> for T
+    where 
+        T : IntoIterator<IntoIter = I>+Clone,
+        I : ExactSizeIterator+Clone,
+        I::Item : Clone,
+        E : ExprTrait<0>,
+        F : Fn(usize,I::Item) -> Option<E>
+{
+    fn genexpr(self,f : F) -> ExprGenerator1<F,E,T,I> {
+        ExprGenerator1{ 
+            idx : self,
+            f
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+
+pub struct ExprGenerator2<F,E,T0,T1,I0,I1> 
+    where 
+        T0 : IntoIterator<IntoIter = I0>,
+        T1 : IntoIterator<IntoIter = I1>,
+        I0 : ExactSizeIterator,
+        I1 : ExactSizeIterator,
+        F : Fn(usize,I0::Item,I1::Item) -> Option<E>,
+        E : ExprTrait<0>
+{
+    idx : (T0,T1), 
+    f : F
+}
+impl<F,E,T0,T1,I0,I1> ExprTrait<2> for ExprGenerator2<F,E,T0,T1,I0,I1> where 
+        T0 : IntoIterator<IntoIter = I0>+Clone,
+        T1 : IntoIterator<IntoIter = I1>+Clone,
+        I0 : ExactSizeIterator+Clone,
+        I1 : ExactSizeIterator+Clone,
+        I0::Item : Clone,
+        I1::Item : Clone,
+        F : Fn(usize,I0::Item,I1::Item) -> Option<E>,
+        E : ExprTrait<0>
+{
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> 
+    {
+        let it0 = self.idx.0.clone().into_iter();
+        let it1 = self.idx.1.clone().into_iter();
+        let shape = [ it0.len(), it1.len() ];
+        let totsize = shape[0];
+        let mut spx = Vec::with_capacity(totsize);
+        
+        for (i,(v0,v1)) in (0..).zip(iproduct!(it0,it1)) {
+            if let Some(e) = (self.f)(i,v0,v1) {
+                spx.push(i);
+                e.eval(ws,rs,xs)?;
+            }
+        }
+
+        if spx.len() < totsize {
+            expr::eval::stack_scalars(&shape, Some(spx.as_slice()), rs, ws, xs)
+        }
+        else {
+            expr::eval::stack_scalars(&shape, None, rs, ws, xs)
+        }
+    }
+}
+
+pub trait ExprGenerator2Ex<F,E,T0,T1,I0,I1>
+    where 
+        T0 : IntoIterator<IntoIter = I0>+Clone,
+        T1 : IntoIterator<IntoIter = I1>+Clone,
+        I0 : ExactSizeIterator+Clone,
+        I1 : ExactSizeIterator+Clone,
+        I0::Item : Clone,
+        I1::Item : Clone,
+        E : ExprTrait<0>,
+        F : Fn(usize,I0::Item,I1::Item) -> Option<E>
+{
+    fn genexpr(self,f : F) -> ExprGenerator2<F,E,T0,T1,I0,I1>;
+}
+
+impl<F,E,T0,T1,I0,I1> ExprGenerator2Ex<F,E,T0,T1,I0,I1> for (T0,T1)
+    where 
+        T0 : IntoIterator<IntoIter = I0>+Clone,
+        T1 : IntoIterator<IntoIter = I1>+Clone,
+        I0 : ExactSizeIterator+Clone,
+        I1 : ExactSizeIterator+Clone,
+        I0::Item : Clone,
+        I1::Item : Clone,
+        E : ExprTrait<0>,
+        F : Fn(usize,I0::Item,I1::Item) -> Option<E>
+{
+    fn genexpr(self,f : F) -> ExprGenerator2<F,E,T0,T1,I0,I1> {
+        ExprGenerator2{ 
+            idx : self,
+            f
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::*;
     #[test]
@@ -282,6 +447,7 @@ mod test {
             assert_eq!(subj,&[1, 6,7, 11,12,13, 16,17,18,19, 21,22,23,24,25]);
         }
     }
+
     #[test]
     fn test_gen2() {
         let mut model = Model::new(None);
@@ -314,4 +480,57 @@ mod test {
             // 21  22  23  24  25
         }
     }
+    
+
+
+    #[test]
+    fn test_gen3() {
+        let mut model = Model::new(None);
+        let x = model.variable(None, unbounded().with_shape(&[15]));
+        {
+            let mut rs = WorkStack::new(1024);
+            let mut ws = WorkStack::new(1024);
+            let mut xs = WorkStack::new(1024);
+
+            (5..10).genexpr(|_,k : usize| Some(x.clone().index(k))).eval(& mut rs, & mut ws, & mut xs).unwrap();
+            
+            let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+            assert_eq!(shape, &[5]);
+            assert!(sp.is_none());
+            assert_eq!(ptr,&[0,1,2,3,4,5 ]);
+            assert_eq!(subj,&[ 6,7,8,9,10 ])
+        }
+    }
+    
+    #[test]
+    fn test_gen4() {
+        let mut model = Model::new(None);
+        let x = model.variable(None, unbounded().with_shape(&[10]));
+        {
+            let mut rs = WorkStack::new(1024);
+            let mut ws = WorkStack::new(1024);
+            let mut xs = WorkStack::new(1024);
+            
+            let names = ["alpha","beta","gamma"].map(String::from);
+
+            let mut nm : HashMap<String,Variable<0>> = HashMap::new();
+            for n in names.iter() {
+                nm.insert(n.clone(), model.variable(Some(n.as_str()),unbounded()));
+            }
+
+
+            (1..5,names.iter()).genexpr(|_, i, n| Some(x.clone().index(i).add(nm.get(n).unwrap().clone())))
+                .eval(& mut rs, & mut ws, & mut xs).unwrap();
+
+            let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+            assert_eq!(shape, &[4,3]);
+            assert!(sp.is_none());
+            assert_eq!(ptr,&[0,2,4,6,8,10,12,14,16,18,20,22,24 ]);
+            assert_eq!(subj,&[ 11,2,12,2,13,2,
+                               11,3,12,3,13,3,
+                               11,4,12,4,13,4,
+                               11,5,12,5,13,5 ]);
+        }
+    }
 }
+
