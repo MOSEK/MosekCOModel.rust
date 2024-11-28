@@ -1,3 +1,21 @@
+//! 
+//! This module defines various experimental exprssions whose usefulness has not been determined
+//! yet.
+//!
+//! # Options expressions
+//!
+//! The [`EitherExpr`], [`EitherExpr3`], [`EitherExpr4`] and [`EitherExpr5`] define expressions
+//! that can be one of multiple types. Since expression types are compile-time fixed (unless using
+//! dynamic expressions), this is the only way to make conditional expressions.
+//!
+//! # Generator expressions
+//!
+//! These are expressions generated from an index set using a function. Generally speaking these
+//! are less efficient than using vectorized expressions for most cases, but, for example,
+//! when formulating an expression where each element is conditional it may be the most reasonable
+//! option.
+//!
+
 use expr::ExprEvalError;
 use itertools::iproduct;
 use utils::iter::*;
