@@ -28,10 +28,9 @@
 //!      Structured Algorithms and Applications", Ph.D thesis, Y. Hachez, 2003.
 //!
 extern crate mosekmodel;
-use mosek::Objsense;
 use mosekmodel::*;
 use mosekmodel::experimental::*;
-use PI;
+use std::f64::consts::PI;
 
 /// Creates a complex semidefinite variable `(Xr + J*Xi) >= 0`, using the equivalent
 /// representation
@@ -167,9 +166,9 @@ fn epigraph(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, t : Either<&V
     let ur = m.variable(None,n+1);
     let ui = m.variable(None,n+1);
 
-    match t {
-        Either::Left(&t)  => m.constraint(None,&t.clone().sub(xr.clone().index(0).add(ur.clone().index(0))), zero()),
-        Either::Right(t) => m.constraint(None,&t.sub(xr.clone().index(0).add(ur.clone().index(0))), zero())
+    match &t {
+        Either::Left(ref t)  => m.constraint(None,&(*t).clone().sub(xr.clone().index(0).add(ur.clone().index(0))), zero()),
+        Either::Right(ref t) => m.constraint(None,&t.sub(xr.clone().index(0).add(ur.clone().index(0))), zero())
     };
     m.constraint(None, &xr.clone().index(1..n+1).add(ur.clone().index(1..n+1)), zeros(&[n]));
     m.constraint(None, &xi.clone().add(ui.clone()), zeros(&[n+1]));
@@ -263,9 +262,58 @@ fn main() {
 
     m.solve();
 
-    let xr = m.primal_solution(SolutionType::Default, &xr);
-    let xi = m.primal_solution(SolutionType::Default, &xi);
-    xr, xi, t = xr.level(), xi.level(), t.level()[0]
-    print("xr:\n", xr)
-    print("xi:\n", xi)
+    let xr = m.primal_solution(SolutionType::Default, &xr).unwrap();
+    let xi = m.primal_solution(SolutionType::Default, &xi).unwrap();
+    let t  = m.primal_solution(SolutionType::Default, &t).unwrap()[0];
+
+    println!("xr: {:?}", xr);
+    println!("xi: {:?}", xi);
+    println!("t:  {}",t);
+            
+
+
+//   from pyx import *
+//   
+//
+//   def H(w): return xr[0] + 2*sum([ (xr[k]*cos(w*k)+xi[k]*sin(w*k)) for k in range(1,len(xr)) ]) 
+//
+//   p = graph.axis.painter.regular(basepathattrs=[deco.earrow.normal])
+//
+//   xticks = [ graph.axis.tick.tick(wp, label='$\omega_p$'),
+//           graph.axis.tick.tick(ws, label='$\omega_s$'),
+//           graph.axis.tick.tick(pi, label='$\pi$') ]
+//
+//   yticks = [ graph.axis.tick.tick(1+delta, label='$1+\delta$'),
+//           graph.axis.tick.tick(1-delta, label='$1-\delta$'),
+//           graph.axis.tick.tick(t, label='$t^\star$') ]
+//
+//   g = graph.graphxy(width=8, x2=None, y2=None,
+//                   x=graph.axis.linear(title="$\omega$", min=0, max=pi+0.2,
+//                                       manualticks=xticks,
+//                                       painter=p,
+//                                       parter=None),
+//#                    y=graph.axis.linear(title="$H(\omega)$", min=0, max=1.2,
+//#                                        manualticks=yticks,
+//#                                        painter=p,
+//#                                        parter=None))
+//                   y=graph.axis.log(title="$H(\omega)$",
+//                                    min=t/100,
+//                                    #manualticks=yticks,
+//                                    painter=p,
+//                                    parter=None))
+//   
+//   g.plot(graph.data.function("y(x)=H(x)", context=locals(), points=500))
+//
+//   (x1, y1), (x2, y2) = g.pos(0.0, 1.0+delta), g.pos(wp,  1.0+delta)
+//   g.stroke(path.line(x1, y1, x2, y2), [style.linestyle.dashed])
+//
+//   (x1, y1), (x2, y2) = g.pos(0.0, 1.0-delta), g.pos(wp,  1.0-delta)
+//   g.stroke(path.line(x1, y1, x2, y2), [style.linestyle.dashed])
+//
+//   (x1, y1), (x2, y2) = g.pos(ws, t), g.pos(pi, t)
+//   g.stroke(path.line(x1, y1, x2, y2), [style.linestyle.dashed])
+//
+//   g.writeEPSfile("trigpoly")
+//   g.writePDFfile("trigpoly")
+//   print("generated trigpoly.eps")
 }
