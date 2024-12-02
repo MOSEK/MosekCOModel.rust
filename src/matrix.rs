@@ -462,12 +462,25 @@ impl IntoIndexes<1> for [usize] {
     fn into_indexes(&self, _shape : &[usize;1]) -> Vec<usize> { self.to_vec() }
 }
 
+//impl<T> IntoIndexes<1> for T 
+//    where T : Iterator<Item = usize>+Clone
+//{
+//    fn into_indexes(&self, shape : &[usize;1]) -> Vec<usize> {
+//        self.clone().into_iter().collect::<Vec<usize>>()
+//    }
+//}
+
+
+
 pub fn zeros<const N : usize>(shape : [usize;N]) -> NDArray<N> {
     NDArray::new(shape,Some(Vec::new()),Vec::new()).unwrap()
 }
 
 /// Create a sparse [NDArray] from data.
-pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> where D : Into<Vec<f64>>, I : IntoIndexes<N> {
+pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> 
+    where 
+        D : Into<Vec<f64>>, 
+        I : IntoIndexes<N> {
     let sparsity = sp.into_indexes(&shape);
     NDArray::new(shape,Some(sparsity),data.into()).unwrap()
 }

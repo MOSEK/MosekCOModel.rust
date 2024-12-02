@@ -1,0 +1,271 @@
+//!
+//!  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//!  File:      trigpoly.rs
+//!
+//!  Purpose: 
+//!  Example of an optimization problem over nonnegative 
+//!  trigonometric polynomials.
+//!
+//!  We consider the nonnegative trigonometric polynomial
+//! 
+//!  H(w) = x_0 + 2*sum_{k=1}^n [ Re(x_k)*cos(w*k) + Im(x_k)*sin(w*k) ].
+//!
+//!  The example shows how to construct a polynomial H(w) that satisfies,
+//!  
+//!     1 - delta <=  H(w) <= 1 + delta,   forall w \in [0, wp]
+//! 
+//!  while minimizing sup_{w \in [ws,pi]} H(w).  
+//!
+//!  In the signal processing literature, such a trigonometric polynomial
+//!  is known as (the squared amplitude respons of) a Chebyshev lowpass filter. 
+//!
+//!  References:
+//!  [1] "Squared Functional Systems and Optimization Problems",  
+//!      Y. Nesterov, 2004.
+//!
+//!  [2] "Convex Optimization of Non-negative Polynomials:
+//!      Structured Algorithms and Applications", Ph.D thesis, Y. Hachez, 2003.
+//!
+extern crate mosekmodel;
+use mosek::Objsense;
+use mosekmodel::*;
+use mosekmodel::experimental::*;
+use PI;
+
+/// Creates a complex semidefinite variable `(Xr + J*Xi) >= 0`, using the equivalent
+/// representation
+/// ```
+/// [Xr, -Xi; Xi, Xr] >= 0   (implying that Xi is skew-symmetric).
+/// ```
+#[allow(non_snake_case)]
+fn complex_sdpvar(m : & mut Model, n : usize) -> (Variable<2>,Variable<2>) {
+    let X   = m.variable(None, in_psd_cone(2*n));
+    let Xr  = (&X).index([0..n, 0..n]);
+    let Xi  = (&X).index([n..2*n, 0..n]);
+    let X22 = (&X).index([n..2*n, n..2*n]);
+    
+    _ = m.constraint(None, &Xr.clone().sub(X22.clone()), equal_to(0.0).with_shape(&[n,n]));
+    _ = m.constraint(None, &Xi.clone().add(Xi.clone().transpose()), equal_to(0.0).with_shape(&[0,0]));
+    
+    (Xr, Xi)
+}
+
+/// Creates a Toeplitz matrix of dimension `n+1`, where 
+/// ```
+/// T_lk = a if l-k=i, and 0 otherwise.
+/// ```
+fn toeplitz(n : usize, i : i64, a : f64 /*=1.0*/) -> NDArray<2> {
+    if i >= 0 {
+        let i = i as usize;
+        matrix::sparse([n+1,n+1], 
+                       (i..n+1).zip(0..n+1-i).map(|(i,j)| [i,j]).collect::<Vec<[usize;2]>>(),
+                       vec![a; n+1-i])
+    }
+    else {
+        let i = (-i) as usize;
+        matrix::sparse([n+1,n+1],
+                       (0..n+1+i).zip(i..n+1).map(|(i,j)|[i,j]).collect::<Vec<[usize;2]>>(), 
+                       vec![a; n+1-i])
+    }
+}
+
+fn toeplitz_ext(n : usize, indx : &[i64], aa : &[f64]) -> NDArray<2> {
+    let mut sp : Vec<[usize;2]> = Vec::new();
+    let mut cof : Vec<f64> = Vec::new();
+
+
+    for (&i,&a) in indx.iter().zip(aa.iter()) {
+        if i >= 0 {
+            let i = i as usize;
+            for (k0,k1) in (i..n+1).zip(0..n+1-i) { sp.push([k0,k1]); }
+            for _ in 0..n+1-i { cof.push(a); }
+        }
+        else {
+            let i = (-i) as usize;
+            for (k0,k1) in (i..n+1).zip(0..n+1-i) { sp.push([k0,k1]); }
+            for _ in 0..n+1-i { cof.push(a); }
+        }
+    }
+
+    matrix::sparse([n+1,n+1], sp, cof)
+}
+
+
+#[allow(non_snake_case)]
+fn trigpoly_0_pi(m : & mut Model, xr : & Variable<1>, xi : & Variable<1>) {
+    let n = xi.len()-1;
+
+    let (Xr, Xi) = complex_sdpvar(m, n+1);
+
+    _ = m.constraint(None, 
+                     &xr.clone().sub((0..n+1).genexpr(|_,i| Some(Xr.clone().dot(toeplitz(n,i as i64,1.0))))), 
+                     equal_to(0.0).with_shape(&[n+1]));
+    _ = m.constraint(None,
+                     &xi.clone().sub((0..n+1).genexpr(|_,i| Some(Xi.clone().dot(toeplitz(n,i as i64,1.0))))),
+                     equal_to(0.0).with_shape(&[n+1]));
+}
+
+#[allow(non_snake_case)]
+fn trigpoly_0_a(m : & mut Model, xr : & Variable<1>, xi : & Variable<1>, a : f64) {
+    let n = xi.len()-1;
+    let (X1r, X1i) = complex_sdpvar(m, n+1);
+    let (X2r, X2i) = complex_sdpvar(m, n);
+
+    
+    
+    let Tn = (0..n+1).map(|i| toeplitz(n,i as i64,1.0));
+    let Tnx = (0..n+1).map(|i| toeplitz_ext(n, &[i as i64+1,i as i64-1, i as i64], &[1.0,1.0,-2.0*a.cos()]));
+
+    m.constraint(None, 
+                 &xr.clone().sub(Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some( X1r.clone().dot(Tni).add(X2r.clone().dot(Tnix))))),
+                 equal_to(0.0).with_shape(&[n+1]));
+
+    m.constraint(None,
+                 &xi.clone().sub(Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some( X1i.clone().dot(Tni).add(X2i.clone().dot(Tnix))))),
+                 equal_to(0.0).with_shape(&[n+1]));
+}
+
+
+#[allow(non_snake_case)]
+fn trigpoly_a_pi(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, a : f64) {
+    let n = xr.len()-1;
+    
+    let (X1r, X1i) = complex_sdpvar(m, n+1);
+    let (X2r, X2i) = complex_sdpvar(m, n);
+
+    let Tn = (0..n+1).map(|i| toeplitz(n,i as i64,1.0));
+    let Tnx = (0..n+1).map(|i| toeplitz_ext(n, &[i as i64+1,i as i64-1, i as i64], &[-1.0,-1.0,-2.0*a.cos()]));
+
+    m.constraint(None, 
+                 &xr.clone().sub( Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some(X1r.clone().dot(Tni).add(X2r.clone().dot(Tnix))))),
+                 equal_to(0.0).with_shape(&[n+1]));
+    m.constraint(None,
+                 &xi.clone().sub( Tn.zip(Tnx).genexpr(|_,(Tni,Tnix)| Some(X1i.clone().dot(Tni).add(X2i.clone().dot(Tnix))))),
+                 equal_to(0.0).with_shape(&[n+1]));
+}
+
+enum Either<A,B> {
+    Left(A),
+    Right(B)
+}
+
+/// Models the epigraph 
+/// ```math
+/// 0 ≤ H(w) ≤ t, for all w ∊ [a, b], 
+/// ```
+/// where
+/// ```math
+/// H(w) = x0 + 2*Re{ x1*exp(-jw) + ... + xn*exp(-jwn) }
+/// ```
+/// and allowed intervals are 
+/// ```
+/// [a,b] ∊ { [a,pi], [0,b] }
+/// ```
+fn epigraph(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, t : Either<&Variable<0>,f64>, a : f64, b : f64) {
+    let n = xr.len()-1;
+    let ur = m.variable(None,n+1);
+    let ui = m.variable(None,n+1);
+
+    match t {
+        Either::Left(&t)  => m.constraint(None,&t.clone().sub(xr.clone().index(0).add(ur.clone().index(0))), zero()),
+        Either::Right(t) => m.constraint(None,&t.sub(xr.clone().index(0).add(ur.clone().index(0))), zero())
+    };
+    m.constraint(None, &xr.clone().index(1..n+1).add(ur.clone().index(1..n+1)), zeros(&[n]));
+    m.constraint(None, &xi.clone().add(ui.clone()), zeros(&[n+1]));
+
+    if a.abs() < 1e-12 && (b-PI).abs() < 1e-12 {
+        trigpoly_0_pi(m, &ur, &ui);
+    }
+    else if a.abs() < 1e-12 && b < PI {
+        trigpoly_0_a(m, &ur, &ui, b);
+    }
+    else if a < PI && (b-PI).abs() < 1e-12 {
+        trigpoly_a_pi(m, &ur, &ui, a);
+    }
+    else {
+        panic!("Invalid interval.");
+    }
+}
+
+
+/// Models the hypograph 
+/// ```math 
+/// 0 ≤ t ≤ H(w), for all w ∊ [a, b]
+/// ```
+/// where
+/// ```math
+/// H(w) = x0 + 2*Re{ x1*exp(-jw) + ... + xn*exp(-jwn) }
+/// ```
+/// and
+/// allowed intervals are 
+/// ```
+/// [a,b] ∊ { [a,pi], [0,b] }
+/// ```
+fn hypograph(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, t : Either<&Variable<0>,f64>, a : f64, b : f64) 
+{
+    let n = xr.len();
+    let u0 = m.variable(None,&[]);
+    match t {
+        Either::Left(t) => m.constraint(None,
+                 &t.clone().sub(xr.clone().index(0).sub(u0.clone())),
+                 zero()),
+        Either::Right(t) => m.constraint(None,
+                 &t.sub(xr.clone().index(0).sub(u0.clone())),
+                 zero())
+    };
+
+    let ur = Variable::vstack(&[&u0.with_shape(&[1]), &xr.index(1..n+1)]);
+
+    if a.abs() < 1e-12 && (b-PI).abs() < 1e-12 {
+        trigpoly_0_pi(m, &ur, xi);
+    }
+    else if a.abs() < 1e-12 && b < PI {
+        trigpoly_0_a(m, &ur, xi, b);
+    }
+    else if a < PI && (b-PI).abs() < 1e-12 {
+        trigpoly_a_pi(m, &ur, xi, a);
+    }
+    else {
+        panic!("Invalid interval.")
+    }
+}
+
+fn main() {
+    let mut m = Model::new(Some("trigpoly"));
+
+    let n : usize = 10;
+
+    let xr = m.variable(Some("xr"), n+1);
+    let xi = m.variable(Some("xi"), n+1);
+    
+    let wp = PI/4.0;
+    let ws = wp + PI/8.0;
+
+    // H(w) >= 0
+    trigpoly_0_pi(& mut m, &xr, &xi);
+
+    let delta = 0.05;
+    // H(w) <= (1+delta),  w \in [0, wp]
+    epigraph(& mut m, &xr, &xi, Either::Right(1.0+delta), 0.0, wp);
+
+    // (1-delta) <= H(w),  w \in [0, wp]
+    hypograph(& mut m, &xr, &xi, Either::Right(1.0-delta), 0.0, wp);
+
+    // H(w) < t,          w \in [ws, pi]
+    let t = m.variable(Some("t"), nonnegative());
+    epigraph(&mut m, &xr, &xi, Either::Left(&t), ws, PI);
+
+    m.objective(None, Sense::Minimize, &t);
+
+    // Enabled log output
+    m.set_log_handler(|msg| print!("{}",msg) );
+
+    m.solve();
+
+    let xr = m.primal_solution(SolutionType::Default, &xr);
+    let xi = m.primal_solution(SolutionType::Default, &xi);
+    xr, xi, t = xr.level(), xi.level(), t.level()[0]
+    print("xr:\n", xr)
+    print("xi:\n", xi)
+}
