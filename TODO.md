@@ -126,3 +126,10 @@ impl LeftMultipliable<2> for DenseMatrix {
 - Update and modify constraints or parts of constraints
 
 
+
+
+
+
+# Generative expressions
+
+

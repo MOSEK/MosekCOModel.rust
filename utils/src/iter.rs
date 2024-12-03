@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ptr::NonNull};
+use std::{cmp::Ordering, iter::Peekable, marker::PhantomData, ptr::NonNull};
 
 
 
@@ -399,7 +399,123 @@ impl<T1,T2,I1,I2,F> Iterator for InnerJoinBy<I1,I2,F>
             None
         }
     }
+}
+////////////////////////////////////////////////////////////
+pub struct OuterMergeBy<I1,I2,C> 
+    where 
+        I1 : Iterator,
+        I2 : Iterator,
+        C : FnMut(&I1::Item,&I2::Item) -> Ordering
+{
+    i1 : Peekable<I1>,
+    i2 : Peekable<I2>,
+    c  : C
+}
 
+pub trait OuterMergeByEx where Self : Iterator+Sized {
+    /// Given two iterators, that are assumed to be sorted, perform an "outer merge", i.e. given a
+    /// comparison function, zip the two lists by order.
+    fn outer_merge_by<I2,C>(self, cmp : C, other : I2) -> OuterMergeBy<Self,I2,C>
+        where 
+            I2 : Iterator, 
+            C : FnMut(&Self::Item,&I2::Item) -> Ordering 
+    {
+        OuterMergeBy{
+            i1 : self.peekable(),
+            i2 : other.peekable(),
+            c : cmp
+        }
+    }
+}
+
+impl<I1,I2,C> Iterator for OuterMergeBy<I1,I2,C>
+    where 
+        I1 : Iterator,
+        I2 : Iterator,
+        C : FnMut(&I1::Item,&I2::Item) -> Ordering
+{
+    type Item = (Option<I1::Item>,Option<I2::Item>);
+    fn next(&mut self) -> Option<Self::Item> {
+        match (self.i1.peek(),self.i2.peek()) {
+            (None,None) => None,
+            (Some(_),None) => { let r = self.i1.next(); Some((r,None)) },
+            (None,Some(_)) => { let r = self.i2.next(); Some((None,r)) },
+            (Some(a),Some(b)) => match (self.c)(a,b) {
+                Ordering::Less => { let r = self.i1.next(); Some((r,None)) },
+                Ordering::Greater => { let r = self.i2.next(); Some((None,r)) },
+                Ordering::Equal => { 
+                    let r1 = self.i1.next();
+                    let r2 = self.i2.next();
+                    Some((r1,r2))
+                }
+
+            }
+        }
+    }
+}
+
+
+
+
+
+////////////////////////////////////////////////////////////
+
+pub struct Interleave<I1,I2> 
+where 
+    I1 : Iterator,
+    I2 : Iterator<Item=I1::Item>
+{
+    i1 : I1,
+    i2 : I2,
+    which : bool
+}
+
+pub trait InterleaveEx where Self : Iterator+Sized {
+    /// Interleave two iterators, picking alternatingly an element from one and from the other.
+    fn interleave<I2>(self, other : I2) -> Interleave<Self,I2> where I2 : Iterator<Item=Self::Item> {
+        Interleave{
+            i1 : self,
+            i2 : other,
+            which : false
+        }
+    }
+}
+
+impl<I1,I2> Iterator for Interleave<I1,I2> where I1:Iterator, I2:Iterator<Item=I1::Item> {
+    type Item = I1::Item;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.which {
+            self.which = ! self.which;
+            self.i2.next()
+        }
+        else {
+            self.which = ! self.which;
+            self.i1.next()
+        }
+    }
+}
+
+pub struct InterleaveN<'a,I> where I : Iterator {
+    ii : &'a mut [I],
+    which : usize
+}
+
+pub fn interleave<'a,I>(ii : &'a mut [I]) -> InterleaveN<'a,I> where I : Iterator {
+    InterleaveN{
+        ii,
+        which : 0
+    }
+}
+
+impl<'a, I> Iterator for InterleaveN<'a,I> where I : Iterator {
+    type Item = I::Item;
+    fn next(&mut self) -> Option<Self::Item> {
+        {
+            let i = self.which;
+            self.which = (self.which+1)%self.ii.len();
+            unsafe{self.ii.get_unchecked_mut(i)}.next()
+        }
+    }
 }
 
 ////////////////////////////////////////////////////////////

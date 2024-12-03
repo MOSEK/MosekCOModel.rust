@@ -57,8 +57,8 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
                 .for_each(|((&i,&p0,&p1),(rp,ri))| {
                     *rp = p1-p0;
                     *ri = (i-first)/d;
-                    rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
-                    rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
+                    rsubj[nzi..nzi+p1-p0].copy_from_slice(&subj[p0..p1]);
+                    rcof[nzi..nzi+p1-p0].copy_from_slice(&cof[p0..p1]);
                     nzi += p1-p0;
                 })
         }
@@ -72,8 +72,8 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
                 .zip(rptr[1..].iter_mut())
                 .for_each(|((_,&p0,&p1),rp)| {
                     *rp = p1-p0;
-                    rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
-                    rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
+                    rsubj[nzi..nzi+p1-p0].copy_from_slice(&subj[p0..p1]);
+                    rcof[nzi..nzi+p1-p0].copy_from_slice(&cof[p0..p1]);
                     nzi += p1-p0;
                 })
         }   
@@ -98,8 +98,8 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
              ptr[first..].iter().step_by(step),
              ptr[first+1..].iter().step_by(step))
             .for_each(|(rp,&p0,&p1)| {
-                rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
-                rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
+                rsubj[nzi..nzi+p1-p0].copy_from_slice(&subj[p0..p1]);
+                rcof[nzi..nzi+p1-p0].copy_from_slice(&cof[p0..p1]);
                 *rp = p1-p0;
                 nzi += p1-p0;
             });
@@ -192,8 +192,8 @@ pub fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) ->
     let (rptr,_rsp,rsubj,rcof)    = rs.alloc_expr(&[],*ptr.last().unwrap(),1);
     rptr[0] = 0;
     rptr[1] = *ptr.last().unwrap();
-    rsubj.clone_from_slice(subj);
-    rcof.clone_from_slice(cof);
+    rsubj.copy_from_slice(subj);
+    rcof.copy_from_slice(cof);
     rs.check();
     Ok(())
 }
@@ -243,8 +243,8 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
             let _ = ix2.iter_mut().zip(strides.iter()).fold(spi,|v,(i,&s)| { *i = v / s; v % s});
            
             (*xs,_) = izip!(strides.iter(),rstrides.iter(),begin.iter()).fold((spi,0),|(i,r),(&s,&rs,&b)| (i%s, r + (i/s-b) * rs) );
-            xsubj.clone_from_slice(&subj[p0..p1]);
-            xcof.clone_from_slice(&cof[p0..p1]);
+            xsubj.copy_from_slice(&subj[p0..p1]);
+            xcof.copy_from_slice(&cof[p0..p1]);
             rnnz += p1-p0;                    
             *xp = rnnz;
             rnelem += 1;
@@ -252,11 +252,11 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
 
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape, rnnz, rnelem);
         rptr[0] = 0;
-        rptr.clone_from_slice(&xptr[..rnelem+1]);
-        rsubj.clone_from_slice(&xsubj[..rnnz]);
-        rcof.clone_from_slice(&xcof[..rnnz]);
+        rptr.copy_from_slice(&xptr[..rnelem+1]);
+        rsubj.copy_from_slice(&xsubj[..rnnz]);
+        rcof.copy_from_slice(&xcof[..rnnz]);
         if let Some(rsp) = rsp {
-            rsp.clone_from_slice(&xsp[..rnelem]);
+            rsp.copy_from_slice(&xsp[..rnelem]);
         }
     } 
     else {
@@ -283,9 +283,9 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
             }
         }
         let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(rshape, rnnz, rnelem);
-        rptr.clone_from_slice(xptr);
-        rsubj.clone_from_slice(&xsubj[..rnnz]);
-        rcof.clone_from_slice(&xcof[..rnnz]);
+        rptr.copy_from_slice(xptr);
+        rsubj.copy_from_slice(&xsubj[..rnnz]);
+        rcof.copy_from_slice(&xcof[..rnnz]);
     }
     rs.check();
     Ok(())
@@ -293,6 +293,9 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
 
 pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+    let nnz = subj.len();
+    let _nelem = ptr.len()-1;
+    let nd = shape.len();
     if dim >= shape.len() {
         return Err(ExprEvalError::new(file!(),line!(),"Invalid stacking dimension"));
     }
@@ -301,7 +304,6 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
     let nelm = ptr.len()-1;
     let rnnz = ptr.last().unwrap()*num;
     let rnelm = (ptr.len()-1)*num;
-
 
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(), rnnz, rnelm);
 
@@ -344,18 +346,39 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
         let _d0 : usize = num * shape[..dim].iter().product::<usize>();
         let d1 : usize = shape[dim..].iter().product();
         rptr[0] = 0;
-        let mut rptr_pos = 0usize;
-        for ((ptrb,ptre),rptr) in izip!(ptr.chunks(d1),ptr[1..].chunks(d1)).map(|v| std::iter::repeat(v).take(num)).flatten().zip(rptr[1..].chunks_mut(d1)) {
-            izip!(rptr.iter_mut(),ptrb.iter(),ptre.iter()).for_each(|(r,&pb,&pe)| *r = pe-pb);
-            let pb = ptrb[0];
-            let pe = *ptre.last().unwrap();
-            let n = pe-pb;
-            rsubj[rptr_pos..rptr_pos+n].copy_from_slice(&subj[pb..pe]);
-            rcof[rptr_pos..rptr_pos+n].copy_from_slice(&cof[pb..pe]);
-            rptr_pos += n;
-        }
 
-        _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+        // special case: stack in top dimension, amounting to repeating the expression n times.
+        if dim == 0 {
+            rsubj.chunks_mut(nnz).for_each(|rj| rj.copy_from_slice(subj));
+            rcof.chunks_mut(nnz).for_each(|rc| rc.copy_from_slice(cof));
+            ptr.iter().zip(ptr[1..].iter())
+                .cycle()
+                .zip(rptr[1..].iter_mut())
+                .for_each(|((p0,p1),rp)| *rp = p1-p0);
+
+            rptr.iter_mut().fold(0,|p,rp| { *rp += p; *rp });
+        }
+        // special case: stack in bottom dimension, the dimension being size 1, amounting to
+        // repeating each element n times
+        else if dim == nd-1 && shape[nd-1] == 1 {
+            println!("repeat dense, dim = {}, dim size = {}",dim,shape[nd-1]);
+            rptr.iter_mut().enumerate().for_each(|(i,rp)| *rp = i);
+            subj.iter().flat_map(|j| std::iter::repeat(*j).take(num)).zip(rsubj.iter_mut()).for_each(|(j,rj)| *rj = j);
+            cof.iter().flat_map(|c| std::iter::repeat(*c).take(num)).zip(rcof.iter_mut()).for_each(|(c,rc)| *rc = c);
+        }
+        else {
+            izip!(ptr.chunks(d1),ptr[1..].chunks(d1))
+                .flat_map(|item| std::iter::repeat(item).take(num))
+                .flat_map(|(pb,pe)| pb.iter().zip(pe)) 
+                .zip(rptr[1..].iter_mut())
+                .fold(0,|p,((p0,p1),rp)| { *rp = p+p1-p0; *rp });
+            izip!(ptr.chunks(d1),ptr[1..].chunks(d1))
+                .flat_map(|item| std::iter::repeat(item).take(num))
+                .flat_map(|(ptrb,ptre)| ptrb.iter().zip(ptre.iter())) 
+                .flat_map(|(&pb,&pe)| unsafe{subj.get_unchecked(pb..pe)}.iter().zip(unsafe{cof.get_unchecked(pb..pe)}.iter()))
+                .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
+                .for_each(|((&j,&c),(rj,rc))| { *rj = j; *rc = c; });
+        }
     }
     rs.check();
     Ok(())
@@ -421,8 +444,8 @@ pub fn permute_axes<const N : usize>(
             let mut nzi = 0;
     
             for (&p0,&p1,p) in izip!(ptr[0..nelem].permute_by(elmperm),ptr[1..nelem+1].permute_by(elmperm),rptr[1..].iter_mut()) {
-                rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
-                rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
+                rsubj[nzi..nzi+p1-p0].copy_from_slice(&subj[p0..p1]);
+                rcof[nzi..nzi+p1-p0].copy_from_slice(&cof[p0..p1]);
                 *p = p1-p0;
                 nzi += p1-p0;
             }
@@ -442,8 +465,8 @@ pub fn permute_axes<const N : usize>(
             let n = ssubj.len();
             let nzi = rptr[ti];
 
-            rsubj[nzi..nzi+n].clone_from_slice(ssubj);
-            rcof[nzi..nzi+n].clone_from_slice(scof);
+            rsubj[nzi..nzi+n].copy_from_slice(ssubj);
+            rcof[nzi..nzi+n].copy_from_slice(scof);
         }
     }
     rs.check();
@@ -499,8 +522,8 @@ pub fn add(n  : usize,
                     .for_each(|(js,cs,&i)| {
                         let nnz = js.len();
                         let p0 = unsafe{ *rptr.get_unchecked(i) };
-                        rsubj[p0..p0+nnz].clone_from_slice(js);
-                        rcof[p0..p0+nnz].clone_from_slice(cs);
+                        rsubj[p0..p0+nnz].copy_from_slice(js);
+                        rcof[p0..p0+nnz].copy_from_slice(cs);
 
                         unsafe{ *rptr.get_unchecked_mut(i) += nnz };
                     });
@@ -511,8 +534,8 @@ pub fn add(n  : usize,
                       rptr.iter())
                     .for_each(|(js,cs,&p0)| {
                         let nnz = js.len();
-                        rsubj[p0..p0+nnz].clone_from_slice(js);
-                        rcof[p0..p0+nnz].clone_from_slice(cs);
+                        rsubj[p0..p0+nnz].copy_from_slice(js);
+                        rcof[p0..p0+nnz].copy_from_slice(cs);
                     });
                 rptr.iter_mut().zip(ptr.iter().zip(ptr[1..].iter()).map(|(&p0,&p1)| p1-p0))
                     .for_each(|(rp,n)| *rp += n);
@@ -561,7 +584,7 @@ pub fn add(n  : usize,
                 *ri = si;
                 *rp = sd;
             }
-            hindex[..rnelm].clone_from_slice(rsp);
+            hindex[..rnelm].copy_from_slice(rsp);
         }
         else {
             for (rp,&sd) in izip!(rptr[1..].iter_mut(), hdata.permute_by(perm)) {
@@ -588,8 +611,8 @@ pub fn add(n  : usize,
                     let n = sj.len();
                     if let Some(index) = h.at(i) {
                         let rp = { let p = &mut rptr[*index]; *p += n; *p - n };
-                        rsubj[rp..rp+n].clone_from_slice(sj);
-                        rcof[rp..rp+n].clone_from_slice(sc);
+                        rsubj[rp..rp+n].copy_from_slice(sj);
+                        rcof[rp..rp+n].copy_from_slice(sc);
                     }
                }
             }
@@ -849,6 +872,146 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
     Ok(())
 }
 
+pub fn dot_rows(mshape : [usize;2],
+                msp    : Option<&[usize]>,
+                mdata  : &[f64],
+                rs     : & mut WorkStack,
+                ws     : & mut WorkStack,
+                _xs    : & mut WorkStack) -> Result<(),ExprEvalError> {
+
+    let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+    if shape != mshape { panic!("Mismatching shapes"); }
+    let (_nelem,nnz) = (ptr.len()-1,subj.len());
+    let rshape = [mshape[0]];
+    let shape = mshape;
+
+    match (&msp,sp) {
+        (None,None) => {
+            let (rnelem,rnnz) = (mshape[0],nnz);
+            let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+            rptr.iter_mut().zip(ptr.iter().step_by(shape[1])).for_each(|(rp,&p)| *rp = p);
+
+            rsubj.copy_from_slice(subj);
+            cof.chunks_ptr(ptr).zip(mdata.iter())
+                .flat_map(|(crow,&m)| crow.iter().map(move |&c| c * m) )
+                .zip(rcof.iter_mut())
+                .for_each(|(c,rc)| *rc = c);
+        },
+        (None,Some(sp)) => {
+            let num_expr_rows = sp.chunk_by(|a,b| a/shape[1] == b/shape[1]).count();
+            let (rnelem,rnnz) = (num_expr_rows,nnz);
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+
+            if let Some(rsp) = rsp {
+                sp.chunk_by(|a,b| a/shape[1] == b/shape[1]).zip(rsp.iter_mut()).for_each(|(ii,ri)| *ri = ii[0] / shape[1]);
+            }
+           
+            rptr[0] = 0;
+            sp.chunk_by(|a,b| a/shape[1] == b/shape[1])
+                .zip(rptr[1..].iter_mut())
+                .fold(0,|p,(eii,rp)| { let p1 = p+eii.len(); *rp = unsafe{ *ptr.get_unchecked(p1) }; p1 } ) ;
+
+            rsubj.copy_from_slice(subj);
+
+            cof.chunks_ptr(ptr).zip(mdata.permute_by(sp))
+                .flat_map(|(crow,&m)| crow.iter().map(move |&c| c * m) )
+                .zip(rcof.iter_mut())
+                .for_each(|(c,rc)| *rc = c);
+        },
+        (Some(msp),None) => {
+            let num_m_rows = msp.chunk_by(|a,b| a/shape[1] == b/shape[1]).count();
+            let rnelem = num_m_rows;
+            let rnnz = ptr.permute_by(msp).zip(ptr[1..].permute_by(msp)).map(|(p0,p1)| p1-p0).sum();
+
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+
+            rptr[0] = 0;
+
+            msp.chunk_by(|a,b| a/shape[1] == b/shape[1])
+                .scan(0,|p,ii| { let (p0,p1) = (*p,*p+ii.len()); *p = p1; Some(unsafe{ ptr.get_unchecked(p0..=p1)})})
+                .zip(rptr[1..].iter_mut())
+                .fold(0,|p,(eprow,rp)| {
+                    let rownnz = *eprow.last().unwrap() - eprow[0];                        
+                    *rp = p + rownnz;
+                    *rp
+                });
+            if let Some(rsp) = rsp { 
+                msp.iter()
+                    .scan(usize::MAX,|prev,mi| { let oldp = *prev; *prev = mi/shape[1]; Some((oldp,*prev)) })
+                    .filter(|(a,b)| *a != *b)
+                    .zip(rsp.iter_mut())
+                    .for_each(|((_,i),ri)| *ri = i);
+                
+            }
+
+            izip!(mdata.iter(),
+                  ptr.permute_by(msp),
+                  ptr[1..].permute_by(msp))
+                .flat_map(|(&mc,&p0,&p1)| izip!(std::iter::repeat(mc),unsafe{subj.get_unchecked(p0..p1)},unsafe{cof.get_unchecked(p0..p1)}) )
+                .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
+                .for_each(|((mc,&j,&c),(rj,rc))| {
+                    *rj = j;
+                    *rc = c * mc;
+                });
+        },
+        (Some(msp),Some(sp)) => {
+            // compute number of elements and nonzeros
+            let (rnelem,rnnz,_) = msp.iter().peekable()
+                .inner_join_by(|a,b| a.cmp(&b.0), izip!(sp.iter(),ptr.iter(),ptr[1..].iter()).peekable())
+                .fold((0,0,usize::MAX),|(nelem,nnz,prev),(&mi,(_,&p0,&p1))| {
+                    if mi/shape[1] != prev { 
+                        (nelem+1, nnz+p1-p0, mi/shape[1]) 
+                    }
+                    else {
+                        (nelem, nnz+p1-p0, prev) 
+                    }
+                });
+
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
+            // build rptr
+            *rptr.last_mut().unwrap() = rnnz;
+            msp.iter()
+                .inner_join_by(|a,b| a.cmp(&b.0), izip!(sp.iter(),ptr.iter(),ptr[1..].iter()))
+                .scan((0,usize::MAX),|(p,prev),(&mi,(_,p0,p1))| {
+                    let oldprev = *prev;
+                    let oldp = *p;
+                    *prev = mi/shape[1];
+                    *p += p1-p0;
+                    Some((oldprev,*prev,oldp))
+                })
+                .filter(|(i0,i1,_)| i0 != i1)
+                .zip(rptr.iter_mut())
+                .for_each(|((_,_,p),rp)| *rp = p);
+
+            // build rsp
+            if let Some(rsp) = rsp {
+                msp.iter()
+                   .inner_join_by(|a,b| a.cmp(b), izip!(sp.iter()))
+                   .scan(usize::MAX,|prev,(&mi,_)| { let oldp = *prev; *prev = mi/shape[1]; Some((oldp,*prev)) })
+                   .filter(|(a,b)| a != b)
+                   .zip(rsp.iter_mut())
+                   .for_each(|((_,rowi),ri)| *ri = rowi);
+            }
+            // build subj and cof
+            msp.iter().zip(mdata.iter())
+                .inner_join_by(|a,b| a.0.cmp(&b.0), izip!(sp.iter(),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)))
+                .map(|((_,mc),(_,js,cs))| (mc,js,cs)) 
+                .flat_map(|(&mc,js,cs)| js.iter().zip(cs.iter().map(move |&v| v * mc)))
+                .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
+                .for_each(|((&j,c),(rj,rc))| { *rj = j; *rc = c;} );
+        }
+    }
+
+
+    Ok(())
+
+    
+
+}
+
+
+
+
 /// Evaluates `lhs` * expr.
 pub fn mul_left_dense(mdata : &[f64],
                              mdimi : usize,
@@ -896,7 +1059,7 @@ pub fn mul_left_dense(mdata : &[f64],
 
             for (p,&v) in izip!(rptr[jj..].iter_mut().step_by(edimj),
                                 mdata[ii..].iter().step_by(mdimj)) {
-                rsubj[*p..*p+rownnz].clone_from_slice(&subj[p0..p1]);
+                rsubj[*p..*p+rownnz].copy_from_slice(&subj[p0..p1]);
                 rcof[*p..*p+rownnz].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * v);
                 *p += rownnz;
             }
@@ -911,7 +1074,7 @@ pub fn mul_left_dense(mdata : &[f64],
         for (mrow,rptrrow) in mdata.chunks(mdimj).zip(rptr[1..].chunks_mut(edimj)) {
             for (j,rp) in rptrrow.iter_mut().enumerate() {
                 for (&v,&p0,&p1) in izip!(mrow.iter(),ptr[j..].iter().step_by(edimj),ptr[j+1..].iter().step_by(edimj)) {
-                    rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                    rsubj[nzi..nzi+p1-p0].copy_from_slice(&subj[p0..p1]);
                     rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * v);
                     nzi += p1-p0;
                 }
@@ -971,7 +1134,7 @@ pub fn mul_right_dense(mdata : &[f64],
 
             for (rp,v) in izip!(rptr[ii*rdimj..(ii+1)*rdimj].iter_mut(),
                                 mdata[jj*mdimj..(jj+1)*mdimj].iter()) {
-                rsubj[*rp..*rp+p1-p0].clone_from_slice(&subj[p0..p1]);
+                rsubj[*rp..*rp+p1-p0].copy_from_slice(&subj[p0..p1]);
                 rcof[*rp..*rp+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * v);
                 *rp += p1-p0;
             }
@@ -984,7 +1147,7 @@ pub fn mul_right_dense(mdata : &[f64],
         let mut nzi = 0;
         for (rp,((ptrb,ptre),i)) in rptr[1..].iter_mut().zip(iproduct!(ptr.chunks(edimj).zip(ptr[1..].chunks(edimj)), 0..mdimj)) {
             for (&p0,&p1,&v) in izip!(ptrb.iter(),ptre.iter(),mdata[i..].iter().step_by(mdimj)) {
-                rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                rsubj[nzi..nzi+p1-p0].copy_from_slice(&subj[p0..p1]);
                 izip!(rcof[nzi..nzi+p1-p0].iter_mut(),cof[p0..p1].iter())
                     .for_each(|(rc,&c)| *rc = c * v);
                 nzi += p1-p0;
@@ -1112,7 +1275,7 @@ pub fn mul_left_sparse(mheight : usize,
                         std::cmp::Ordering::Less    => { let _ = mspi.next(); },
                         std::cmp::Ordering::Greater => { let _ = espi.next(); },
                         std::cmp::Ordering::Equal => {
-                            rsubj[ijnnz..ijnnz+p1-p0].clone_from_slice(&subj[p0..p1]);
+                            rsubj[ijnnz..ijnnz+p1-p0].copy_from_slice(&subj[p0..p1]);
                             rcof[ijnnz..ijnnz+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c*mc );
                             let _ = espi.next();
                             let _ = mspi.next();
@@ -1147,7 +1310,7 @@ pub fn mul_left_sparse(mheight : usize,
 
         let &rnnz = xptr.last().unwrap();
         let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[mheight,ewidth],rnnz,rnelm);
-        rptr.clone_from_slice(xptr);
+        rptr.copy_from_slice(xptr);
 
         for (&mspi,&mv) in msparsity.iter().zip(mdata.iter()) {
             let (mi,mj) = (mspi / mwidth,mspi % mwidth);
@@ -1156,7 +1319,7 @@ pub fn mul_left_sparse(mheight : usize,
                                      ptr[mj*ewidth..(mj+1)*ewidth].iter(),
                                      ptr[mj*ewidth+1..(mj+1)*ewidth+1].iter()) {
                 let dst = unsafe{*xptr.get_unchecked(mi*ewidth+j)};
-                rsubj[dst..dst+p1-p0].clone_from_slice(&subj[p0..p1]);
+                rsubj[dst..dst+p1-p0].copy_from_slice(&subj[p0..p1]);
                 rcof[dst..dst+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c*mv);
 
                 unsafe{*xptr.get_unchecked_mut(mi*ewidth+j) += p1-p0};
@@ -1280,7 +1443,7 @@ pub fn mul_right_sparse(mheight : usize,
                                 let _ = ei.next();
                                 let _ = mi.next();
 
-                                rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                                rsubj[nzi..nzi+p1-p0].copy_from_slice(&subj[p0..p1]);
                                 rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c*mv);
 
                                 nzi += p1-p0;
@@ -1339,7 +1502,7 @@ pub fn mul_right_sparse(mheight : usize,
                 izip!(p0s.permute_by(mcolsubi),
                       p1s.permute_by(mcolsubi),
                       mcof[mp0..mp1].iter()).for_each(|(&p0,&p1,&mv)| {
-                          rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                          rsubj[nzi..nzi+p1-p0].copy_from_slice(&subj[p0..p1]);
                           rcof[nzi..nzi+p1-p0].iter_mut().zip(&cof[p0..p1]).for_each(|(rc,&c)| *rc = c * mv);
                           nzi += p1-p0;
                       });
@@ -1381,7 +1544,7 @@ pub fn dot_vec(data : &[f64],
         let rnelm = 1;
         let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[],rnnz,rnelm);
 
-        rsubj.clone_from_slice(subj);
+        rsubj.copy_from_slice(subj);
         rptr[0] = 0;
         rptr[1] = rnnz;
         for (&i,&p0,&p1) in izip!(sp.iter(),ptr[0..ptr.len()-1].iter(),ptr[1..].iter()) {
@@ -1396,7 +1559,7 @@ pub fn dot_vec(data : &[f64],
         let rnelm = 1;
         let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(&[],rnnz,rnelm);
 
-        rsubj.clone_from_slice(subj);
+        rsubj.copy_from_slice(subj);
         rptr[0] = 0;
         rptr[1] = rnnz;
         for (&p0,&p1,v) in izip!(ptr[0..ptr.len()-1].iter(),ptr[1..].iter(),data.iter()) {
@@ -1424,7 +1587,7 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
     let mut rshape = exprs.first().unwrap().0.to_vec();
     rshape[dim] = ddim;
 
-    let (rptr,mut rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),rnnz,rnelm);
+    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),rnnz,rnelm);
 
     // Stacking in any number of dimensions can always be reduced to
     // stacking in 3 dimensions, with the dimension sizes computed as:
@@ -1437,37 +1600,74 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
     // product up to the stacking dimension are all 1, so effectively
     // that means stacking in the first (non-one) dimension.
     if d0 == 1 {
-        // println!("{}:{}: eval::stack CASE 1",file!(),line!());
-        let mut elmi : usize = 0;
-        let mut nzi  : usize = 0;
-        let mut ofs  : usize = 0;
+        if let Some(rsp) = rsp {
+            let (irest,_) = xs.alloc(3*(n+1),0);
+            let (chunkp,irest) = irest.split_at_mut(n+1);
+            let (nnzp,offsets) = irest.split_at_mut(n+1);
+            chunkp[0]  = 0; 
+            nnzp[0]    = 0;
+            offsets[0] = 0;
+            izip!(chunkp[1..].iter_mut(),
+                  nnzp[1..].iter_mut(),
+                  offsets[1..].iter_mut(),
+                  exprs.iter())
+                .fold((0,0,0),|(elmi,nzi,ofsi),(elmptr,nzptr,offset,(shape,ptr,_,subj,_))| {
+                    *elmptr = elmi+ptr.len()-1;
+                    *nzptr  = nzi+subj.len();
+                    *offset = ofsi+shape.iter().product::<usize>();
+                    (*elmptr,*nzptr,*offset)
+                });
+            println!("offsets = {:?}",offsets);
+            
+            rptr[0] = 0;
+            izip!(
+                nnzp.iter(),
+                offsets.iter(),
+                rptr[1..].chunks_ptr_mut(&chunkp[..n], &chunkp[1..]),
+                rsp.chunks_ptr_mut(&chunkp[..n],&chunkp[1..]),
+                rsubj.chunks_ptr_mut(&nnzp[..n], &nnzp[1..]),
+                rcof.chunks_ptr_mut(&nnzp[..n], &nnzp[1..]),
+                exprs.iter())
+                .for_each(|(nzi,ofs,rps,rsp,rjs,rcs,(_,ptr,sp,subj,cof))| {
+                    rps.iter_mut().zip(ptr[1..].iter()).for_each(|(rp,&p)| *rp = nzi+p );
+                    if let Some(sp) = sp {
+                        rsp.iter_mut().zip(sp.iter()).for_each(|(ri,&i)| *ri = i + ofs);
+                    }
+                    else {
+                        rsp.iter_mut().enumerate().for_each(|(i,ri)| *ri = i+*ofs);
+                    }
 
-        rptr[0] = 0;
-        for (shape,ptr,sp,subj,cof) in exprs.iter() {
-            // println!("{}:{}: shape = {:?}",file!(),line!(),shape);
-            let nnz = ptr.last().unwrap();
-            let nelm = ptr.len()-1;
-            rsubj[nzi..nzi+nnz].clone_from_slice(subj);
-            rcof[nzi..nzi+nnz].clone_from_slice(cof);
-            izip!(rptr[elmi+1..elmi+nelm+1].iter_mut(),
-                  ptr.iter(),
-                  ptr[1..].iter()).for_each(|(rp,&p0,&p1)| *rp = p1-p0);
-
-            if let Some(ref mut rsp) = rsp {
-                if let Some(sp) = sp {
-                    rsp[elmi..elmi+nelm].iter_mut().zip(sp.iter()).for_each(|(rsp,&sp)| *rsp = sp+ofs);
-                }
-                else {
-                    rsp[elmi..elmi+nelm].iter_mut().zip(0..nelm).for_each(|(rsp,sp)| *rsp = sp+ofs);
-                }
-                ofs += shape.iter().product::<usize>();
-            }
-            nzi += ptr.last().unwrap();
-
-            elmi += ptr.len()-1;
+                    rjs.copy_from_slice(subj);
+                    rcs.copy_from_slice(cof);
+                });
         }
-        //println!("{}:{}: rptr = {:?}",file!(),line!(),rptr);
-        let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
+        else {
+            let (irest,_) = xs.alloc(2*(n+1),0);
+            let (chunkp,nnzp) = irest.split_at_mut(n+1);
+            chunkp[0]  = 0; 
+            nnzp[0]    = 0;
+            izip!(chunkp[1..].iter_mut(),
+                  nnzp[1..].iter_mut(),
+                  exprs.iter())
+                .fold((0,0),|(elmi,nzi),(elmptr,nzptr,(_,ptr,_,subj,_))| {
+                    *elmptr = elmi+ptr.len()-1;
+                    *nzptr  = nzi+subj.len();
+                    (*elmptr,*nzptr)
+                });
+            
+            rptr[0] = 0;
+            izip!(
+                nnzp.iter(),
+                rptr[1..].chunks_ptr_mut(&chunkp[..n], &chunkp[1..]),
+                rsubj.chunks_ptr_mut(&nnzp[..n], &nnzp[1..]),
+                rcof.chunks_ptr_mut(&nnzp[..n], &nnzp[1..]),
+                exprs.iter())
+                .for_each(|(nzi,rps,rjs,rcs,(_,ptr,_,subj,cof))| {
+                    rps.iter_mut().zip(ptr[1..].iter()).for_each(|(rp,&p)| *rp = nzi+p );
+                    rjs.copy_from_slice(subj);
+                    rcs.copy_from_slice(cof);
+                });
+        }
     }
     // Case 2: The result is sparse, implying that at least one
     // operand is sparse. Strategy:
@@ -1525,8 +1725,8 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
                                       ptr.iter(),
                                       ptr[1..].iter()) {
                 let n = p1-p0;
-                rsubj[*xp..*xp+n].clone_from_slice(&subj[p0..p1]);
-                rcof[*xp..*xp+n].clone_from_slice(&cof[p0..p1]);
+                rsubj[*xp..*xp+n].copy_from_slice(&subj[p0..p1]);
+                rcof[*xp..*xp+n].copy_from_slice(&cof[p0..p1]);
                 *xp += n;
             }
             elmi += *ptr.last().unwrap();
@@ -1575,8 +1775,8 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
                     let p1 = *p1s.last().unwrap();
 
                     let rp = rps[ofs];
-                    rsubj[rp..rp+p1-p0].clone_from_slice(&subj[p0..p1]);
-                    rcof[rp..rp+p1-p0].clone_from_slice(&cof[p0..p1]);
+                    rsubj[rp..rp+p1-p0].copy_from_slice(&subj[p0..p1]);
+                    rcof[rp..rp+p1-p0].copy_from_slice(&cof[p0..p1]);
 
                 });
 
@@ -1627,71 +1827,72 @@ pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : &
             }
             
         }
-        rsubj.clone_from_slice(subj);
-        rcof.clone_from_slice(cof);
+        rsubj.copy_from_slice(subj);
+        rcof.copy_from_slice(cof);
     } 
     else {
         let rnelm = shape.iter().product::<usize>()/d; 
         let (rptr,_,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),subj.len(),rnelm);
 
-        rsubj.clone_from_slice(subj);
-        rcof.clone_from_slice(cof);
+        rsubj.copy_from_slice(subj);
+        rcof.copy_from_slice(cof);
         rptr.iter_mut().zip(ptr.iter().step_by(d)).for_each(|(rp,&p)| *rp = p );
     }
     rs.check();
     Ok(())
 }
 
-pub fn mul_elem(datashape : &[usize],
-                        datasparsity : Option<&[usize]>,
-                        data : &[f64],
-                        rs : & mut WorkStack,
-                        ws : & mut WorkStack,
-                        xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+pub fn mul_elem(mshape: &[usize],
+                msp: Option<&[usize]>,
+                mdata : &[f64],
+                rs : & mut WorkStack,
+                ws : & mut WorkStack,
+                _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let &nnz = ptr.last().unwrap();
     let nelm = ptr.len()-1;
 
-    if shape.iter().zip(datashape.iter()).any(|(&s0,&s1)| s0 != s1) { return Err(ExprEvalError::new(file!(),line!(),"Mismatching operand shapes in mul_elm")); }
+    if shape != mshape {
+        return Err(ExprEvalError::new(file!(),line!(),"Mismatching operand shapes"));
+    }
 
-    match (datasparsity,sp) {
-        (Some(msp),Some(esp)) => {
-            let (upart,xcof) = xs.alloc(esp.len()*2+1+subj.len(),subj.len());
-            let (xsp,upart) = upart.split_at_mut(esp.len());
-            let (xptr,xsubj) = upart.split_at_mut(esp.len()+1);
-
-            xptr[0] = 0;
-            let mut mit   = msp.iter().zip(data.iter()).peekable();
-            let mut eit   = izip!(esp.iter(),ptr.iter(),ptr[1..].iter()).peekable();
-            let mut rnelm = 0usize;
-            let mut rnnz  = 0usize;
-
-            while let (Some((&mi,&mc)),Some((ei,&p0,&p1))) = (mit.peek(),eit.peek()) {
-                match mi.cmp(ei) {
-                    std::cmp::Ordering::Less => _ = mit.next(),
-                    std::cmp::Ordering::Greater => _ = eit.next(),
-                    std::cmp::Ordering::Equal => {
-                        xsp[rnelm] = mi;                            
-                        xsubj[rnnz..rnnz+p1-p0].clone_from_slice(&subj[p0..p1]);                            
-                        xcof[rnnz..rnnz+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(tc,&sc)| *tc = sc * mc);
-
-                        rnelm += 1;
-                        rnnz += p1-p0;
-                        xptr[rnelm] = rnnz;
-
-                        _ = mit.next();
-                        _ = eit.next();
-                    }
-                }
+    if let Some(msp) = msp {
+        if msp.iter().zip(msp.iter()).any(|(&s0,&s1)| s0 != s1) { return Err(ExprEvalError::new(file!(),line!(),"Mismatching operand shapes in mul_elm")); }
+        let msz = mshape.iter().product::<usize>();
+        if let Some(&i) = msp.iter().max() {
+            if i >= msz {
+                return Err(ExprEvalError::new(file!(),line!(),"Invalid sparsity pattern"));
             }
+        }
+    }
 
-            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape, rnnz, rnelm);
-            rptr.clone_from_slice(&xptr[..rnelm+1]);
-            assert!(rptr[0] == 0);
-            if let Some(rsp) = rsp { rsp.clone_from_slice(&xsp[..rnelm]) };
-            rsubj.clone_from_slice(&xsubj[..rnnz]);
-            rcof.clone_from_slice(&xcof[..rnnz]);
-            xs.clear();
+    match (msp,sp) {
+        (Some(msp),Some(esp)) => {
+            
+            let (rnelem,rnnz) = 
+                msp.iter()
+                    .inner_join_by(|&mi,(&ei,_,_)| mi.cmp(&ei), izip!(esp.iter(),ptr.iter(),ptr[1..].iter()))
+                    .fold((0,0),|(elmi,nzi),(_,(_,p0,p1))| (elmi+1,nzi+p1-p0));
+
+            let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape, rnnz, rnelem);
+            rptr[0] = 0;
+
+            // build rptr and rsp
+            msp.iter()
+                .inner_join_by(|mi,(ei,_,_)| mi.cmp(ei), izip!(esp.iter(),ptr.iter(),ptr[1..].iter()))
+                .zip(rptr[1..].iter_mut().zip(rsp.unwrap().iter_mut()))
+                .fold(0,|p, ((&mi,(_,&p0,&p1)),(rp,ri))| { 
+                    *rp = p + p1-p0; 
+                    *ri = mi;
+                    *rp 
+                });
+
+            // build subj, cof
+            msp.iter().zip(mdata.iter())
+                .inner_join_by(|(mi,_),(ei,_,_)| mi.cmp(ei), izip!(esp.iter(),ptr.iter(),ptr[1..].iter()))
+                .flat_map(|((_,&mc),(_,&p0,&p1))| unsafe{subj.get_unchecked(p0..p1)}.iter().zip(unsafe{cof.get_unchecked(p0..p1)}.iter().map(move |v| v*mc)))
+                .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
+                .for_each(|((&j,c),(rj,rc))| { *rj = j; *rc = c; });
         }
         (Some(msp),None) =>  {
             // count result size
@@ -1707,13 +1908,13 @@ pub fn mul_elem(datashape : &[usize],
             for (ri,rp,&i,&mc) in izip!(rsp.iter_mut(),
                                         rptr[1..].iter_mut(),
                                         msp.iter(),
-                                        data.iter()) {
+                                        mdata.iter()) {
                 let p0 = ptr[i];
                 let p1 = ptr[i+1];
 
                 //println!("  p0 = {}, p1 = {}",p0,p1);
                 *ri = i;
-                rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
+                rsubj[nzi..nzi+p1-p0].copy_from_slice(&subj[p0..p1]);
                 rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * mc);
                 nzi += p1-p0;
                 *rp = nzi; 
@@ -1727,22 +1928,22 @@ pub fn mul_elem(datashape : &[usize],
             let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(shape, rnnz, rnelm);
 
             if let Some(rsp) = rsp {
-                rsp.clone_from_slice(esp);
+                rsp.copy_from_slice(esp);
             }
-            rsubj.clone_from_slice(subj);
-            rptr.clone_from_slice(ptr);
-            rcof.clone_from_slice(cof);
+            rsubj.copy_from_slice(subj);
+            rptr.copy_from_slice(ptr);
+            rcof.copy_from_slice(cof);
             for (&p0,&p1,&i) in izip!(ptr.iter(),ptr[1..].iter(),esp.iter()) {
-                let mc = data[i];
+                let mc = mdata[i];
                 rcof[p0..p1].iter_mut().for_each(|c| *c *= mc);
             }
         }
         (None,None) => {
             let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(shape, nnz, nelm);
-            rptr.clone_from_slice(ptr);
-            rsubj.clone_from_slice(subj);
-            rcof.clone_from_slice(cof);
-            for (&p0,&p1,&c) in izip!(ptr.iter(),ptr[1..].iter(),data.iter()) {
+            rptr.copy_from_slice(ptr);
+            rsubj.copy_from_slice(subj);
+            rcof.copy_from_slice(cof);
+            for (&p0,&p1,&c) in izip!(ptr.iter(),ptr[1..].iter(),mdata.iter()) {
                 rcof[p0..p1].iter_mut().for_each(|t| *t *= c );
             }
         }
@@ -1925,11 +2126,11 @@ pub fn inplace_reduce_shape(m : usize,rs : & mut WorkStack, xs : & mut WorkStack
     {
         let (shape,_,_,_,_) = rs.peek_expr();
         if m <= shape.len() {
-            rshape[..m-1].clone_from_slice(&shape[0..m-1]);
+            rshape[..m-1].copy_from_slice(&shape[0..m-1]);
             *rshape.last_mut().unwrap() = shape[m-1..].iter().product();
         }
         else {
-            rshape[0..shape.len()].clone_from_slice(shape);
+            rshape[0..shape.len()].copy_from_slice(shape);
             rshape[shape.len()..].iter_mut().for_each(|s| *s = 1);
         }
     }
@@ -1998,9 +2199,9 @@ pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs
 
     let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(rshape,ptr.len()-1,subj.len());
 
-    rptr.clone_from_slice(ptr);
-    rsubj.clone_from_slice(subj);
-    rcof.clone_from_slice(cof);
+    rptr.copy_from_slice(ptr);
+    rsubj.copy_from_slice(subj);
+    rcof.copy_from_slice(cof);
     rs.check();
     Ok(())
 }
@@ -2012,11 +2213,40 @@ pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut Wor
 
     let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr( &[rnelm],rnnz,rnelm);
 
-    rptr.clone_from_slice(ptr);
-    rsubj.clone_from_slice(subj);
-    rcof.clone_from_slice(cof);
+    rptr.copy_from_slice(ptr);
+    rsubj.copy_from_slice(subj);
+    rcof.copy_from_slice(cof);
     Ok(())
 }
+
+/// Compose a list of scalar expressions on the stack into an N-dimensional expression.
+///
+/// # Arguments
+/// - `rshape` The shape of the result expression
+/// - `spx` The (optional) sparsity pattern of the the result. If not `None`, the length defines
+///   the number of scalar expressions to pop, otherwise the number of scalar expressions is
+///   defined by the size of the shape.
+pub fn stack_scalars(rshape : &[usize], spx : Option<&[usize]>, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+    let nelm = spx.map(|v| v.len()).unwrap_or(rshape.iter().product());
+
+    let exprs = ws.pop_exprs(nelm);
+    
+    let nnz = exprs.iter().map(|(_,_,_,subj,_)| subj.len()).sum::<usize>();
+    
+    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape, nnz, nelm);
+
+    rptr[0] = 0;
+    rptr[1..].iter_mut().zip(exprs.iter().rev()).fold(0,|p,(rp,(_,_,_,subj,_))| { *rp = p + subj.len(); *rp });
+    rsubj.iter_mut().zip(exprs.iter().rev().flat_map(|(_,_,_,subj,_)| subj.iter())).for_each(|(rj,&j)| *rj = j);
+    rcof.iter_mut().zip(exprs.iter().rev().flat_map(|(_,_,_,_,cof)| cof.iter())).for_each(|(rc,&c)| *rc = c);
+
+    if let (Some(spx),Some(rsp)) = (spx,rsp) {
+        rsp.copy_from_slice(spx);
+    }
+    
+    Ok(())
+}
+
 
 
 
