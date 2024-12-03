@@ -44,8 +44,8 @@ fn complex_sdpvar(m : & mut Model, n : usize) -> (Variable<2>,Variable<2>) {
     let Xi  = (&X).index([n..2*n, 0..n]);
     let X22 = (&X).index([n..2*n, n..2*n]);
     
-    _ = m.constraint(None, &Xr.clone().sub(X22.clone()), equal_to(0.0).with_shape(&[n,n]));
-    _ = m.constraint(None, &Xi.clone().add(Xi.clone().transpose()), equal_to(0.0).with_shape(&[0,0]));
+    _ = m.constraint(None, &Xr.clone().sub(X22.clone()), zeros(&[n,n]));
+    _ = m.constraint(None, &Xi.clone().add(Xi.clone().transpose()), zeros(&[n,n]));
     
     (Xr, Xi)
 }
@@ -73,15 +73,15 @@ fn toeplitz_ext(n : usize, indx : &[i64], aa : &[f64]) -> NDArray<2> {
     let mut sp : Vec<[usize;2]> = Vec::new();
     let mut cof : Vec<f64> = Vec::new();
 
+    // n = 5 
+    // indx = [ 4,6,5 ]
+    // 
+    // [ 4,5,  5 ]
+    // [ 0,1,  0 ]
 
     for (&i,&a) in indx.iter().zip(aa.iter()) {
-        if i >= 0 {
-            let i = i as usize;
-            for (k0,k1) in (i..n+1).zip(0..n+1-i) { sp.push([k0,k1]); }
-            for _ in 0..n+1-i { cof.push(a); }
-        }
-        else {
-            let i = (-i) as usize;
+        let i = if i >= 0 { i as usize } else { (-i) as usize };
+        if i < n+1 {
             for (k0,k1) in (i..n+1).zip(0..n+1-i) { sp.push([k0,k1]); }
             for _ in 0..n+1-i { cof.push(a); }
         }
@@ -114,7 +114,8 @@ fn trigpoly_0_a(m : & mut Model, xr : & Variable<1>, xi : & Variable<1>, a : f64
     
     
     let Tn = (0..n+1).map(|i| toeplitz(n,i as i64,1.0));
-    let Tnx = (0..n+1).map(|i| toeplitz_ext(n, &[i as i64+1,i as i64-1, i as i64], &[1.0,1.0,-2.0*a.cos()]));
+    let Tnx = (0..n+1).map(|i| toeplitz_ext(n-1, &[i as i64+1,i as i64-1, i as i64], &[1.0,1.0,-2.0*a.cos()]));
+
 
     m.constraint(None, 
                  &xr.clone().sub(Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some( X1r.clone().dot(Tni).add(X2r.clone().dot(Tnix))))),
@@ -134,7 +135,7 @@ fn trigpoly_a_pi(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, a : f64)
     let (X2r, X2i) = complex_sdpvar(m, n);
 
     let Tn = (0..n+1).map(|i| toeplitz(n,i as i64,1.0));
-    let Tnx = (0..n+1).map(|i| toeplitz_ext(n, &[i as i64+1,i as i64-1, i as i64], &[-1.0,-1.0,-2.0*a.cos()]));
+    let Tnx = (0..n+1).map(|i| toeplitz_ext(n-1, &[i as i64+1,i as i64-1, i as i64], &[-1.0,-1.0,-2.0*a.cos()]));
 
     m.constraint(None, 
                  &xr.clone().sub( Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some(X1r.clone().dot(Tni).add(X2r.clone().dot(Tnix))))),
@@ -203,7 +204,7 @@ fn epigraph(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, t : Either<&V
 /// ```
 fn hypograph(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, t : Either<&Variable<0>,f64>, a : f64, b : f64) 
 {
-    let n = xr.len();
+    let n = xr.len()-1;
     let u0 = m.variable(None,&[]);
     match t {
         Either::Left(t) => m.constraint(None,

@@ -1,6 +1,8 @@
 //! This module provides basic array functionality.
 //!
+use iter::PermuteByEx;
 use itertools::{izip, EitherOrBoth};
+use mosek::Sparam;
 use crate::expr::{Expr, IntoExpr};
 use utils::*;
 
@@ -477,12 +479,53 @@ pub fn zeros<const N : usize>(shape : [usize;N]) -> NDArray<N> {
 }
 
 /// Create a sparse [NDArray] from data.
+///
+/// If necessary, entries are sorted.
 pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> 
     where 
         D : Into<Vec<f64>>, 
         I : IntoIndexes<N> {
     let sparsity = sp.into_indexes(&shape);
-    NDArray::new(shape,Some(sparsity),data.into()).unwrap()
+
+    if sparsity.iter().zip(sparsity[1..].iter()).all(|(&a,&b)| a < b) {
+        // all sorted
+        NDArray::new(shape,Some(sparsity),data.into()).unwrap()
+    }
+    else {
+        let data : Vec<f64> = data.into();
+        if data.len() != sparsity.len() {
+            panic!("Mismatching data lengths");
+        }
+
+        let mut perm : Vec<usize> = (0..sparsity.len()).collect();
+        perm.sort_by_key(|&i| unsafe{ *sparsity.get_unchecked(i) });
+
+        if sparsity.permute_by(perm.as_slice()).zip(sparsity.permute_by(&perm[1..])).all(|(&i0,&i1)| i0 < i1 ) {
+            // does not contain duplicates
+            let data : Vec<f64>       = perm.iter().map(|&i| unsafe{ *data.get_unchecked(i) } ).collect();
+            let sparsity : Vec<usize> = perm.iter().map(|&i| unsafe{ *sparsity.get_unchecked(i) }).collect();
+       
+            NDArray::new(shape,Some(sparsity),data).unwrap()
+        }
+        else {
+            // merge duplicates
+            let mut data_ = Vec::with_capacity(perm.len());
+            let mut sparsity_ = Vec::with_capacity(perm.len());
+            _ = sparsity.permute_by(perm.as_slice()).zip(data.permute_by(perm.as_slice()))
+                .fold(usize::MAX,|previ,(&spi,&v)| {
+                    if previ != spi { 
+                        sparsity_.push(spi); 
+                        data_.push(v);
+                    } 
+                    else {
+                        *data_.last_mut().unwrap() += v;
+                    }  
+                    spi
+                });
+
+            NDArray::new(shape,Some(sparsity_),data_).unwrap()
+        }
+    }
 }
 //pub fn sparse<const N : usize,I,D>(shape : [usize;N], sp : I, data : D) -> NDArray<N> where D : Into<Vec<f64>>, I : Into<Vec<usize>> {
 //    NDArray::new(shape,Some(sp.into()),data.into()).unwrap()

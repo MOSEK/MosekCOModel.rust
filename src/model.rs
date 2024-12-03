@@ -1030,7 +1030,7 @@ impl Model {
         if eshape.len() != N { 
             panic!("Invalid expression shape {:?}",eshape);
         }
-        else if izip!(eshape.iter(),eshape.iter()).any(|(&a,&b)| a != b) {
+        else if izip!(eshape.iter(),shape.iter()).any(|(&a,&b)| a != b) {
             panic!("Mismatching shapes of expression {:?} and domain {:?}",shape,dshape);
         }
 
@@ -1038,6 +1038,9 @@ impl Model {
         let nelm = ptr.len()-1;
         if shape.iter().product::<usize>() != nelm {
             panic!("Mismatching expression and shape");
+        }
+        if nelm != b.len() {
+            panic!("Invalid expression size {} relative to domain size {}", nelm, b.len())
         }
 
         if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
