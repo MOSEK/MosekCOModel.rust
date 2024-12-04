@@ -7,15 +7,19 @@
 //!  Example of an optimization problem over nonnegative 
 //!  trigonometric polynomials.
 //!
-//!  We consider the nonnegative trigonometric polynomial
-//! 
-//!  H(w) = x_0 + 2*sum_{k=1}^n [ Re(x_k)*cos(w*k) + Im(x_k)*sin(w*k) ].
+//!  We consider the nonnegative trigonometric polynomials
+//!
+//!  ```math 
+//!  H(w) = x_0 + 2·sum_{k=1}^n [ Re(x_k)·cos(w·k) + Im(x_k)·sin(w·k) ].
+//!  ```
 //!
 //!  The example shows how to construct a polynomial H(w) that satisfies,
-//!  
-//!     1 - delta <=  H(w) <= 1 + delta,   forall w \in [0, wp]
 //! 
-//!  while minimizing sup_{w \in [ws,pi]} H(w).  
+//!  ```math
+//!     1 - delta <=  H(w) <= 1 + delta,   forall w \in [0, wp]
+//!  ```
+//! 
+//!  while minimizing `sup_{w ∊ [ws,pi]} H(w).`
 //!
 //!  In the signal processing literature, such a trigonometric polynomial
 //!  is known as (the squared amplitude respons of) a Chebyshev lowpass filter. 
@@ -51,7 +55,7 @@ fn complex_sdpvar(m : & mut Model, n : usize) -> (Variable<2>,Variable<2>) {
 }
 
 /// Creates a Toeplitz matrix of dimension `n+1`, where 
-/// ```
+/// ```math
 /// T_lk = a if l-k=i, and 0 otherwise.
 /// ```
 fn toeplitz(n : usize, i : i64, a : f64 /*=1.0*/) -> NDArray<2> {
@@ -91,9 +95,16 @@ fn toeplitz_ext(n : usize, indx : &[i64], aa : &[f64]) -> NDArray<2> {
 }
 
 
+/// Models the equation
+/// ```math
+/// x[i] = <T(n+1,i),X>
+/// ```
+/// where `x = (xr,xi)` is a complex variable vector, and `X = (Xr,Xi)` is a 
+/// complex PSD variable.
 #[allow(non_snake_case)]
 fn trigpoly_0_pi(m : & mut Model, xr : & Variable<1>, xi : & Variable<1>) {
     let n = xi.len()-1;
+    assert_eq!(xi.len(),xr.len());
 
     let (Xr, Xi) = complex_sdpvar(m, n+1);
 
@@ -105,18 +116,21 @@ fn trigpoly_0_pi(m : & mut Model, xr : & Variable<1>, xi : & Variable<1>) {
                      equal_to(0.0).with_shape(&[n+1]));
 }
 
+/// Models the equation
+/// ```math
+/// x[i] = <T(n+1,i),X1> + <T(n,i+1),X2> + <T(n,i-1),X2> -  2·cos(a) <T(n,i),X2>
+/// ```
+/// where `x = (xr,xi)` is a complex variable vector, and `X1 = (X1r,X1i)`, 
+/// `X2 = (X2r,X2i)` are complex PSD variables.
 #[allow(non_snake_case)]
 fn trigpoly_0_a(m : & mut Model, xr : & Variable<1>, xi : & Variable<1>, a : f64) {
+    assert_eq!(xi.len(),xr.len());
     let n = xi.len()-1;
     let (X1r, X1i) = complex_sdpvar(m, n+1);
     let (X2r, X2i) = complex_sdpvar(m, n);
 
-    
-    
     let Tn = (0..n+1).map(|i| toeplitz(n,i as i64,1.0));
     let Tnx = (0..n+1).map(|i| toeplitz_ext(n-1, &[i as i64+1,i as i64-1, i as i64], &[1.0,1.0,-2.0*a.cos()]));
-
-
     m.constraint(None, 
                  &xr.clone().sub(Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some( X1r.clone().dot(Tni).add(X2r.clone().dot(Tnix))))),
                  equal_to(0.0).with_shape(&[n+1]));
@@ -126,16 +140,22 @@ fn trigpoly_0_a(m : & mut Model, xr : & Variable<1>, xi : & Variable<1>, a : f64
                  equal_to(0.0).with_shape(&[n+1]));
 }
 
-
+/// Models the equation
+/// ```math
+/// x[i] = <T(n+1,i),X1> - <T(n,i+1),X2> - <T(n,i-1),X2> + 2·cos(a) <T(n,i),X2>
+/// ```
+/// where `x = (xr,xi)` is a complex variable vector, and `X1 = (X1r,X1i)`,
+/// `X2 = (X2r,X2i)` are complex PSD variables.
 #[allow(non_snake_case)]
 fn trigpoly_a_pi(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, a : f64) {
+    assert_eq!(xi.len(),xr.len());
     let n = xr.len()-1;
     
     let (X1r, X1i) = complex_sdpvar(m, n+1);
     let (X2r, X2i) = complex_sdpvar(m, n);
 
     let Tn = (0..n+1).map(|i| toeplitz(n,i as i64,1.0));
-    let Tnx = (0..n+1).map(|i| toeplitz_ext(n-1, &[i as i64+1,i as i64-1, i as i64], &[-1.0,-1.0,-2.0*a.cos()]));
+    let Tnx = (0..n+1).map(|i| toeplitz_ext(n-1, &[i as i64+1,i as i64-1, i as i64], &[-1.0,-1.0,2.0*a.cos()]));
 
     m.constraint(None, 
                  &xr.clone().sub( Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some(X1r.clone().dot(Tni).add(X2r.clone().dot(Tnix))))),
