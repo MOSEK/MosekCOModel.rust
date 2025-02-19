@@ -23,7 +23,7 @@ members = ["utils"]
 
 [dependencies]
 itertools = "0.10"
-mosek = { version = "11.1.0-alpha.0", path = "../../Mosek.rust/11.1" }
+mosek = "11.0.0"
 rand_distr = "0.4.3"
 utils = { path = "utils" }
 #mosek = { path = "../Mosek.rust" }
