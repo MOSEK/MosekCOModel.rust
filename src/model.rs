@@ -205,13 +205,12 @@ pub struct Model {
     /// Vector of scalar constraint atoms
     cons : Vec<ConAtom>,
 
+    /// The `djc_...`  members are used when building disjunctive constraints.
     djc_temp_cur_termsize : i64,
     djc_temp_b        : Vec<f64>,
     djc_temp_termsize : Vec<i64>,
     djc_temp_domidx   : Vec<i64>,
     djc_temp_afeidx   : Vec<i64>,
-    
-
 
     /// Basis solution
     sol_bas : Solution,

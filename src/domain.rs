@@ -42,6 +42,9 @@ pub enum LinearDomainOfsType {
 
 
 /// A Linear domain defines bounds, shape and sparsity for a model item.
+///
+/// A set of member functions makes it possible to transform the domain by changing its shape
+/// sparsity, offset etc. 
 pub struct LinearDomain<const N : usize> {
     /// Bound type
     pub(super) dt    : LinearDomainType,
@@ -56,6 +59,9 @@ pub struct LinearDomain<const N : usize> {
 }
 
 /// A Conic domain defines a conic domain, shape and cone dimension for a model item.
+///
+/// A set of member functions makes it possible to transform the domain by changing its shape
+/// sparsity, offset etc. 
 pub struct ConicDomain<const N : usize> {
     /// Cone type
     pub(super) dt      : ConicDomainType,
@@ -91,6 +97,7 @@ impl<const N :usize> ConicDomain<N> {
     }
 }
 impl<const N : usize> LinearDomain<N> {
+    /// Create a [ConicDomain] equivalent to the linear domain.
     pub fn to_conic(&self) -> ConicDomain<N> {
         let conedim = if self.shape.len() > 0 { self.shape.len() - 1} else { 0 };
         let dt = match self.dt {
@@ -125,6 +132,9 @@ impl<const N : usize> LinearDomain<N> {
     /// - if `sparsity` is present, the shape must contain all sparsity elements, otherwise
     /// - if `ofs` is a scalar, any shape goes, otherwise
     /// - the shape must match the length of `ofs`
+    ///
+    /// # Arguments
+    /// - `shape` The new shape.
     pub fn with_shape<const M : usize>(self,shape : &[usize; M]) -> LinearDomain<M> {
         let (dt,ofs,_,sp,is_integer) = (self.dt,self.ofs,self.shape,self.sp,self.is_integer);
 
@@ -181,7 +191,9 @@ impl<const N : usize> LinearDomain<N> {
 
         self.with_sparsity_indexes(spx)
     }
-    /// Set or update sparsity using linearized indexes rather than coordinate indexes.
+    /// Set or update sparsity using linearized indexes rather than coordinate indexes. When a
+    /// sparse domain is used to create a variable or constraint, all elements outside the sparsity
+    /// pattern will be fixed to 0.
     ///
     /// The sparsity pattern must match the domain: 
     /// - the maximum element of the sparsity pattern must be within the shape
@@ -253,7 +265,12 @@ impl<const N : usize> LinearDomain<N> {
             is_integer : false}.with_sparsity(sp)
     }
 
+
+    /// Make this an integer domain. That means that rather than being a domain over a continuous
+    /// region, it is a domain over integers. This is only used for variables and is ignored for constraints.
     pub fn integer(mut self) -> Self { self.is_integer = true; self }
+
+    /// Extract domain values.
     pub fn extract(self) -> (LinearDomainType,Vec<f64>,[usize;N],Option<Vec<usize>>,bool) {
         match self.ofs {
             LinearDomainOfsType::M(v) => (self.dt,v,self.shape,self.sp,self.is_integer),
@@ -267,6 +284,7 @@ impl<const N : usize> LinearDomain<N> {
                 }
         }
     }
+    /// Make a sparse domain into a dense, adding zeros as necessary.
     pub fn into_dense(self) -> Self {
         if let Some(ref sp) = self.sp {
             let ofs = 
@@ -333,7 +351,7 @@ impl<const N : usize> OffsetTrait<N> for NDArray<N> {
 // Domain constructors
 ////////////////////////////////////////////////////////////
 
-/// Unbounded domain
+/// Unbounded scalar domain.
 pub fn unbounded() -> LinearDomain<0> { LinearDomain{ dt : LinearDomainType::Free, ofs : LinearDomainOfsType::Scalar(0.0), shape : [], sp : None, is_integer : false } }   
 /// Scalar domain of nonnegative values
 pub fn nonnegative() -> LinearDomain<0> { 0f64.greater_than() }
@@ -341,6 +359,7 @@ pub fn nonnegative() -> LinearDomain<0> { 0f64.greater_than() }
 pub fn nonpositive() -> LinearDomain<0> { 0f64.less_than() }
 /// Scalar domain of zeros
 pub fn zero() -> LinearDomain<0> { 0f64.equal_to() }
+/// Domain of zeros of the given shape.
 pub fn zeros<const N : usize>(shape : &[usize; N]) -> LinearDomain<N> { equal_to(0.0).with_shape(shape) }
 /// Domain of values greater than the offset `v`. 
 /// 
