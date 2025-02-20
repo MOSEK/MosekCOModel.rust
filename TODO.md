@@ -36,7 +36,7 @@ For example we would like to support combinations expression multiplication:
 - `mul(SparseMatrix, Expr<2>) -> Expr<2>` matrix-matrix multiplication
 - `mul(Expr<2>,SparseMatrix) -> Expr<2>` matrix-matrix multiplication
 
-We create two threads:
+We create two traits:
 ```
 trait<const N : usize> LeftMultipliable { 
     type Result;
