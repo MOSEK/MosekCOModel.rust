@@ -9,6 +9,13 @@ use utils::{*,iter::*};
 
 use itertools::{izip,iproduct};
 
+
+/// Given a square matrix expression, return the vector representing a diagonal.
+///
+/// # Arguments
+/// - `anti` False for normal diagonal, true for antidiagonal
+/// - `index` Index of the diagonal. 0 is the corner-to-corner diagonal, while positive and
+///   negative indexes in corresponds to diagonals if the upper and lower triangular part.
 pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
@@ -110,6 +117,12 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
     Ok(())
 }
 
+/// Given a square matrix expression, compute a sparse expression containing the elements from one
+/// triangular part of the matrix.
+///
+/// # Arguments
+/// - `upper` Indicates if we request the upper or the lower part of the matrix.
+/// - `with_diag` Indicates if the diagonal elements should be included.
 pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
@@ -187,6 +200,7 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
     Ok(())
 }
 
+/// Given an expression of any shape, sum all elements producing a scalar expression.
 pub fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
     let (rptr,_rsp,rsubj,rcof)    = rs.alloc_expr(&[],*ptr.last().unwrap(),1);
@@ -198,7 +212,11 @@ pub fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) ->
     Ok(())
 }
 
-
+/// Given an expression if any dimension `n`, take a slice from a range in each dimension.
+///
+/// # Arguments
+/// - `begin` Array of length `n` of starting indexes in each dimension
+/// - `end`  Array of length `n` of ending indexes in each dimension
 pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nnz = *ptr.last().unwrap();
@@ -2251,7 +2269,9 @@ pub fn stack_scalars(rshape : &[usize], spx : Option<&[usize]>, rs : & mut WorkS
 
 
 
-
+/// Clean up the top expression for use in a constraint:
+/// - Merge all duplicate coefficients
+/// - Make the expression dense
 pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let rnnz  = subj.len();
@@ -2274,20 +2294,11 @@ pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut Work
             };
     }
     xptr.iter_mut().fold(0usize,|c,p| { *p += c; *p });
-    //println!("subj = {:?}",subj);
-    //println!("ptr = {:?}",ptr);
-    //println!("xptr = {:?}",xptr);
-    //println!("xptr.last() = {}, rsubj.len() = {}",xptr.last().unwrap(),rsubj.len());
-    //println!("perm = {:?}",perm);
-
-    
 
     for (rsubj,rcof,perm) in izip!(rsubj.chunks_ptr_mut(xptr,&xptr[1..]),
                                    rcof.chunks_ptr_mut(xptr,&xptr[1..]),
                                    perm.chunks_ptr(ptr))
     {
-        //println!("sub perm = {:?}",perm);
-        
         let mut sit = subj.permute_by(perm).zip(cof.permute_by(perm));
         let mut tit = rsubj.iter_mut().zip(rcof.iter_mut()).peekable();
         
