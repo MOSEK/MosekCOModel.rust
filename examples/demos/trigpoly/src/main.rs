@@ -32,9 +32,14 @@
 //!      Structured Algorithms and Applications", Ph.D thesis, Y. Hachez, 2003.
 //!
 extern crate mosekmodel;
+use itertools::Itertools;
 use mosekmodel::*;
 use mosekmodel::experimental::*;
-use std::f64::consts::PI;
+use std::{cell::RefCell, cmp::Ordering, f64::consts::PI, rc::Rc};
+use gtk::glib::ControlFlow;
+use gtk::prelude::*;
+use cairo::Context;
+use gtk::{glib,Application, DrawingArea, ApplicationWindow};
 
 /// Creates a complex semidefinite variable `(Xr + J*Xi) >= 0`, using the equivalent
 /// representation
@@ -251,7 +256,10 @@ fn hypograph(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, t : Either<&
     }
 }
 
-fn main() {
+
+const APP_ID : &str = "com.mosek.trigpoly";
+
+fn main() -> glib::ExitCode {
     let mut m = Model::new(Some("trigpoly"));
 
     let n : usize = 10;
@@ -290,14 +298,58 @@ fn main() {
     println!("xr: {:?}", xr);
     println!("xi: {:?}", xi);
     println!("t:  {}",t);
-            
+
+    let app = Application::builder()
+        .application_id(APP_ID)
+        .build();
+
+    let drawdata = (xr,xi,t,wp,ws);
+
+    app.connect_activate(move |app : &Application| build_ui(app,&drawdata));
+    let r = app.run_with_args::<&str>(&[]);
+    println!("Main loop exit");
+    r
+
+}
+
+#[allow(non_snake_case)]
+fn build_ui(app   : &Application,
+            ddata : &(Vec<f64>,Vec<f64>,f64,f64,f64))
+{    
+    let data = Rc::new(RefCell::new(ddata.clone()));
+    
+    let darea = DrawingArea::builder()
+        .width_request(800) 
+        .height_request(800)
+        .build();
+
+    // Redraw callback
+    {
+        let data = data.clone();
+        darea.set_draw_func(move |widget,context,w,h| redraw_window(widget,context,w,h,&data.borrow()));
+    }
+
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("Hello Trigpoly")
+        .child(&darea)
+        .build();
+    
+    window.present();
+}
 
 
-//   from pyx import *
+#[allow(non_snake_case)]
+fn H(w : f64, xr : &[f64],xi : &[f64]) -> f64 {
+    xr[0] + 2.0*(1..xr.len()).zip(xr[1..].iter().zip(xi[1..].iter()))
+        .map(|(k,(&xrk,&xik))| xrk*(w*k as f64).cos() + xik*(w*k as f64).sin())
+        .sum::<f64>()
+}
+
+#[allow(non_snake_case)]
+fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, data : &(Vec<f64>,Vec<f64>,f64,f64,f64)) {
+    let (xr,xi,t,wp,ws) = data;
 //   
-//
-//   def H(w): return xr[0] + 2*sum([ (xr[k]*cos(w*k)+xi[k]*sin(w*k)) for k in range(1,len(xr)) ]) 
-//
 //   p = graph.axis.painter.regular(basepathattrs=[deco.earrow.normal])
 //
 //   xticks = [ graph.axis.tick.tick(wp, label='$\omega_p$'),
@@ -337,4 +389,49 @@ fn main() {
 //   g.writeEPSfile("trigpoly")
 //   g.writePDFfile("trigpoly")
 //   print("generated trigpoly.eps")
+    context.set_source_rgb(1.0, 1.0, 1.0);
+    _ = context.paint();
+
+    let w : f64 = w.into();
+    let h : f64 = h.into();
+    let wscale = std::f64::consts::PI+0.2;
+
+
+    const margin : f64 = 15.0;
+    context.set_source_rgb(0.0, 0.0, 0.0);
+    context.move_to(margin,margin);
+    context.line_to(margin,h-margin);
+    _ = context.stroke();
+    
+    context.move_to(margin,h/2.0);
+    context.line_to(w-margin,h/2.0);
+    _ = context.stroke();
+
+
+    context.set_matrix(cairo::Matrix::identity());
+    context.translate(margin,h/2.0);
+
+    let Hw : Vec<(f64,f64)> = (0..500).map(|i| { let w = wscale/500.0*(i as f64); (w,H(w,xr.as_slice(),xi.as_slice())) } ).collect::<Vec<(f64,f64)>>();
+
+    let (Hmin,Hmax) : (f64,f64) = match Hw.iter().minmax_by(|&(_,a),&(_,b)| if a < b { Ordering::Less } else if b < a { Ordering::Greater } else { Ordering::Equal } ) {
+        itertools::MinMaxResult::NoElements => panic!("Broken"),
+        itertools::MinMaxResult::OneElement((_,e)) => (*e,*e),
+        itertools::MinMaxResult::MinMax((_,a),(_,b)) => (*a,*b)
+    };
+
+    let hscale = Hmin.abs().max(Hmax.abs()) * 2.0;
+    context.scale((w-margin*2.0)/wscale, -(h-margin*2.0)/hscale);
+
+
+
+
+    context.set_source_rgb(0.0, 0.0, 0.0);
+    if let Some((x,y)) = Hw.first() {
+        context.move_to(*x,*y);
+        for (x,y) in Hw[1..].iter() {
+            context.line_to(*x,*y);
+        }
+        context.set_matrix(cairo::Matrix::identity());
+        _ = context.stroke();
+    }
 }
