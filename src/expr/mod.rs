@@ -953,12 +953,14 @@ impl<const N : usize,const M : usize,E> ExprReshapeOneRow<N,M,E>
         E:ExprTrait<N> 
 {
     pub fn new(dim : usize, item : E) -> ExprReshapeOneRow<N,M,E> {
+        //println!("{}:{}: reshape one row, dim = {}",file!(),line!(),dim);
         ExprReshapeOneRow{item,dim}
     }
 }
 
 impl<const N : usize, const M : usize, E:ExprTrait<N>> ExprTrait<M> for ExprReshapeOneRow<N,M,E> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        //println!("{}:{}: ExprReshapeOneRow::eval reshape one row, dim = {}, nd = {}",file!(),line!(),self.dim,M);
         if self.dim >= M { panic!("Invalid dimension given"); }
         self.item.eval(rs,ws,xs)?;
         eval::inplace_reshape_one_row(M, self.dim, rs, xs)
@@ -1070,6 +1072,11 @@ macro_rules! exprcat {
     [ $e0:expr , $( $es:expr ),+ ; $( $rest:tt )+ ] => { hstack![ $e0 $( , $es )* ].vstack( exprcat![ $( $rest )*] ) };
 }
 
+pub struct ExprStackVec<const N : usize, E : ExprTrait<N>> {
+    items : Vec<E>,
+    dim : usize
+}
+
 pub struct ExprStack<const N : usize,E1:ExprTrait<N>,E2:ExprTrait<N>> {
     item1 : E1,
     item2 : E2,
@@ -1082,13 +1089,28 @@ pub struct ExprStackRec<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>
     dim   : usize
 }
 
+// Heterogen stacking
+impl<const N : usize, E> ExprTrait<N> for ExprStackVec<N,E> where E : ExprTrait<N> {
+    fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        for item in self.items.iter().rev() {
+            item.eval(ws,rs,xs)?;
+        }
+        eval::stack(self.dim,self.items.len(),rs,ws,xs)
+    }
+}
+
 pub trait ExprStackRecTrait<const N : usize> : ExprTrait<N> {
     fn stack_dim(&self) -> usize;
     fn eval_rec(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<usize,ExprEvalError>;
 }
 
 impl<const N : usize, E1:ExprTrait<N>,E2:ExprTrait<N>> ExprStack<N,E1,E2> {
-    pub fn new(item1 : E1, item2 : E2, dim : usize) -> Self { ExprStack{item1,item2,dim} }
+    pub fn new(item1 : E1, item2 : E2, dim : usize) -> Self { 
+        if dim > N {
+            panic!("Stacking dimension out of bounds");
+        }
+        ExprStack{item1,item2,dim}
+    }
     pub fn stack<T:ExprTrait<N>>(self, dim : usize, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim} }
     pub fn vstack<T:ExprTrait<N>>(self, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim:0} }
     pub fn hstack<T:ExprTrait<N>>(self, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim:1} }
@@ -1207,6 +1229,9 @@ pub fn hstack<const N : usize>(exprs : Vec<ExprDynamic<'static,N>>) -> ExprDynSt
     ExprDynStack{exprs,dim:1}
 }
 
+pub fn stackvec<const N : usize,E>(dim : usize, exprs : Vec<E>) -> ExprStackVec<N,E> where E : ExprTrait<N> {
+    ExprStackVec{dim,items:exprs}
+}
 
 #[allow(unused)]
 pub struct ExprSumVec<const N : usize,E> where E : ExprTrait<N>

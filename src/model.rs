@@ -356,6 +356,7 @@ impl<const N : usize> ModelItemIndex<Constraint<N>> for [std::ops::Range<usize>;
 
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct Disjunction {
     index : i64
 }
@@ -1250,7 +1251,6 @@ impl Model {
             panic!("Mismatching domain/expression shapes: {:?} vs {:?}",shape,dom.shape);
         }
 
-        let acci = self.task.get_num_acc().unwrap();
         let afei = self.task.get_num_afe().unwrap();
 
         let (asubj,

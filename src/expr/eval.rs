@@ -361,7 +361,7 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
         // special case: stack in bottom dimension, the dimension being size 1, amounting to
         // repeating each element n times
         else if dim == nd-1 && shape[nd-1] == 1 {
-            println!("repeat dense, dim = {}, dim size = {}",dim,shape[nd-1]);
+            //println!("repeat dense, dim = {}, dim size = {}",dim,shape[nd-1]);
             rptr.iter_mut().enumerate().for_each(|(i,rp)| *rp = i);
             subj.iter().flat_map(|j| std::iter::repeat(*j).take(num)).zip(rsubj.iter_mut()).for_each(|(j,rj)| *rj = j);
             cof.iter().flat_map(|c| std::iter::repeat(*c).take(num)).zip(rcof.iter_mut()).for_each(|(c,rc)| *rc = c);
@@ -635,9 +635,9 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
     let nnz = *ptr.last().unwrap();
     //let nelem = ptr.len()-1;
     if nd != 2 || shape[1] != mshape.1 {
-        panic!("Mismatching operand shapes");
+        panic!("Mismatching operand shapes for M x E': M:{:?} x E:{:?}",mshape,shape);
     }
-    let shape = [shape[0],shape[1]];
+    let shape  = [shape[0],shape[1]];
     let rshape = [mshape.0,shape[0]];
 
     // compute size
@@ -1911,8 +1911,6 @@ pub fn mul_elem(mshape: &[usize],
                                         mdata.iter()) {
                 let p0 = ptr[i];
                 let p1 = ptr[i+1];
-
-                //println!("  p0 = {}, p1 = {}",p0,p1);
                 *ri = i;
                 rsubj[nzi..nzi+p1-p0].copy_from_slice(&subj[p0..p1]);
                 rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * mc);
