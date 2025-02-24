@@ -197,6 +197,7 @@ impl<E, M> ExprRightMultipliable<2,E> for M
     }
 }
 
+// R = E x M = (M' x E')'
 impl<E, M> ExprRightMultipliable<1,E> for M 
     where 
         M : Matrix,
@@ -207,7 +208,7 @@ impl<E, M> ExprRightMultipliable<1,E> for M
         let (shape,sp,data) = self.transpose().dissolve();
         ExprReshapeOneRow{
             item : ExprMulMEt{
-                item : ExprReshapeOneRow{ item: rhs, dim : 0 },
+                item : ExprReshapeOneRow{ item: rhs, dim : 1 },
                 shape,
                 data,
                 sp},
@@ -451,7 +452,6 @@ impl<E> ExprTrait<2> for ExprMulMEt<E> where E:ExprTrait<2> {
             rs,ws,xs)
     }
 }
-
 
 impl<E> ExprTrait<2> for ExprMulLeft<E> where E:ExprTrait<2> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {

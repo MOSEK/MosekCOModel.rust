@@ -2,7 +2,6 @@
 //!
 use iter::PermuteByEx;
 use itertools::{izip, EitherOrBoth};
-use mosek::Sparam;
 use crate::expr::{Expr, IntoExpr};
 use utils::*;
 
@@ -337,6 +336,16 @@ impl<const N : usize> NDArray<N> {
 }
 
 
+impl<const N : usize> std::ops::Index<[usize;N]> for NDArray<N> {
+    type Output = f64;
+    fn index(&self, index: [usize;N]) -> &Self::Output {
+        let mut stride = [0usize;N]; stride.iter_mut().zip(self.shape.iter()).rev().fold(1,|c,(s,&d)| { *s = c; c*d} );
+        let ii : usize = index.iter().zip(stride.iter()).map(|(&i,&s)| i*s).sum();
+        &self.data[ii]
+    }
+}
+
+
 impl<const N : usize> std::ops::Add for NDArray<N> {
     type Output = NDArray<N>;
     fn add(self, rhs: Self) -> Self::Output {
@@ -363,6 +372,21 @@ impl From<&[f64]> for NDArray<1> {
 impl From<Vec<f64>> for NDArray<1> {
     fn from(v : Vec<f64>) -> NDArray<1> {
         NDArray{ shape : [ v.len() ], sp : None, data : v }
+    }
+}
+
+impl<const D1 : usize,const D2 : usize> From<&[[f64;D2]; D1]> for NDArray<2> {
+    fn from(value : &[[f64;D2]; D1]) -> NDArray<2> {
+        let mut data = vec![0.0; D1*D2];
+        data.iter_mut().zip(value.iter().flat_map(|v| v.iter().cloned())).for_each(|(t,s)| *t = s);
+        NDArray::new([D1,D2], None, data).unwrap()
+    }
+}
+impl<const D2 : usize> From<&[[f64;D2]]> for NDArray<2> {
+    fn from(value : &[[f64;D2]]) -> NDArray<2> {
+        let mut data = vec![0.0; value.len()*D2];
+        data.iter_mut().zip(value.iter().flat_map(|v| v.iter().cloned())).for_each(|(t,s)| *t = s);
+        NDArray::new([value.len(),D2], None, data).unwrap()
     }
 }
 

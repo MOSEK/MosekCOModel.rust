@@ -191,7 +191,8 @@ pub use expr::{ExprTrait,
                ModelExprIndex,
                IntoExpr,
                Expr,
-               Dot};
+               Dot,
+               stack,hstack,vstack,stackvec};
 pub use variable::Variable;
 pub use domain::{LinearDomain,
                  ConicDomain,
