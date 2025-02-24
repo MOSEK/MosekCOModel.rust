@@ -91,3 +91,6 @@ fn main() {
 
     println!("h={:.4} w={:.4} d={:.4}\n", hwd[0], hwd[1], hwd[2]);
 }
+
+#[test]
+fn test() { main() }

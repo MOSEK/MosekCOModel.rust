@@ -55,3 +55,6 @@ fn main() {
     let total_revenue : f64 = res.iter().zip(revenue.iter()).map(|(&a,&b)| a*b).sum();
     println!(" Revenue : ${}", total_revenue);
 }
+
+#[test]
+fn test() { main() }

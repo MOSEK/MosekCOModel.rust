@@ -29,3 +29,5 @@ fn main() {
     println!("x1,x2,s1,s2,y = {}, {}, {}, {}, {}", xsol[0], xsol[1], ssol[0], ssol[1], ysol[0]);
 }
 
+#[test]
+fn test() { main() }

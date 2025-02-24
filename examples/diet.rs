@@ -117,3 +117,5 @@ fn main() {
         .for_each(|(&c,nv)| nv.iter().zip(res.iter_mut()).for_each(|(&nvi,r)| *r += c * nvi));
 }
 
+#[test]
+fn test() { main() }

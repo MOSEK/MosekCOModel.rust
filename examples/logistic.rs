@@ -80,3 +80,6 @@ fn main() {
     let xx = model.primal_solution(SolutionType::Default, &theta).unwrap();
     println!("theta = {:?}",&xx);
 }
+
+#[test]
+fn test() { main() }
