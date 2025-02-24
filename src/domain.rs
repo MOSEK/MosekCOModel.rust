@@ -376,12 +376,12 @@ pub fn less_than<const N : usize, T : OffsetTrait<N>>(v : T) -> LinearDomain<N> 
 /// # Arguments
 /// - `v` - Offset, the shape of the domain is taken from the shape of `v`
 pub fn equal_to<const N : usize, T : OffsetTrait<N>>(v : T) -> LinearDomain<N> { v.equal_to() }
-/// Domain of a single quadratic cone if size `dim`. The result is a vector domain of size `dim`.
+/// Domain of a single quadratic cone ofsize `dim`. The result is a vector domain of size `dim`.
 /// 
 /// # Arguments
 /// - `dim` - dimension of the cone.
 pub fn in_quadratic_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::QuadraticCone,ofs:vec![0.0; dim],shape:[dim],conedim:0, is_integer : false} }
-/// Domain of a single rotated quadratic cone if size `dim`. The result is a vector domain of size `dim`.
+/// Domain of a single rotated quadratic cone ofsize `dim`. The result is a vector domain of size `dim`.
 /// 
 /// # Arguments
 /// - `dim` - dimension of the cone.
@@ -397,26 +397,23 @@ pub fn in_svecpsd_cone(dim : usize) -> ConicDomain<1> {
     if n * (n+1)/2 != dim { panic!("Invalid dimension {} for svecpsd cone", dim) }
     ConicDomain{dt:ConicDomainType::SVecPSDCone,ofs:vec![0.0; dim],shape:[dim],conedim:0, is_integer : false} 
 }
-/// Domain of a single geometric mean cone if size `dim`. The result is a vector domain of size `dim`.
+/// Domain of a single geometric mean cone ofsize `dim`. The result is a vector domain of size `dim`.
 /// 
 /// # Arguments
 /// - `dim` - dimension of the cone.
 pub fn in_geometric_mean_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::GeometricMeanCone,ofs:vec![0.0; dim],shape:[dim],conedim:0, is_integer : false} }
-/// domain of a single dual geometric mean cone if size `dim`. the result is a vector domain of size `dim`.
+/// domain of a single dual geometric mean cone ofsize `dim`. the result is a vector domain of size `dim`.
 /// 
 /// # arguments
 /// - `dim` - dimension of the cone.
 pub fn in_dual_geometric_mean_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::DualGeometricMeanCone,ofs:vec![0.0; dim],shape:[dim],conedim:0, is_integer : false} }
-/// domain of a single exponential mean cone if size `dim`. the result is a vector domain of size `dim`.
-/// 
-/// # arguments
-/// - `dim` - dimension of the cone.
+/// domain of a single exponential cone of size 3. the result is a vector domain of size 3.
 pub fn in_exponential_cone() -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::ExponentialCone,ofs:vec![0.0; 3],shape:[3],conedim:0, is_integer : false} }
-/// Domain of a single dual exponential cone if size `dim`. The result is a vector domain of size `dim`.
+/// Domain of a single dual exponential cone ofsize `dim`. The result is a vector domain of size `dim`.
 /// 
 /// # Arguments
 /// - `dim` - dimension of the cone.
-pub fn in_dual_exponential_cone(dim : usize) -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::DualExponentialCone,ofs:vec![0.0; dim],shape:[dim],conedim:0, is_integer : false} }
+pub fn in_dual_exponential_cone() -> ConicDomain<1> { ConicDomain{dt:ConicDomainType::DualExponentialCone,ofs:vec![0.0; 3],shape:[3],conedim:0, is_integer : false} }
 
 /// Domain of a single power cone.
 ///

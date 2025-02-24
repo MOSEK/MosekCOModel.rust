@@ -363,9 +363,9 @@ impl<const N : usize> Variable<N> {
             panic!("Mismatching shapes: {:?} cannot be reshaped into {:?}",self.shape,shape);
         }
         Variable{
-            idxs : self.idxs,
+            idxs     : self.idxs,
             sparsity : self.sparsity,
-            shape : *shape
+            shape    : *shape
         }
     }
 
