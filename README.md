@@ -4,6 +4,15 @@ relatively thin interface in top of low-level [MOSEK](https://mosek.com)
 optimizer C API, where `MosekModel` is an attempt to create an interface that
 is more like the MOSEK Fusion modelling interface.
 
+Currently, it implements most of the functionality of Fusion, although not
+parameterized expressions. It also does some things slightly differently due to
+differences in language features between Rust and the Fusion API languages:
+- Dimensionality of objects (variables, constraints, expressions) is part of
+  the object type, which means that it is checked at compile-time rather than
+  at evaluation time.
+- Nearly everything is *generic* and function calls are fully resolved at
+  compile time, where Fusion use abstract base classes and virtual functions.
+
 # Design principle
 `MosekModel` allows building a model of the form
 ```
