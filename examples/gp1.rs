@@ -9,10 +9,10 @@
 //              Example from
 //                https://gpkit.readthedocs.io/en/latest/examples.html//maximizing-the-volume-of-a-box
 //
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
-use mosekmodel::*;
-use mosekmodel::expr::ones;
+use mosekcomodel::*;
+use mosekcomodel::expr::ones;
 
 /// Models log(sum(exp(Ax+b))) <= 0.
 /// Each row of [A b] describes one of the exp-terms

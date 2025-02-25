@@ -25,11 +25,11 @@
 ///  [1] "Squared Functional Systems and Optimization Problems",
 ///      Y. Nesterov, in High Performance Optimization,
 ///      Kluwer Academic Publishers, 2000.
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
 use itertools::iproduct;
-use mosekmodel::*;
-use mosekmodel::matrix;
+use mosekcomodel::*;
+use mosekcomodel::matrix;
 
 /// Creates a Hankel matrix of dimension n+1, where
 /// ```math

@@ -31,9 +31,9 @@
 //!  [2] "Convex Optimization of Non-negative Polynomials:
 //!      Structured Algorithms and Applications", Ph.D thesis, Y. Hachez, 2003.
 //!
-extern crate mosekmodel;
-use mosekmodel::*;
-use mosekmodel::experimental::*;
+extern crate mosekcomodel;
+use mosekcomodel::*;
+use mosekcomodel::experimental::*;
 use std::f64::consts::PI;
 
 /// Creates a complex semidefinite variable `(Xr + J*Xi) >= 0`, using the equivalent

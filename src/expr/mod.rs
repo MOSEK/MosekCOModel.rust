@@ -76,7 +76,7 @@ pub trait ExprTrait<const N : usize> {
     ///
     /// # Example
     /// ```
-    /// use mosekmodel::*;
+    /// use mosekcomodel::*;
     /// let mut M = Model::new(None);
     /// let v = M.variable(None, greater_than(0.0));
     /// 
@@ -113,7 +113,7 @@ pub trait ExprTrait<const N : usize> {
     ///
     /// # Example
     /// ```
-    /// use mosekmodel::*;
+    /// use mosekcomodel::*;
     /// let mut M = Model::new(None);
     /// let v = M.variable(None,&[3,4,5]);
     /// let w = M.variable(None,&[3,4,5]);
@@ -274,7 +274,7 @@ pub trait ExprTrait<const N : usize> {
     ///
     /// # Example: Stacking a compile-time known list
     /// ```
-    /// use mosekmodel::*;
+    /// use mosekcomodel::*;
     ///
     /// let mut M = Model::new(None);
     /// let u = M.variable(None,&[3,2]);
@@ -288,7 +288,7 @@ pub trait ExprTrait<const N : usize> {
     /// ```
     /// # Example: Stacking a variable length list
     /// ```
-    /// use mosekmodel::*;
+    /// use mosekcomodel::*;
     /// fn dynstack(n : usize) {
     ///     assert!(n > 0);
     ///     let mut M = Model::new(None);

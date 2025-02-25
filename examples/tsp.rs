@@ -7,11 +7,11 @@
 //           usign the Fusion API.
 //
 //
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
 
-use mosekmodel::*;
-use mosekmodel::matrix::*;
+use mosekcomodel::*;
+use mosekcomodel::matrix::*;
 
 #[allow(non_snake_case)]
 fn tsp(n : usize, A : & NDArray<2>, C : &NDArray<2>, remove_selfloops: bool, remove_2_hop_loops: bool) -> (Vec<f64>,Vec<[usize;2]>) {

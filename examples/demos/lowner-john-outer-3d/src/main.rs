@@ -1,5 +1,5 @@
 extern crate glam;
-extern crate mosekmodel;
+extern crate mosekcomodel;
 extern crate bevy;
 extern crate rand;
 extern crate ellipsoids;
@@ -16,7 +16,7 @@ use std::time::{Duration, SystemTime};
 use ellipsoids::Ellipsoid;
 use glam::{DMat2,DVec2};
 use itertools::izip;
-use mosekmodel::{unbounded, Model};
+use mosekcomodel::{unbounded, Model};
 
 use std::f32::consts::PI;
 
@@ -187,14 +187,14 @@ fn update(time: Res<Time>,
         let p = ellipsoids::det_rootn(None, & mut m, t.clone(), 3);
         let q = m.variable(None, unbounded().with_shape(&[3]));
   
-        m.objective(None, mosekmodel::Sense::Maximize, &t);
+        m.objective(None, mosekcomodel::Sense::Maximize, &t);
 
         ellipsoids::ellipsoid_contains_points(& mut m, &p, &q, points.as_slice());
 
         m.solve();
   
-        if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&p),
-                                      m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
+        if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekcomodel::SolutionType::Default,&p),
+                                      m.primal_solution(mosekcomodel::SolutionType::Default,&q)) {
             
             let A = DMat3::from_cols_array(&[psol[0],psol[1],psol[2],psol[3],psol[4],psol[5],psol[6],psol[7],psol[8]]).inverse();
             let b = -A.mul_vec3(DVec3::new(qsol[0],qsol[1],qsol[2]));

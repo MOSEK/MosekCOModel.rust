@@ -1,8 +1,8 @@
-extern crate mosekmodel;
+extern crate mosekcomodel;
 extern crate itertools;
 
-use mosekmodel::*;
-use mosekmodel::matrix;
+use mosekcomodel::*;
+use mosekcomodel::matrix;
 use itertools::izip;
 
 // Structure defining an ellipsoid as
@@ -295,7 +295,7 @@ pub fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize
 
 #[cfg(test)]
 mod test {
-    use mosekmodel::{unbounded, Model, SolutionType};
+    use mosekcomodel::{unbounded, Model, SolutionType};
     use itertools::izip;
 
     #[allow(non_snake_case)]
@@ -306,7 +306,7 @@ mod test {
         let P = super::det_rootn(None, & mut M, t.clone(), 2);
         let q = M.variable(None, unbounded().with_shape(&[2]));
 
-        M.objective(None, mosekmodel::Sense::Maximize, &t);
+        M.objective(None, mosekcomodel::Sense::Maximize, &t);
 
         let A = [ [-1.0, -1.0], [1.0, 0.0], [-1.0,3.0] ];
         let b = [ -3.0, 6.0, -9.0 ];
@@ -333,7 +333,7 @@ mod test {
         let P = super::det_rootn(None, & mut M, t.clone(), 2);
         let q = M.variable(None, unbounded().with_shape(&[2]));
 
-        M.objective(None, mosekmodel::Sense::Maximize, &t);
+        M.objective(None, mosekcomodel::Sense::Maximize, &t);
           
         let mut A = vec![ [0.0;2]; points.len()];
         let mut b = vec![ 0.0; points.len() ];

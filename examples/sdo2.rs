@@ -14,8 +14,8 @@
 //!                 C1, C2, A1, A2 are assumed to be constant symmetric matrices,/
 //!                 and b, k are constants./
 
-extern crate mosekmodel;
-use mosekmodel::*;
+extern crate mosekcomodel;
+use mosekcomodel::*;
 
 
 #[allow(non_snake_case)]

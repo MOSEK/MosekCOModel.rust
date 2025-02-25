@@ -11,9 +11,9 @@
 //                  x0=2.5 or x1=2.5 or x2=2.5 or x3=2.5
 //
 
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
-use mosekmodel::*;
+use mosekcomodel::*;
 
 fn djc1() -> (SolutionStatus,Result<Vec<f64>,String>) {
     let mut model = Model::new(Some("djc1"));

@@ -1,9 +1,9 @@
 extern crate criterion;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
-use mosekmodel::*;
+use mosekcomodel::*;
 
 //----const N1 : usize = 500;
 //----const N2 : usize = 1000;

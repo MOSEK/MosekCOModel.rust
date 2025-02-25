@@ -16,8 +16,8 @@
 // We now wish to compute the combination of cakes and breads that will optimize
 // the total revenue.
 
-extern crate mosekmodel;
-use mosekmodel::*;
+extern crate mosekcomodel;
+use mosekcomodel::*;
 
 fn main() {
     let _ingredientnames = [ "Flour", "Sugar", "Butter" ];

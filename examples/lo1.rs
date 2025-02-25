@@ -14,9 +14,9 @@
 //           x0,x1,x2,x3 > 0,
 //           0 < x1 < 10
 //
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
-use mosekmodel::*;
+use mosekcomodel::*;
 
 fn lo1() -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>) {
     let a0 = vec![ 3.0, 1.0, 2.0, 0.0 ];

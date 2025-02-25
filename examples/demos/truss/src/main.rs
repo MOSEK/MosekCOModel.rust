@@ -1,5 +1,5 @@
 extern crate cairo;
-extern crate mosekmodel;
+extern crate mosekcomodel;
 extern crate mosek;
 
 use std::cell::RefCell;
@@ -9,9 +9,9 @@ use itertools::izip;
 
 use cairo::Context;
 use gtk::{Application, DrawingArea, ApplicationWindow,Box};
-use mosekmodel::expr::*;
-use mosekmodel::matrix::NDArray;
-use mosekmodel::{hstack, in_rotated_quadratic_cones, unbounded, nonnegative,equal_to,zero, Model, Sense, SolutionType};
+use mosekcomodel::expr::*;
+use mosekcomodel::matrix::NDArray;
+use mosekcomodel::{hstack, in_rotated_quadratic_cones, unbounded, nonnegative,equal_to,zero, Model, Sense, SolutionType};
 
 use std::fs::File;
 use std::io::{BufRead,BufReader};

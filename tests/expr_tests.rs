@@ -1,4 +1,4 @@
-use mosekmodel::*;
+use mosekcomodel::*;
 use expr::workstack::WorkStack;
 
 fn dense_expr() -> Expr<2> {

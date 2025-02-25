@@ -7,9 +7,9 @@
 //                 with cardinality constraints on number of assets traded.
 //
 
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
-use mosekmodel::*;
+use mosekcomodel::*;
 
 /// # Description
 /// 

@@ -37,9 +37,9 @@ rotated quadratic cone of size 3 defined as
 This is the included model `cqo1.rs`:
 
 ```rust
-extern crate mosekmodel;
-use mosekmodel::*;
-use mosekmodel::expr::*;
+extern crate mosekcomodel;
+use mosekcomodel::*;
+use mosekcomodel::expr::*;
 
 fn main() {
     let mut m = Model::new(Some("cqo1"));

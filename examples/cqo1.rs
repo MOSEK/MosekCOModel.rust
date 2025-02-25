@@ -19,8 +19,8 @@
 //!       K_3 = { z1,z2,z3 : 2 z1 z2 >= z3^2              }
 //!
 
-extern crate mosekmodel;
-use mosekmodel::*;
+extern crate mosekcomodel;
+use mosekcomodel::*;
 
 fn main() {
     let mut m = Model::new(Some("cqo1"));

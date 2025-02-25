@@ -7,11 +7,11 @@
 //            variation problem using the Fusion API.
 //
 
-extern crate mosekmodel;
+extern crate mosekcomodel;
 extern crate rand;
 extern crate rand_distr;
 use itertools::iproduct;
-use mosekmodel::*;
+use mosekcomodel::*;
 use rand::*;
 use rand_distr::*;
 

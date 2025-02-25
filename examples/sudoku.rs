@@ -6,9 +6,9 @@
 /// Purpose:  A MILP-based SUDOKU solver
 ///
 
-extern crate mosekmodel;
+extern crate mosekcomodel;
 use itertools::{iproduct, izip};
-use mosekmodel::*;
+use mosekcomodel::*;
 
 fn main() {
     //fixed cells in human readable (i.e. 1-based) format

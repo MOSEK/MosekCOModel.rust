@@ -20,8 +20,8 @@
 //
 //                   X >> 0,  x0 >= (x1^2 + x2^2) ^ (1/2)
 //
-extern crate mosekmodel;
-use mosekmodel::*;
+extern crate mosekcomodel;
+use mosekcomodel::*;
 
 fn main() {
     let mut m = Model::new(Some("sdo1"));

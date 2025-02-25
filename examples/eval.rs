@@ -1,11 +1,11 @@
 /// This library provides a C-callable API for the expression evaluation functionality.
 
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
 use std::ptr::null;
 
-use mosekmodel::expr::workstack::WorkStack;
-use mosekmodel::expr::eval;
+use mosekcomodel::expr::workstack::WorkStack;
+use mosekcomodel::expr::eval;
 
 
 #[no_mangle]

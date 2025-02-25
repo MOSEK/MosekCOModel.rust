@@ -5,10 +5,10 @@
 //
 //  Computes the Löwner-John outer ellipsoid for a convex polygon. 
 //
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
-use mosekmodel::*;
-use mosekmodel::matrix::{speye,dense};
+use mosekcomodel::*;
+use mosekcomodel::matrix::{speye,dense};
 
 /// Purpose: Models the hypograph of the n-th power of the
 /// determinant of a positive definite matrix. See [1,2] for more details.

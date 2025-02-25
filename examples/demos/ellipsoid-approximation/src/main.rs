@@ -1,6 +1,6 @@
 extern crate cairo;
 extern crate glam;
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -13,7 +13,7 @@ use itertools::izip;
 
 use cairo::Context;
 use gtk::{glib,Application, DrawingArea, ApplicationWindow};
-use mosekmodel::{unbounded, Model};
+use mosekcomodel::{unbounded, Model};
 
 const APP_ID : &str = "com.mosek.lowner-john";
 const SPEED_SCALE : f64 = 0.1;
@@ -118,7 +118,7 @@ fn build_ui(app   : &Application,
                     let p = ellipsoids::det_rootn(None, & mut m, t.clone(), 2);
                     let q = m.variable(None, unbounded().with_shape(&[2]));
   
-                    m.objective(None, mosekmodel::Sense::Maximize, &t);
+                    m.objective(None, mosekcomodel::Sense::Maximize, &t);
                    
                     for (A,b) in data.Abs.iter() {
                         let A = DMat2::from_cols_array(A).inverse();
@@ -131,8 +131,8 @@ fn build_ui(app   : &Application,
 
                     m.solve();
   
-                    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&p),
-                                                  m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
+                    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekcomodel::SolutionType::Default,&p),
+                                                  m.primal_solution(mosekcomodel::SolutionType::Default,&q)) {
                         
                         // A² = P => A = sqrt(P)
                         // Ab = q => A\q
@@ -157,7 +157,7 @@ fn build_ui(app   : &Application,
                     let p = ellipsoids::det_rootn(None, & mut m, t.clone(), 2);
                     let q = m.variable(None, unbounded().with_shape(&[2]));
 
-                    m.objective(None, mosekmodel::Sense::Maximize, &t);
+                    m.objective(None, mosekcomodel::Sense::Maximize, &t);
 
                     for (A,b) in data.Abs.iter() {
                         let A = DMat2::from_cols_array(A).inverse();
@@ -170,8 +170,8 @@ fn build_ui(app   : &Application,
 
                     m.solve();
 
-                    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&p),
-                                                  m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
+                    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekcomodel::SolutionType::Default,&p),
+                                                  m.primal_solution(mosekcomodel::SolutionType::Default,&q)) {
                         let A = DMat2::from_cols_array(&[psol[0],psol[1],psol[2],psol[3]]).inverse();
                         let b = A.mul_vec2(DVec2::from_array([qsol[0],qsol[1]])).to_array();
 

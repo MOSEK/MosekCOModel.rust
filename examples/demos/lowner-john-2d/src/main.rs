@@ -1,6 +1,6 @@
 extern crate cairo;
 extern crate glam;
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -13,8 +13,8 @@ use itertools::izip;
 use cairo::Context;
 //use cairo::glib::controlflow;
 use gtk::{glib,Application, DrawingArea, ApplicationWindow};
-use mosekmodel::{in_psd_cone, matrix, unbounded, zero, Model};
-use mosekmodel::expr::*;
+use mosekcomodel::{in_psd_cone, matrix, unbounded, zero, Model};
+use mosekcomodel::expr::*;
 //use gtk::prelude::*;
 //use rand::random;
 
@@ -136,13 +136,13 @@ fn build_ui(app   : &Application,
                     let p = ellipsoids::det_rootn(None, & mut m, t.clone(), 2);
                     let q = m.variable(None, unbounded().with_shape(&[2]));
 
-                    m.objective(None, mosekmodel::Sense::Maximize, &t);
+                    m.objective(None, mosekcomodel::Sense::Maximize, &t);
                     ellipsoids::ellipsoid_contains_points(& mut m, &p, &q, data.tpoints.as_ref());
 
                     m.solve();
 
-                    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&p),
-                                                  m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
+                    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekcomodel::SolutionType::Default,&p),
+                                                  m.primal_solution(mosekcomodel::SolutionType::Default,&q)) {
                         data.Pc = Some(([psol[0],psol[1],psol[2],psol[3]],[qsol[0],qsol[1]]));
                     }
                     else {
@@ -159,7 +159,7 @@ fn build_ui(app   : &Application,
                     let P = ellipsoids::det_rootn(None, & mut m, t.clone(), 2);
                     let q = m.variable(None, unbounded().with_shape(&[2]));
 
-                    m.objective(None, mosekmodel::Sense::Maximize, &t);
+                    m.objective(None, mosekcomodel::Sense::Maximize, &t);
 
                     let mut A = vec![ [0.0;2]; n_planes];
                     let mut b = vec![ 0.0; n_planes ];
@@ -177,8 +177,8 @@ fn build_ui(app   : &Application,
 
                     m.solve();
 
-                    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&P),
-                                                  m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
+                    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekcomodel::SolutionType::Default,&P),
+                                                  m.primal_solution(mosekcomodel::SolutionType::Default,&q)) {
                         data.Zw = Some(([psol[0],psol[1],psol[2],psol[3]],[qsol[0],qsol[1]]));
                     }
                     else {

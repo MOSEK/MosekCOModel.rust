@@ -1,8 +1,8 @@
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
 use matrix::NDArray;
-use mosekmodel::*;
-use mosekmodel::expr::workstack::WorkStack;
+use mosekcomodel::*;
+use mosekcomodel::expr::workstack::WorkStack;
 
 const N1 : usize = 100;
 const N2 : usize = 100;

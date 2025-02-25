@@ -31,10 +31,10 @@
 //!  [2] "Convex Optimization of Non-negative Polynomials:
 //!      Structured Algorithms and Applications", Ph.D thesis, Y. Hachez, 2003.
 //!
-extern crate mosekmodel;
+extern crate mosekcomodel;
 use itertools::Itertools;
-use mosekmodel::*;
-use mosekmodel::experimental::*;
+use mosekcomodel::*;
+use mosekcomodel::experimental::*;
 use std::{cell::RefCell, cmp::Ordering, f64::consts::PI, rc::Rc};
 use gtk::glib::ControlFlow;
 use gtk::prelude::*;

@@ -1,4 +1,4 @@
-extern crate mosekmodel;
+extern crate mosekcomodel;
 extern crate bevy;
 extern crate mosek;
 extern crate ellipsoids;
@@ -10,7 +10,7 @@ use bevy::{prelude::*, math::{DMat3, DVec3,DQuat}};
 use linalg::symsqrt3;
 
 use ellipsoids::Ellipsoid;
-use mosekmodel::{unbounded, Model};
+use mosekcomodel::{unbounded, Model};
 use rand::Rng;
 
 use bevy::render::view::screenshot::ScreenshotManager;
@@ -264,7 +264,7 @@ fn update(time       : Res<Time>,
     let p = ellipsoids::det_rootn(None, & mut m, t.clone(), 3);
     let q = m.variable(None, unbounded().with_shape(&[3]));
 
-    m.objective(None, mosekmodel::Sense::Maximize, &t);
+    m.objective(None, mosekcomodel::Sense::Maximize, &t);
 
     for e in ellipses.iter() {
         ellipsoids::ellipsoid_contains(&mut m,&p,&q,e);
@@ -272,8 +272,8 @@ fn update(time       : Res<Time>,
 
     m.solve();
 
-    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&p),
-                                  m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
+    if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekcomodel::SolutionType::Default,&p),
+                                  m.primal_solution(mosekcomodel::SolutionType::Default,&q)) {
         // A² = P => A = sqrt(P)
         // Ab = q => b = A\q
         
@@ -354,7 +354,7 @@ mod test {
     use bevy::math::{Quat, Mat3, DVec3, DMat3, Vec3};
     use rand::{self, SeedableRng, Rng};
     use ellipsoids::Ellipsoid;
-    use mosekmodel::{Model,unbounded,Variable};
+    use mosekcomodel::{Model,unbounded,Variable};
     use super::{linalg,RandVec3};
     use std::f32::consts::PI;
 
@@ -413,14 +413,14 @@ mod test {
             let p = ellipsoids::det_rootn(None, & mut m, t.clone(), 3);
             let q = m.variable(None, unbounded().with_shape(&[3]));
 
-            m.objective(None, mosekmodel::Sense::Maximize, &t);
+            m.objective(None, mosekcomodel::Sense::Maximize, &t);
 
             let taus : Vec<Variable<0>>= ellipses.iter().map(|(e,_,_,_)| ellipsoids::ellipsoid_contains(&mut m,&p,&q,e)).collect();
 
             m.solve();
 
-            if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&p),
-                                          m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
+            if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekcomodel::SolutionType::Default,&p),
+                                          m.primal_solution(mosekcomodel::SolutionType::Default,&q)) {
 
                 // A² = P => A = sqrt(P)
                 // Ab = q => b = A\q
@@ -438,7 +438,7 @@ mod test {
 
                 // Verify that the solution satisfies constraint for all ellipsoids
                 for (tau,(e,_,_,_)) in taus.iter().zip(ellipses.iter()) {
-                    let tau = m.primal_solution(mosekmodel::SolutionType::Default,tau).unwrap();
+                    let tau = m.primal_solution(mosekcomodel::SolutionType::Default,tau).unwrap();
                     let (a,b,c) = e.get_Abc();
                     let b = DVec3::from_array(b);
                     let a = DMat3::from_cols(DVec3::from_array(a[0]),DVec3::from_array(a[1]),DVec3::from_array(a[2]));
@@ -598,7 +598,7 @@ mod test {
             let Psq = ellipsoids::det_rootn(None, & mut m, t.clone(), 3);
             let q = m.variable(None, unbounded().with_shape(&[3]));
 
-            m.objective(None, mosekmodel::Sense::Maximize, &t);
+            m.objective(None, mosekcomodel::Sense::Maximize, &t);
            
             let (tau,e) = {
                 let A = symA;
@@ -624,8 +624,8 @@ mod test {
 
             m.solve();
 
-            if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekmodel::SolutionType::Default,&Psq),
-                                          m.primal_solution(mosekmodel::SolutionType::Default,&q)) {
+            if let (Ok(psol),Ok(qsol)) = (m.primal_solution(mosekcomodel::SolutionType::Default,&Psq),
+                                          m.primal_solution(mosekcomodel::SolutionType::Default,&q)) {
                 let P = linalg::symsqrt3(&DMat3::from_cols_array(&[psol[0],psol[1],psol[2],psol[3],psol[4],psol[5],psol[6],psol[7],psol[8]])).unwrap();
                 let Pinv = P.inverse();
                 let q = Pinv.mul_vec3(DVec3::new(qsol[0],qsol[1],qsol[2]));
@@ -633,7 +633,7 @@ mod test {
                
 
                 // Verify that the solution actually satisfies the PSD constraint
-                if let Ok(tau) = m.primal_solution(mosekmodel::SolutionType::Default,&tau) 
+                if let Ok(tau) = m.primal_solution(mosekcomodel::SolutionType::Default,&tau) 
                 {
                     let (a,b,c) = e.get_Abc();
                     let b = DVec3::from_array(b);

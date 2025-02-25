@@ -7,11 +7,11 @@
 //!
 //!           Demonstrates using the exponential cone and log-sum-exp in Fusion.
 
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
 use expr::const_expr;
 use itertools::iproduct;
-use mosekmodel::*;
+use mosekcomodel::*;
 
 
 fn softplus<E2>(model : & mut Model, n : usize, t : &Variable<1>, u : E2) where E2 : ExprTrait<1> {

@@ -3,9 +3,9 @@
 // File:      duality.rs
 //
 // Purpose: Show how to read the dual value of a constraint.
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
-use mosekmodel::*;
+use mosekcomodel::*;
 
 #[allow(non_snake_case)]
 fn main() {

@@ -27,8 +27,8 @@ use crate::*;
 /// # Example
 ///
 /// ```
-/// use mosekmodel::*;
-/// use mosekmodel::experimental::*;
+/// use mosekcomodel::*;
+/// use mosekcomodel::experimental::*;
 /// let mut m = Model::new(None);
 /// let x = m.variable(None,unbounded());
 /// let y = m.variable(None,unbounded());
@@ -179,8 +179,8 @@ pub struct GeneratorExpr<const N : usize,F,R>
 ///
 /// # Example
 /// ```
-/// use mosekmodel::*;
-/// use mosekmodel::experimental::*;
+/// use mosekcomodel::*;
+/// use mosekcomodel::experimental::*;
 ///
 /// let mut m = Model::new(None);
 /// let x = m.variable(None, &[5,5]);
@@ -351,8 +351,8 @@ pub trait ExprGenerator1Ex<F,E,T,I>
     /// # Example
     ///
     /// ```
-    /// use mosekmodel::*;
-    /// use mosekmodel::experimental::*;
+    /// use mosekcomodel::*;
+    /// use mosekcomodel::experimental::*;
     ///
     /// let mut m = Model::new(None);
     /// let x = m.variable(None,unbounded().with_shape(&[5]));
@@ -455,8 +455,8 @@ pub trait ExprGenerator2Ex<F,E,T0,T1,I0,I1>
     /// # Example
     ///
     /// ```
-    /// use mosekmodel::*;
-    /// use mosekmodel::experimental::*;
+    /// use mosekcomodel::*;
+    /// use mosekcomodel::experimental::*;
     ///
     /// let mut m = Model::new(None);
     /// let x = m.variable(None,unbounded().with_shape(&[5,5]));

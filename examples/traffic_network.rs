@@ -18,9 +18,9 @@
 //            Given a fixed inflow we now wish to find the
 //            configuration that minimizes the average travel time.
 
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
-use mosekmodel::*;
+use mosekcomodel::*;
 
 pub fn traffic_network_model(
     arcs   : &[Arc], 

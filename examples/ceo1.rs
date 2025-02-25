@@ -10,8 +10,8 @@
 ///   and      x1 >= x2 * exp(x3/x2)
 ///
 ///TAG:begin-ceo1
-extern crate mosekmodel;
-use mosekmodel::*;
+extern crate mosekcomodel;
+use mosekcomodel::*;
 
 fn main() {
     //TAG:begin-create-model

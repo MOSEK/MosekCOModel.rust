@@ -1,9 +1,9 @@
 extern crate criterion;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
-use mosekmodel::{*, expr::workstack::WorkStack};
+use mosekcomodel::{*, expr::workstack::WorkStack};
 
 // Operation specific benchmarks
 

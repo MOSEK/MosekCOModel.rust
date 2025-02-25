@@ -20,10 +20,10 @@
 //              nutrient.
 //  nutritive_value - Two-dimensional MxN array of floats where each row
 //              denotes the nutrient values for a single food per $ spent.
-extern crate mosekmodel;
+extern crate mosekcomodel;
 extern crate itertools;
 
-use mosekmodel::*;
+use mosekcomodel::*;
 use itertools::izip;
 
 fn diet(daily_allowance : &[f64],

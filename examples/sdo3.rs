@@ -17,10 +17,10 @@
 //              This example is to demonstrate creating and using 
 //              many matrix variables of the same dimension.
 
-extern crate mosekmodel;
+extern crate mosekcomodel;
 extern crate rand;
 use expr::{nil, sum_vec, ExprDot};
-use mosekmodel::*;
+use mosekcomodel::*;
 
 
 fn rand_matrix(shape : [usize;2]) -> NDArray<2> {

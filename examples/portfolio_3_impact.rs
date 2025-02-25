@@ -7,9 +7,9 @@
 //             with x^(3/2) market impact costs.
 //
 
-extern crate mosekmodel;
+extern crate mosekcomodel;
 
-use mosekmodel::*;
+use mosekcomodel::*;
 
 /// Extends the basic Markowitz model with a market cost term.
 ///
