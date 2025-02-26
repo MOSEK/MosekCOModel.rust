@@ -172,7 +172,6 @@ pub mod disjunction;
 pub mod experimental;
 pub mod utils;
 
-
 use expr::workstack::WorkStack;
 
 pub use model::{Sense,

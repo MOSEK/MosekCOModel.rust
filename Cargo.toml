@@ -8,7 +8,6 @@ authors = [ "Ulf Worsøe <ulf.worsoe@mosek.com>" ]
 keywords = ["mosek","optimization","conic_optimization","linear_optimization","integer_optimization","conic_modeling"]
 categories = ["mathematics","science"]
 license = "MIT"
-license-file = "LICENSE"
 # repository =
 # documentation = 
 homepage = "https://mosek.com"
@@ -18,7 +17,6 @@ readme = "README.md"
 itertools = "0.14"
 mosek = "~11.0.0"
 rand_distr = "0.4.3"
-utils = { path = "utils", version = "0.1.0" }
 #mosek = { path = "../Mosek.rust" }
 
 [dev-dependencies]
