@@ -8,8 +8,8 @@ authors = [ "Ulf Worsøe <ulf.worsoe@mosek.com>" ]
 keywords = ["mosek","optimization","conic_optimization","linear_optimization","integer_optimization","conic_modeling"]
 categories = ["mathematics","science"]
 license = "MIT"
-# repository =
-# documentation = 
+repository = "https://github.com/MOSEK/MosekCOModel.rust"
+#documentation = 
 homepage = "https://mosek.com"
 readme = "README.md"
 
