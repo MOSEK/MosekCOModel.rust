@@ -18,7 +18,7 @@ readme = "README.md"
 itertools = "0.10"
 mosek = "~11.0.0"
 rand_distr = "0.4.3"
-utils = { path = "utils" }
+utils = { path = "utils", version = "*" }
 #mosek = { path = "../Mosek.rust" }
 
 [dev-dependencies]
