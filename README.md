@@ -1,8 +1,18 @@
-The `MosekModel` crate is a modeling package for building optimization models
+<p style="size : large; color: red; align:center"
+Disclaimer:     
+</p>
+This is a pre-release of the `MosekCOModel` project. It is provided with
+absolutely no official support and is still to be considered highly
+experimenental.
+
+# MosekCOModel
+
+The `MosekCOModel` crate is a modeling package for building optimization models
 with `Mosek.rs`. The [Mosek.rs](https://crates.io/crates/mosek) package is a
 relatively thin interface in top of low-level [MOSEK](https://mosek.com)
 optimizer C API, where `MosekModel` is an attempt to create an interface that
 is more like the MOSEK Fusion modelling interface.
+
 
 # Design principle
 `MosekModel` allows building a model of the form

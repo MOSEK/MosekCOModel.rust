@@ -14,9 +14,6 @@ license-file = "LICENSE"
 homepage = "https://mosek.com"
 readme = "README.md"
 
-[workspace]
-members = ["utils"]
-
 [dependencies]
 itertools = "0.10"
 mosek = "~11.0.0"

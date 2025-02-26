@@ -162,7 +162,6 @@
 
 extern crate mosek;
 extern crate itertools;
-extern crate utils;
 
 pub mod variable;
 pub mod domain;
@@ -171,6 +170,8 @@ pub mod expr;
 pub mod model;
 pub mod disjunction;
 pub mod experimental;
+pub mod utils;
+
 
 use expr::workstack::WorkStack;
 
