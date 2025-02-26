@@ -1,9 +1,6 @@
-<p style="size : large; color: red; align:center"
-Disclaimer:     
-</p>
-This is a pre-release of the `MosekCOModel` project. It is provided with
+**This is a pre-release of the `MosekCOModel` project. It is provided with
 absolutely no official support and is still to be considered highly
-experimenental.
+experimenental.**
 
 # MosekCOModel
 
