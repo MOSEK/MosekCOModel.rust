@@ -96,4 +96,23 @@ fn main() {
 }
 ```
 
+# Compiling, testing, running
+
+To compile the project and run basic tests, do 
+```sh
+cargo build && cargo test
+```
+
+When running examples, the compiled examples cannot locate the MOSEK library 
+
+Running examples requires the MOSEK library to be available. The simplest
+solution is to download and unpack the MOSEK distro from https://www.mosek.com/downloads/, unpack the distro
+and set relevant environment variable:
+- On MS Windows: 
+  ```set PATH=C:\full\path\to\mosek\binaries;%PATH%```
+- On Mac OSX: 
+  ```export DYLD_LIBRARY_PATH=/full/path/to/mosek/binaries:$DYLD_LIBRARY_PATH```
+- On Linux: 
+  ```export LD_LIBRARY_PATH=/full/path/to/mosek/binaries:$LD_LIBRARY_PATH```
+
 

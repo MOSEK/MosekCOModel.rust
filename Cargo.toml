@@ -13,11 +13,14 @@ license = "MIT"
 homepage = "https://mosek.com"
 readme = "README.md"
 
+#[lib]
+#crate-type = ["dylib"]
+
 [dependencies]
 itertools = "0.14"
-mosek = "~11.0.0"
 rand_distr = "0.4.3"
-#mosek = { path = "../Mosek.rust" }
+mosek = "~11.0.0"
+#mosek = { path = "../Mosek.rs/11.0" }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = [ "html_reports" ] }
