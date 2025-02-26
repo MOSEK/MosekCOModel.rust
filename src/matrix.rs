@@ -3,7 +3,7 @@
 use iter::PermuteByEx;
 use itertools::{izip, EitherOrBoth};
 use crate::expr::{Expr, IntoExpr};
-use utils::*;
+use crate::utils::*;
 
 
 /// This trait represents an 2-dimensional array, with a few functions specialized for matrixes on

@@ -2,7 +2,7 @@ use iter::{PermuteByEx,PermuteByMutEx};
 use itertools::izip;
 
 use super::matrix::NDArray;
-use utils::*;
+use crate::utils::*;
 
 pub enum LinearDomainType {
     NonNegative,

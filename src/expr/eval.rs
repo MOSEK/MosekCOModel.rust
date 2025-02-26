@@ -5,7 +5,7 @@
 use std::{iter::once};
 use super::*;
 use super::workstack::WorkStack;
-use utils::{*,iter::*};
+use crate::utils::{*,iter::*};
 
 use itertools::{izip,iproduct};
 

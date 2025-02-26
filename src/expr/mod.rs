@@ -14,7 +14,7 @@ use crate::matrix::Matrix;
 use itertools::izip;
 use workstack::WorkStack;
 use super::matrix;
-use utils::iter::*;
+use crate::utils::iter::*;
 use std::iter::{Peekable,Zip};
 use std::slice::Iter;
 
