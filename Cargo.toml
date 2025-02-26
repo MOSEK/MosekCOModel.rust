@@ -3,17 +3,15 @@ name = "mosekcomodel"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.77.0"
-description = "Library for conic optimization modeling with Mosek"
+description = "Library for Conic Optimization Modeling with Mosek"
 authors = [ "Ulf Worsøe <ulf.worsoe@mosek.com>" ]
 keywords = ["mosek","optimization","conic_optimization","linear_optimization","integer_optimization","conic_modeling"]
 categories = ["mathematics","science"]
-# licence = 
+licence = 
 # repository =
 # documentation = 
-# homepage =
+homepage = "https://mosek.com"
 readme = "README.md"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
 members = ["utils"]
@@ -28,11 +26,6 @@ utils = { path = "utils" }
 [dev-dependencies]
 criterion = { version = "0.5.1", features = [ "html_reports" ] }
 rand = "0.8.5"
-#bencher = "0.1"
-
-#[[bench]]
-#name="performance"
-#harness = false
 
 [[bench]]
 name="exprs"
@@ -41,8 +34,4 @@ harness = false
 [[example]]
 name = "eval"
 crate-type = ["cdylib"]
-
-#[[example]]
-#name = "nearestcorr"
-#crate-type = ["cdylib"]
 
