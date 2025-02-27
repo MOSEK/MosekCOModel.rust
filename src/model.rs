@@ -1,3 +1,7 @@
+//! The model module implements the Model and Constraint objects.
+//!
+#[doc = include_str!("../js/mathjax.tag")]
+
 use itertools::{merge_join_by, EitherOrBoth};
 use itertools::{iproduct, izip};
 use std::{iter::once, path::Path};
@@ -197,6 +201,7 @@ impl<const N : usize> ConDomainTrait<N> for PSDDomain<N> {
 ///
 /// Variables and constraints are created through the `Model` object and belong to exactly that
 /// model.
+#[doc = include_str!("../js/mathjax.tag")]
 pub struct Model {
     /// The MOSEK task
     task : mosek::TaskCB,
@@ -412,12 +417,17 @@ impl SolverParameterValue for &str {
 //======================================================
 
 impl Model {
-    /// Create new Model object
+    /// Create new Model object.
     ///
     /// # Arguments
     /// - `name` An optional name
     /// # Returns
     /// An empty model.
+    /// # Example
+    /// ```rust
+    /// use mosekcomodel::*;
+    /// let mut model = Model::new(Some("SuperModel"));
+    /// ```
     pub fn new(name : Option<&str>) -> Model {
         let mut task = mosek::Task::new().unwrap().with_callbacks();
         if let Some(name) = name { task.put_task_name(name).unwrap() };
@@ -442,7 +452,8 @@ impl Model {
         }
     }
 
-    /// Attach a log printer callback to the Model.
+    /// Attach a log printer callback to the Model. This will receive messages from the solver
+    /// while solving and during a few other calls like file reading/writing. 
     ///
     /// # Arguments
     /// - `func` A function that will be called with strings from the log. Individual lines may be
@@ -452,28 +463,33 @@ impl Model {
         self.task.put_stream_callback(mosek::Streamtype::LOG,func).unwrap();
     }
 
-    /// Write problem to a file. The filename extension determines the file format to use. If the
-    /// file extension is not recognized, the MPS format is used.
+    /// Write problem to a file. The file is written by the underlying solver task, so no
+    /// structural information will be written.
+    ///
+    /// # Arguments
+    /// - `filename` The filename extension determines the file format to use. If the
+    ///   file extension is not recognized, the MPS format is used.
+    ///
     pub fn write_problem<P>(&self, filename : P) where P : AsRef<Path> {
         let path = filename.as_ref();
         self.task.write_data(path.to_str().unwrap()).unwrap();
     }
 
-    //pub fn write_problem_to<S>(&self, s : S) where S : std::io::Write {
-    //    self.task.write_data_stream()
-    //}
-
     //======================================================
     // Variable interface
 
-    /// Add a Variable
+    /// Add a Variable.
     ///
     /// # Arguments
-    /// - `name` Optional constraint name
+    /// - `name` Optional constraint name. This is currently only used to generate names passed to
+    ///   the underlying task.
     /// - `dom` The domain of the variable. This defines the bound
     ///   type, shape and sparsity of the variable. For sparse
     ///   variables, elements outside of the sparsity pattern are
     ///   treated as variables fixed to 0.0.
+    /// # Returns
+    /// An `N`-dimensional variable object is returned. The `Variable` object may be dense or
+    /// sparse, where "sparse" means that all entries outside the sparsity pattern are fixed to 0.
     pub fn variable<const N : usize, D>(& mut self, name : Option<&str>, dom : D) -> Variable<N> 
         where 
             D : VarDomainTrait<N> 
@@ -771,7 +787,8 @@ impl Model {
     /// Note that even if the domain or the expression are sparse, a constraint will always be full.
     ///
     /// # Arguments
-    /// - `name` Optional constraint name
+    /// - `name` Optional constraint name. Currently this is only used to generate names passed to
+    ///   the underlting task.
     /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
     /// - `dom`  The domain of the constraint. This defines the bound type and shape.
     pub fn constraint<const N : usize,E,D>(& mut self, name : Option<&str>, expr : &E, dom : D) -> Constraint<N> 
@@ -1332,11 +1349,75 @@ impl Model {
     pub(crate) fn start_term(& mut self) { self.djc_temp_cur_termsize = 0; }
     pub(crate) fn end_term(& mut self) { self.djc_temp_termsize.push(self.djc_temp_cur_termsize); self.djc_temp_cur_termsize = 0 }    
 
-    /// Add a disjunctive constraint to the model.
+    /// Add a disjunctive constraint to the model. A disjunctive constraint is a logical constraint
+    /// of the form
+    /// $$
+    /// \\begin{array}{c}
+    ///     A_1x+b_1 \\in K_1 \\\\
+    ///     \\mathrm{or}      \\\\
+    ///     \\vdots           \\\\
+    ///     \\mathrm{or}      \\\\
+    ///     A_nx+b_n \\in K_n 
+    /// \\end{array}
+    /// $$
+    /// where each \\(K_\\cdot\\) is a single cone or a product of cones. 
+    ///
+    ///
+    /// Another example is an indicator constraint like an indicator constraint
+    /// $$ 
+    ///     z\\in\\{0,1\\},\\ z=1 \\Rightarrow Ax+b\\in K_n 
+    /// $$
+    /// implemented as 
+    /// $$
+    ///     z\\in\\{0,1\\},\\ z = 0\\ \\vee\\ z = 1\\wedge Ax+b\\in K_n
+    /// $$
     ///
     /// # Arguments
     /// - `name` Name of the disjunction
     /// - `terms` Structure defining the terms of the disjunction.
+    ///
+    /// # Example: Simple disjunction
+    /// A Simple logical disjunctions like 
+    /// $$
+    ///     a^Tx+b = 3 \\vee\\ b^Tx+c = 1.0
+    /// $$
+    /// can be implemented as:
+    /// ```rust
+    /// use mosekcomodel::*;
+    /// let mut model = Model::new(None);
+    /// let x = model.variable(Some("x"), 5);
+    /// let y = model.variable(Some("y"), 3);
+    /// let a = vec![1.0,2.0,3.0,4.0,5.0];
+    /// let b = vec![5.0,4.0,3.0];
+    /// model.disjunction(None, 
+    ///                   &(term(x.dot(a), equal_to(3.0))
+    ///                         .or(term(y.dot(b), equal_to(1.0)))));
+    /// ```
+    ///
+    /// # Example: Indicator constraint
+    ///
+    /// A logical constraint for a binary variable \\(z\\in\\{0,1\\}\\) of the form
+    /// $$
+    ///     z = 1 \\Rightarrow a^T x+b = 1
+    /// $$
+    //  is implemented as 
+    //  $$
+    //      z = 0\\ \\vee\\ \\left[ z=1\\ \\wedge\\ a^Tx+b=1 \\right]
+    //  $$
+    /// ```rust
+    /// use mosekcomodel::*;
+    /// let mut model = Model::new(None);
+    /// let a = vec![1.0,2.0,3.0,4.0,5.0];
+    /// let x = model.variable(Some("x"), 5);
+    /// let z = model.variable(Some("z"), nonnegative().integer());
+    /// model.constraint(None,&z,less_than(1.0));
+    ///
+    /// model.disjunction(None,
+    ///                   &(term(z.clone(),equal_to(0.0))
+    ///                         .or(term(z, equal_to(1.0))
+    ///                                 .and(x.dot(a), equal_to(1.0)))));
+    /// ```
+    //
     pub fn disjunction<D>(& mut self, name : Option<&str>, terms : & D) -> Disjunction where D : disjunction::DisjunctionTrait {
         self.djc_temp_termsize.clear();
         self.djc_temp_domidx.clear();
@@ -1556,6 +1637,7 @@ impl Model {
         }
     }
 
+    /// Update the expression of a constraint in the Model.
     pub fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : &E) where E : expr::ExprTrait<N> {
         e.eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).unwrap();
         {
@@ -1607,7 +1689,7 @@ impl Model {
         }
     }
 
-    /// Set the objective
+    /// Set the objective.
     ///
     /// Arguments:
     /// - `name` Optional objective name
@@ -1625,23 +1707,50 @@ impl Model {
     //======================================================
     // Optimize
 
-
+    /// Set a parameter in the underlying task object. 
+    ///
+    /// # Arguments
+    /// - `parname` The name is the full name as listed in the MOSEK C manual, that is `MSK_IPAR_...`.
+    /// - `parval` A parameter value. This can be an integer, a floating point value, string
+    ///   value or a string representing an integer or float value, or a string representing a
+    ///   symbolic constant value (again, the full value as listed in the MOSEK C manual).
     pub fn set_parameter<T>(& mut self, parname : &str, parval : T) 
         where T : SolverParameterValue {
         parval.set(parname,self);
     }
 
+    /// Set a double parameter in the underlying task object.
+    ///
+    /// # Arguments
+    /// - `parname` The name is the full name as listed in the MOSEK C manual, that is `MSK_DPAR_...`.
+    /// - `parval` Parameter value 
     pub fn set_double_parameter(&mut self, parname : &str, parval : f64) {
         self.task.put_na_dou_param(parname, parval).unwrap();
     }
+
+    /// Set a integer parameter in the underlying task object.
+    ///
+    /// # Arguments
+    /// - `parname` The name is the full name as listed in the MOSEK C manual, that is `MSK_IPAR_...`.
+    /// - `parval` Parameter value 
     pub fn set_int_parameter(&mut self, parname : &str, parval : i32) {
         self.task.put_na_int_param(parname, parval).unwrap();
     }
+
+    /// Set a double parameter in the underlying task object.
+    ///
+    /// # Arguments
+    /// - `parname` The name is the full name as listed in the MOSEK C manual, that is `MSK_SPAR_...`.
+    /// - `parval` Parameter value 
     pub fn set_str_parameter(&mut self, parname : &str, parval : &str) {
         self.task.put_na_str_param(parname, parval).unwrap();
     }
 
     /// Solve the problem and extract the solution.
+    ///
+    /// This will fail if the optimizer fails with an error. Not producing a solution (stalling or
+    /// otherwise failing), producing a non-optimal solution or a certificate of infeasibility 
+    /// is *not* an error.
     pub fn solve(& mut self) {
         self.task.put_int_param(mosek::Iparam::REMOVE_UNUSED_SOLUTIONS, 1).unwrap();
         self.task.optimize().unwrap();
@@ -1782,6 +1891,7 @@ impl Model {
             }
         }
     }
+
     pub(crate) fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
         if let Some(sol) = self.select_sol(solid) {
             if let SolutionStatus::Undefined = sol.primal.status {
@@ -1844,7 +1954,21 @@ impl Model {
         }
     }
 
-    /// Get solution status for the given solution
+    /// Get solution status for the given solution.
+    ///
+    /// Solution status is returned as a pair: Status of the primal solution and status of the dual
+    /// solution. In some cases, only part of the solution is available and meaningful:
+    /// - An integer problem does not have any dual information
+    /// - A problem that is primally infeasible will return a dual ray and have no meaningful
+    ///   primal solution values.
+    /// - A problem that is dual infeasible will return a primal ray and have no meaningful dual
+    ///  solution information.
+    ///
+    /// # Arguments
+    /// - `solid` Which solution to request status for.
+    ///
+    /// # Returns
+    /// - `(psolsta,dsolsta)` Primal and dual solution status.
     pub fn solution_status(&self, solid : SolutionType) -> (SolutionStatus,SolutionStatus) {
         if let Some(sol) = self.select_sol(solid) {
             (sol.primal.status,sol.dual.status)
@@ -1854,7 +1978,9 @@ impl Model {
         }
     }
 
-
+    /// Get primal objective value, if available.
+    ///
+    /// The primal objective is only available if the primal solution is defined.
     pub fn primal_objective(&self, solid : SolutionType) -> Option<f64> { 
         if let Some(sol) = self.select_sol(solid) {
             Some(sol.primal.obj)
@@ -1864,11 +1990,28 @@ impl Model {
         }
     }
 
-    /// Get primal solution values for an item
+    /// Get primal solution values for an a variable or constraint.
     ///
-    /// Returns: If solution item is defined, return the solution, otherwise a n error message.
+    /// # Arguments
+    /// - `solid` Choose which solution to ask for if multiple are available.
+    /// - `item` The constraint or variable for which the solution values are wanted. If the item
+    /// is a sparse variable, the result is filled out with zeros where necessary.
+    ///
+    /// # Returns
+    /// If solution item is defined, return the solution, otherwise an error message.
     pub fn primal_solution<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> { item.primal(self,solid) }
     
+    /// Get primal solution values for an a sparse variable or constraint.
+    ///
+    /// # Arguments
+    /// - `solid` Choose which solution to ask for if multiple are available.
+    /// - `item` The constraint or variable for which the solution values are wanted.
+    ///
+    /// # Returns
+    /// - `Err(msg)` is returned if the requested solution is not available 
+    /// - `Some((vals,idxs))` is returned, where 
+    ///   - `vals` are the solution values for non-zero entries
+    ///   - `idxs` are the indexes.
     pub fn sparse_primal_solution<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String> { item.sparse_primal(self,solid) }
 
     /// Get dual solution values for an item
