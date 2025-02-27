@@ -7,62 +7,67 @@
 //! - Integer variables
 //!
 //! The model used is this:
-//! ```math 
-//! min/max   c^t x 
-//! such that A x + b ∊ Kc
-//!           X ∊ Kx
-//! ```
-//! where `Kc=Kc₀ × ... × Kc_m` and `Kx=Kx₀ × ... × Kxₙ`, each `Kcᵢ` and `Kxᵢ` is a conic
+//! $$
+//! \begin{array}{ll}
+//! \\mathrm{min/max}  & c^t x \\\\
+//! \mathrm{such that} & A x + b \\in K_c\\\\
+//!                    & X \\in K_x
+//! \\end{array}
+//! $$
+//!
+//! where \\(K_c = K_{c_0}\\times\\cdots\\times K_{c_m}\\), \\(K_x = K_{x_0} \\times\\cdots\\times K_{x_n}\\), each \\(K_{c_i}\\) and \\(K_{x_i}\\) is a conic
 //! domain from the currently supported set plus an offset:
 //! - Non-positive or non-negative orthant (see [nonpositive], [nonnegative], [less_than] and
 //!   [greater_than]).
 //! - Unbounded values (see [unbounded]).
 //! - Fixed values (see [zero] and [equal_to])
 //! - Second order cone(s) (see [in_quadratic_cone], [in_quadratic_cones]): 
-//!   ```math
-//!   { x ∊ Rⁿ | x₁² ≥ ‖ x₂² + ... + xₙ² ‖², x₁ ≥ 0 }
-//!   ```
+//!   $$
+//!   \\left\\{ x \\in R^n | x_1^2 \\geq \\left\\Vert x_2^2 + \\cdots + x_n^2 \\right\\Vert^2, x₁ \\geq 0 \\right\\}
+//!   $$
 //! - Rotated second order cone(s) (see [in_rotated_quadratic_cone], [in_rotated_quadratic_cones]): 
-//!   ```math
-//!   { x ∊ Rⁿ | 1/2 x₁ x₂ ≥ ‖ x₃² + ... + xₙ² ‖², x₁, x₂ ≥ 0 }
-//!   ```
+//!   $$
+//!   \\left\\{ x \in R^n | \\frac{1}{2} x_1 x_2 \geq \\left\\Vert x_3^2 + \\cdots + x_n^2 \\right\\Vert^2, x_1, x_2 \\geq 0 \\right\\}
+//!   $$
 //!<!-- - Symmetric positive semidefinite cone(s) if dimension `n > 1` (see [in_psd_cone], [in_psd_cones]).-->
 //! - Primal power cone(s) (see [in_power_cone], [in_power_cones]): 
-//!   ```math
-//!   { x ∊ Rⁿ | x₁^(β₁) ··· xₖ^(βₖ) ≥ √(x_(k+1)² ··· xₙ²), x₀,..., xₖ ≥ 0 }
-//!   ```
+//!   $$
+//!   \\left\\{ x \\in R^n | x_2^{\\beta_1} \\cdots x_k^{\\beta_k} \\geq \\sqrt{x_{k+1}^2 \\cdots x_n^2}, x_0,\\ldots, x_k \geq 0 \\right\\}
+//!   $$
 //! - Dual power cone(s) (see [in_dual_power_cone], [in_dual_power_cones]): 
-//!   ```math
-//!   { x ∊ Rⁿ | (x₁/β₁)^(β₁) ··· (xₖ/βₖ)^(βₖ) ≥ √(x_(k+1)² ··· xₙ²), x₀,..., xₖ ≥ 0 }
-//!   ```
+//!   $$
+//!   \\left\\{ x \\in R^n | (x_1/\\beta_1)^{\\beta_1} \\cdots (x_k)^{\\beta_k} \geq \\sqrt{x_{k+1}^2 \\cdots x_n^2}, x_0,\\ldots, x_k \\geq 0 \\right\\}
+//!   $$
 //! - Primal exponential cone(s) (see [in_exponential_cone], [in_exponential_cones]): 
-//!   ```math
-//!   { x ∊ R^3 | x₁ ≥ x₁ exp(x₃/x₂), x₀, x₁ ≥ 0 }
-//!   ```
+//!   $$
+//!   \\left\\{ x \\in R^3 | x_1 \\geq x_1 e^{x_3/x_2}, x_0, x_1 \geq 0 \\right\\}
+//!   $$
 //! - Dual exponential cone(s) (see [in_dual_exponential_cone], [in_dual_exponential_cones]): 
-//!   ```math
-//!   { x ∊ R^3 | x₁ ≥ -x₃ exp(-1) exp(x₂/x₃), x₃ ≤ 0, x₁ ≥ 0 }
-//!   ```
+//!   $$
+//!   \\left\\{ x \\in R^3 | x_1 \\geq -x_3 e^{-1} e^{x_2/x_3}, x_3 \\geq 0, x_1 \\geq 0 \\right\\}
+//!   $$
 //! - Primal geometric mean cone(s) (see [in_geometric_mean_cone], [in_geometric_mean_cones]): 
-//!   ```math
-//!   { x ∊ Rⁿ | (x₁ ··· x_(n-1))^{1/(n-1)} |xₙ|, x₁,...,x_(n-1) ≥ 0}
-//!   ```
+//!   $$
+//!   \\left\\{ x \\in R^n| (x_1\\cdots x_{n-1})^{1/(n-1)} |x_n|, x_1,\\ldots,x_{n-1} \\geq 0\\right\\}
+//!   $$
 //! - Dual geometric mean cone(s) (see [in_dual_geometric_mean_cone], [in_dual_geometric_mean_cones]): 
-//!   ```math
-//!   { x ∊ Rⁿ | (n-1)(x₁ ··· x_(n-1))^{1/(n-1)} |xₙ|, x₁,...,x_(n-1) ≥ 0}
-//!   ```
+//!   $$
+//!   \\left\\{ x \\in R^n | (n-1)(x_1 \\cdots x_{n-1})^{1/(n-1)} |x_n|, x_1,\\ldots,x_{n-1} \\geq 0\\right\\}
+//!   $$
 //! - Scaled vectorized positive semidefinite cone(s) (see [in_svecpsd_cone], [in_svecpsd_cones]). For a `n` dimensional positive symmetric this
 //!   is the scaled lower triangular part of the matrix in column-major format, i.e. 
-//!   ```math
-//!   { x ∊ R^(n(n+1)/2)} | sMat(x) ∊ S₊ⁿ }
-//!   ```
+//!   $$
+//!   \\left\\{ x \\in R^{n(n+1)/2} | \\mathrm{sMat}(x) \\in S_+^n \\right\\}
+//!   $$
 //!   where
-//!   ```math
-//!             ⎡ x₁    x₂/√2       ···   xₙ/√2       ⎤
-//!   sMat(x) = ⎢ x₂/√2 xₙ+1        ···   x_(2n-1)/√2 ⎥
-//!             ⎢                   ···               ⎥
-//!             ⎣ xₙ/√2 x_(2n-1)/√2 ... x_(n(n+1)/2)² ⎦
-//!   ```
+//!   $$
+//!   \\mathrm{sMat}(x) = \\left[ \\begin{array}{cccc} 
+//!     x_1            & x_2/\\sqrt{2} & \\cdots & x_n/\\sqrt{2}      \\\\
+//!     x_2/\\sqrt{2}  & x_n+1         & \\cdots & x_{2n-1}/\\sqrt{2} \\\\
+//!                    &               & \\cdots &                    \\\\
+//!     x_n/\\sqrt{2}  & x_{2n-1}/\\sqrt{2} & \\cdots & x_{n(n+1_/2}^2
+//!   \\end{array} \\right]
+//!   $$
 //! 
 //! # Expressions and shapes
 //!
@@ -81,11 +86,10 @@
 //! When reshaping an object it is important to understand the order of the scalar elements in the
 //! multi-dimensional array. In `MosekModel` everything is in row-major order, i.e. for a
 //! two-dimensional array, where the first dimension is the height and the second is the width
-//! ```math
-//! ⎡ a b ⎤
-//! ⎣ c d ⎦
-//! ```
-//! the elements are ordered as ` [a,b,c,d]`. More generally, elements are ordered by inner
+//! $$
+//! \\left[\\begin{array}{cc} a & b \\\\ c & d \\end{array}\\right]
+//! $$
+//! the elements are ordered as `[a,b,c,d]`. More generally, elements are ordered by inner
 //! dimension first.
 //!
 //! A scalar is an n-dimensional object with `n=0`.
