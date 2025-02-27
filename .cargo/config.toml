@@ -1,6 +1,6 @@
 [build]
 
-rustdocflags = ["--html-in-header","js/mathjax.tag"] 
+#rustdocflags = ["--html-in-header","js/mathjax.tag"] 
 
 
 

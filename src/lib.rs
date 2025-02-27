@@ -163,6 +163,7 @@
 //! let xx = m.primal_solution(SolutionType::Default,&x);
 //! println!("x = {:?}", xx);
 //! ```
+#![doc = include_str!("../js/mathjax.tag")]
 
 extern crate mosek;
 extern crate itertools;
