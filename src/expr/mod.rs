@@ -1,3 +1,21 @@
+//! The expression building operations are used to generate linear expressions for constraints. The
+//! vast majority is implemented in [ExprTrait] and public functions.
+//!
+//! In `MosekCOModel`, an expression is a structure that describes an `N`-dimensional linear
+//! expression, that is a an `NDArray` of scalar linear expressions. Expressions can be directly
+//! defined, or it can be composed of other expressions. When an expression is built, only
+//! compile-time properties are checked, and when it is evaluated (for example when used to create
+//! a constraint), proper consistency checks are performed (like whether dimensions match).
+//!
+//! Mostly, expressions are statically typed, i.e. the types of all sub-expressions are parts of
+//! the expression type, for example for `let e1 : E1; let e2 : E2;` the type of sum expression
+//! `(e1+e2)` would be `AddExpr<E1,E2>`.
+//! In a few cases it may be desirable to hide the actual type. One example: We wish stack a number
+//! of expressions whose exact types and number are unknown at compile-time. We would then use the
+//! `ExprTrait::dynamic()` function to generate an expression that hides the underlying types.
+//!
+//! Note that operand expressions are passed by *value* to avoid cloning them at every level of
+//! building an expression. 
 extern crate itertools;
 
 pub mod eval;
@@ -436,9 +454,14 @@ pub trait ExprTrait<const N : usize> {
     fn square_diag(self) -> ExprSquareDiag<Self> where Self:Sized+ExprTrait<1> { ExprSquareDiag{ item : self }}
 
 
-    // Explicit functions for performing left and right multiplcation with different types
+    /// Internal. Should normally not be called directly.
+    ///
+    /// Explicit functions for performing left and right multiplcation with different types.
     fn mul_any_scalar(self, c : f64) -> ExprMulScalar<N,Self> where Self : Sized { ExprMulScalar{ item : self, lhs : c } }
 
+    /// Internal. Should normally not be called directly.
+    ///
+    /// Multiply matrix expression and constant matrix.
     fn mul_matrix_const_matrix<M>(self, m : &M) -> ExprMulRight<Self> where Self : Sized+ExprTrait<2>, M : Matrix { 
         ExprMulRight{
             item : self,
@@ -447,6 +470,10 @@ pub trait ExprTrait<const N : usize> {
             sp : m.sparsity().map(|v| v.to_vec())
         }
     }
+    
+    /// Internal. Should normally not be called directly.
+    ///
+    /// Multiply a constant matrix by a matrix expression.
     fn mul_rev_matrix_const_matrix<M>(self, m : &M) -> ExprMulLeft<Self> where Self:Sized+ExprTrait<2>, M : Matrix {
         ExprMulLeft{     
             item : self,
@@ -456,6 +483,9 @@ pub trait ExprTrait<const N : usize> {
         }
     }
 
+    /// Internal. Should normally not be called directly.
+    ///
+    /// Multiply a matrix expression by a vector constant.
     fn mul_matrix_vec(self,v : Vec<f64>) -> ExprReshapeOneRow<2,1,ExprMulRight<Self>> where Self:Sized+ExprTrait<2> {
         ExprReshapeOneRow{
             item : ExprMulRight{
@@ -466,6 +496,10 @@ pub trait ExprTrait<const N : usize> {
             dim : 0
         }
     }
+
+    /// Internal. Should normally not be called directly.
+    ///
+    /// Multiply a vector constant by a matrix expression.
     fn mul_rev_matrix_vec(self, v : Vec<f64>) -> ExprReshapeOneRow<2,1,ExprMulLeft<Self>> where Self:Sized+ExprTrait<2> {
         ExprReshapeOneRow{
             item : ExprMulLeft{
@@ -477,6 +511,8 @@ pub trait ExprTrait<const N : usize> {
         }
     }
 
+    /// Internal. Should normally not be called directly.
+    ///
     fn mul_vec_matrix<M>(self, m : &M) -> ExprReshapeOneRow<2,1,ExprMulRight<ExprReshapeOneRow<1,2,Self>>> where Self:Sized+ExprTrait<1>, M : Matrix {
         ExprReshapeOneRow{
             item : ExprMulRight{
@@ -487,6 +523,8 @@ pub trait ExprTrait<const N : usize> {
             dim : 0
         }
     }
+    /// Internal. Should normally not be called directly.
+    ///
     fn mul_rev_vec_matrix<M>(self, m : &M) -> ExprReshapeOneRow<2,1,ExprMulRight<ExprReshapeOneRow<1,2,Self>>> where Self:Sized+ExprTrait<1>, M : Matrix {
         ExprReshapeOneRow{
             item : ExprMulRight{
@@ -497,6 +535,8 @@ pub trait ExprTrait<const N : usize> {
             dim : 0
         }
     }
+    /// Internal. Should normally not be called directly.
+    ///
     fn mul_scalar_matrix<M>(self, m : &M) -> ExprReshape<1, 2, ExprMulElm<1, ExprRepeat<1, ExprReshape<0, 1, Self>>>> where Self : Sized+ExprTrait<0>, M : Matrix { 
         ExprReshape{
             item : ExprMulElm{
@@ -598,7 +638,7 @@ impl<E> ModelExprIndex<E> for usize where E : ExprTrait<1>+Clone {
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////
 // Expression objects
-/// Expr defines a literal expression with no sub-expressions
+/// `Expr` defines a literal expression with no sub-expressions
 #[derive(Clone)]
 pub struct Expr<const N : usize> {
     shape : [usize; N],
@@ -876,6 +916,10 @@ pub fn zeros<const N : usize>(shape : &[usize;N]) -> Expr<N> {
 }
 
 /// A constant expression of the given shape where each element is fixed to `value`.
+///
+/// # Arguments
+/// - `shape` Share of the expression
+/// - `value` Constant value of all elements in the expression.
 pub fn const_expr<const N : usize>(shape : &[usize;N], value : f64) -> Expr<N> {
     let nelm : usize = shape.iter().product();
     Expr{
@@ -888,11 +932,14 @@ pub fn const_expr<const N : usize>(shape : &[usize;N], value : f64) -> Expr<N> {
 }
 
 /// A constant expression of the given shape where each element is fixed to 1.
+///
+/// # Arguments
+/// - `shape` Shape of the expression.
 pub fn ones<const N : usize>(shape : &[usize;N]) -> Expr<N> {
     const_expr(shape,1.0)
 }
 
-/// A constant square expression if the given size, with `value` on the diagonal and zeros
+/// A constant square expression of the given size, with `value` on the diagonal and zeros
 /// everywhere else.
 pub fn const_diag(n : usize,value:f64) -> Expr<2> {
     Expr{
@@ -910,6 +957,8 @@ pub fn eye(n : usize) -> Expr<2> {
     const_diag(n,1.0)
 }
 
+
+/// A constant expression with the given values.
 pub fn constants<const N : usize>(shape : &[usize;N], values : &[f64]) -> Expr<N> {
     if shape.iter().product::<usize>() != values.len() {
         panic!("Data and shape do not match");
@@ -923,6 +972,7 @@ pub fn constants<const N : usize>(shape : &[usize;N], values : &[f64]) -> Expr<N
     }
 }
 
+/// An empty expression (all zeros) of the given shape.
 pub fn nil<const N : usize>(shape : &[usize; N]) -> ExprNil<N> {
     if shape.len() > 0 && shape.iter().product::<usize>() != 0 {
         panic!("Shape must have at least one zero-dimension");
@@ -1376,6 +1426,43 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
     }
 }
 
+
+/// Element-wise summing of a vector of expressions.
+///
+/// # Arguments
+/// - `exprs` Vector of expressions. The expression types must be exactly the same. To pass a list
+///   of heterogenous expressions, use dynamic expressions.
+/// # Example
+/// Sum a dynamic list of variables
+/// ```rust 
+/// use mosekcomodel::*;
+///
+/// let mut model = Model::new(None);
+/// let x = model.variable(None, 2);
+/// let y = model.variable(None, 2);
+/// let z = model.variable(None, 3);
+/// 
+/// model.constraint(None, expr::sum_vec(vec![x,y,z]),equal_to(vec![1.0,2.0]));
+/// ```
+///
+/// # Example
+/// Sum a heterogenous vector:
+/// ```rust
+/// use mosekcomodel::*;
+///
+/// let mut model = Model::new(None);
+/// let x = model.variable(None, 2);
+/// let y = model.variable(None, 4);
+/// let z = model.variable(None, 3);
+///
+/// let v : Vec<'static,ExprDynamic> = 
+///     vec![ x.dynamic(), 
+///           y.clone().index([0..2]).sub(y.clone().index([2..4])).dynamic(),
+///           z.dynamic() ];
+/// model.constraint(None, 
+///                  expr::sum_vec(v),
+///                  equal_to(vec![1.0,2.0]));
+/// ```
 pub fn sum_vec<const N : usize,E>(exprs : Vec<E>) -> ExprSumVec<N,E> where E : ExprTrait<N> {
     if exprs.is_empty() {
         panic!("Empty operand list");
