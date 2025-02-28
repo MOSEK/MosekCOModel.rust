@@ -10,6 +10,9 @@ relatively thin interface in top of low-level [MOSEK](https://mosek.com)
 optimizer C API, where `MosekModel` is an attempt to create an interface that
 is more like the MOSEK Fusion modelling interface.
 
+Published crates: https://crates.io/crates/mosekcomodel
+
+Documentation for latest crates: https://docs.rs/mosekcomodel/latest/mosekcomodel/
 
 # Design principle
 `MosekModel` allows building a model of the form
