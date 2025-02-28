@@ -1442,7 +1442,7 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
 /// let y = model.variable(None, 2);
 /// let z = model.variable(None, 3);
 /// 
-/// model.constraint(None, expr::sum_vec(vec![x,y,z]),equal_to(vec![1.0,2.0]));
+/// model.constraint(None, &expr::sum_vec(vec![x,y,z]),equal_to(vec![1.0,2.0]));
 /// ```
 ///
 /// # Example
@@ -1460,7 +1460,7 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
 ///           y.clone().index([0..2]).sub(y.clone().index([2..4])).dynamic(),
 ///           z.dynamic() ];
 /// model.constraint(None, 
-///                  expr::sum_vec(v),
+///                  &expr::sum_vec(v),
 ///                  equal_to(vec![1.0,2.0]));
 /// ```
 pub fn sum_vec<const N : usize,E>(exprs : Vec<E>) -> ExprSumVec<N,E> where E : ExprTrait<N> {
