@@ -1,8 +1,14 @@
 use itertools::izip;
 
 /// The `WorkStack` struct defines working areas for evaluating expressions. An evaluated
-/// expression has a specific format on the stacks. A stack can contain multiple expressions.
+/// expression has a specific format on the stacks. A stack can contain multiple expressions that
+/// can be parsed top-down. 
 ///
+/// Internally, the workstack defines two stacks: An `usize` stack and a `f64` stack. Linear
+/// expressions are stored on the stack in a format that allows traversing expressions top-down.
+/// The stacks are resized as necessary when new expressions are allocated.
+///
+/// 
 /// Structure of a computed expression on the workstack:
 /// ```text
 /// stack bottom <---> top 
@@ -16,8 +22,9 @@ use itertools::izip;
 /// sf64:   [ acof[nnz] ]
 /// ```
 ///
-/// The top 3 values on the integer stack, `(nelm,nnz,nd)`, define the exact size on the stack of the
-/// top expression, so the offset of the next expression can be computed from these 3 values. 
+/// The top 3 values on the integer stack, `(nelm,nnz,nd)`, define the exact size of the expression
+/// on the stack of the top expression, so the offset of the next expression can be computed from
+/// these 3 values. These are written when the expression is allocated and cannot then be modified.
 pub struct WorkStack {
     /// Stack of unsigned integers
     susize : Vec<usize>,
@@ -99,16 +106,16 @@ impl WorkStack {
     /// Allocate a new expression on the stack.
     ///
     /// # Arguments
-    /// - `shape` - Shape of the expression
-    /// - `nnz` - Total number of non-zeros
-    /// - `nelm` - Number of elements. This must not be greater than the size of `shape`. If it
+    /// - `shape`  Shape of the expression
+    /// - `nnz`  Total number of non-zeros
+    /// - `nelm`  Number of elements. This must not be greater than the size of `shape`. If it
     ///   equals the size of `shape`, the returned `sp` is None
     ///
     /// # Returns
-    /// - `ptr` - Ptr array of size `nelm+1`
-    /// - `sp` - `None` for a dense expression, otherwise `Some(a)` with an array of size `nelm`.
-    /// - `subj` - Subscripts array of size `nnz`
-    /// - `cof` - Coefficients array of size `nnz`
+    /// - `ptr`  Ptr array of size `nelm+1`
+    /// - `sp`  `None` for a dense expression, otherwise `Some(a)` with an array of size `nelm`.
+    /// - `subj`  Subscripts array of size `nnz`
+    /// - `cof`  Coefficients array of size `nnz`
     /// Returns (ptr,sp,subj,cof)
     ///
     pub fn alloc_expr(& mut self, shape : &[usize], nnz : usize, nelm : usize) -> (& mut [usize], Option<& mut [usize]>,& mut [usize], & mut [f64]) {

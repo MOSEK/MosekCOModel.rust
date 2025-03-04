@@ -197,7 +197,7 @@ pub use expr::{ExprTrait,
                IntoExpr,
                Expr,
                Dot,
-               stack,hstack,vstack,stackvec};
+               stack,hstack,vstack,stackvec,sumvec};
 pub use variable::Variable;
 pub use domain::{LinearDomain,
                  ConicDomain,

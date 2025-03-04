@@ -142,7 +142,7 @@ pub trait ExprTrait<const N : usize> {
     /// ```
     /// 
     /// # Note
-    /// The construction may seem a  but backward, but it s because we need to explicitly
+    /// The construction may seem a bit backward, but it is because we need to explicitly
     /// specify the dimensionality of the output. Rust does not support aritmetic with generic
     /// constants.
     fn sum_on<const K : usize>(self, axes : &[usize; K]) -> ExprReduceShape<N,K,ExprSumLastDims<N,ExprPermuteAxes<N,Self>>> where Self:Sized { 
@@ -1289,11 +1289,13 @@ pub struct ExprSumVec<const N : usize,E> where E : ExprTrait<N>
     exprs : Vec<E>
 }
 
-#[allow(unused)]
-impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
+impl<const N : usize, E> ExprTrait<N> for ExprSumVec<N,E> where E : ExprTrait<N> {
     fn eval(&self, rs : & mut WorkStack,ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
         let n = self.exprs.len();
-        if n == 1 {
+        if n == 0 {
+            panic!("Cannot sum 0 expressions");
+        }
+        else if n == 1 {
             self.exprs[0].eval(rs,ws,xs)
         }
         else {
@@ -1303,8 +1305,8 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
             let vals = ws.pop_exprs(n);
 
             // check shapes
-            if vals.iter().zip(vals[1..].iter()).any(|(s0,s1)| *s0 != *s1) {
-                panic!("Mismarching operand shapes");
+            if let Some(((s0,_,_,_,_),(s1,_,_,_,_))) = vals.iter().zip(vals[1..].iter()).find(|((s0,_,_,_,_),(s1,_,_,_,_))| *s0 != *s1) {
+                panic!("Mismarching operand shapes {:?} vs. {:?}", s0,s1);
             }
 
             let is_dense = vals.iter().any(|vv| vv.2.is_none() );
@@ -1323,7 +1325,8 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
                         for (&pb,&pe,rp) in izip!(ptr.iter(),ptr[1..].iter(),rptr.iter_mut()) { *rp += pe-pb; }
                     }
                 }
-                rptr.iter_mut().fold(0usize, |c,rp| { *rp += c; *rp });
+                rptr.iter_mut().fold(0usize, |c,rp| { let tmp = *rp; *rp = c; tmp + c });
+                println!("rptr = {:?}",rptr);
                 
                 for (_,ptr,sp,subj,cof) in vals.iter() {
                     if let Some(sp) = sp { 
@@ -1335,6 +1338,7 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
                         }
                     }
                     else {
+                        println!("ptr = {:?}, rptr = {:?}",ptr,rptr);
                         for (&pb,&pe,rp) in izip!(ptr.iter(),ptr[1..].iter(),rptr.iter_mut()) {
                             rsubj[*rp..*rp+pe-pb].copy_from_slice(&subj[pb..pe]);
                             rcof[*rp..*rp+pe-pb].copy_from_slice(&cof[pb..pe]);
@@ -1440,9 +1444,9 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
 /// let mut model = Model::new(None);
 /// let x = model.variable(None, 2);
 /// let y = model.variable(None, 2);
-/// let z = model.variable(None, 3);
+/// let z = model.variable(None, 2);
 /// 
-/// model.constraint(None, &expr::sum_vec(vec![x,y,z]),equal_to(vec![1.0,2.0]));
+/// model.constraint(None, &expr::sumvec(vec![x,y,z]),equal_to(vec![1.0,2.0]));
 /// ```
 ///
 /// # Example
@@ -1453,17 +1457,17 @@ impl<const N : usize, E> ExprSumVec<N,E> where E : ExprTrait<N> {
 /// let mut model = Model::new(None);
 /// let x = model.variable(None, 2);
 /// let y = model.variable(None, 4);
-/// let z = model.variable(None, 3);
+/// let z = model.variable(None, 2);
 ///
-/// let v : Vec<'static,ExprDynamic> = 
+/// let v : Vec<expr::ExprDynamic<'static,1>> = 
 ///     vec![ x.dynamic(), 
 ///           y.clone().index([0..2]).sub(y.clone().index([2..4])).dynamic(),
 ///           z.dynamic() ];
 /// model.constraint(None, 
-///                  &expr::sum_vec(v),
+///                  &expr::sumvec(v),
 ///                  equal_to(vec![1.0,2.0]));
 /// ```
-pub fn sum_vec<const N : usize,E>(exprs : Vec<E>) -> ExprSumVec<N,E> where E : ExprTrait<N> {
+pub fn sumvec<const N : usize,E>(exprs : Vec<E>) -> ExprSumVec<N,E> where E : ExprTrait<N> {
     if exprs.is_empty() {
         panic!("Empty operand list");
     }

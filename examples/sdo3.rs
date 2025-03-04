@@ -19,7 +19,7 @@
 
 extern crate mosekcomodel;
 extern crate rand;
-use expr::{nil, sum_vec, ExprDot};
+use expr::nil;
 use mosekcomodel::*;
 
 
