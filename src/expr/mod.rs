@@ -145,6 +145,10 @@ pub trait ExprTrait<const N : usize> {
     /// The construction may seem a bit backward, but it is because we need to explicitly
     /// specify the dimensionality of the output. Rust does not support aritmetic with generic
     /// constants.
+    ///
+    /// # TODO
+    /// If at some point Rust allows compile-time computations with const-generics, and possibly
+    /// compile-time constraints on them, we can make this a bit more ergonomic.
     fn sum_on<const K : usize>(self, axes : &[usize; K]) -> ExprReduceShape<N,K,ExprSumLastDims<N,ExprPermuteAxes<N,Self>>> where Self:Sized { 
         if K > N {
             panic!("Invalid axis specification")
@@ -260,25 +264,30 @@ pub trait ExprTrait<const N : usize> {
     //TODO: Generalized dot_rows that perform summing in an arbitrary dimension.
 
     /// Stack vertically, i.e. in first dimension. The two operands have the same number of
-    /// dimensions, and must have the same shapes except in the first dimension.
+    /// dimensions, and must have the same shapes except in the first dimension. `N` must be
+    /// at least 1.
     ///
     /// Specialized case of [ExprTrait::stack].
     ///
     /// # Arguments
-    /// - `other` The second operand.
+    /// - `other` The second operand. This must have the same shape as `self` except in the first
+    ///   dimension.
     fn vstack<E>(self,other : E) -> ExprStack<N,Self,E::Result>  where Self:Sized, E:IntoExpr<N> { ExprStack::new(self,other.into(),0) }
 
     /// Stack horizontally, i.e. stack in second dimension. The two operands have the same number of
-    /// dimensions, and must have the same shapes except in the second dimension.
+    /// dimensions, and must have the same shapes except in the second dimension. `N` must be at
+    /// least 2.
     ///
     /// Specialized case of [ExprTrait::stack].
     ///
     /// # Arguments
-    /// - `other` The second operand.
+    /// - `other` The second operand. This must have the same shape as `self` except in second
+    ///   dimension.
     fn hstack<E>(self,other : E) -> ExprStack<N,Self,E::Result>  where Self:Sized,E:IntoExpr<N> { ExprStack::new(self,other.into(),1) }
 
     /// Stack in arbitrary dimension. The two operands have the same number of
-    /// dimensions, and must have the same shapes except in dimension `dim`.
+    /// dimensions, and must have the same shapes except in dimension `dim`. `N` must be larger
+    /// than or equal to `dim`
     ///
     /// Often we wish to stack multiple expression. If the list of expressions is entirely
     /// determined at compile-time, we can simply stack using `e0.stack(e2).stack(e3)...`, but in
@@ -320,6 +329,13 @@ pub trait ExprTrait<const N : usize> {
     /// dynstack(10);
     /// ```
     ///
+    /// # TODO
+    /// Consider if dim should be a compile-time value. When Rust improves support for const
+    /// generics this may make sense, especially if it means we can impose a compile-time
+    /// constraint `dim<=N`.
+    ///
+    /// Something else we cannot currently do is to stack in dimension `N`, producing an expression
+    /// of dimension `N+1`.
     fn stack<E>(self,dim : usize, other : E) -> ExprStack<N,Self,E::Result> where Self:Sized, E:IntoExpr<N>{ ExprStack::new(self,other.into(),dim) }
 
     /// Repeat a fixed number of times in the given dimension. 
@@ -330,7 +346,7 @@ pub trait ExprTrait<const N : usize> {
     fn repeat(self,dim : usize, num : usize) -> ExprRepeat<N,Self> where Self:Sized { ExprRepeat{ expr : self, dim, num } }
 
     /// Indexing or slicing an expression. This is not compatible with `std::ops::Index` since we
-    /// need to return a new object rather than a reference to an object. 
+    /// need to return a new object rather than a reference to an object.
     ///
     /// Create an expression representing a slice of this expression. The exact result depends on
     /// the type of the indexer, which can be an 

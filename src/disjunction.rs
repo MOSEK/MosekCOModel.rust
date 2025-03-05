@@ -1,5 +1,26 @@
-use super::*;
+//! Structures and functions for formulating disjunctive constraints.
+//!
+//! A disjunctive constraint is a constraint of the form 
+//! $$
+//!   A_1x+b_1\\in K_1\\mathbb{ or }\\ldots A_nx+b_n\\in K_n
+//! $$
+//! Each \\(A_ix+b_i\\) is called a _term_ (see [term]). A term can be composed if multiple _clauses_:
+//! $$
+//!   \\left[
+//!     \\begin{array}{c}
+//!       A_{i,1}x+b_{i,1}\\\\
+//!       \\vdots \\\\
+//!       A_{i,m_i}x+b{i,m_i}
+//!     \\end{array}
+//!   \\right]x
+//!   +\\left[\\begin{array}{c}b_{i,1}\\\\ \\vdots \\\\ b_{i,m_i} \\end{array}\\right]
+//!   \\in 
+//!   K_i = K_{i,1}\\times\\cdots K_{i,m_i}
+//! $$
+//!
+#![doc = include_str!("../js/mathjax.tag")]
 
+use super::*;
 
 /// Trait that can be converted to a conic constraint.
 pub trait ConicDomainTrait<const N : usize>  {
@@ -149,9 +170,18 @@ impl DisjunctionTrait for DisjunctionList {
     }
 }
 
+/// Construct single clause term for a disjunctive constraint.
+///
+/// This constructs a single clause term of the form 
+/// $$
+///    Ax+b\\in K
+/// $$
+#[doc = include_str!("../js/mathjax.tag")]
 pub fn term<const N : usize, E,D>(expr : E, dom : D) -> Clause<N,E,D> where E : ExprTrait<N>, D : ConicDomainTrait<N> {
     Clause{ expr, dom}
 }
+
+///  
 pub fn clauses() -> ClauseList {
     ClauseList{ clauses : Vec::new() }
 }
