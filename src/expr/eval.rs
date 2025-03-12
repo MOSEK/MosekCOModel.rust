@@ -1635,7 +1635,7 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
                     *offset = ofsi+shape.iter().product::<usize>();
                     (*elmptr,*nzptr,*offset)
                 });
-            println!("offsets = {:?}",offsets);
+            //println!("offsets = {:?}",offsets);
             
             rptr[0] = 0;
             izip!(
