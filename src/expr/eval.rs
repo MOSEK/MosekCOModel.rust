@@ -649,8 +649,11 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
     let nd = shape.len();
     let nnz = *ptr.last().unwrap();
     //let nelem = ptr.len()-1;
-    if nd != 2 || shape[1] != mshape.1 {
-        panic!("Mismatching operand shapes for M x E': M:{:?} x E:{:?}",mshape,shape);
+    if nd != 2 {
+        panic!("Mismatching operand dimensionality");
+    }
+    else if shape[1] != mshape.1 {
+        return Err(ExprEvalError::new(file!(),line!(),format!("Mismatching operand shapes for M x E': M:{:?} x E:{:?}",mshape,shape)))
     }
     let shape  = [shape[0],shape[1]];
     let rshape = [mshape.0,shape[0]];

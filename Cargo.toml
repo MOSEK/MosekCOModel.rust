@@ -34,3 +34,6 @@ harness = false
 name = "eval"
 crate-type = ["cdylib"]
 
+[[bin]]
+name = "compare"
+path = "examples/compare/compare.rs"
