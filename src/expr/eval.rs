@@ -500,12 +500,13 @@ pub fn add(n  : usize,
     // check that shapes match
     let exprs = ws.pop_exprs(n);
 
-    exprs.iter().map(|(shape,_,_,_,_)| shape)
-        .zip(exprs[1..].iter().map(|(shape,_,_,_,_)| shape))
-        .find(|(shape1,shape2)| shape1 != shape2)
-        .iter().for_each(|(shape1,shape2)|
-            panic!("Mismatching operand shapes: {:?} and {:?}",shape1,shape2)
-        );
+    if let Some((shape1,shape2)) = 
+        exprs.iter().map(|(shape,_,_,_,_)| shape)
+            .zip(exprs[1..].iter().map(|(shape,_,_,_,_)| shape))
+            .find(|(shape1,shape2)| shape1 != shape2)
+    {
+        return Err(ExprEvalError::new(file!(),line!(),format!("Mismatching operand shapes: {:?} and {:?}",shape1,shape2)));
+    }
 
     let (shape,_,_,_,_) = exprs.first().unwrap();
 
@@ -562,8 +563,8 @@ pub fn add(n  : usize,
         // revert rptr
         let _ = rptr.iter_mut().fold(0,|prevp,p| { let nextp = *p; *p = prevp; nextp } );
     }
-    else {
-        let nelm_bound = if has_dense { shape.iter().product() } else { shape.iter().product::<usize>().max(exprs.iter().map(|(_,ptr,_,_,_)| ptr.len()-1).sum()) };
+    else { // fully sparse
+        let nelm_bound = shape.iter().product::<usize>().min(exprs.iter().map(|(_,ptr,_,_,_)| ptr.len()-1).sum());
         let (uslice,_) = xs.alloc(nelm_bound*5,0);
         let (hdata,uslice)  = uslice.split_at_mut(nelm_bound);
         let (hindex,uslice) = uslice.split_at_mut(nelm_bound);
@@ -571,8 +572,7 @@ pub fn add(n  : usize,
         let (hbucket,hperm) = uslice.split_at_mut(nelm_bound);
         hdata.fill(0);
 
-
-        let (rptr,rsp,rsubj,rcof) = {
+        let (rptr,mut rsp,rsubj,rcof) = {
             // We use a hash map to count number of elements and nonzeros
             let mut h = IndexHashMap::new(hdata,hindex,hnext,hbucket,0);
 
@@ -593,16 +593,13 @@ pub fn add(n  : usize,
         perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
         perm.sort_by_key(|&i| unsafe{* hindex.get_unchecked(i) });
         // copy data to solution
-        if let Some(rsp) = rsp {
-            //println!("len rptr: {}, rsp: {}, perm: {}",rptr.len(),rsp.len(),perm.len());
-            for (rp,ri,&si,&sd) in izip!(rptr[1..].iter_mut(),
-                                         rsp.iter_mut(),
-                                         hindex.permute_by(perm),
-                                         hdata.permute_by(perm)) {
-                *ri = si;
-                *rp = sd;
-            }
+        if let Some(rsp) = & mut rsp {
+            rsp.iter_mut().for_each(|i| *i = 0);
+            rsp.iter_mut().zip(hindex.permute_by(perm)).for_each(|(ri,&si)| *ri = si );
+            rptr[1..].iter_mut().zip(hdata.permute_by(perm)).for_each(|(rp,&sd)| *rp = sd);
             hindex[..rnelm].copy_from_slice(rsp);
+            //println!("expr::add rshape = {:?}, rsp = {:?}",shape,rsp);
+            //println!("hindex = {:?}",hindex.permute_by(perm).cloned().collect::<Vec<usize>>());
         }
         else {
             for (rp,&sd) in izip!(rptr[1..].iter_mut(), hdata.permute_by(perm)) {

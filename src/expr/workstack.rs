@@ -192,7 +192,6 @@ impl WorkStack {
         let ubase = utop - totalusize;
         let fbase = ftop - totalfsize;
 
-
         let uslice : &[usize] = & self.susize[ubase..utop];
         let cof    : &[f64]   = & self.sf64[fbase..ftop];
 
@@ -434,29 +433,37 @@ impl WorkStack {
         let shape = &self.susize[self.utop-3-nd..self.utop-3];
         let totalsize : usize = shape.iter().product();
         
-        let issparse = totalsize > nelm;
-
-        if issparse {
-            if self.utop < 3+nd+nnz+nelm*2+1 { return Err("Invalid utop".to_string()); }
-        } 
-        else if self.utop < 3+nd+nnz+nelm+1 { return Err("Invalid utop".to_string()); } 
-
-        if self.ftop < nnz { return Err("Invalid ftop".to_string()); } 
-        //let ubase = self.utop - if totalsize > nelm { 3+2*nelm+1+nnz+nd } else { 3+nelm+1+nnz+nd };
-        //let fbase = self.ftop-nnz;
-
-        //let subj = &self.susize[0..nnz];
-        let ptr = &self.susize[self.utop-3-nd-nelm-1..self.utop-3-nd];
+        let totalusize = nd+nelm+1+nnz + (if totalsize > nelm { nelm } else { 0 });
+        let totalfsize = nnz;
         
-        if *ptr.last().unwrap() > nnz { return Err("Invalid ptr structure".to_string()); }
+        if self.utop < 3+totalusize { return Err("Invalid utop".to_string()); }
+        if self.ftop < totalfsize { return Err("Invalid ftop".to_string()); }
+
+        let ubase = self.utop - 3 - totalusize;
+        let fbase = self.ftop - totalfsize;
+
+        let uslice : &[usize] = & self.susize[ubase..self.utop];
+        let cof    : &[f64]   = & self.sf64[fbase..self.ftop];
+
+        let subj_base = 0;
+        let sp_base = subj_base+nnz;
+        let ptr_base = if nelm < totalsize { sp_base + nelm } else { sp_base };
+        let shape_base = ptr_base + nelm+1;
+
+        let subj  = &uslice[subj_base..subj_base+nnz];
+        let sp    = if totalsize > nelm { Some(&uslice[sp_base..sp_base+nelm]) } else { None };
+        let ptr   = &uslice[ptr_base..ptr_base+nelm+1];
+        let shape = &uslice[shape_base..shape_base+nd];
+        
+        if *ptr.last().unwrap() > nnz { return Err("Ptr structure does not match nnz".to_string()); }
         if ptr.iter().zip(ptr[1..].iter()).any(|(a,b)| a > b) {
-            return Err("Invalid ptr structure".to_string());
+            return Err("Ptr array is not increasing".to_string());
         }
 
-        if issparse {
-            let sp = &self.susize[nnz..nnz+nelm];
-            if sp.iter().zip(sp[1..].iter()).any(|(a,b)| a >= b) {
-                return Err("Sparsity pattern is unsorted or contains duplicates".to_string());
+        if let Some(sp) = sp {
+            if let Some((a,b)) = sp.iter().zip(sp[1..].iter()).find(|(a,b)| a >= b) {
+                println!("sp : {:?}",sp);
+                return Err(format!("Sparsity pattern is unsorted or contains duplicates: {} >= {}",a,b));
             }
         }
 
