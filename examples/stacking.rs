@@ -126,10 +126,32 @@ fn mul3() {
     let t0 = time::Instant::now();
 
     for _ in 0..REP {
+        x.clone().add(x.clone().transpose()).mul(m.clone()).eval(&mut rs, &mut ws, &mut xs).unwrap();
+    }
+    
+    println!("{:<30}: Avg time: {:.2} sec", "Mul dense X * sparse M",t0.elapsed().as_secs_f64()/REP as f64);
+}
+
+fn mul4() {
+    const N : usize = 400;
+    let mut model = Model::new(None);
+
+    let x = model.variable(None,unbounded().with_shape(&[N,N]));
+    let y = model.variable(None,unbounded().with_shape(&[N,N]).with_sparsity_indexes((0..N*N).step_by(7).collect()));
+
+    let m = matrix::sparse([N,N], (0..N*N).step_by(11).map(|i| [i/N,i%N]).collect::<Vec<[usize;2]>>(), (0..N*N).step_by(11).map(|i| (i % 100) as f64 / 50.0).collect::<Vec<f64>>());
+
+    let mut ws = WorkStack::new(1024);
+    let mut rs = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    let t0 = time::Instant::now();
+
+    for _ in 0..REP {
         y.clone().add(y.clone().transpose()).mul(m.clone()).eval(&mut rs, &mut ws, &mut xs).unwrap();
     }
     
-    println!("{:<30}: Avg time: {:.2} sec", "Mul sparse X * dense M",t0.elapsed().as_secs_f64()/REP as f64);
+    println!("{:<30}: Avg time: {:.2} sec", "Mul sparse X * sparse M",t0.elapsed().as_secs_f64()/REP as f64);
 }
 
 
@@ -139,8 +161,9 @@ pub fn main() {
     //stacking2();
     //stacking3();
     //mul1();
-    mul2();
+    //mul2();
     mul3();
+    mul4();
 }
 
 
