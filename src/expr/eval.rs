@@ -1176,14 +1176,14 @@ pub fn mul_right_dense(mdata : &[f64],
     Ok(())
 } // mul_right_dense
 
-
+/// Implements `M * E`
 pub fn mul_left_sparse(mheight : usize,
-                              mwidth : usize,
-                              msparsity : &[usize],
-                              mdata : &[f64],
-                              rs : & mut WorkStack,
-                              ws : & mut WorkStack,
-                              xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+                       mwidth : usize,
+                       msparsity : &[usize],
+                       mdata : &[f64],
+                       rs : & mut WorkStack,
+                       ws : & mut WorkStack,
+                       xs : & mut WorkStack) -> Result<(),ExprEvalError> {
 
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nd = shape.len();
@@ -1347,14 +1347,14 @@ pub fn mul_left_sparse(mheight : usize,
     Ok(())
 }
 
-// expr x matrix
+/// Implements `E * M` for sparse matrix
 pub fn mul_right_sparse(mheight : usize,
-                               mwidth : usize,
-                               msparsity : &[usize],
-                               mdata : &[f64],
-                               rs : & mut WorkStack,
-                               ws : & mut WorkStack,
-                               xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+                        mwidth : usize,
+                        msparsity : &[usize],
+                        mdata : &[f64],
+                        rs : & mut WorkStack,
+                        ws : & mut WorkStack,
+                        xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     if shape.len() != 1 && shape.len() != 2 {
         return Err(ExprEvalError::new(file!(),line!(),"Invalid operand shapes: Expr is not 1- or 2-dimensional"));
@@ -1367,9 +1367,8 @@ pub fn mul_right_sparse(mheight : usize,
     if ewidth != mheight {
         panic!("Incompatible operand shapes: {:?} * {:?}",shape,&[mheight,mwidth]);
     }
-    //println!("Operand shapes: {:?} * {:?}",shape,&[mheight,mwidth]);
 
-    // tranpose matrix
+    //---------------- transpose matrix
     let (us,mcof) = xs.alloc(eheight+1 // erowptr
                              +(mwidth+1)*2 // mptr
                              + mwidth // msubj
@@ -1398,7 +1397,9 @@ pub fn mul_right_sparse(mheight : usize,
     let mnumnzcol = mcolptr1[..mwidth].iter().filter(|&&n| n > 0).count();
     let mcolptr = &mcolptr[..mnumnzcol+1];
     let msubj   = &msubj[..mnumnzcol];
-
+    //------------------------------------
+    //
+    //
     if let Some(sp) = sp {
         let mut rnelm    = 0;
         let mut rnnz     = 0;

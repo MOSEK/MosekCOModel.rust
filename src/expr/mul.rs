@@ -8,7 +8,16 @@ pub struct ExprMulScalar<const N : usize, E:ExprTrait<N>> {
     pub(super) lhs  : f64
 }
 
-
+/// Represents a multiplication of the form
+/// $$
+/// M\\in\\mathbb{R}^{(m,n)},\\ E(x) \\rightarrow \\mathbb{R}^{(p,n)}:\\ M\\times E(x)^T
+/// \\rightarrow \mathbb{R}^{(m,p)}
+/// $$
+///
+/// This combined with transpose can be used to implement both left and right multiplication, but
+/// it comes at a cost. For \\(E \\times M\\) computed as \\((M^T\\times E^T)^T\\), we transpose
+/// the result, which will often (except for very sparse M) be significantly larger than computing
+/// the straight forward product.
 pub struct ExprMulMEt<E:ExprTrait<2>> {
     pub(super) item : E,
     pub(super) shape : [usize;2],
@@ -182,18 +191,22 @@ impl<E, M> ExprRightMultipliable<2,E> for M
     type Result = ExprPermuteAxes<2,ExprMulMEt<E>>;
     fn mul_right(self,rhs : E) -> Self::Result {
         let (shape,sp,data) = self.transpose().dissolve();
-        ExprPermuteAxes{
-            item : ExprMulMEt{
-                item:rhs,
-                shape,
-                data,
-                sp},
-            perm : [1,0] }
-        //ExprMulRight{
-        //    item : rhs,
-        //    shape,
-        //    data,
-        //    sp}
+
+        // for f(M,E) = M * E'
+        // E * M = (M' * E')' = f(M',E)'
+
+        ExprMulRight{
+            item : rhs,
+            shape : shape,
+
+        }
+        //ExprPermuteAxes{
+        //    item : ExprMulMEt{
+        //        item:rhs,
+        //        shape,
+        //        data,
+        //        sp},
+        //    perm : [1,0] }
     }
 }
 

@@ -268,6 +268,7 @@ pub fn main() {
 
 
     let mut args = std::env::args();
+    println!("args = {:?}",std::env::args().collect::<Vec<String>>());
     _  = args.next(); // pop executable name
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -329,17 +330,17 @@ pub fn main() {
     }
 
     let tabledata = vec![
-        ("Stacking, mixed",        stacking1(),rundata.get("stacking1")),
-        ("Stacking, dense",        stacking2(),rundata.get("stacking2")),
-        ("Stacking, sparse",       stacking3(),rundata.get("stacking3")),
-        ("Mul dense X * dense M",  mul1(),     rundata.get("mul1")),
+        //("Stacking, mixed",        stacking1(),rundata.get("stacking1")),
+        //("Stacking, dense",        stacking2(),rundata.get("stacking2")),
+        //("Stacking, sparse",       stacking3(),rundata.get("stacking3")),
+        //("Mul dense X * dense M",  mul1(),     rundata.get("mul1")),
         ("Mul sparse X * dense M", mul2(),     rundata.get("mul2")),
-        ("Mul dense X * sparse M", mul3(),     rundata.get("mul3")),
-        ("Mul sparse X * sparse M",mul4(),     rundata.get("mul4")),
-        ("Mul dense M * dense X",  mul5(),     rundata.get("mul5")),
-        ("Mul dense M * sparse X", mul6(),     rundata.get("mul6")),
-        ("Mul sparse M * dense X", mul7(),     rundata.get("mul7")),
-        ("Mul sparse M * sparse X",mul8(),     rundata.get("mul8")),
+        //("Mul dense X * sparse M", mul3(),     rundata.get("mul3")),
+        //("Mul sparse X * sparse M",mul4(),     rundata.get("mul4")),
+        //("Mul dense M * dense X",  mul5(),     rundata.get("mul5")),
+        //("Mul dense M * sparse X", mul6(),     rundata.get("mul6")),
+        //("Mul sparse M * dense X", mul7(),     rundata.get("mul7")),
+        //("Mul sparse M * sparse X",mul8(),     rundata.get("mul8")),
     ];
 
     let width = tabledata.iter().map(|(n,_,_)| n.len()).max().unwrap();
