@@ -4,18 +4,18 @@
 //! MOSEK Java Fusion.
 //! 
 //! Date: March 13, 2025
-//! |                         | Rust  | Java  |
-//! | Stacking, mixed         |  0.19 |  0.48 |
-//! | Stacking, dense         |  0.09 |  0.18 |
-//! | Stacking, sparse        |  0.02 |  0.06 |
-//! | Mul dense X * dense M   |  0.20 |  0.26 |
-//! | Mul sparse X * dense M  |  0.31 |  0.07 |
-//! | Mul dense X * sparse M  |  0.18 |  0.05 |
-//! | Mul sparse X * sparse M |  0.29 |  0.13 |
-//! | Mul dense M * dense X   |  0.14 |  0.16 |
-//! | Mul dense M * sparse X  |  0.24 |  0.05 |
-//! | Mul sparse M * dense X  |  0.15 |  0.04 |
-//! | Mul sparse M * sparse X |  0.28 |  0.12 |
+//!|                         | Rust  | Java  |
+//!| Stacking, mixed         |  0.19 |  0.55 |
+//!| Stacking, dense         |  0.09 |  0.20 |
+//!| Stacking, sparse        |  0.02 |  0.06 |
+//!| Mul dense X * dense M   |  0.14 |  0.26 |
+//!| Mul sparse X * dense M  |  0.17 |  0.07 |
+//!| Mul dense X * sparse M  |  0.12 |  0.03 |
+//!| Mul sparse X * sparse M |  0.10 |  0.06 |
+//!| Mul dense M * dense X   |  0.14 |  0.33 |
+//!| Mul dense M * sparse X  |  0.24 |  0.09 |
+//!| Mul sparse M * dense X  |  0.14 |  0.04 |
+//!| Mul sparse M * sparse X |  0.28 |  0.06 |
 //!
 extern crate mosekcomodel;
 use std::{time, collections::HashMap};
@@ -330,17 +330,17 @@ pub fn main() {
     }
 
     let tabledata = vec![
-        //("Stacking, mixed",        stacking1(),rundata.get("stacking1")),
-        //("Stacking, dense",        stacking2(),rundata.get("stacking2")),
-        //("Stacking, sparse",       stacking3(),rundata.get("stacking3")),
-        //("Mul dense X * dense M",  mul1(),     rundata.get("mul1")),
+        ("Stacking, mixed",        stacking1(),rundata.get("stacking1")),
+        ("Stacking, dense",        stacking2(),rundata.get("stacking2")),
+        ("Stacking, sparse",       stacking3(),rundata.get("stacking3")),
+        ("Mul dense X * dense M",  mul1(),     rundata.get("mul1")),
         ("Mul sparse X * dense M", mul2(),     rundata.get("mul2")),
-        //("Mul dense X * sparse M", mul3(),     rundata.get("mul3")),
-        //("Mul sparse X * sparse M",mul4(),     rundata.get("mul4")),
-        //("Mul dense M * dense X",  mul5(),     rundata.get("mul5")),
-        //("Mul dense M * sparse X", mul6(),     rundata.get("mul6")),
-        //("Mul sparse M * dense X", mul7(),     rundata.get("mul7")),
-        //("Mul sparse M * sparse X",mul8(),     rundata.get("mul8")),
+        ("Mul dense X * sparse M", mul3(),     rundata.get("mul3")),
+        ("Mul sparse X * sparse M",mul4(),     rundata.get("mul4")),
+        ("Mul dense M * dense X",  mul5(),     rundata.get("mul5")),
+        ("Mul dense M * sparse X", mul6(),     rundata.get("mul6")),
+        ("Mul sparse M * dense X", mul7(),     rundata.get("mul7")),
+        ("Mul sparse M * sparse X",mul8(),     rundata.get("mul8")),
     ];
 
     let width = tabledata.iter().map(|(n,_,_)| n.len()).max().unwrap();

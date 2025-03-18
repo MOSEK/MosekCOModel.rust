@@ -181,24 +181,25 @@ pub trait ExprRightMultipliable<const N : usize,E>
     fn mul_right(self,other : E) -> Self::Result;
 }
 
-
-
 impl<E, M> ExprRightMultipliable<2,E> for M 
     where 
         M : Matrix,
         E : ExprTrait<2>
 {
-    type Result = ExprPermuteAxes<2,ExprMulMEt<E>>;
+    //type Result = ExprPermuteAxes<2,ExprMulMEt<E>>;
+    type Result = ExprMulRight<E>;
     fn mul_right(self,rhs : E) -> Self::Result {
-        let (shape,sp,data) = self.transpose().dissolve();
+        //let (shape,sp,data) = self.transpose().dissolve();
+        let (shape,sp,data) = self.dissolve();
 
         // for f(M,E) = M * E'
         // E * M = (M' * E')' = f(M',E)'
 
         ExprMulRight{
             item : rhs,
-            shape : shape,
-
+            shape,
+            data,
+            sp
         }
         //ExprPermuteAxes{
         //    item : ExprMulMEt{
@@ -507,9 +508,6 @@ impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprMulElm<N,E> {
                               rs,ws,xs)
     }
 }
-
-
-
 
 impl<const N : usize,E> ExprTrait<N> for ExprScalarMul<N,E> where E : ExprTrait<0> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {

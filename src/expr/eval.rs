@@ -639,6 +639,7 @@ pub fn add(n  : usize,
     Ok(())
 } // add
 
+// M * E^T
 pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                                  msp   : Option<&[usize]>,
                                  mdata : &[f64],
@@ -1030,7 +1031,7 @@ pub fn dot_rows(mshape : [usize;2],
 
 
 
-/// Evaluates `lhs` * expr.
+/// Evaluates matrix * expr.
 pub fn mul_left_dense(mdata : &[f64],
                              mdimi : usize,
                              mdimj : usize,
@@ -1103,6 +1104,7 @@ pub fn mul_left_dense(mdata : &[f64],
     Ok(())
 } // mul_left_dense
 
+// expr * matrix
 pub fn mul_right_dense(mdata : &[f64],
                               mdimi : usize,
                               mdimj : usize,
@@ -1398,8 +1400,7 @@ pub fn mul_right_sparse(mheight : usize,
     let mcolptr = &mcolptr[..mnumnzcol+1];
     let msubj   = &msubj[..mnumnzcol];
     //------------------------------------
-    //
-    //
+    
     if let Some(sp) = sp {
         let mut rnelm    = 0;
         let mut rnnz     = 0;
@@ -1491,7 +1492,7 @@ pub fn mul_right_sparse(mheight : usize,
             ii.for_each(| _ |{});
         }
     }
-    else {
+    else { // Dense expression
         // count nonzeros
         let rnelm = mnumnzcol * eheight;
         let mut rnnz = 0;
