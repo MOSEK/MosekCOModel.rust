@@ -1147,8 +1147,9 @@ pub fn mul_right_dense(mdata : &[f64],
         }
         let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; v+prev });
 
-
-
+        // TODO: This loop is slow since we use checked indexing for each rsubj/rcof slice we copy.
+        // For an expression that has many elements with few non-zeros the cost of indexing becomes
+        // quite high.
         for (k,&p0,&p1) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter()) {
             let (ii,jj) = (k/edimj,k%edimj);
 
