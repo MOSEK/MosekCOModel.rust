@@ -1110,7 +1110,7 @@ pub fn mul_right_dense(mdata : &[f64],
                               mdimj : usize,
                               rs    : & mut WorkStack,
                               ws    : & mut WorkStack,
-                              _xs    : & mut WorkStack) -> Result<(),ExprEvalError> {
+                              xs    : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nd   = shape.len();
@@ -1129,41 +1129,73 @@ pub fn mul_right_dense(mdata : &[f64],
     let rdimi = edimi;
     let rdimj = mdimj;
     let rnnz = nnz * mdimj;
-    let rnelm = rdimi * rdimj;
-
-    let (rptr,_rsp,rsubj,rcof) = if nd == 2 {
-        rs.alloc_expr(&[rdimi,rdimj],rnnz,rnelm)
-    }
-    else {
-        rs.alloc_expr(&[rdimj],rnnz,rnelm)
-    };
 
     if let Some(sp) = sp {
-        rptr.fill(0);
-
-        for (k,p0,p1) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter()) {
-            let (ii,_jj) = (k/edimj,k%edimj);
-            rptr[ii*rdimj..(ii+1)*rdimj].iter_mut().for_each(|p| *p += p1-p0);
+        // count non-empty rows in expression
+        let rnelm = sp.chunk_by(|i0,i1| i0/edimj == i1/edimj).count() * rdimj;
+        
+        let (rptr,rsp,rsubj,rcof) = if nd == 2 {
+            rs.alloc_expr(&[rdimi,rdimj],rnnz,rnelm)
         }
-        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; v+prev });
+        else {
+            rs.alloc_expr(&[rdimj],rnnz,rnelm)
+        };
 
-        // TODO: This loop is slow since we use checked indexing for each rsubj/rcof slice we copy.
-        // For an expression that has many elements with few non-zeros the cost of indexing becomes
-        // quite high.
-        for (k,&p0,&p1,csubj,ccof) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter(),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)) {
-            let (ii,jj) = (k/edimj,k%edimj);
+        if let Some(rsp) = rsp {
+            sp.chunk_by(|i0,i1| i0/edimj == i1/edimj)
+                .flat_map(|sprow| std::iter::repeat(sprow.first().unwrap()/edimj).take(mdimj).enumerate() )
+                .zip(rsp.iter_mut())
+                .for_each(|((colj,i0),ri)| *ri = i0*mdimj+colj )
+                ;
+        }
+        
+        // transpose m
+        let (_,mxdata) = xs.alloc(0,mdata.len());
+        mxdata.iter_mut().zip( (0..mdimj).flat_map(|i| mdata[i..].iter().step_by(mdimj)))
+            .for_each(|(t,&s)| *t = s);
+            
 
-            for (rp,v) in izip!(rptr[ii*rdimj..(ii+1)*rdimj].iter_mut(),
-                                mdata[jj*mdimj..(jj+1)*mdimj].iter()) {
-                rsubj[*rp..*rp+p1-p0].copy_from_slice(csubj);
-                rcof[*rp..*rp+p1-p0].iter_mut().zip(ccof.iter()).for_each(|(rc,&c)| *rc = c * v);
-                *rp += p1-p0;
+        // NOTE: Constructing the result expression efficiently without using unsafe is really
+        // difficult. I have not yet found a good abstraction that allows this.
+
+        {
+            let mut rptri = 0usize;
+            let mut ri = 0usize;
+            rptr[0] = 0;
+            for (rowsp,rowptr) in 
+                sp.chunk_by(|i0,i1| i0/edimj == i1/edimj)
+                    .scan(0,|p,row| { let p0 = *p; *p += row.len(); Some((row,&ptr[p0..*p+1])) })
+            {
+                for mcol in mxdata.chunks(mdimi) 
+                {
+                    for (spi,&p0,&p1) in izip!( rowsp.iter(), rowptr.iter(), rowptr[1..].iter()) 
+                    {
+                        unsafe {
+                            let mc = *mcol.get_unchecked(spi%edimj);
+                            rsubj.get_unchecked_mut(rptri..rptri+p1-p0).copy_from_slice(subj.get_unchecked(p0..p1));
+                            rcof.get_unchecked_mut(rptri..rptri+p1-p0).iter_mut()
+                                .zip(cof.get_unchecked(p0..p1).iter())
+                                .for_each(|(rc,&c)| *rc = c * mc);
+
+                            rptri += p1-p0;
+                        }
+                    }
+                    ri += 1;
+                    unsafe { *rptr.get_unchecked_mut(ri) = rptri; }
+                }
             }
         }
-        let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev });
     }
     // dense expr
     else {
+        let rnelm = rdimi * rdimj;
+
+        let (rptr,_rsp,rsubj,rcof) = if nd == 2 {
+            rs.alloc_expr(&[rdimi,rdimj],rnnz,rnelm)
+        }
+        else {
+            rs.alloc_expr(&[rdimj],rnnz,rnelm)
+        };
         rptr[0] = 0;
         let mut nzi = 0;
         for (rp,((ptrb,ptre),i)) in rptr[1..].iter_mut().zip(iproduct!(ptr.chunks(edimj).zip(ptr[1..].chunks(edimj)), 0..mdimj)) {
