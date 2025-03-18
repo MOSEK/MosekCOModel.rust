@@ -1150,13 +1150,13 @@ pub fn mul_right_dense(mdata : &[f64],
         // TODO: This loop is slow since we use checked indexing for each rsubj/rcof slice we copy.
         // For an expression that has many elements with few non-zeros the cost of indexing becomes
         // quite high.
-        for (k,&p0,&p1) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter()) {
+        for (k,&p0,&p1,csubj,ccof) in izip!(sp.iter(),ptr.iter(),ptr[1..].iter(),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)) {
             let (ii,jj) = (k/edimj,k%edimj);
 
             for (rp,v) in izip!(rptr[ii*rdimj..(ii+1)*rdimj].iter_mut(),
                                 mdata[jj*mdimj..(jj+1)*mdimj].iter()) {
-                rsubj[*rp..*rp+p1-p0].copy_from_slice(&subj[p0..p1]);
-                rcof[*rp..*rp+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * v);
+                rsubj[*rp..*rp+p1-p0].copy_from_slice(csubj);
+                rcof[*rp..*rp+p1-p0].iter_mut().zip(ccof.iter()).for_each(|(rc,&c)| *rc = c * v);
                 *rp += p1-p0;
             }
         }
