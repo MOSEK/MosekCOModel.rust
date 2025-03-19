@@ -32,7 +32,7 @@ use crate::matrix::Matrix;
 use itertools::izip;
 use workstack::WorkStack;
 use super::matrix;
-use crate::utils::iter::*;
+use crate::utils::{iter::*, ShapeToStridesEx};
 use std::iter::{Peekable,Zip};
 use std::slice::Iter;
 
@@ -419,6 +419,30 @@ pub trait ExprTrait<const N : usize> {
     /// Reshape a sparse expression into a dense expression vector. The length of the vector
     /// cannot be known until the expression is evaluated.
     fn gather(self) -> ExprGatherToVec<N,Self>  where Self:Sized { ExprGatherToVec{item:self} }
+    /// Map each nonzero to a new position in an expression with a new shape. 
+    ///
+    /// The mapping is done by a function 
+    ///
+    /// # arguments
+    /// - `shape` the result shape
+    /// - `f : Clone+FnMut(&[usize;N]) -> Option([usize;M])`, 
+    ///   If the function returns
+    ///   - `None` the non-zero is discarded,
+    ///   - `Some(index)` with index being outside the `shape`, the non-zero is discarded,
+    ///   - `Some(index)` with index being within the `shape` the non-zero is mapped to the new
+    ///      position provided by `index`.
+    ///   that is called for each non-zero index
+    ///
+    /// # Example
+    ///
+    ///
+    fn map<const M : usize,F>(self, shape : &[usize;M], f : F) -> ExprMap<N,M,F,Self> 
+        where 
+            F : FnMut(&[usize;N]) -> Option<[usize;M]>,
+            Self : Sized
+    {
+        ExprMap{ item : self, shape : *shape, f}
+    }
 
     /// Multiply `(self * other)`, where other must be right-multipliable with `Self`.
     ///
@@ -1078,6 +1102,95 @@ impl<const M : usize, E:ExprTrait<1>> ExprTrait<M> for ExprScatter<M,E> {
     }
 }
 
+
+/// Map each nonzero to a new position in an expression with a new shape. 
+///
+/// The mapping is done by a function 
+/// ```text
+/// f : Clone+FnMut(&[usize;N]) -> Option([usize;M])
+/// ```
+/// If the function returns
+/// - `None` the non-zero is discarded,
+/// - `Some(index)` with index being outside the target shape, the non-zero is discarded,
+/// - `Some(index)` with index being within the target shape the non-zero is mapped to the new
+///    position provided by `index`.
+/// that is called for each non-zero index
+pub struct ExprMap<const N : usize, const M : usize, F, E> where
+    F : Clone+FnMut(&[usize;N]) -> Option<[usize;M]>,
+    E : ExprTrait<N>
+{
+    item : E,
+    shape : [usize;M],
+    f    : F
+}
+
+impl<const N : usize, const M : usize, F, E> ExprTrait<M> for ExprMap<N,M,F,E> 
+    where 
+        F : Clone+FnMut(&[usize;N]) -> Option<[usize;M]>,
+        E : ExprTrait<N>
+{
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.item.eval(ws,rs,xs)?;
+        let (shape,ptr,sp,subj,cof) = ws.pop_expr();
+
+        if let Some(sp) = sp {
+            let (irest,_) = xs.alloc(sp.len()*3, 0);
+            let (xptrb,irest) = irest.split_at_mut(sp.len());
+            let (xptre,xsp)   = irest.split_at_mut(sp.len());
+           
+            let mut src_shape = [0usize; N]; src_shape.copy_from_slice(shape);
+            let src_st = src_shape.to_strides();
+            let tgt_st = self.shape.to_strides();
+
+            let mut f = self.f.clone();
+            let xnelm = 
+                izip!(ptr.iter(),
+                      ptr[1..].iter(),
+                      sp.iter())
+                .filter_map(|(p0,p1,i)| 
+                    if let Some(j) = f(&src_st.to_index(*i)) {
+                        if j.iter().zip(self.shape.iter()).all(|(a,b)| a < b) {
+                            Some((tgt_st.to_linear(&j),*p0,*p1)) 
+                        }
+                        else {
+                            None
+                        }
+                    } 
+                    else {
+                        None })
+                .zip(izip!(xptrb.iter_mut(),xptre.iter_mut(),xsp.iter_mut()))
+                .fold(0,|n,((j,p0,p1),(xpb,xpe,xspi))| { *xspi = j; *xpb = p0; *xpe = p1; n+1 })
+                ; 
+
+            let xptrb = &mut xptrb[..xnelm];
+            let xptre = &mut xptre[..xnelm];
+            let xsp   = &mut xsp[..xnelm];
+
+            let rnnz = xptrb.iter().zip(xptre.iter()).map(|(a,b)| b-a).sum();
+            if xsp.iter().zip(xsp[1..].iter()).all(|(&i,&j)| i < j) {
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.shape, rnnz, xnelm);
+                rptr[0] = 0;
+                izip!(xptrb.iter(),xptre.iter(),rptr[1..].iter_mut()).fold(0,|n,(&pb,&pe,rp)| { *rp = n+pe-pb; *rp });
+                if let Some(rsp) = rsp { rsp.clone_from_slice(xsp); }
+
+                izip!(cof.chunks_ptr2(xptrb, xptre),
+                      rcof.chunks_ptr_mut(rptr,&rptr[1..]))
+                    .for_each(|(cof,rcof)| rcof.clone_from_slice(cof));
+                izip!(subj.chunks_ptr2(xptrb, xptre),
+                      rsubj.chunks_ptr_mut(rptr, &rptr[1..]))
+                    .for_each(|(subj,rsubj)| rsubj.clone_from_slice(subj));
+
+                Ok(())
+            }
+            else {
+                unimplemented!("Case not implemented");
+            }
+        }
+        else {
+            unimplemented!("Case not implemented");
+        }
+    }
+}
 
 /// Pick nonzeros from a sparse expression to produce a dense vector expression.
 pub struct ExprGatherToVec<const N : usize, E:ExprTrait<N>> { item : E }
