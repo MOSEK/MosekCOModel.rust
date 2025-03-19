@@ -1,15 +1,15 @@
-//
-//   Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-//   File:      djc1.rs
-//
-//   Purpose: Demonstrates how to solve the problem with two disjunctions:
-//
-//      minimize    2x0 + x1 + 3x2 + x3
-//      subject to   x0 + x1 + x2 + x3 >= -10
-//                  (x0-2x1<=-1 and x2=x3=0) or (x2-3x3<=-2 and x1=x2=0)
-//                  x0=2.5 or x1=2.5 or x2=2.5 or x3=2.5
-//
+//!
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//! File:      djc1.rs
+//!
+//! Purpose: Demonstrates how to solve the problem with two disjunctions:
+//! ```
+//!    minimize    2x0 + x1 + 3x2 + x3
+//!    subject to   x0 + x1 + x2 + x3 >= -10
+//!                (x0-2x1<=-1 and x2=x3=0) or (x2-3x3<=-2 and x1=x2=0)
+//!                x0=2.5 or x1=2.5 or x2=2.5 or x3=2.5
+//! ```
 
 extern crate mosekcomodel;
 

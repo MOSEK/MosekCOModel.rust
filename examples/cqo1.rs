@@ -1,23 +1,24 @@
 //!
-//!   Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
 //!
-//!   File:      cqo1.rs
+//! File: cqo1.rs
 //!
-//!   Purpose: Demonstrates how to solve the problem
-//!
-//!   minimize y1 + y2 + y3
-//!   such that
-//!            x1 + x2 + 2.0 x3  = 1.0
-//!                    x1,x2,x3 >= 0.0
-//!   and
-//!            (y1,x1,x2) in C_3,
-//!            (y2,y3,x3) in K_3
-//!
-//!   where C_3 and K_3 are respectively the quadratic and
-//!   rotated quadratic cone of size 3 defined as
-//!       C_3 = { z1,z2,z3 :      z1 >= sqrt(z2^2 + z3^2) }
-//!       K_3 = { z1,z2,z3 : 2 z1 z2 >= z3^2              }
-//!
+//! Purpose: Demonstrates how to solve the problem
+//! ```
+//! minimize y1 + y2 + y3
+//! such that
+//!          x1 + x2 + 2.0 x3  = 1.0
+//!                  x1,x2,x3 >= 0.0
+//! and
+//!          (y1,x1,x2) in C_3,
+//!          (y2,y3,x3) in K_3
+//! ```
+//! where `C_3` and `K_3` are respectively the quadratic and
+//! rotated quadratic cone of size 3 defined as
+//! ```
+//!     C_3 = { z1,z2,z3 :      z1 >= sqrt(z2^2 + z3^2) }
+//!     K_3 = { z1,z2,z3 : 2 z1 z2 >= z3^2              }
+//! ```
 
 extern crate mosekcomodel;
 use mosekcomodel::*;

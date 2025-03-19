@@ -1,11 +1,11 @@
-//
-// Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-// File:      total_variation.rs
-//
-// Purpose:   Demonstrates how to solve a total 
-//            variation problem using the Fusion API.
-//
+//!
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//! File:      `total_variation.rs`
+//!
+//! Purpose:   Demonstrates how to solve a total 
+//!            variation problem using the Fusion API.
+//!
 
 extern crate mosekcomodel;
 extern crate rand;

@@ -1,25 +1,26 @@
-// Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-// File:      diet.rs
-//
-// Purpose: Solving Stigler's Nutrition model (DIET,SEQ=7)
-//
-// Source: GAMS Model library,
-//           Dantzig, G B, Chapter 27.1. In Linear Programming and Extensions.
-//           Princeton University Press, Princeton, New Jersey, 1963.
-//
-// Given a set of nutrients, foods with associated nutrient values, allowance of
-// nutrients per day, the model will find the cheapest combination of foods
-// which will provide the necessary nutrients.
-//
-//  Arguments for construction:
-//  name      - Model name.
-//  foods     - List of M names of the foods.
-//  nutrients - List of N names of the nutrients.
-//  daily_allowance - List of N floats denoting the daily allowance of each
-//              nutrient.
-//  nutritive_value - Two-dimensional MxN array of floats where each row
-//              denotes the nutrient values for a single food per $ spent.
+//! 
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//! File:      diet.rs
+//!
+//! Purpose: Solving Stigler's Nutrition model (DIET,SEQ=7)
+//!
+//! Source: GAMS Model library,
+//!           Dantzig, G B, Chapter 27.1. In Linear Programming and Extensions.
+//!           Princeton University Press, Princeton, New Jersey, 1963.
+//!
+//! Given a set of nutrients, foods with associated nutrient values, allowance of
+//! nutrients per day, the model will find the cheapest combination of foods
+//! which will provide the necessary nutrients.
+//!
+//! # Arguments for construction:
+//! - `name`      - Model name.
+//! - `foods`     - List of `M` names of the foods.
+//! - `nutrients` - List of `N` names of the nutrients.
+//! - `daily_allowance` - List of `N` floats denoting the daily allowance of each
+//!              nutrient.
+//! - `nutritive_value` - Two-dimensional MxN array of floats where each row
+//!              denotes the nutrient values for a single food per $ spent.
 extern crate mosekcomodel;
 extern crate itertools;
 

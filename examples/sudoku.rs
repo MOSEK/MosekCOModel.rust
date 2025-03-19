@@ -1,7 +1,7 @@
 ///
 /// Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
 ///
-/// File:      sudoku.rs
+/// File:      `sudoku.rs`
 ///
 /// Purpose:  A MILP-based SUDOKU solver
 ///

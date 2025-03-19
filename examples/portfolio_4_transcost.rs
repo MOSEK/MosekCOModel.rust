@@ -1,12 +1,12 @@
-//
-// Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-// File:      portfolio_4_transcost.rs
-//
-//  Purpose :   Implements a basic portfolio optimization model
-//              with fixed setup costs and transaction costs
-//              as a mixed-integer problem.
-//
+//!
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//! File:      `portfolio_4_transcost.rs`
+//!
+//!  Purpose :   Implements a basic portfolio optimization model
+//!              with fixed setup costs and transaction costs
+//!              as a mixed-integer problem.
+//!
 
 extern crate mosekcomodel;
 

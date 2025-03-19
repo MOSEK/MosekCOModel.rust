@@ -1,20 +1,20 @@
-//
-// Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-// File:      baker.rs
-//
-// Purpose: Demonstrates a small linear problem.
-//
-// Source: "Linaer Algebra" by Knut Sydsaeter and Bernt Oeksendal.
-//
-// The problem: A baker has 150 kg flour, 22 kg sugar, 25 kg butter and two
-// recipes:
-//   1) Cakes, requiring 3.0 kg flour, 1.0 kg sugar and 1.2 kg butter per dozen.
-//   2) Breads, requiring 5.0 kg flour, 0.5 kg sugar and 0.5 kg butter per dozen.
-// Let the revenue per dozen cakes be $4 and the revenue per dozen breads be $6.
-//
-// We now wish to compute the combination of cakes and breads that will optimize
-// the total revenue.
+//!
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//! File:      baker.rs
+//!
+//! Purpose: Demonstrates a small linear problem.
+//!
+//! Source: "Linaer Algebra" by Knut Sydsaeter and Bernt Oeksendal.
+//!
+//! The problem: A baker has 150 kg flour, 22 kg sugar, 25 kg butter and two
+//! recipes:
+//! 1) Cakes, requiring 3.0 kg flour, 1.0 kg sugar and 1.2 kg butter per dozen.
+//! 2) Breads, requiring 5.0 kg flour, 0.5 kg sugar and 0.5 kg butter per dozen.
+//! Let the revenue per dozen cakes be $4 and the revenue per dozen breads be $6.
+//!
+//! We now wish to compute the combination of cakes and breads that will optimize
+//! the total revenue.
 
 extern crate mosekcomodel;
 use mosekcomodel::*;

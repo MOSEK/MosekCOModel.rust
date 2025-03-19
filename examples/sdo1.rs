@@ -1,25 +1,25 @@
-//
-//  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-//  File:      sdo1.rs
-//
-//  Purpose:
-//  Solves the mixed semidefinite and conic quadratic optimization problem
-//
-//                   [2, 1, 0]
-//    minimize    Tr [1, 2, 1] * X + x0
-//                   [0, 1, 2]
-//
-//                   [1, 0, 0]
-//    subject to  Tr [0, 1, 0] * X + x0           = 1.0
-//                   [0, 0, 1]
-//
-//                   [1, 1, 1]
-//                Tr [1, 1, 1] * X      + x1 + x2 = 0.5
-//                   [1, 1, 1]
-//
-//                   X >> 0,  x0 >= (x1^2 + x2^2) ^ (1/2)
-//
+//!
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//! File:      `sdo1.rs`
+//!
+//! Purpose:
+//! Solves the mixed semidefinite and conic quadratic optimization problem
+//! ```
+//!                [2, 1, 0]
+//! minimize    Tr [1, 2, 1] * X + x0
+//!                [0, 1, 2]
+//!
+//!                [1, 0, 0]
+//! subject to  Tr [0, 1, 0] * X + x0           = 1.0
+//!                [0, 0, 1]
+//!
+//!                [1, 1, 1]
+//!             Tr [1, 1, 1] * X      + x1 + x2 = 0.5
+//!                [1, 1, 1]
+//!
+//!                X >> 0,  x0 >= (x1^2 + x2^2) ^ (1/2)
+//! ```
 extern crate mosekcomodel;
 use mosekcomodel::*;
 

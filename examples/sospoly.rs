@@ -1,30 +1,27 @@
-///
-///  Copyright
-///     Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-///
-///  File
-///     sospoly.rs
-///
-///  # Purpose
-///
-///  Models the cone of nonnegative polynomials and nonnegative trigonometric
-///  polynomials using Nesterov's framework  [1].
-///
-///  Given a set of coefficients `(x0, x1, ..., xn)`, the functions model the
-///  cone of nonnegative polynomials
-///
-///  ```math
-///  P_m = { x ∊ R^{n+1} | x0 + x1*t + ... xn*t^n ≥ 0, ∀ t ∊ I }
-///  ```
-///
-///  where I can be the entire real axis, the semi-infinite interval `[0,inf)`, or
-///  a finite interval `I = [a, b]`, respectively.
-///
-///  # References
-///
-///  [1] "Squared Functional Systems and Optimization Problems",
-///      Y. Nesterov, in High Performance Optimization,
-///      Kluwer Academic Publishers, 2000.
+//! Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//! File: `sospoly.rs`
+//!
+//! # Purpose
+//!
+//! Models the cone of nonnegative polynomials and nonnegative trigonometric
+//! polynomials using Nesterov's framework  \[1\].
+//!
+//! Given a set of coefficients `(x0, x1, ..., xn)`, the functions model the
+//! cone of nonnegative polynomials
+//!
+//! ```math
+//! P_m = { x ∊ R^{n+1} | x0 + x1*t + ... xn*t^n ≥ 0, ∀ t ∊ I }
+//! ```
+//!
+//! where I can be the entire real axis, the semi-infinite interval `[0,inf)`, or
+//! a finite interval `I = [a, b]`, respectively.
+//!
+//! # References
+//!
+//! \[1\] "Squared Functional Systems and Optimization Problems",
+//!     Y. Nesterov, in High Performance Optimization,
+//!     Kluwer Academic Publishers, 2000.
 extern crate mosekcomodel;
 
 use itertools::iproduct;

@@ -1,11 +1,11 @@
-//
-// Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-// File:      portfolio_3_impact.rs
-//
-// Purpose :   Implements a basic portfolio optimization model
-//             with x^(3/2) market impact costs.
-//
+//!
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//! File:      `portfolio_3_impact.rs`
+//!
+//! Purpose :   Implements a basic portfolio optimization model
+//!             with x^(3/2) market impact costs.
+//!
 
 extern crate mosekcomodel;
 

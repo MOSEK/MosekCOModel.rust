@@ -1,22 +1,22 @@
-//
-// Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-// File:      TrafficNetworlModel.rs
-//
-// Purpose:   Demonstrates a traffic network problem as a conic quadratic problem.
-//
-// Source:    Robert Fourer, "Convexity Checking in Large-Scale Optimization",
-//            OR 53 --- Nottingham 6-8 September 2011.
-//
-// The problem:
-//            Given a directed graph representing a traffic network
-//            with one source and one sink, we have for each arc an
-//            associated capacity, base travel time and a
-//            sensitivity. Travel time along a specific arc increases
-//            as the flow approaches the capacity.
-//
-//            Given a fixed inflow we now wish to find the
-//            configuration that minimizes the average travel time.
+//!
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//! File:      `TrafficNetworlModel.rs`
+//!
+//! Purpose:   Demonstrates a traffic network problem as a conic quadratic problem.
+//!
+//! Source:    Robert Fourer, "Convexity Checking in Large-Scale Optimization",
+//!            OR 53 --- Nottingham 6-8 September 2011.
+//!
+//! The problem:
+//!            Given a directed graph representing a traffic network
+//!            with one source and one sink, we have for each arc an
+//!            associated capacity, base travel time and a
+//!            sensitivity. Travel time along a specific arc increases
+//!            as the flow approaches the capacity.
+//!
+//!            Given a fixed inflow we now wish to find the
+//!            configuration that minimizes the average travel time.
 
 extern crate mosekcomodel;
 

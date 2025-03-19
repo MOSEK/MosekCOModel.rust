@@ -1,21 +1,21 @@
-//
-//  Copyright : Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-//  File :      sdo3.rs
-//
-//  Purpose :   Solves the semidefinite problem:
-//
-//                 min   tr(X_1) + ... + tr(X_n)
-//                 st.   <A_11,X_1> + ... + <A_1n,X_n> >= b_1
-//                       ...
-//                       <A_k1,X_1> + ... + <A_kn,X_n> >= b_k
-//                
-//                 where X_i are symmetric positive semidefinite of dimension d,
-//
-//                 A_ji are constant symmetric matrices and b_i are constant.
-//
-//              This example is to demonstrate creating and using 
-//              many matrix variables of the same dimension.
+//!
+//! Copyright : Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//! File :      `sdo3.rs`
+//!
+//! Purpose :   Solves the semidefinite problem:
+//! ``` 
+//! min   tr(X_1) + ... + tr(X_n)
+//! st.   <A_11,X_1> + ... + <A_1n,X_n> >= b_1
+//!       ...
+//!       <A_k1,X_1> + ... + <A_kn,X_n> >= b_k
+//! ```               
+//! where `X_i` are symmetric positive semidefinite of dimension d,
+//!
+//! `A_ji` are constant symmetric matrices and b_i are constant.
+//!
+//! This example is to demonstrate creating and using 
+//! many matrix variables of the same dimension.
 
 extern crate mosekcomodel;
 extern crate rand;

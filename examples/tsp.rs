@@ -1,12 +1,12 @@
-//
-//  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-//  File:      tsp.py
-//
-//  Purpose: Demonstrates a simple technique to the TSP
-//           usign the Fusion API.
-//
-//
+//!
+//!  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//!  File:      `tsp.py`
+//!
+//!  Purpose: Demonstrates a simple technique to the TSP
+//!           usign the Fusion API.
+//!
+//!
 extern crate mosekcomodel;
 
 

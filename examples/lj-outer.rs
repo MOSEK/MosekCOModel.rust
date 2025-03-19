@@ -1,10 +1,10 @@
-//
-//  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-// 
-//  File: lj-outer.rs
-//
-//  Computes the Löwner-John outer ellipsoid for a convex polygon. 
-//
+//!
+//!  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//! 
+//!  File: lj-outer.rs
+//!
+//!  Computes the Löwner-John outer ellipsoid for a convex polygon. 
+//!
 extern crate mosekcomodel;
 
 use mosekcomodel::*;

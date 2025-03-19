@@ -1,11 +1,11 @@
-//
-// Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-// File:     portfolio_5_card.rs 
-//
-//  Description :  Implements a basic portfolio optimization model
-//                 with cardinality constraints on number of assets traded.
-//
+//!
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//! File:     `portfolio_5_card.rs`
+//!
+//!  Description :  Implements a basic portfolio optimization model
+//!                 with cardinality constraints on number of assets traded.
+//!
 
 extern crate mosekcomodel;
 

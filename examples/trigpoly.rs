@@ -1,7 +1,7 @@
 //!
 //!  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
 //!
-//!  File:      trigpoly.rs
+//!  File:      `trigpoly.rs`
 //!
 //!  Purpose: 
 //!  Example of an optimization problem over nonnegative 
@@ -25,10 +25,10 @@
 //!  is known as (the squared amplitude respons of) a Chebyshev lowpass filter. 
 //!
 //!  References:
-//!  [1] "Squared Functional Systems and Optimization Problems",  
+//!  \[1\] "Squared Functional Systems and Optimization Problems",  
 //!      Y. Nesterov, 2004.
 //!
-//!  [2] "Convex Optimization of Non-negative Polynomials:
+//!  \[2\] "Convex Optimization of Non-negative Polynomials:
 //!      Structured Algorithms and Applications", Ph.D thesis, Y. Hachez, 2003.
 //!
 extern crate mosekcomodel;

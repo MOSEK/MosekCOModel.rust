@@ -1,8 +1,8 @@
-// Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-// File:      duality.rs
-//
-// Purpose: Show how to read the dual value of a constraint.
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//! File:      duality.rs
+//!
+//! Purpose: Show how to read the dual value of a constraint.
 extern crate mosekcomodel;
 
 use mosekcomodel::*;

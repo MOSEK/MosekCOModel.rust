@@ -1,14 +1,14 @@
 //!
-//!   Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
 //!
-//!   File:      pow1.rs
+//! File:      pow1.rs
 //!
-//!   Purpose: Demonstrates how to solve the problem
-//!
-//!     maximize x^0.2*y^0.8 + z^0.4 - x
-//!           st x + y + 0.5z = 2
-//!              x,y,z >= 0
-//!
+//! Purpose: Demonstrates how to solve the problem
+//! ```
+//! maximize x^0.2*y^0.8 + z^0.4 - x
+//!       st x + y + 0.5z = 2
+//!          x,y,z >= 0
+//! ```
 
 extern crate mosekcomodel;
 use expr::const_expr;

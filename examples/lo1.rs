@@ -1,19 +1,19 @@
-//
-//  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
-//
-//  File:      lo1.rs
-//
-//  Purpose: Demonstrates how to solve the problem
-//
-//  maximize 3*x0 + 1*x1 + 5*x2 + x3
-//  such that
-//           3*x0 + 1*x1 + 2*x2        = 30,
-//           2*x0 + 1*x1 + 3*x2 + 1*x3 > 15,
-//                  2*x1 +      + 3*x3 < 25
-//  and
-//           x0,x1,x2,x3 > 0,
-//           0 < x1 < 10
-//
+//!
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//!
+//! File:      lo1.rs
+//!
+//! Purpose: Demonstrates how to solve the problem
+//! ```
+//! maximize 3*x0 + 1*x1 + 5*x2 + x3
+//! such that
+//!          3*x0 + 1*x1 + 2*x2        = 30,
+//!          2*x0 + 1*x1 + 3*x2 + 1*x3 > 15,
+//!                 2*x1 +      + 3*x3 < 25
+//! and
+//!          x0,x1,x2,x3 > 0,
+//!          0 < x1 < 10
+//! ```
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
