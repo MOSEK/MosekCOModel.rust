@@ -250,3 +250,164 @@ pub fn mul8() -> f64 {
     t0.elapsed().as_secs_f64()/REP as f64
 }
 
+
+pub fn sumon1() -> f64 {
+    const N : usize = 300;
+    let mut model = Model::new(None);
+
+    let x = model.variable(None,unbounded().with_shape(&[N,N,N]));
+    let s = model.variable(None,unbounded().with_shape(&[N,N,N]).with_sparsity_indexes((0..N*N*N).step_by(7).collect()));
+
+    let mut ws = WorkStack::new(1024);
+    let mut rs = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    let t0 = time::Instant::now();
+
+    for _ in 0..REP {
+        x.clone().add(x.clone().axispermute(&[1,2,0])).sum_on(&[1,2]).eval(&mut rs, &mut ws, &mut xs).unwrap();
+    }
+    
+    t0.elapsed().as_secs_f64()/REP as f64
+}
+
+pub fn sumon2() -> f64 {
+    const N : usize = 300;
+    let mut model = Model::new(None);
+
+    let x = model.variable(None,unbounded().with_shape(&[N,N,N]));
+    let s = model.variable(None,unbounded().with_shape(&[N,N,N]).with_sparsity_indexes((0..N*N*N).step_by(7).collect()));
+
+    let mut ws = WorkStack::new(1024);
+    let mut rs = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    let t0 = time::Instant::now();
+
+    for _ in 0..REP {
+        x.clone().add(x.clone().axispermute(&[1,2,0])).sum_on(&[0,2]).eval(&mut rs, &mut ws, &mut xs).unwrap();
+    }
+    
+    t0.elapsed().as_secs_f64()/REP as f64
+}
+
+pub fn sumon3() -> f64 {
+    const N : usize = 300;
+    let mut model = Model::new(None);
+
+    let x = model.variable(None,unbounded().with_shape(&[N,N,N]));
+    let s = model.variable(None,unbounded().with_shape(&[N,N,N]).with_sparsity_indexes((0..N*N*N).step_by(7).collect()));
+
+    let mut ws = WorkStack::new(1024);
+    let mut rs = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    let t0 = time::Instant::now();
+
+    for _ in 0..REP {
+        x.clone().add(x.clone().axispermute(&[1,2,0])).sum_on(&[0,1]).eval(&mut rs, &mut ws, &mut xs).unwrap();
+    }
+    
+    t0.elapsed().as_secs_f64()/REP as f64
+}
+
+pub fn sumon4() -> f64 {
+    const N : usize = 300;
+    let mut model = Model::new(None);
+
+    let x = model.variable(None,unbounded().with_shape(&[N,N,N]));
+    let s = model.variable(None,unbounded().with_shape(&[N,N,N]).with_sparsity_indexes((0..N*N*N).step_by(7).collect()));
+
+    let mut ws = WorkStack::new(1024);
+    let mut rs = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    let t0 = time::Instant::now();
+
+    for _ in 0..REP {
+        x.clone().add(x.clone().axispermute(&[1,2,0])).sum_on(&[1]).eval(&mut rs, &mut ws, &mut xs).unwrap();
+    }
+    
+    t0.elapsed().as_secs_f64()/REP as f64
+}
+
+
+pub fn sumon1s() -> f64 {
+    const N : usize = 300;
+    let mut model = Model::new(None);
+
+    let x = model.variable(None,unbounded().with_shape(&[N,N,N]));
+    let s = model.variable(None,unbounded().with_shape(&[N,N,N]).with_sparsity_indexes((0..N*N*N).step_by(7).collect()));
+
+    let mut ws = WorkStack::new(1024);
+    let mut rs = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    let t0 = time::Instant::now();
+
+    for _ in 0..REP {
+        s.clone().add(s.clone().axispermute(&[1,2,0])).sum_on(&[1,2]).eval(&mut rs, &mut ws, &mut xs).unwrap();
+    }
+    
+    t0.elapsed().as_secs_f64()/REP as f64
+}
+
+pub fn sumon2s() -> f64 {
+    const N : usize = 300;
+    let mut model = Model::new(None);
+
+    let x = model.variable(None,unbounded().with_shape(&[N,N,N]));
+    let s = model.variable(None,unbounded().with_shape(&[N,N,N]).with_sparsity_indexes((0..N*N*N).step_by(7).collect()));
+
+    let mut ws = WorkStack::new(1024);
+    let mut rs = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    let t0 = time::Instant::now();
+
+    for _ in 0..REP {
+        s.clone().add(s.clone().axispermute(&[1,2,0])).sum_on(&[0,2]).eval(&mut rs, &mut ws, &mut xs).unwrap();
+    }
+    
+    t0.elapsed().as_secs_f64()/REP as f64
+}
+
+pub fn sumon3s() -> f64 {
+    const N : usize = 300;
+    let mut model = Model::new(None);
+
+    let x = model.variable(None,unbounded().with_shape(&[N,N,N]));
+    let s = model.variable(None,unbounded().with_shape(&[N,N,N]).with_sparsity_indexes((0..N*N*N).step_by(7).collect()));
+
+    let mut ws = WorkStack::new(1024);
+    let mut rs = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    let t0 = time::Instant::now();
+
+    for _ in 0..REP {
+        s.clone().add(s.clone().axispermute(&[1,2,0])).sum_on(&[0,1]).eval(&mut rs, &mut ws, &mut xs).unwrap();
+    }
+    
+    t0.elapsed().as_secs_f64()/REP as f64
+}
+
+pub fn sumon4s() -> f64 {
+    const N : usize = 300;
+    let mut model = Model::new(None);
+
+    let x = model.variable(None,unbounded().with_shape(&[N,N,N]));
+    let s = model.variable(None,unbounded().with_shape(&[N,N,N]).with_sparsity_indexes((0..N*N*N).step_by(7).collect()));
+
+    let mut ws = WorkStack::new(1024);
+    let mut rs = WorkStack::new(1024);
+    let mut xs = WorkStack::new(1024);
+
+    let t0 = time::Instant::now();
+
+    for _ in 0..REP {
+        s.clone().add(s.clone().axispermute(&[1,2,0])).sum_on(&[1]).eval(&mut rs, &mut ws, &mut xs).unwrap();
+    }
+    
+    t0.elapsed().as_secs_f64()/REP as f64
+}

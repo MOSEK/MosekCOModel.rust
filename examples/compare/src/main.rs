@@ -3,19 +3,26 @@
 //! Comparing runtimes of simple expressions as implemented in MosekCOModel (--release mode) and in
 //! MOSEK Java Fusion.
 //! 
-//! Date: March 13, 2025
-//!|                         | Rust  | Java  |
-//!| Stacking, mixed         |  0.19 |  0.55 |
-//!| Stacking, dense         |  0.09 |  0.20 |
-//!| Stacking, sparse        |  0.02 |  0.06 |
-//!| Mul dense X * dense M   |  0.14 |  0.26 |
-//!| Mul sparse X * dense M  |  0.17 |  0.07 |
-//!| Mul dense X * sparse M  |  0.12 |  0.03 |
-//!| Mul sparse X * sparse M |  0.10 |  0.06 |
-//!| Mul dense M * dense X   |  0.14 |  0.33 |
-//!| Mul dense M * sparse X  |  0.24 |  0.09 |
-//!| Mul sparse M * dense X  |  0.14 |  0.04 |
-//!| Mul sparse M * sparse X |  0.28 |  0.06 |
+//! Date: March 19, 2025
+//! 
+//! |                           | Rust  | Java  |
+//! | Stacking, mixed           | 0.189 | 0.515 |
+//! | Stacking, dense           | 0.091 | 0.153 |
+//! | Stacking, sparse          | 0.021 | 0.088 |
+//! | Mul dense X * dense M     | 1.192 | 2.944 |
+//! | Mul sparse X * dense M    | 0.167 | 0.394 |
+//! | Mul dense X * sparse M    | 0.984 | 5.053 |
+//! | Mul sparse X * sparse M   | 1.846 | 5.945 |
+//! | Mul dense M * dense X     | 1.150 | 1.862 |
+//! | Mul dense M * sparse X    | 2.484 | 3.47  |
+//! | Mul sparse M * dense X    | 1.121 | 3.798 |
+//! | Mul sparse M * sparse X   | 3.524 | 5.398 |
+//! | Expr Sum on axis 1        | 2.458 | 4.663 |
+//! | Expr Sum on axis 2        | 2.294 | 4.076 |
+//! | Expr Sum on axis 3        | 2.248 | 3.898 |
+//! | Sparse Expr Sum on axis 1 | 1.163 | 4.186 |
+//! | Sparse Expr Sum on axis 2 | 1.069 | 4.01  |
+//! | Sparse Expr Sum on axis 3 | 0.859 | 3.072 |
 //!
 extern crate mosekcomodel;
 mod tests;
@@ -80,9 +87,11 @@ pub fn main() {
         println!("Run Java examples...");
         for name in ["stacking1","stacking2","stacking3",
                      "mul1","mul2","mul3","mul4",
-                     "mul5","mul6","mul7","mul8"].iter() {
+                     "mul5","mul6","mul7","mul8",
+                     "sumon1","sumon2","sumon3","sumon4",
+                     "sumon1s","sumon2s","sumon3s","sumon4s" ].iter() {
             let mut cmd2 = std::process::Command::new("java");
-            cmd2.arg("-Xmx8192G");
+            cmd2.arg("-Xmx8G");
             if let Some(ref cp) = classpath {
                 cmd2.arg("-cp").arg(format!("target:{}",cp));
             } 
@@ -108,17 +117,25 @@ pub fn main() {
     }
 
     let tabledata = vec![
-        ("Stacking, mixed",        stacking1(),rundata.get("stacking1")),
-        ("Stacking, dense",        stacking2(),rundata.get("stacking2")),
-        ("Stacking, sparse",       stacking3(),rundata.get("stacking3")),
-        ("Mul dense X * dense M",  mul1(),     rundata.get("mul1")),
-        ("Mul sparse X * dense M", mul2(),     rundata.get("mul2")),
-        ("Mul dense X * sparse M", mul3(),     rundata.get("mul3")),
-        ("Mul sparse X * sparse M",mul4(),     rundata.get("mul4")),
-        ("Mul dense M * dense X",  mul5(),     rundata.get("mul5")),
-        ("Mul dense M * sparse X", mul6(),     rundata.get("mul6")),
-        ("Mul sparse M * dense X", mul7(),     rundata.get("mul7")),
-        ("Mul sparse M * sparse X",mul8(),     rundata.get("mul8")),
+        ("Stacking, mixed",           stacking1(),rundata.get("stacking1")),
+        ("Stacking, dense",           stacking2(),rundata.get("stacking2")),
+        ("Stacking, sparse",          stacking3(),rundata.get("stacking3")),
+        ("Mul dense X * dense M",     mul1(),     rundata.get("mul1")),
+        ("Mul sparse X * dense M",    mul2(),     rundata.get("mul2")),
+        ("Mul dense X * sparse M",    mul3(),     rundata.get("mul3")),
+        ("Mul sparse X * sparse M",   mul4(),     rundata.get("mul4")),
+        ("Mul dense M * dense X",     mul5(),     rundata.get("mul5")),
+        ("Mul dense M * sparse X",    mul6(),     rundata.get("mul6")),
+        ("Mul sparse M * dense X",    mul7(),     rundata.get("mul7")),
+        ("Mul sparse M * sparse X",   mul8(),     rundata.get("mul8")),
+        ("Expr Sum on axis 1",        sumon1(),   rundata.get("sumon1")),
+        ("Expr Sum on axis 2",        sumon2(),   rundata.get("sumon2")),
+        ("Expr Sum on axis 3",        sumon3(),   rundata.get("sumon3")),
+        ("Expr Sum on axis 1,3",      sumon4(),   rundata.get("sumon4")),
+        ("Sparse Expr Sum on axis 1", sumon1s(),  rundata.get("sumon1s")),
+        ("Sparse Expr Sum on axis 2", sumon2s(),  rundata.get("sumon2s")),
+        ("Sparse Expr Sum on axis 3", sumon3s(),  rundata.get("sumon3s")),
+        ("Sparse Expr Sum on axis 1,3", sumon4s(),  rundata.get("sumon4s")),
     ];
 
     let width = tabledata.iter().map(|(n,_,_)| n.len()).max().unwrap();

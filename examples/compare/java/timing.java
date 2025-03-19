@@ -344,10 +344,226 @@ public class timing {
       double T1 = 0.001 * System.currentTimeMillis();
 
       return (T1-T0)/REP;
-      //System.out.printf("%-30s: Avg time: %.2f secs\n","Mul sparse M * sparse X", (T1-T0)/REP);
     }
   }
 
+  static double sumon1()
+    throws SolutionError 
+  {
+    int N = 300;
+    try (Model M = new Model()) {
+      Variable x = M.variable(new int[] {N,N,N});
+      int[][] sp = new int[(N*N*N-1)/7+1][];
+      for (int i = 0, j = 0; j < N*N*N; ++i, j += 7) { sp[i] = new int[]{ j/(N*N),(j/N)%N,j%N }; }
+      Variable s = M.variable(Domain.unbounded().withShape(new int[]{N,N,N}).sparse(sp));
+
+      WorkStack rs = new WorkStack();
+      WorkStack ws = new WorkStack();
+      WorkStack xs = new WorkStack();
+
+      double T0 = 0.001 * System.currentTimeMillis();
+      for (int i = 0; i < REP; ++i) {
+          for (int d = 0; d < 3; ++d) {
+              rs.clear();
+              Expr.sum(Expr.add(x,new ExprPermuteDims(new int[]{1,2,0},x)),0).eval(rs,ws,xs);
+          }
+      }
+      double T1 = 0.001 * System.currentTimeMillis();
+
+      return (T1-T0)/REP;
+    }
+  }
+
+  static double sumon2()
+    throws SolutionError 
+  {
+    int N = 300;
+    try (Model M = new Model()) {
+      Variable x = M.variable(new int[] {N,N,N});
+      int[][] sp = new int[(N*N*N-1)/7+1][];
+      for (int i = 0, j = 0; j < N*N*N; ++i, j += 7) { sp[i] = new int[]{ j/(N*N),(j/N)%N,j%N }; }
+      Variable s = M.variable(Domain.unbounded().withShape(new int[]{N,N,N}).sparse(sp));
+
+      WorkStack rs = new WorkStack();
+      WorkStack ws = new WorkStack();
+      WorkStack xs = new WorkStack();
+
+      double T0 = 0.001 * System.currentTimeMillis();
+      for (int i = 0; i < REP; ++i) {
+          for (int d = 0; d < 3; ++d) {
+              rs.clear();
+              Expr.sum(Expr.add(x,new ExprPermuteDims(new int[]{1,2,0},x)),1).eval(rs,ws,xs);
+          }
+      }
+      double T1 = 0.001 * System.currentTimeMillis();
+
+      return (T1-T0)/REP;
+    }
+  }
+
+  static double sumon3()
+    throws SolutionError 
+  {
+    int N = 300;
+    try (Model M = new Model()) {
+      Variable x = M.variable(new int[] {N,N,N});
+      int[][] sp = new int[(N*N*N-1)/7+1][];
+      for (int i = 0, j = 0; j < N*N*N; ++i, j += 7) { sp[i] = new int[]{ j/(N*N),(j/N)%N,j%N }; }
+      Variable s = M.variable(Domain.unbounded().withShape(new int[]{N,N,N}).sparse(sp));
+
+      WorkStack rs = new WorkStack();
+      WorkStack ws = new WorkStack();
+      WorkStack xs = new WorkStack();
+
+      double T0 = 0.001 * System.currentTimeMillis();
+      for (int i = 0; i < REP; ++i) {
+          for (int d = 0; d < 3; ++d) {
+              rs.clear();
+              Expr.sum(Expr.add(x,new ExprPermuteDims(new int[]{1,2,0},x)),2).eval(rs,ws,xs);
+          }
+      }
+      double T1 = 0.001 * System.currentTimeMillis();
+
+      return (T1-T0)/REP;
+    }
+  }
+  
+  static double sumon4()
+    throws SolutionError 
+  {
+    int N = 300;
+    try (Model M = new Model()) {
+      Variable x = M.variable(new int[] {N,N,N});
+      int[][] sp = new int[(N*N*N-1)/7+1][];
+      for (int i = 0, j = 0; j < N*N*N; ++i, j += 7) { sp[i] = new int[]{ j/(N*N),(j/N)%N,j%N }; }
+      Variable s = M.variable(Domain.unbounded().withShape(new int[]{N,N,N}).sparse(sp));
+
+      WorkStack rs = new WorkStack();
+      WorkStack ws = new WorkStack();
+      WorkStack xs = new WorkStack();
+
+      double T0 = 0.001 * System.currentTimeMillis();
+      for (int i = 0; i < REP; ++i) {
+          for (int d = 0; d < 3; ++d) {
+              rs.clear();
+              Expr.sum(Expr.add(x,new ExprPermuteDims(new int[]{1,2,0},x)),new int[]{0,2}).eval(rs,ws,xs);
+          }
+      }
+      double T1 = 0.001 * System.currentTimeMillis();
+
+      return (T1-T0)/REP;
+    }
+  }
+
+
+
+  static double sumon1s()
+    throws SolutionError 
+  {
+    int N = 300;
+    try (Model M = new Model()) {
+      Variable x = M.variable(new int[] {N,N,N});
+      int[][] sp = new int[(N*N*N-1)/7+1][];
+      for (int i = 0, j = 0; j < N*N*N; ++i, j += 7) { sp[i] = new int[]{ j/(N*N),(j/N)%N,j%N }; }
+      Variable s = M.variable(Domain.unbounded().withShape(new int[]{N,N,N}).sparse(sp));
+
+      WorkStack rs = new WorkStack();
+      WorkStack ws = new WorkStack();
+      WorkStack xs = new WorkStack();
+
+      double T0 = 0.001 * System.currentTimeMillis();
+      for (int i = 0; i < REP; ++i) {
+          for (int d = 0; d < 3; ++d) {
+              rs.clear();
+              Expr.sum(Expr.add(s,new ExprPermuteDims(new int[]{1,2,0},s)),0).eval(rs,ws,xs);
+          }
+      }
+      double T1 = 0.001 * System.currentTimeMillis();
+
+      return (T1-T0)/REP;
+    }
+  }
+
+  static double sumon2s()
+    throws SolutionError 
+  {
+    int N = 300;
+    try (Model M = new Model()) {
+      Variable x = M.variable(new int[] {N,N,N});
+      int[][] sp = new int[(N*N*N-1)/7+1][];
+      for (int i = 0, j = 0; j < N*N*N; ++i, j += 7) { sp[i] = new int[]{ j/(N*N),(j/N)%N,j%N }; }
+      Variable s = M.variable(Domain.unbounded().withShape(new int[]{N,N,N}).sparse(sp));
+
+      WorkStack rs = new WorkStack();
+      WorkStack ws = new WorkStack();
+      WorkStack xs = new WorkStack();
+
+      double T0 = 0.001 * System.currentTimeMillis();
+      for (int i = 0; i < REP; ++i) {
+          for (int d = 0; d < 3; ++d) {
+              rs.clear();
+              Expr.sum(Expr.add(s,new ExprPermuteDims(new int[]{1,2,0},s)),1).eval(rs,ws,xs);
+          }
+      }
+      double T1 = 0.001 * System.currentTimeMillis();
+
+      return (T1-T0)/REP;
+    }
+  }
+
+  static double sumon3s()
+    throws SolutionError 
+  {
+    int N = 300;
+    try (Model M = new Model()) {
+      Variable x = M.variable(new int[] {N,N,N});
+      int[][] sp = new int[(N*N*N-1)/7+1][];
+      for (int i = 0, j = 0; j < N*N*N; ++i, j += 7) { sp[i] = new int[]{ j/(N*N),(j/N)%N,j%N }; }
+      Variable s = M.variable(Domain.unbounded().withShape(new int[]{N,N,N}).sparse(sp));
+
+      WorkStack rs = new WorkStack();
+      WorkStack ws = new WorkStack();
+      WorkStack xs = new WorkStack();
+
+      double T0 = 0.001 * System.currentTimeMillis();
+      for (int i = 0; i < REP; ++i) {
+          for (int d = 0; d < 3; ++d) {
+              rs.clear();
+              Expr.sum(Expr.add(s,new ExprPermuteDims(new int[]{1,2,0},s)),2).eval(rs,ws,xs);
+          }
+      }
+      double T1 = 0.001 * System.currentTimeMillis();
+
+      return (T1-T0)/REP;
+    }
+  }
+
+  static double sumon4s()
+    throws SolutionError 
+  {
+    int N = 300;
+    try (Model M = new Model()) {
+      Variable x = M.variable(new int[] {N,N,N});
+      int[][] sp = new int[(N*N*N-1)/7+1][];
+      for (int i = 0, j = 0; j < N*N*N; ++i, j += 7) { sp[i] = new int[]{ j/(N*N),(j/N)%N,j%N }; }
+      Variable s = M.variable(Domain.unbounded().withShape(new int[]{N,N,N}).sparse(sp));
+
+      WorkStack rs = new WorkStack();
+      WorkStack ws = new WorkStack();
+      WorkStack xs = new WorkStack();
+
+      double T0 = 0.001 * System.currentTimeMillis();
+      for (int i = 0; i < REP; ++i) {
+          for (int d = 0; d < 3; ++d) {
+              rs.clear();
+              Expr.sum(Expr.add(s,new ExprPermuteDims(new int[]{1,2,0},s)),new int[]{0,2}).eval(rs,ws,xs);
+          }
+      }
+      double T1 = 0.001 * System.currentTimeMillis();
+
+      return (T1-T0)/REP;
+    }
+  }
 
 
 
@@ -377,6 +593,22 @@ public class timing {
             System.out.printf("%.3f",mul7());
         else if (args[0].equals("mul8"))
             System.out.printf("%.3f",mul8());
+        else if (args[0].equals("sumon1"))
+            System.out.printf("%.3f",sumon1());
+        else if (args[0].equals("sumon2"))
+            System.out.printf("%.3f",sumon2());
+        else if (args[0].equals("sumon3"))
+            System.out.printf("%.3f",sumon3());
+        else if (args[0].equals("sumon4"))
+            System.out.printf("%.3f",sumon4());
+        else if (args[0].equals("sumon1s"))
+            System.out.printf("%.3f",sumon1s());
+        else if (args[0].equals("sumon2s"))
+            System.out.printf("%.3f",sumon2s());
+        else if (args[0].equals("sumon3s"))
+            System.out.printf("%.3f",sumon3s());
+        else if (args[0].equals("sumon4s"))
+            System.out.printf("%.3f",sumon4s());
     }
   }
 }
