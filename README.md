@@ -108,7 +108,7 @@ cargo build && cargo test
 
 When running examples, the compiled examples cannot locate the MOSEK library 
 
-Running examples requires the MOSEK library to be available. The simplest
+Running examples requires the MOSEK library to be available and a license file. The simplest
 solution is to download and unpack the MOSEK distro from https://www.mosek.com/downloads/, unpack the distro
 and set relevant environment variable:
 - On MS Windows: 
@@ -118,4 +118,4 @@ and set relevant environment variable:
 - On Linux: 
   ```export LD_LIBRARY_PATH=/full/path/to/mosek/binaries:$LD_LIBRARY_PATH```
 
-
+A trial license can be obtained from https://www.mosek.com/products/trial/.
