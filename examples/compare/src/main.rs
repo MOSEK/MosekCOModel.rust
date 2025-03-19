@@ -72,26 +72,25 @@ pub fn main() {
         cmd1.status().expect("Failed to compile java example");
         println!("    Ok");
 
-        println!("Run Java example...");
-        let mut cmd2 = std::process::Command::new("java");
-        cmd2.arg("-Xmx8192G")
-            .arg("-Xms4096G");
-        if let Some(ref cp) = classpath {
-            cmd2.arg("-cp").arg(format!("target:{}",cp));
-        } 
-        else {
-            cmd2.arg("-cp").arg("target");
-        };
-        cmd2.arg("com.mosek.fusion.examples.timing");
-        let output = cmd2.output().expect("Failure to run Java tests.");
-        println!("    Ok");
-        let data = std::str::from_utf8(output.stdout.as_slice()).unwrap();
-                
-        for l in data.split("\n") {
-            let mut elms = l.split(":");
-            if let (Some(n),Some(v)) = (elms.next(),elms.next()) {
-                 if let Ok(v) = v.parse::<f64>() { _ = rundata.insert(n.to_string(),v); }
-            }
+        println!("Run Java examples...");
+        for name in ["stacking1","stacking2","stacking3",
+                     "mul1","mul2","mul3","mul4",
+                     "mul5","mul6","mul7","mul8"].iter() {
+            let mut cmd2 = std::process::Command::new("java");
+            cmd2.arg("-Xmx8192G")
+                .arg("-Xms4096G");
+            if let Some(ref cp) = classpath {
+                cmd2.arg("-cp").arg(format!("target:{}",cp));
+            } 
+            else {
+                cmd2.arg("-cp").arg("target");
+            };
+            cmd2.arg("com.mosek.fusion.examples.timing");
+            cmd2.arg(name);
+            let output = cmd2.output().expect("Failure to run Java tests.");
+            println!("    {} Ok", name);
+            let data = std::str::from_utf8(output.stdout.as_slice()).unwrap();
+            if let Ok(v) = data.parse::<f64>() { _ = rundata.insert(name.to_string(),v); }
         }
     }
 
