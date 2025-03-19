@@ -19,7 +19,7 @@
 //!
 extern crate mosekcomodel;
 mod tests;
-use std::{collections::HashMap};
+use std::collections::HashMap;
 use tests::*;
 
 pub fn main() {
@@ -32,7 +32,6 @@ pub fn main() {
 
 
     let mut args = std::env::args();
-    println!("args = {:?}",std::env::args().collect::<Vec<String>>());
     _  = args.next(); // pop executable name
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -52,7 +51,7 @@ pub fn main() {
                 println!("compare [--style STYLE] [--compare] [--classpath PATH | -cp PATH] [--help]");
                 println!("  --compare run Java fusion implementation for comparison");
                 println!("  --classpath|-cp PATH provide CLASSPATH for compiling and running java");
-                println!("  --style (csv|markdown|tab) select output style");
+                println!("  --style (csv|md|tab) select output style");
                 return;
             }
             _ => panic!("Unexpected argument {}",a)
@@ -63,22 +62,27 @@ pub fn main() {
 
     if compare {
         println!("Compile Java...");
-        let mut cmd1 = std::process::Command::new("javac");
-            if let Some(ref cp) = classpath {
-                cmd1.arg("-cp").arg(cp);
-            } 
-            cmd1.arg("-d").arg("target")
-                .arg("java/timing.java");
-        cmd1.status().expect("Failed to compile java example");
-        println!("    Ok");
+        {
+            let mut cmd1 = std::process::Command::new("javac");
+                if let Some(ref cp) = classpath {
+                    cmd1.arg("-cp").arg(cp);
+                } 
+                cmd1.arg("-d").arg("target")
+                    .arg("java/timing.java");
+            let output = cmd1.output().expect("Failed to compile java example");
+            if ! output.status.success() {
+                println!("Failed to compile Java ({}):\n{}",output.status,std::str::from_utf8(output.stderr.as_slice()).unwrap());
+                panic!("Failed to compile Java!") 
+            }
+            println!("    Ok");
+        }
 
         println!("Run Java examples...");
         for name in ["stacking1","stacking2","stacking3",
                      "mul1","mul2","mul3","mul4",
                      "mul5","mul6","mul7","mul8"].iter() {
             let mut cmd2 = std::process::Command::new("java");
-            cmd2.arg("-Xmx8192G")
-                .arg("-Xms4096G");
+            cmd2.arg("-Xmx8192G");
             if let Some(ref cp) = classpath {
                 cmd2.arg("-cp").arg(format!("target:{}",cp));
             } 
@@ -88,9 +92,18 @@ pub fn main() {
             cmd2.arg("com.mosek.fusion.examples.timing");
             cmd2.arg(name);
             let output = cmd2.output().expect("Failure to run Java tests.");
-            println!("    {} Ok", name);
-            let data = std::str::from_utf8(output.stdout.as_slice()).unwrap();
-            if let Ok(v) = data.parse::<f64>() { _ = rundata.insert(name.to_string(),v); }
+            if ! output.status.success() {
+                println!("Command: {:?}",cmd2);
+                println!("Java run failed ({}):\n{}",output.status,std::str::from_utf8(output.stderr.as_slice()).unwrap());
+            }
+            else {
+                let data = std::str::from_utf8(output.stdout.as_slice()).unwrap();
+                println!("    {} Ok -> {}", name,data);
+                if let Ok(v) = data.parse::<f64>() { 
+                    _ = rundata.insert(name.to_string(),v);
+                    println!("      -> {}",v);
+                }
+            }
         }
     }
 

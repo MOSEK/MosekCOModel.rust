@@ -354,28 +354,28 @@ public class timing {
 
   public static void main(String[] args)
   throws SolutionError {
-    if (args.length > 1) {
-        if (args[1].equals("stacking1"))
+    if (args.length > 0) {
+        if (args[0].equals("stacking1"))
             System.out.printf("%.3f",stacking1());
-        else if (args[1].equals("stacking2"))
+        else if (args[0].equals("stacking2"))
             System.out.printf("%.3f",stacking2());
-        else if (args[1].equals("stacking3"))
+        else if (args[0].equals("stacking3"))
             System.out.printf("%.3f",stacking3());
-        else if (args[1].equals("mul1"))
+        else if (args[0].equals("mul1"))
             System.out.printf("%.3f",mul1());
-        else if (args[1].equals("mul2"))
+        else if (args[0].equals("mul2"))
             System.out.printf("%.3f",mul2());
-        else if (args[1].equals("mul3"))
+        else if (args[0].equals("mul3"))
             System.out.printf("%.3f",mul3());
-        else if (args[1].equals("mul4"))
+        else if (args[0].equals("mul4"))
             System.out.printf("%.3f",mul4());
-        else if (args[1].equals("mul5"))
+        else if (args[0].equals("mul5"))
             System.out.printf("%.3f",mul5());
-        else if (args[1].equals("mul6"))
+        else if (args[0].equals("mul6"))
             System.out.printf("%.3f",mul6());
-        else if (args[1].equals("mul7"))
+        else if (args[0].equals("mul7"))
             System.out.printf("%.3f",mul7());
-        else if (args[1].equals("mul8"))
+        else if (args[0].equals("mul8"))
             System.out.printf("%.3f",mul8());
     }
   }
