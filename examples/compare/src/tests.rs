@@ -87,7 +87,7 @@ pub fn stacking3() -> f64 {
 }
 
 pub fn mul1() -> f64 {
-    const N : usize = 200;
+    const N : usize = 400;
     let mut model = Model::new(None);
 
     let x = model.variable(None,unbounded().with_shape(&[N,N]));
@@ -127,7 +127,7 @@ pub fn mul2() -> f64 {
 }
 
 pub fn mul3() -> f64 {
-    const N : usize = 400;
+    const N : usize = 800;
     let mut model = Model::new(None);
 
     let x = model.variable(None,unbounded().with_shape(&[N,N]));
@@ -148,7 +148,7 @@ pub fn mul3() -> f64 {
 }
 
 pub fn mul4() -> f64 {
-    const N : usize = 400;
+    const N : usize = 800;
     let mut model = Model::new(None);
 
     let y = model.variable(None,unbounded().with_shape(&[N,N]).with_sparsity_indexes((0..N*N).step_by(7).collect()));
@@ -169,7 +169,7 @@ pub fn mul4() -> f64 {
 }
 
 pub fn mul5() -> f64 {
-    const N : usize = 200;
+    const N : usize = 400;
     let mut model = Model::new(None);
 
     let x = model.variable(None,unbounded().with_shape(&[N,N]));
@@ -189,7 +189,7 @@ pub fn mul5() -> f64 {
 }
 
 pub fn mul6() -> f64 {
-    const N : usize = 400;
+    const N : usize = 800;
     let mut model = Model::new(None);
 
     let y = model.variable(None,unbounded().with_shape(&[N,N]).with_sparsity_indexes((0..N*N).step_by(7).collect()));
@@ -209,7 +209,7 @@ pub fn mul6() -> f64 {
 }
 
 pub fn mul7() -> f64 {
-    const N : usize = 400;
+    const N : usize = 800;
     let mut model = Model::new(None);
 
     let x = model.variable(None,unbounded().with_shape(&[N,N]));
@@ -230,7 +230,7 @@ pub fn mul7() -> f64 {
 }
 
 pub fn mul8() -> f64 {
-    const N : usize = 400;
+    const N : usize = 800;
     let mut model = Model::new(None);
 
     let y = model.variable(None,unbounded().with_shape(&[N,N]).with_sparsity_indexes((0..N*N).step_by(7).collect()));

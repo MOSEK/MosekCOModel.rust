@@ -68,18 +68,20 @@ pub fn main() {
                 cmd1.arg("-cp").arg(cp);
             } 
             cmd1.arg("-d").arg("target")
-                .arg("examples/compare/timing.java");
+                .arg("java/timing.java");
         cmd1.status().expect("Failed to compile java example");
         println!("    Ok");
 
         println!("Run Java example...");
         let mut cmd2 = std::process::Command::new("java");
-            if let Some(ref cp) = classpath {
-                cmd2.arg("-cp").arg(format!("target:{}",cp));
-            } 
-            else {
-                cmd2.arg("-cp").arg("target");
-            };
+        cmd2.arg("-Xmx8192G")
+            .arg("-Xms4096G");
+        if let Some(ref cp) = classpath {
+            cmd2.arg("-cp").arg(format!("target:{}",cp));
+        } 
+        else {
+            cmd2.arg("-cp").arg("target");
+        };
         cmd2.arg("com.mosek.fusion.examples.timing");
         let output = cmd2.output().expect("Failure to run Java tests.");
         println!("    Ok");
