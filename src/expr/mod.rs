@@ -2647,11 +2647,16 @@ mod test {
             assert_eq!(shape,&[5,5]);
             assert_eq!(sp.unwrap(),&[5,11]);
             assert_eq!(ptr,&[0,1,2]);
-            assert_eq!(subj,&[127,128]);
+            assert_eq!(subj,&[127,129]);
         }
 
-
+        println!("---------------------------------");
         {
+
+
+
+
+
             rs.clear(); ws.clear(); xs.clear();
             x.clone().map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { Some([i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
 
@@ -2660,9 +2665,20 @@ mod test {
             assert_eq!(shape,&[5,5]);
             assert_eq!(sp.unwrap(),&[5usize,10,11,15,16,17,20,21,22,23]);
             assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10]);
-            assert_eq!(subj,&[27,52,57,78,83,88,104,19,114,119]);
+            assert_eq!(subj,&[27,53,58,79,84,89,105,110,115,120]);
         }
+        println!("---------------------------------");
         {
+            // 1 0 1 -> 26    | 3 0 -> 15
+            // 2 0 2 -> 52    | 2 0 -> 10
+            // 2 1 2 -> 57    | 2 1 -> 11
+            // 3 0 3 -> 78    | 1 0 -> 5
+            // 3 1 3 -> 83    | 1 1 -> 6
+            // 3 2 3 -> 88    | 1 2 -> 7
+            // 4 0 4 -> 104   | 0 0 -> 0
+            // 4 1 4 -> 109   | 0 1 -> 1
+            // 4 2 4 -> 114   | 0 2 -> 2
+            // 4 3 4 -> 119   | 0 3 -> 3
             rs.clear(); ws.clear(); xs.clear();
             x.clone().map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { Some([4-i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
 
@@ -2671,6 +2687,7 @@ mod test {
             assert_eq!(shape,&[5,5]);
             assert_eq!(sp.unwrap(),&[0,1,2,3,5,6,7,10,11,15]);
             assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10]);
+            assert_eq!(subj,&[105,110,115,120, 79,84,89, 53,58, 27]);
         }
 
     }
