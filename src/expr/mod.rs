@@ -1133,110 +1133,110 @@ impl<const N : usize, const M : usize, F, E> ExprTrait<M> for ExprMap<N,M,F,E>
         self.item.eval(ws,rs,xs)?;
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
-        if let Some(sp) = sp {
-            let nn = sp.len();
-            let (irest,_) = xs.alloc(sp.len()*6, 0);
-            let (xptrb,irest) = irest.split_at_mut(sp.len());
-            let (xptre,irest) = irest.split_at_mut(sp.len());
-            let (xsp,irest)   = irest.split_at_mut(sp.len());
-           
+
+        let nelm : usize = sp.map(|v| v.len()).unwrap_or(ptr.len()-1);
+        let (irest,_) = xs.alloc(nelm*7, 0);
+
+        let (xptrb,xptre,xsp) = {
+            let (xptrb,irest) = irest.split_at_mut(nelm);
+            let (xptre,irest) = irest.split_at_mut(nelm);
+            let (xsp,irest)   = irest.split_at_mut(nelm);
+
             let mut src_shape = [0usize; N]; src_shape.copy_from_slice(shape);
             let src_st = src_shape.to_strides();
             let tgt_st = self.shape.to_strides();
 
             let mut f = self.f.clone();
-            let xnelm = 
-                izip!(ptr.iter(),
-                      ptr[1..].iter(),
-                      sp.iter())
-                .filter_map(|(p0,p1,i)| 
-                    if let Some(j) = f(&src_st.to_index(*i)) {
-                        if j.iter().zip(self.shape.iter()).all(|(a,b)| a < b) {
-                            Some((tgt_st.to_linear(&j),*p0,*p1)) 
-                        }
-                        else {
-                            None
-                        }
-                    } 
-                    else {
-                        None })
-                .zip(izip!(xptrb.iter_mut(),xptre.iter_mut(),xsp.iter_mut()))
-                .fold(0,|n,((j,p0,p1),(xpb,xpe,xspi))| { *xspi = j; *xpb = p0; *xpe = p1; n+1 })
-                ; 
+            let xnelm = {
+                if let Some(sp) = sp {
+                    izip!(ptr.iter(),
+                          ptr[1..].iter(),
+                          sp.iter())
+                    .filter_map(|(p0,p1,i)|
+                        f(&src_st.to_index(*i))
+                            .and_then(|v| tgt_st.from_coords_checked(&v))
+                            .and_then(|i| Some((i,*p0,*p1))))
+                    .zip(izip!(xptrb.iter_mut(),xptre.iter_mut(),xsp.iter_mut()))
+                    .fold(0,|n,((j,p0,p1),(xpb,xpe,xspi))| { *xspi = j; *xpb = p0; *xpe = p1; n+1 })
+                }
+                else {
+                    izip!(ptr.iter(),
+                          ptr[1..].iter(),
+                          src_shape.index_iterator())
+                    .filter_map(|(p0,p1,i)|
+                        f(&i)
+                            .and_then(|v| tgt_st.from_coords_checked(&v))
+                            .and_then(|i| Some((i,*p0,*p1))))
+                    .zip(izip!(xptrb.iter_mut(),xptre.iter_mut(),xsp.iter_mut()))
+                    .fold(0,|n,((j,p0,p1),(xpb,xpe,xspi))| { *xspi = j; *xpb = p0; *xpe = p1; n+1 })
+                }
+            };
 
             let xptrb = &mut xptrb[..xnelm];
             let xptre = &mut xptre[..xnelm];
             let xsp   = &mut xsp[..xnelm];
 
-            let rnnz = xptrb.iter().zip(xptre.iter()).map(|(a,b)| b-a).sum();
             if xsp.iter().zip(xsp[1..].iter()).all(|(&i,&j)| i < j) {
-                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.shape, rnnz, xnelm);
-                rptr[0] = 0;
-                izip!(xptrb.iter(),xptre.iter(),rptr[1..].iter_mut()).fold(0,|n,(&pb,&pe,rp)| { *rp = n+pe-pb; *rp });
-                if let Some(rsp) = rsp { rsp.clone_from_slice(xsp); }
-
-                izip!(cof.chunks_ptr2(xptrb, xptre),
-                      rcof.chunks_ptr_mut(rptr,&rptr[1..]))
-                    .for_each(|(cof,rcof)| rcof.clone_from_slice(cof));
-                izip!(subj.chunks_ptr2(xptrb, xptre),
-                      rsubj.chunks_ptr_mut(rptr, &rptr[1..]))
-                    .for_each(|(subj,rsubj)| rsubj.clone_from_slice(subj));
-
-                Ok(())
+                (xptrb,xptre,xsp)
             }
             else {
-                // target sparsity was not ordered or contained duplicates
                 let (xperm,irest)   = irest.split_at_mut(xnelm);
-                let (xoptrb,irest)  = irest.split_at_mut(nn);
-                let (irest,xoptre)  = irest.split_at_mut(nn);
-                xperm.copy_from_iter(0..nn);
+                let (xosp,irest)    = irest.split_at_mut(xnelm);
+                let (xoptrb,xoptre) = irest.split_at_mut(xnelm);
+                xperm.copy_from_iter(0..nelm);
                 xperm.sort_by_key(|&i| unsafe{ *xsp.get_unchecked(i) } );
                 xoptrb.copy_from_iter(xptrb.permute_by(xperm).cloned());
                 xoptre.copy_from_iter(xptre.permute_by(xperm).cloned());
-                
-                let rnelm = 
-                    if xnelm == 0 { 0 }
-                    else {
-                        xsp.permute_by(&xperm[1..]).fold((1,xsp[xperm[0]]),| (n,previ), &i | if previ == i { (n,previ) } else { (n+1,i) }).0
-                    };
+                xosp.copy_from_iter(xsp.permute_by(xperm).cloned());
 
-                let rnnz : usize = xoptrb.iter().zip(xoptre.iter()).map(|(p0,p1)| p1-p0).sum();
-
-                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.shape, rnnz, rnelm);
-
-                rptr[0] = 0;
-
-                izip!(xsp.permute_by(xperm),
-                      xsp.permute_by(&xperm[1..]),
-                      xoptrb.iter(),xoptrb[1..].iter(),
-                      xoptre.iter(),xoptre[1..].iter())
-                    .scan(0usize,|n,(&spi0,&spi1,&p0,&p1)| if spi0 == spi1 {  } )
-
-                izip!(xoptrb.iter(),xoptre.iter(),xsp.permute_by(xperm))
-                    .scan((usize::MAX,0usize),|(previ,n),(&xpb,&xpe,&spi)| 
-                    )
-
-
-                izip!(xptrb.iter(),xptre.iter(),rptr[1..].iter_mut()).fold(0,|n,(&pb,&pe,rp)| { *rp = n+pe-pb; *rp });
-                if let Some(rsp) = rsp { rsp.clone_from_slice(xsp); }
-
-                izip!(cof.chunks_ptr2(xptrb, xptre),
-                      rcof.chunks_ptr_mut(rptr,&rptr[1..]))
-                    .for_each(|(cof,rcof)| rcof.clone_from_slice(cof));
-                izip!(subj.chunks_ptr2(xptrb, xptre),
-                      rsubj.chunks_ptr_mut(rptr, &rptr[1..]))
-                    .for_each(|(subj,rsubj)| rsubj.clone_from_slice(subj));
-
-                Ok(())
-
-
-
-                unimplemented!("Case not implemented");
+                (xoptrb,xoptre,xosp)
             }
+        };
+
+        let rnnz = xptrb.iter().zip(xptre.iter()).map(|(a,b)| b-a).sum();
+        let rnelm = if xsp.is_empty() { 0 } else { 1+xsp.iter().zip(xsp[1..].iter()).filter(|(a,b)| a!=b).count() };
+
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.shape, rnnz, rnelm);
+
+        izip!(cof.chunks_ptr2(xptrb, xptre),
+              rcof.chunks_ptr_mut(rptr,&rptr[1..]))
+            .for_each(|(cof,rcof)| rcof.clone_from_slice(cof));
+        izip!(subj.chunks_ptr2(xptrb, xptre),
+              rsubj.chunks_ptr_mut(rptr, &rptr[1..]))
+            .for_each(|(subj,rsubj)| rsubj.clone_from_slice(subj));
+
+        rptr[0] = 0;
+        if rnelm == xsp.len() {
+            // each target index was mapped exactly once (no duplicates)
+            if let Some(rsp) = rsp { rsp.copy_from_slice(xsp); }
+            izip!(rptr[1..].iter_mut(),xptrb.iter(),xptre.iter())
+                .fold(0,|n,(rp,&pb,&pe)| { *rp = n+pe-pb; *rp });
         }
         else {
-            unimplemented!("Case not implemented");
+            // some target indexes were duplicates and need to be merged
+            let it = 
+                izip!(xsp.iter(),
+                      xsp[1..].iter().chain(std::iter::once(&usize::MAX)),
+                      xptrb.iter(),
+                      xptre.iter())
+                    .scan(0usize,|n,(&spi0,&spi1,&pb,&pe)| if spi0 == spi1 { *n += pe-pb; Some(None) } else { let oldn = *n; *n = 0; Some(Some((oldn,spi0))) } )
+                    .filter_map(|v| v)
+                    ;
+
+            if let Some(rsp) = rsp {
+                // target is sparse
+                it
+                    .zip(rsp.iter_mut().zip(rptr[1..].iter_mut()))
+                    .fold(0,|n,((nz,i),(ri,rp))| { *ri = i; *rp = n+nz; *rp });
+            } 
+            else {
+                // target is dense
+                it
+                    .zip(rptr[1..].iter_mut())
+                    .fold(0,|n,((nz,_),rp)| { *rp = n+nz; *rp });
+            }
         }
+        Ok(())
     }
 }
 

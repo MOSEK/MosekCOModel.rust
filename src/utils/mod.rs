@@ -6,6 +6,7 @@ use itertools::izip;
 
 #[derive(Debug,Clone,Copy)]
 pub struct Strides<const N : usize> {
+    shape   : [usize;N],
     strides : [usize;N]
 }
 
@@ -13,7 +14,7 @@ impl<const N : usize> Strides<N> {
     pub fn from_shape(shape : &[usize;N]) -> Strides<N> {
         let mut strides = [0usize; N]; 
         strides.iter_mut().zip(shape.iter()).rev().fold(1usize,|c,(t,&s)| { *t = c; c*s });
-        Strides{ strides }
+        Strides{ strides, shape : *shape }
     }
     pub fn to_array(&self) -> [usize;N] { self.strides }
     pub fn to_linear(&self, index : &[usize;N]) -> usize {
@@ -24,6 +25,18 @@ impl<const N : usize> Strides<N> {
         r.iter_mut().zip(self.strides.iter()).fold(i,|i,(r,&s)| { *r = i/s; i%s} );
         r
     }
+
+    // Given coordinates `i`, compute the correponsing linear index. If `i` is not inside the
+    // shape, return None.
+    pub fn from_coords_checked(&self, i : &[usize;N]) -> Option<usize> {
+        if i.iter().zip(self.shape.iter()).all(|v| *v.0 < *v.1) {
+            Some(self.to_linear(i))
+        }
+        else {
+            None
+        }
+    }
+
     pub fn iter(&self) -> std::slice::Iter<usize> { self.strides.iter() }
 }
 
