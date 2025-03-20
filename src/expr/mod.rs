@@ -438,7 +438,7 @@ pub trait ExprTrait<const N : usize> {
     ///
     fn map<const M : usize,F>(self, shape : &[usize;M], f : F) -> ExprMap<N,M,F,Self> 
         where 
-            F : FnMut(&[usize;N]) -> Option<[usize;M]>,
+            F : Clone+FnMut(&[usize;N]) -> Option<[usize;M]>,
             Self : Sized
     {
         ExprMap{ item : self, shape : *shape, f}
@@ -1134,9 +1134,11 @@ impl<const N : usize, const M : usize, F, E> ExprTrait<M> for ExprMap<N,M,F,E>
         let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
         if let Some(sp) = sp {
-            let (irest,_) = xs.alloc(sp.len()*3, 0);
+            let nn = sp.len();
+            let (irest,_) = xs.alloc(sp.len()*6, 0);
             let (xptrb,irest) = irest.split_at_mut(sp.len());
-            let (xptre,xsp)   = irest.split_at_mut(sp.len());
+            let (xptre,irest) = irest.split_at_mut(sp.len());
+            let (xsp,irest)   = irest.split_at_mut(sp.len());
            
             let mut src_shape = [0usize; N]; src_shape.copy_from_slice(shape);
             let src_st = src_shape.to_strides();
@@ -1183,6 +1185,52 @@ impl<const N : usize, const M : usize, F, E> ExprTrait<M> for ExprMap<N,M,F,E>
                 Ok(())
             }
             else {
+                // target sparsity was not ordered or contained duplicates
+                let (xperm,irest)   = irest.split_at_mut(xnelm);
+                let (xoptrb,irest)  = irest.split_at_mut(nn);
+                let (irest,xoptre)  = irest.split_at_mut(nn);
+                xperm.copy_from_iter(0..nn);
+                xperm.sort_by_key(|&i| unsafe{ *xsp.get_unchecked(i) } );
+                xoptrb.copy_from_iter(xptrb.permute_by(xperm).cloned());
+                xoptre.copy_from_iter(xptre.permute_by(xperm).cloned());
+                
+                let rnelm = 
+                    if xnelm == 0 { 0 }
+                    else {
+                        xsp.permute_by(&xperm[1..]).fold((1,xsp[xperm[0]]),| (n,previ), &i | if previ == i { (n,previ) } else { (n+1,i) }).0
+                    };
+
+                let rnnz : usize = xoptrb.iter().zip(xoptre.iter()).map(|(p0,p1)| p1-p0).sum();
+
+                let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.shape, rnnz, rnelm);
+
+                rptr[0] = 0;
+
+                izip!(xsp.permute_by(xperm),
+                      xsp.permute_by(&xperm[1..]),
+                      xoptrb.iter(),xoptrb[1..].iter(),
+                      xoptre.iter(),xoptre[1..].iter())
+                    .scan(0usize,|n,(&spi0,&spi1,&p0,&p1)| if spi0 == spi1 {  } )
+
+                izip!(xoptrb.iter(),xoptre.iter(),xsp.permute_by(xperm))
+                    .scan((usize::MAX,0usize),|(previ,n),(&xpb,&xpe,&spi)| 
+                    )
+
+
+                izip!(xptrb.iter(),xptre.iter(),rptr[1..].iter_mut()).fold(0,|n,(&pb,&pe,rp)| { *rp = n+pe-pb; *rp });
+                if let Some(rsp) = rsp { rsp.clone_from_slice(xsp); }
+
+                izip!(cof.chunks_ptr2(xptrb, xptre),
+                      rcof.chunks_ptr_mut(rptr,&rptr[1..]))
+                    .for_each(|(cof,rcof)| rcof.clone_from_slice(cof));
+                izip!(subj.chunks_ptr2(xptrb, xptre),
+                      rsubj.chunks_ptr_mut(rptr, &rptr[1..]))
+                    .for_each(|(subj,rsubj)| rsubj.clone_from_slice(subj));
+
+                Ok(())
+
+
+
                 unimplemented!("Case not implemented");
             }
         }
