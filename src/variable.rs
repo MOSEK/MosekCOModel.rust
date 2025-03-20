@@ -1,5 +1,7 @@
 //! Module for Variable object and related implementations
 
+use std::fmt::Debug;
+
 use expr::ExprEvalError;
 use iter::IndexIteratorExt;
 use utils::*;
@@ -15,6 +17,21 @@ pub struct Variable<const N : usize> {
     idxs     : Vec<usize>,
     sparsity : Option<Vec<usize>>,
     shape    : [usize; N]
+}
+
+impl<const N : usize> Debug for Variable<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Variable{idxs:")?;
+        self.idxs.fmt(f);
+        f.write_str(", shape:")?;
+        self.shape.fmt(f)?;
+
+        if self.sparsity.is_some() {
+            f.write_str(",SPARSE")?;
+        }
+        f.write_str("}")?;
+        Ok(())
+    }
 }
 
 impl<const N : usize> Variable<N> {

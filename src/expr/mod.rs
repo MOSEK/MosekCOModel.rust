@@ -1161,25 +1161,28 @@ impl<const N : usize, const M : usize, F, E> ExprTrait<M> for ExprMap<N,M,F,E>
             let mut f = self.f.clone();
             let xnelm = {
                 if let Some(sp) = sp {
-                    println!("sp = {:?}",sp);
                     izip!(ptr.iter(),
                           ptr[1..].iter(),
-                          sp.iter())
-                        .filter_map(|(p0,p1,i)|
-                            f(&src_st.to_index(*i))
+                          sp.iter().map(|&i| src_st.to_index(i)))
+                        .filter_map(|(p0,p1,i)| {
+                            let r = f(&i)
                                 .and_then(|v| tgt_st.from_coords_checked(&v))
-                                .and_then(|i| Some((i,*p0,*p1))))
+                                .and_then(|i| Some((i,*p0,*p1)));
+                            if let Some(r) = r { println!("{:?} -> {:?}",i,r); }
+                            r
+                        })
                         .zip(izip!(xptrb.iter_mut(),xptre.iter_mut(),xsp.iter_mut()))
-                        .fold(0,|n,((j,p0,p1),(xpb,xpe,xspi))| { println!("xspi : {}",j); *xspi = j; *xpb = p0; *xpe = p1; n+1 })
+                        .fold(0,|n,((j,p0,p1),(xpb,xpe,xspi))| { println!("j = {}, range = {}..{}",j,p0,p1); *xspi = j; *xpb = p0; *xpe = p1; n+1 })
                 }
                 else {
                     izip!(ptr.iter(),
                           ptr[1..].iter(),
                           src_shape.index_iterator())
-                        .filter_map(|(p0,p1,i)|
+                        .filter_map(|(p0,p1,i)| {
                             f(&i)
                                 .and_then(|v| tgt_st.from_coords_checked(&v))
-                                .and_then(|i| Some((i,*p0,*p1))))
+                                .and_then(|i| Some((i,*p0,*p1)))
+                        })
                         .zip(izip!(xptrb.iter_mut(),xptre.iter_mut(),xsp.iter_mut()))
                         .fold(0,|n,((j,p0,p1),(xpb,xpe,xspi))| { *xspi = j; *xpb = p0; *xpe = p1; n+1 })
                 }
@@ -1213,10 +1216,6 @@ impl<const N : usize, const M : usize, F, E> ExprTrait<M> for ExprMap<N,M,F,E>
 
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.shape, rnnz, rnelm);
 
-        println!("xsp   = {:?}",xsp);
-        println!("xptrb = {:?}",xptrb);
-        println!("xptre = {:?}",xptre);
-        println!("cof len : {}",cof.len());
         rptr[0] = 0;
         if rnelm == xsp.len() {
             // each target index was mapped exactly once (no duplicates)
@@ -1522,7 +1521,6 @@ impl<const N : usize, E> ExprTrait<N> for ExprSumVec<N,E> where E : ExprTrait<N>
                     }
                 }
                 rptr.iter_mut().fold(0usize, |c,rp| { let tmp = *rp; *rp = c; tmp + c });
-                println!("rptr = {:?}",rptr);
                 
                 for (_,ptr,sp,subj,cof) in vals.iter() {
                     if let Some(sp) = sp { 
@@ -1534,7 +1532,6 @@ impl<const N : usize, E> ExprTrait<N> for ExprSumVec<N,E> where E : ExprTrait<N>
                         }
                     }
                     else {
-                        println!("ptr = {:?}, rptr = {:?}",ptr,rptr);
                         for (&pb,&pe,rp) in izip!(ptr.iter(),ptr[1..].iter(),rptr.iter_mut()) {
                             rsubj[*rp..*rp+pe-pb].copy_from_slice(&subj[pb..pe]);
                             rcof[*rp..*rp+pe-pb].copy_from_slice(&cof[pb..pe]);
@@ -2632,13 +2629,15 @@ mod test {
     #[test]
     fn map_expr() {
         let mut model = Model::new(None);
-        let x = model.variable(None,&[5,5,5]);
-        let s = model.variable(None,unbounded().with_shape(&[5,5,5]).with_sparsity(&[[0,0,0],[1,0,1],[2,1,2],[1,2,1],[3,2,2]]));
+        let x = model.variable(None,&[5,5,5]); // 1..125
+        let s = model.variable(None,unbounded().with_shape(&[5,5,5]).with_sparsity(&[[0,0,0],[1,0,1],[1,2,1],[2,1,2],[3,2,2]])); // 126..130
 
         let mut rs = WorkStack::new(1024);
         let mut ws = WorkStack::new(1024);
         let mut xs = WorkStack::new(1024);
        
+        println!("x = {:?}",x);
+        println!("s = {:?}",s);
         {
             rs.clear(); ws.clear(); xs.clear();
             s.map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { Some([i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
@@ -2648,20 +2647,20 @@ mod test {
             assert_eq!(shape,&[5,5]);
             assert_eq!(sp.unwrap(),&[5,11]);
             assert_eq!(ptr,&[0,1,2]);
-
-            println!("sp = {:?}",sp.unwrap());
+            assert_eq!(subj,&[127,128]);
         }
 
 
         {
             rs.clear(); ws.clear(); xs.clear();
-            x.clone().map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { println!("{:?} -> [{},{}]",i,i[0],i[1]); Some([i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
+            x.clone().map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { Some([i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
 
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
 
             assert_eq!(shape,&[5,5]);
             assert_eq!(sp.unwrap(),&[5usize,10,11,15,16,17,20,21,22,23]);
             assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10]);
+            assert_eq!(subj,&[27,52,57,78,83,88,104,19,114,119]);
         }
         {
             rs.clear(); ws.clear(); xs.clear();
