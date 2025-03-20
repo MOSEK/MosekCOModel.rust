@@ -435,7 +435,19 @@ pub trait ExprTrait<const N : usize> {
     ///
     /// # Example
     ///
+    /// Pick out the diagonal elements of a square expression into a vector:
+    /// ```
+    /// use mosekcomodel::*;
     ///
+    /// let mut model = Model::new(None);
+    /// let x = model.variable(None,unbounded().with_shape(&[10,10]));
+    /// let c = model.constraint(
+    ///   None, 
+    ///   &x.clone().add(x.clone().transpose())
+    ///     .map(&[10],|i| if i[0] == i[1] { Some([i[0]]) } else { None }),
+    ///   nonnegative().with_shape(&[10]));
+    ///
+    /// ```
     fn map<const M : usize,F>(self, shape : &[usize;M], f : F) -> ExprMap<N,M,F,Self> 
         where 
             F : Clone+FnMut(&[usize;N]) -> Option<[usize;M]>,
@@ -1149,26 +1161,27 @@ impl<const N : usize, const M : usize, F, E> ExprTrait<M> for ExprMap<N,M,F,E>
             let mut f = self.f.clone();
             let xnelm = {
                 if let Some(sp) = sp {
+                    println!("sp = {:?}",sp);
                     izip!(ptr.iter(),
                           ptr[1..].iter(),
                           sp.iter())
-                    .filter_map(|(p0,p1,i)|
-                        f(&src_st.to_index(*i))
-                            .and_then(|v| tgt_st.from_coords_checked(&v))
-                            .and_then(|i| Some((i,*p0,*p1))))
-                    .zip(izip!(xptrb.iter_mut(),xptre.iter_mut(),xsp.iter_mut()))
-                    .fold(0,|n,((j,p0,p1),(xpb,xpe,xspi))| { *xspi = j; *xpb = p0; *xpe = p1; n+1 })
+                        .filter_map(|(p0,p1,i)|
+                            f(&src_st.to_index(*i))
+                                .and_then(|v| tgt_st.from_coords_checked(&v))
+                                .and_then(|i| Some((i,*p0,*p1))))
+                        .zip(izip!(xptrb.iter_mut(),xptre.iter_mut(),xsp.iter_mut()))
+                        .fold(0,|n,((j,p0,p1),(xpb,xpe,xspi))| { println!("xspi : {}",j); *xspi = j; *xpb = p0; *xpe = p1; n+1 })
                 }
                 else {
                     izip!(ptr.iter(),
                           ptr[1..].iter(),
                           src_shape.index_iterator())
-                    .filter_map(|(p0,p1,i)|
-                        f(&i)
-                            .and_then(|v| tgt_st.from_coords_checked(&v))
-                            .and_then(|i| Some((i,*p0,*p1))))
-                    .zip(izip!(xptrb.iter_mut(),xptre.iter_mut(),xsp.iter_mut()))
-                    .fold(0,|n,((j,p0,p1),(xpb,xpe,xspi))| { *xspi = j; *xpb = p0; *xpe = p1; n+1 })
+                        .filter_map(|(p0,p1,i)|
+                            f(&i)
+                                .and_then(|v| tgt_st.from_coords_checked(&v))
+                                .and_then(|i| Some((i,*p0,*p1))))
+                        .zip(izip!(xptrb.iter_mut(),xptre.iter_mut(),xsp.iter_mut()))
+                        .fold(0,|n,((j,p0,p1),(xpb,xpe,xspi))| { *xspi = j; *xpb = p0; *xpe = p1; n+1 })
                 }
             };
 
@@ -1176,15 +1189,17 @@ impl<const N : usize, const M : usize, F, E> ExprTrait<M> for ExprMap<N,M,F,E>
             let xptre = &mut xptre[..xnelm];
             let xsp   = &mut xsp[..xnelm];
 
-            if xsp.iter().zip(xsp[1..].iter()).all(|(&i,&j)| i < j) {
+            if xsp.is_empty() || xsp.iter().zip(xsp[1..].iter()).all(|(&i,&j)| i < j) {
                 (xptrb,xptre,xsp)
             }
             else {
-                let (xperm,irest)   = irest.split_at_mut(xnelm);
-                let (xosp,irest)    = irest.split_at_mut(xnelm);
-                let (xoptrb,xoptre) = irest.split_at_mut(xnelm);
+                let (xperm,  irest) = irest.split_at_mut(xnelm);
+                let (xosp,   irest) = irest.split_at_mut(xnelm);
+                let (xoptrb, irest) = irest.split_at_mut(xnelm);
+                let (xoptre,_irest) = irest.split_at_mut(xnelm);
+
                 xperm.copy_from_iter(0..nelm);
-                xperm.sort_by_key(|&i| unsafe{ *xsp.get_unchecked(i) } );
+                xperm.sort_by_key(|&i| unsafe{ *xsp.get_unchecked(i) });
                 xoptrb.copy_from_iter(xptrb.permute_by(xperm).cloned());
                 xoptre.copy_from_iter(xptre.permute_by(xperm).cloned());
                 xosp.copy_from_iter(xsp.permute_by(xperm).cloned());
@@ -1198,13 +1213,10 @@ impl<const N : usize, const M : usize, F, E> ExprTrait<M> for ExprMap<N,M,F,E>
 
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&self.shape, rnnz, rnelm);
 
-        izip!(cof.chunks_ptr2(xptrb, xptre),
-              rcof.chunks_ptr_mut(rptr,&rptr[1..]))
-            .for_each(|(cof,rcof)| rcof.clone_from_slice(cof));
-        izip!(subj.chunks_ptr2(xptrb, xptre),
-              rsubj.chunks_ptr_mut(rptr, &rptr[1..]))
-            .for_each(|(subj,rsubj)| rsubj.clone_from_slice(subj));
-
+        println!("xsp   = {:?}",xsp);
+        println!("xptrb = {:?}",xptrb);
+        println!("xptre = {:?}",xptre);
+        println!("cof len : {}",cof.len());
         rptr[0] = 0;
         if rnelm == xsp.len() {
             // each target index was mapped exactly once (no duplicates)
@@ -1236,6 +1248,13 @@ impl<const N : usize, const M : usize, F, E> ExprTrait<M> for ExprMap<N,M,F,E>
                     .fold(0,|n,((nz,_),rp)| { *rp = n+nz; *rp });
             }
         }
+        izip!(cof.chunks_ptr2(xptrb, xptre),
+              rcof.chunks_ptr_mut(rptr,&rptr[1..]))
+            .for_each(|(cof,rcof)| rcof.clone_from_slice(cof));
+        izip!(subj.chunks_ptr2(xptrb, xptre),
+              rsubj.chunks_ptr_mut(rptr, &rptr[1..]))
+            .for_each(|(subj,rsubj)| rsubj.clone_from_slice(subj));
+
         Ok(())
     }
 }
@@ -2607,5 +2626,53 @@ mod test {
             assert_eq!(subj,[19,25,21,26,23,27]);
             assert_eq!(cof,[1.1,1.1,1.3,1.3,3.2,3.2]);
         }
+    }
+
+
+    #[test]
+    fn map_expr() {
+        let mut model = Model::new(None);
+        let x = model.variable(None,&[5,5,5]);
+        let s = model.variable(None,unbounded().with_shape(&[5,5,5]).with_sparsity(&[[0,0,0],[1,0,1],[2,1,2],[1,2,1],[3,2,2]]));
+
+        let mut rs = WorkStack::new(1024);
+        let mut ws = WorkStack::new(1024);
+        let mut xs = WorkStack::new(1024);
+       
+        {
+            rs.clear(); ws.clear(); xs.clear();
+            s.map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { Some([i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
+
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+
+            assert_eq!(shape,&[5,5]);
+            assert_eq!(sp.unwrap(),&[5,11]);
+            assert_eq!(ptr,&[0,1,2]);
+
+            println!("sp = {:?}",sp.unwrap());
+        }
+
+
+        {
+            rs.clear(); ws.clear(); xs.clear();
+            x.clone().map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { println!("{:?} -> [{},{}]",i,i[0],i[1]); Some([i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
+
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+
+            assert_eq!(shape,&[5,5]);
+            assert_eq!(sp.unwrap(),&[5usize,10,11,15,16,17,20,21,22,23]);
+            assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10]);
+        }
+        {
+            rs.clear(); ws.clear(); xs.clear();
+            x.clone().map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { Some([4-i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
+
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            
+            assert_eq!(shape,&[5,5]);
+            assert_eq!(sp.unwrap(),&[0,1,2,3,5,6,7,10,11,15]);
+            assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10]);
+        }
+
     }
 }
