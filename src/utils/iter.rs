@@ -294,8 +294,11 @@ pub struct ChunksByIterMut<'a,'b,'c,T:'a>
 
 impl<'a,'b,'c,T:'a> ChunksByIterMut<'a,'b,'c,T> {
     fn new(data : &'a mut [T], ptrb : &'b[usize], ptre : &'c[usize]) -> Self {
-        if let Some(&p) = ptrb.last() { if p > data.len() { panic!("Invalid ptrb for chunks_ptr iterator") } }
-        if let Some(&p) = ptre.last() { if p > data.len() { panic!("Invalid ptre for chunks_ptr iterator") } }
+        let n = ptrb.len().min(ptre.len());
+        let ptrb = &ptrb[..n];
+        let ptre = &ptre[..n];
+        if let Some(&p) = ptrb.iter().max() { if p > data.len() { panic!("Ptrb element out of bounds for data: {} > {}",p,data.len()) } }
+        if let Some(&p) = ptre.iter().max() { if p > data.len() { panic!("Invalid ptre for chunks_ptr iterator") } }
         if ptrb.iter().zip(ptre.iter()).any(|(&p0,&p1)| p0 > p1 ) {
             panic!("Invalid ptrb/ptre construction");
         }
