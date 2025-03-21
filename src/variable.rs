@@ -399,7 +399,7 @@ impl<const N : usize> Variable<N> {
         }
     }
 
-    pub fn dot<RHS>(&self,rhs: RHS) -> RHS::Result where RHS: Dot<ExprVariable<N>> { rhs.dot(IntoExpr::<N>::into(self)) }
+    pub fn dot<RHS>(&self,rhs: RHS) -> RHS::Result where RHS: RightDottable<N,ExprVariable<N>> { rhs.dot(IntoExpr::<N>::into(self)) }
     pub fn mul<RHS>(&self,other : RHS) -> RHS::Result where RHS : ExprRightMultipliable<N,ExprVariable<N>> { other.mul_right(IntoExpr::into(self)) }
     pub fn rev_mul<LHS>(&self, lhs: LHS) -> LHS::Result where LHS : ExprLeftMultipliable<N,ExprVariable<N>> { lhs.mul(IntoExpr::<N>::into(self)) }
     pub fn reshape<const M : usize>(&self,shape : &[usize; M]) -> Variable<M> {

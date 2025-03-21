@@ -6,18 +6,6 @@ use super::workstack::WorkStack;
 use itertools::izip;
 
 
-
-/// Implements support for dot-operator (inner product).
-///
-/// Implementations *should* adhere to the rules:
-/// - The operands must have the same shape, and
-/// - The result is a value representing the sum of elements in the element-wise multiplication of
-///   the operands.
-pub trait Dot<RHS> {
-    type Result;
-    fn dot(self, rhs : RHS) -> Self::Result;
-}
-
 pub struct ExprDot<const N : usize,E> where E : ExprTrait<N> {
     expr  : E,
     shape : [usize; N],
@@ -25,82 +13,161 @@ pub struct ExprDot<const N : usize,E> where E : ExprTrait<N> {
     sp    : Option<Vec<usize>>
 }
 
-/// Implements for `NDArray<N<>.dot(ExprTrait<N>)`
-impl<const N : usize, E> Dot<E> for NDArray<N>
-    where 
-        E : ExprTrait<N>
-{
+pub trait RightDottable<const N : usize, E> where E : ExprTrait<N> {
+    type Result : ExprTrait<0>;
+    fn dot(self,expr : E) -> Self::Result;
+}
+
+
+
+
+impl<E> RightDottable<1,E> for &[f64] where E: ExprTrait<1> {
+    type Result = ExprDot<1,E>;
+    fn dot(self,expr : E) -> Self::Result {
+        ExprDot{
+            expr,
+            shape : [self.len()],
+            cof : self.to_vec(),
+            sp : None
+        }
+    }
+}
+
+impl<E> RightDottable<1,E> for &Vec<f64> where E: ExprTrait<1> {
+    type Result = ExprDot<1,E>;
+    fn dot(self,expr : E) -> Self::Result { self.clone().dot(expr) }
+}
+
+impl<E> RightDottable<1,E> for Vec<f64> where E: ExprTrait<1> {
+    type Result = ExprDot<1,E>;
+    fn dot(self,expr : E) -> Self::Result { self.to_vec().dot(expr) }
+}
+
+impl<const N : usize, E> RightDottable<N,E> for &NDArray<N> where E : ExprTrait<N> {
     type Result = ExprDot<N,E>;
-    fn dot(self, rhs : E) -> Self::Result {
-        let (shape,sp,data) = self.dissolve();
+    fn dot(self,expr : E) -> Self::Result {
+        let (shape,sp,cof) = self.clone().dissolve();
 
         ExprDot{
-            expr : rhs,
+            expr,
             shape,
-            cof: data,
+            cof,
             sp
         }
     }
 }
 
-/// Implements for `NDArray<N<>.dot(ExprTrait<N>)`
-impl<const N : usize, E> Dot<NDArray<N>> for E
-    where 
-        E : ExprTrait<N>
-{
+impl<const N : usize, E> RightDottable<N,E> for NDArray<N> where E : ExprTrait<N> {
     type Result = ExprDot<N,E>;
-    fn dot(self, rhs : NDArray<N>) -> Self::Result { rhs.dot(self) }
-}
+    fn dot(self,expr : E) -> Self::Result {
+        let (shape,sp,cof) = self.dissolve();
 
-// Implements ExprTrait<1>.dot(&[f64])
-impl<E> Dot<&[f64]> for E where E : ExprTrait<1> {
-    type Result = ExprDot<1,E>;
-    fn dot(self,rhs : &[f64]) -> Self::Result {
         ExprDot{
-            expr : self,
-            shape : [rhs.len()],
-            cof: rhs.to_vec(),
-            sp: None
+            expr,
+            shape,
+            cof,
+            sp
         }
     }
 }
 
-// Support &[f64] . dot(ExprTrait<1>)
-impl<E> Dot<E> for &[f64] where E : ExprTrait<1> {
-    type Result = ExprDot<1,E>;
-    fn dot(self,rhs : E) -> Self::Result { rhs.dot(self) }
-}
 
-impl<E> Dot<E> for &Vec<f64> where E : ExprTrait<1> {
-    type Result = ExprDot<1,E>;
-    fn dot(self,rhs : E) -> Self::Result { rhs.dot(self.as_slice()) }
-}
-
-// Implements ExprTrait<1>.dot(Vec<f64>)
-impl<E> Dot<Vec<f64>> for E where E : ExprTrait<1> {
-    type Result = ExprDot<1,E>;
-    fn dot(self,rhs : Vec<f64>) -> Self::Result {
-        ExprDot{
-            expr : self,
-            shape : [rhs.len()],
-            cof: rhs,
-            sp: None
-        }
-    }
-}
-impl<E> Dot<&Vec<f64>> for E where E : ExprTrait<1> {
-    type Result = ExprDot<1,E>;
-    fn dot(self,rhs : &Vec<f64>) -> Self::Result {
-        self.dot(rhs.as_slice())
-    }
-}
-// Support Vec<f64> . dot(ExprTrait<1>)
-impl<E> Dot<E> for Vec<f64> where E : ExprTrait<1> {
-    type Result = ExprDot<1,E>;
-    fn dot(self,rhs : E) -> Self::Result { rhs.dot(self) }
-}
-
-
+//
+//
+///// Implements support for dot-operator (inner product).
+/////
+///// Implementations *should* adhere to the rules:
+///// - The operands must have the same shape, and
+///// - The result is a value representing the sum of elements in the element-wise multiplication of
+/////   the operands.
+//pub trait Dot<RHS> {
+//    type Result;
+//    fn dot(self, rhs : RHS) -> Self::Result;
+//}
+//
+//
+///// Implements for `NDArray<N<>.dot(ExprTrait<N>)`
+//impl<const N : usize, E> Dot<E> for NDArray<N>
+//    where 
+//        E : ExprTrait<N>
+//{
+//    type Result = ExprDot<N,E>;
+//    fn dot(self, rhs : E) -> Self::Result {
+//        let (shape,sp,data) = self.dissolve();
+//
+//        ExprDot{
+//            expr : rhs,
+//            shape,
+//            cof: data,
+//            sp
+//        }
+//    }
+//}
+//
+///// Implements for `NDArray<N<>.dot(ExprTrait<N>)`
+//impl<const N : usize, E> Dot<NDArray<N>> for E
+//    where 
+//        E : ExprTrait<N>
+//{
+//    type Result = ExprDot<N,E>;
+//    fn dot(self, rhs : NDArray<N>) -> Self::Result { rhs.dot(self) }
+//}
+//
+//// Implements ExprTrait<1>.dot(&[f64])
+//impl<E> Dot<&[f64]> for E where E : ExprTrait<1> {
+//    type Result = ExprDot<1,E>;
+//    fn dot(self,rhs : &[f64]) -> Self::Result {
+//        ExprDot{
+//            expr : self,
+//            shape : [rhs.len()],
+//            cof: rhs.to_vec(),
+//            sp: None
+//        }
+//    }
+//}
+//
+//// Support &[f64] . dot(ExprTrait<1>)
+//impl<E> Dot<E> for &[f64] where E : ExprTrait<1> {
+//    type Result = ExprDot<1,E>;
+//    fn dot(self,rhs : E) -> Self::Result { rhs.dot(self) }
+//}
+//
+//impl<E> Dot<E> for &Vec<f64> where E : ExprTrait<1> {
+//    type Result = ExprDot<1,E>;
+//    fn dot(self,rhs : E) -> Self::Result { rhs.dot(self.as_slice()) }
+//}
+//
+//// Implements ExprTrait<1>.dot(Vec<f64>)
+//impl<E> Dot<Vec<f64>> for E where E : ExprTrait<1> {
+//    type Result = ExprDot<1,E>;
+//    fn dot(self,rhs : Vec<f64>) -> Self::Result {
+//        ExprDot{
+//            expr : self,
+//            shape : [rhs.len()],
+//            cof: rhs,
+//            sp: None
+//        }
+//    }
+//}
+//
+//impl<E> Dot<&Vec<f64>> for E where E : ExprTrait<1> {
+//    type Result = ExprDot<1,E>;
+//    fn dot(self,rhs : &Vec<f64>) -> Self::Result {
+//        ExprDot{
+//            expr : self,
+//            shape : [rhs.len()],
+//            cof: rhs.clone(),
+//            sp: None
+//        }
+//    }
+//}
+//// Support Vec<f64> . dot(ExprTrait<1>)
+//impl<E> Dot<E> for Vec<f64> where E : ExprTrait<1> {
+//    type Result = ExprDot<1,E>;
+//    fn dot(self,rhs : E) -> Self::Result { rhs.dot(self) }
+//}
+//
+//
 
 
 

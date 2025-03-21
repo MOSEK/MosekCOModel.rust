@@ -19,10 +19,10 @@ extern crate mosekcomodel;
 use mosekcomodel::*;
 
 fn lo1() -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>) {
-    let a0 = vec![ 3.0, 1.0, 2.0, 0.0 ];
-    let a1 = vec![ 2.0, 1.0, 3.0, 1.0 ];
-    let a2 = vec![ 0.0, 2.0, 0.0, 3.0 ];
-    let c  = vec![ 3.0, 1.0, 5.0, 1.0 ];
+    let a0 = &[ 3.0, 1.0, 2.0, 0.0 ];
+    let a1 = &[ 2.0, 1.0, 3.0, 1.0 ];
+    let a2 = &[ 0.0, 2.0, 0.0, 3.0 ];
+    let c  = &[ 3.0, 1.0, 5.0, 1.0 ];
 
     // Create a model with the name 'lo1'
     let mut m = Model::new(Some("lo1"));
@@ -31,12 +31,12 @@ fn lo1() -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>) {
 
     // Create constraints
     let _ = m.constraint(None, &x.index(1), less_than(10.0));
-    let _ = m.constraint(Some("c1"), &x.dot(&a0), equal_to(30.0));
-    let _ = m.constraint(Some("c2"), &x.dot(&a1), greater_than(15.0));
-    let _ = m.constraint(Some("c3"), &x.dot(&a2), less_than(25.0));
+    let _ = m.constraint(Some("c1"), &x.dot(a0), equal_to(30.0));
+    let _ = m.constraint(Some("c2"), &x.dot(a1), greater_than(15.0));
+    let _ = m.constraint(Some("c3"), &x.dot(a2), less_than(25.0));
 
     // Set the objective function to (c^t * x)
-    m.objective(Some("obj"), Sense::Maximize, &x.dot(c.as_slice()));
+    m.objective(Some("obj"), Sense::Maximize, &x.dot(c));
 
     // Solve the problem
     m.write_problem("lo1-nosol.ptf");

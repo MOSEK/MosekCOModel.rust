@@ -521,7 +521,6 @@ impl<const N : usize,E> ExprTrait<N> for ExprScalarMul<N,E> where E : ExprTrait<
     }
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 // MulDiag
 //
@@ -551,4 +550,8 @@ mod test {
         e.mul(m).eval(& mut rs, & mut ws, & mut xs).unwrap();
     }
 }
+
+
+
+
 

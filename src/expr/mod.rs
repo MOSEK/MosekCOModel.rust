@@ -36,7 +36,7 @@ use crate::utils::{iter::*, ShapeToStridesEx};
 use std::iter::{Peekable,Zip};
 use std::slice::Iter;
 
-pub use dot::{Dot,ExprDot};
+pub use dot::{RightDottable,ExprDot};
 pub use mul::*;
 pub use add::*;
 pub use super::domain;
@@ -216,6 +216,8 @@ pub trait ExprTrait<const N : usize> {
     {
         ExprAdd::new(self,rhs.into(),1.0,-1.0) 
     }
+
+    fn dot<RHS>(self,rhs: RHS) -> RHS::Result where RHS: RightDottable<N,Self>, Self : Sized { rhs.dot(self) }
 
     /// Element-wise multiplication of two operands. The operand shapes must be the same.
     ///
