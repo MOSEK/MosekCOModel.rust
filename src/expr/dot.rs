@@ -1,3 +1,5 @@
+// TODO: Clean up dot logic: dot should be a ExprTrait and Variable function
+//
 use super::{ExprEvalError, ExprTrait};
 use super::matrix::NDArray;
 use super::workstack::WorkStack;
@@ -69,6 +71,10 @@ impl<E> Dot<E> for &[f64] where E : ExprTrait<1> {
     fn dot(self,rhs : E) -> Self::Result { rhs.dot(self) }
 }
 
+impl<E> Dot<E> for &Vec<f64> where E : ExprTrait<1> {
+    type Result = ExprDot<1,E>;
+    fn dot(self,rhs : E) -> Self::Result { rhs.dot(self.as_slice()) }
+}
 
 // Implements ExprTrait<1>.dot(Vec<f64>)
 impl<E> Dot<Vec<f64>> for E where E : ExprTrait<1> {
@@ -80,6 +86,12 @@ impl<E> Dot<Vec<f64>> for E where E : ExprTrait<1> {
             cof: rhs,
             sp: None
         }
+    }
+}
+impl<E> Dot<&Vec<f64>> for E where E : ExprTrait<1> {
+    type Result = ExprDot<1,E>;
+    fn dot(self,rhs : &Vec<f64>) -> Self::Result {
+        self.dot(rhs.as_slice())
     }
 }
 // Support Vec<f64> . dot(ExprTrait<1>)

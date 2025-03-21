@@ -31,12 +31,12 @@ fn lo1() -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>) {
 
     // Create constraints
     let _ = m.constraint(None, &x.index(1), less_than(10.0));
-    let _ = m.constraint(Some("c1"), &x.dot(a0.as_slice()), equal_to(30.0));
-    let _ = m.constraint(Some("c2"), &x.dot(a1.as_slice()), greater_than(15.0));
-    let _ = m.constraint(Some("c3"), &x.dot(a2.as_slice()), less_than(25.0));
+    let _ = m.constraint(Some("c1"), &x.dot(&a0), equal_to(30.0));
+    let _ = m.constraint(Some("c2"), &x.dot(&a1), greater_than(15.0));
+    let _ = m.constraint(Some("c3"), &x.dot(&a2), less_than(25.0));
 
     // Set the objective function to (c^t * x)
-    m.objective(Some("obj"), Sense::Maximize, &x.clone().dot(c.as_slice()));
+    m.objective(Some("obj"), Sense::Maximize, &x.dot(c.as_slice()));
 
     // Solve the problem
     m.write_problem("lo1-nosol.ptf");
