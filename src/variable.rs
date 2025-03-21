@@ -1,6 +1,6 @@
 //! Module for Variable object and related implementations
 
-use std::fmt::Debug;
+use std::{fmt::Debug, rc::Rc};
 
 use expr::ExprEvalError;
 use iter::IndexIteratorExt;
@@ -10,13 +10,18 @@ use super::*;
 use itertools::{iproduct, izip};
 use super::utils;
 
+#[derive(Clone)]
+struct VariableData {
+    idxs     : Vec<usize>,
+    sparsity : Option<Vec<usize>>,
+}
+
 /// A Variable object is basically a wrapper around a variable index
 /// list with a shape and a sparsity pattern.
 #[derive(Clone)]
 pub struct Variable<const N : usize> {
-    idxs     : Vec<usize>,
-    sparsity : Option<Vec<usize>>,
-    shape    : [usize; N]
+    data  : Rc<VariableData>,
+    shape : [usize; N]
 }
 
 impl<const N : usize> Debug for Variable<N> {
@@ -593,6 +598,9 @@ impl<const N : usize> Variable<N> {
 }
 
 
+
+
+
 impl<const N : usize> From<Variable<N>> for super::expr::Expr<N> {
     fn from(v : Variable<N>) -> super::expr::Expr<N> {
         let n = v.idxs.len();
@@ -621,6 +629,10 @@ impl<const N : usize> Variable<N> {
         Ok(())
     }
 }
+
+
+
+
 
 impl<const N : usize> super::ExprTrait<N> for Variable<N> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {

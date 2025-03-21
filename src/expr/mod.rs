@@ -1880,6 +1880,11 @@ pub trait IntoExpr<const N : usize> {
     fn into(self) -> Self::Result;
 }
 
+impl<const N : usize, E : ExprTrait<N>> IntoExpr<N> for E {
+    type Result = E;
+    fn into(self) -> Self::Result { self }
+}
+
 impl IntoExpr<1> for &[f64] {
     type Result = Expr<1>;
     fn into(self) -> Self::Result { Expr::from(self) }
