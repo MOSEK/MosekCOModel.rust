@@ -64,7 +64,7 @@ fn nn_inf(model : & mut Model, x : & Variable<1>) {
 
     // x_i = Tr H(n, i) * X  i=0,...,m
     for i in 0..m+1 {
-        _ = model.constraint(None, & x.clone().index(i).sub(hankel(n, i as isize, 1.0).dot(barx.clone())), equal_to(0.0));
+        _ = model.constraint(None, &x.index(i).sub(hankel(n, i as isize, 1.0).dot(barx)), equal_to(0.0));
     }
 }
 

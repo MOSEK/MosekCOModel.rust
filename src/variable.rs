@@ -45,7 +45,7 @@ pub struct Variable<const N : usize> {
 impl<const N : usize> Debug for Variable<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("Variable{idxs:")?;
-        self.idxs.fmt(f);
+        self.idxs.fmt(f)?;
         f.write_str(", shape:")?;
         self.shape.fmt(f)?;
 

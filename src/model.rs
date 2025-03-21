@@ -791,7 +791,7 @@ impl Model {
     ///   the underlting task.
     /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
     /// - `dom`  The domain of the constraint. This defines the bound type and shape.
-    pub fn constraint<const N : usize,E,D>(& mut self, name : Option<&str>, expr : E, dom : D) -> Constraint<N> 
+    pub fn constraint<const N : usize,E,D>(& mut self, name : Option<&str>, expr :  E, dom : D) -> Constraint<N> 
         where
             E : IntoExpr<N>, 
             <E as IntoExpr<N>>::Result : ExprTrait<N>,
@@ -1697,11 +1697,11 @@ impl Model {
     /// - `sense` Objective sense
     /// - `expr` Objective expression, this must contain exactly one
     ///   element. The shape is otherwise ignored.
-    pub fn objective<E : expr::ExprTrait<0>>(& mut self,
+    pub fn objective<E : expr::IntoExpr<0>>(& mut self,
                                              name  : Option<&str>,
                                              sense : Sense,
-                                             expr  : & E) {
-        expr.eval_finalize(& mut self.rs,& mut self.ws, & mut self.xs).unwrap();
+                                             expr  : E) {
+        expr.into().eval_finalize(& mut self.rs,& mut self.ws, & mut self.xs).unwrap();
         self.set_objective(name,sense);
     }
 
