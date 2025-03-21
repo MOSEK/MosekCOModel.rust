@@ -5,7 +5,7 @@
 use itertools::{merge_join_by, EitherOrBoth};
 use itertools::{iproduct, izip};
 use std::{iter::once, path::Path};
-use crate::{disjunction, expr};
+use crate::{disjunction, expr, IntoExpr, ExprTrait};
 use crate::utils::iter::*;
 use crate::utils::*;
 use crate::domain::*;
@@ -791,12 +791,13 @@ impl Model {
     ///   the underlting task.
     /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
     /// - `dom`  The domain of the constraint. This defines the bound type and shape.
-    pub fn constraint<const N : usize,E,D>(& mut self, name : Option<&str>, expr : &E, dom : D) -> Constraint<N> 
+    pub fn constraint<const N : usize,E,D>(& mut self, name : Option<&str>, expr : E, dom : D) -> Constraint<N> 
         where
-            E : expr::ExprTrait<N>, 
+            E : IntoExpr<N>, 
+            <E as IntoExpr<N>>::Result : ExprTrait<N>,
             D : ConDomainTrait<N> 
     {
-        expr.eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).unwrap();
+        IntoExpr::<N>::into(expr).eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).unwrap();
         dom.create(self,name)
     }
 

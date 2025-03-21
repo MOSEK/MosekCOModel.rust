@@ -1878,9 +1878,53 @@ impl From<Vec<f64>> for Expr<1> {
 pub trait IntoExpr<const N : usize> {
     type Result : ExprTrait<N>;
     fn into(self) -> Self::Result;
+    
+//    fn vstack<E>(self,other : E) -> ExprStack<N,Self,E::Result>  where Self:Sized, E:IntoExpr<N> { ExprStack::new(self,other.into(),0) }
+//    fn hstack<E>(self,other : E) -> ExprStack<N,Self,E::Result>  where Self:Sized,E:IntoExpr<N> { ExprStack::new(self,other.into(),1) }
+//    fn stack<E>(self,dim : usize, other : E) -> ExprStack<N,Self,E::Result> where Self:Sized, E:IntoExpr<N>{ ExprStack::new(self,other.into(),dim) }
+//    fn repeat(self,dim : usize, num : usize) -> ExprRepeat<N,Self> where Self:Sized { ExprRepeat{ expr : self, dim, num } }
+//    fn index<I>(self, idx : I) -> I::Output where I : ModelExprIndex<Self>, Self:Sized {
+//        idx.index(self)
+//    }
+//    fn reshape<const M : usize>(self,shape : &[usize; M]) -> ExprReshape<N,M,Self>  where Self:Sized { ExprReshape{item:self,shape:*shape} }
+//    fn into_symmetric(self, dim : usize) -> ExprIntoSymmetric<N,Self> where Self:Sized {
+//        if dim > N-2 {
+//            panic!("Invalid symmetrization dimension");
+//        }
+//        
+//        ExprIntoSymmetric{
+//            dim,
+//            expr : self
+//        }
+//    }
+//    fn flatten(self) -> ExprReshapeOneRow<N,1,Self> where Self:Sized { ExprReshapeOneRow { item:self, dim : 0 } }
+//    fn into_column(self) -> ExprReshapeOneRow<N,2,Self> where Self:Sized { ExprReshapeOneRow { item:self, dim : 0 } }
+//    fn into_vec<const M : usize>(self, i : usize) -> ExprReshapeOneRow<N,M,Self> where Self:Sized+ExprTrait<1> { 
+//        if i >= M {
+//            panic!("Invalid dimension index")
+//        }
+//        ExprReshapeOneRow{item:self, dim : i }
+//    }
+//
+//    fn map<const M : usize,F>(self, shape : &[usize;M], f : F) -> ExprMap<N,M,F,Self> 
+//        where 
+//            F : Clone+FnMut(&[usize;N]) -> Option<[usize;M]>,
+//            Self : Sized
+//    {
+//        ExprMap{ item : self, shape : *shape, f}
+//    }
+//    fn mul<RHS>(self,other : RHS) -> RHS::Result where Self: Sized, RHS : ExprRightMultipliable<N,Self> { other.mul_right(self) }
+//    fn rev_mul<LHS>(self, lhs: LHS) -> LHS::Result where Self: Sized, LHS : ExprLeftMultipliable<N,Self> { lhs.mul(self) }
+//    fn transpose(self) -> ExprPermuteAxes<2,Self> where Self:Sized+ExprTrait<2> { ExprPermuteAxes{ item : self, perm : [1,0]} }
+//    fn tril(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized+ExprTrait<2> { ExprTriangularPart{item:self,upper:false,with_diag} }
+//    fn triu(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized+ExprTrait<2> { ExprTriangularPart{item:self,upper:true,with_diag} }
+//    fn trilvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:false,with_diag} } } 
+//    fn triuvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
+//    fn diag(self) -> ExprDiag<Self> where Self:Sized+ExprTrait<2> { ExprDiag{ item : self, anti : false, index : 0 } }
+//    fn square_diag(self) -> ExprSquareDiag<Self> where Self:Sized+ExprTrait<1> { ExprSquareDiag{ item : self }}
 }
 
-impl<const N : usize, E : ExprTrait<N>> IntoExpr<N> for E {
+impl<const N : usize, E> IntoExpr<N> for E where E : ExprTrait<N>+Sized {
     type Result = E;
     fn into(self) -> Self::Result { self }
 }
@@ -1895,10 +1939,6 @@ impl IntoExpr<1> for Vec<f64> {
     fn into(self) -> Self::Result { Expr::from(self) }
 }
     
-impl<const N : usize, E> IntoExpr<N> for E where E : ExprTrait<N>+Sized {
-    type Result = E;
-    fn into(self) -> Self::Result { self }
-}
 
 impl ExprTrait<0> for f64 {
     fn eval(&self, rs : &mut WorkStack, _ws : &mut WorkStack, _xs : &mut WorkStack) -> Result<(),ExprEvalError> {

@@ -30,10 +30,10 @@ fn lo1() -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>) {
     let x = m.variable(Some("x"), greater_than(vec![0.0,0.0,0.0,0.0]));
 
     // Create constraints
-    let _ = m.constraint(None, &(&x).index(1), less_than(10.0));
-    let _ = m.constraint(Some("c1"), &x.clone().dot(a0.as_slice()), equal_to(30.0));
-    let _ = m.constraint(Some("c2"), &x.clone().dot(a1.as_slice()), greater_than(15.0));
-    let _ = m.constraint(Some("c3"), &x.clone().dot(a2.as_slice()), less_than(25.0));
+    let _ = m.constraint(None, &x.index(1), less_than(10.0));
+    let _ = m.constraint(Some("c1"), &x.dot(a0.as_slice()), equal_to(30.0));
+    let _ = m.constraint(Some("c2"), &x.dot(a1.as_slice()), greater_than(15.0));
+    let _ = m.constraint(Some("c3"), &x.dot(a2.as_slice()), less_than(25.0));
 
     // Set the objective function to (c^t * x)
     m.objective(Some("obj"), Sense::Maximize, &x.clone().dot(c.as_slice()));
