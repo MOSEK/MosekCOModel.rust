@@ -30,7 +30,7 @@ fn lo1() -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>) {
     let x = m.variable(Some("x"), greater_than(vec![0.0,0.0,0.0,0.0]));
 
     // Create constraints
-    let _ = m.constraint(None, &x.index(1), less_than(10.0));
+    let _ = m.constraint(None, x.index(1), less_than(10.0));
     let _ = m.constraint(Some("c1"), x.dot(a0), equal_to(30.0));
     let _ = m.constraint(Some("c2"), x.dot(a1), greater_than(15.0));
     let _ = m.constraint(Some("c3"), x.dot(a2), less_than(25.0));

@@ -612,6 +612,11 @@ pub struct ExprVariable<const N : usize> {
     item : Variable<N>
 }
 
+impl<const N : usize> IntoExpr<N> for Variable<N> {
+    type Result = ExprVariable<N>;
+    fn into(self) -> Self::Result { ExprVariable{ item : self } }
+}
+
 impl<const N : usize> IntoExpr<N> for &Variable<N> {
     type Result = ExprVariable<N>;
     fn into(self) -> Self::Result { self.to_expr() }
