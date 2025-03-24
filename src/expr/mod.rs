@@ -1864,11 +1864,12 @@ impl From<Vec<f64>> for Expr<1> {
     fn from(v : Vec<f64>) -> Expr<1> { Expr::new(&[v.len()], None, (0..v.len()+1).collect(), vec![0; v.len()], v) }
 }
 
-
+/// Blanket implementation of [IntoExpr] for any [ExprTrait] object.
 impl<const N : usize, E> IntoExpr<N> for E where E : ExprTrait<N>+Sized {
     type Result = E;
     fn into(self) -> Self::Result { self }
 }
+
 
 impl IntoExpr<1> for &[f64] {
     type Result = Expr<1>;

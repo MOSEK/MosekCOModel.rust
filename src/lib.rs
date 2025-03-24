@@ -71,12 +71,38 @@
 //! 
 //! # Expressions and shapes
 //!
-//! The central trait for expressions is [ExprTrait], which all objects that must act as
-//! expressions have to implement. For example, [Variable] and [NDArray] implement [ExprTrait].
-//! [ExprTrait] also implements most of the functionality for creating new expressions. Note that
-//! im most cases, expression objects *own* their data (for example the [expr::ExprAdd] object owns its
-//! operands). This means that normally it will be necessary to clone a [Variable] object that is
-//! used in an expression, if it is used in more than one place.
+//! The central traits for expressions are [ExprTrait], which all objects that must act as
+//! expressions have to implement, and [IntoExpr] which is anything that can be turned into an
+//! [ExprTrait]. For example, [Variable] `Vec<f64>`, `f64` and [NDArray] implement [IntoExpr] since
+//! they can be turned into a expression, while the various expression structs (e.g. [Expr],
+//! [ExprAdd], [ExprStack] etc.) implement [ExprTrait]. Note that expressions are *consumed* when
+//! creating new expressions, while variables and constants can be passed by reference and will be
+//! cloned. This is because the expression constructing functions accept [IntoExpr]s rather than
+//! [ExprTrait]s. For example, an `add` function might look like this:
+//! ```
+//! use mosekcomodel::*;
+//!
+//! struct ExprAdd<const N : usize,E1,E2> 
+//!     where 
+//!         E1 : ExprTrait<N>,
+//!         E2 : ExprTrait<N>
+//! {
+//!     e1 : E1,
+//!     e2 : E2
+//! }
+//! fn add<const N : usize, E1,E2>( e1 : E1, e2 : E2 ) -> ExprAdd<N,E1::Result,E2::Result> 
+//!     where E1 : IntoExpr<N>,
+//!           E2 : IntoExpr<N>
+//! {
+//!     ExprAdd{
+//!         e1 : e1.into_expr(),
+//!         e2 : e2.into_expr()
+//!     }
+//! }
+//! ```
+//! Now, when [IntoExpr] is implemented for all [ExprTrait], as well as for both `&Variable<N>` and
+//! for `Variable<N>`, we can pass an expression, a variable or a variable reference to the
+//! function.
 //!
 //! Constraint, domains, variables and expressions have shapes, and the latter three can be either
 //! dense or sparse meanning that some entries are fixed to zero. A shaped variable, expression and
