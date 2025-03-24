@@ -33,15 +33,15 @@ fn main() {
     let barc  = matrix::dense([3, 3], vec![2., 1., 0., 
                                            1., 2., 1., 
                                            0., 1., 2.]);
-    let bara1 = matrix::diag(&[1.0;3]);
+    let bara1 = matrix::diag([1.0;3]);
     let bara2 = matrix::ones([3,3]);
 
     // Objective
-    m.objective(None, Sense::Minimize, &barx.clone().dot(barc).add(x.clone().index(0)));
+    m.objective(None, Sense::Minimize, barx.dot(barc).add(x.index(0)));
 
     // Constraints
-    _ = m.constraint(Some("c1"), &barx.clone().dot(bara1).add((&x).index(0)), equal_to(1.0));
-    _ = m.constraint(Some("c2"), &barx.clone().dot(bara2).add((&x).index([1..3]).sum()), equal_to(0.5));
+    _ = m.constraint(Some("c1"), barx.dot(bara1).add(x.index(0)), equal_to(1.0));
+    _ = m.constraint(Some("c2"), barx.dot(bara2).add(x.index([1..3]).sum()), equal_to(0.5));
 
 
     m.solve();

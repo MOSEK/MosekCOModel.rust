@@ -32,17 +32,17 @@ fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) ->
     let Y = M.variable(name, in_psd_cone(2*n));
 
     // Setup Y = [X, Z; Z^T , diag(Z)]
-    let X  = (&Y).index([0..n, 0..n]);
-    let Z  = (&Y).index([0..n,   n..2*n]);
-    let DZ = (&Y).index([n..2*n, n..2*n]);
+    let X  = Y.index([0..n, 0..n]);
+    let Z  = Y.index([0..n,   n..2*n]);
+    let DZ = Y.index([n..2*n, n..2*n]);
 
 
     // Z is lower-triangular
-    _ = M.constraint(Some("triu(Z)=0"), &Z.clone().triuvec(false), equal_to(vec![0.0; n*(n-1)/2].as_slice()));
+    _ = M.constraint(Some("triu(Z)=0"), Z.triuvec(false), equal_to(vec![0.0; n*(n-1)/2].as_slice()));
     // DZ = Diag(Z)
-    _ = M.constraint(Some("DZ=Diag(Z)"), &DZ.clone().sub(Z.mul_elem(speye(n))).reshape(&[n*n]), equal_to(vec![0.0; n*n]));
+    _ = M.constraint(Some("DZ=Diag(Z)"), DZ.sub(Z.mul_elem(speye(n))).reshape(&[n*n]), equal_to(vec![0.0; n*n]));
     // (Z11*Z22*...*Znn) >= t^n
-    _ = M.constraint(name,&vstack!(DZ.clone().diag(),t.reshape(&[1])), in_geometric_mean_cone(n+1));
+    _ = M.constraint(name,vstack!(DZ.diag().to_expr(),t.reshape(&[1])), in_geometric_mean_cone(n+1));
 
     // Return an n x n PSD variable which satisfies t <= det(X)^(1/n)
     X
@@ -80,8 +80,8 @@ fn lowner_john_outer<const N : usize>(x : &[[f64;N]]) -> Option<(SolutionStatus,
 
     // (1, Px-c) in cone
     _ = M.constraint(Some("qc"),
-                     &hstack![ Expr::from(vec![1.0; m]).reshape(&[m,1]), 
-                               P.clone().rev_mul(x).sub(c.clone().repeat(0,m))],
+                     hstack![ Expr::from(vec![1.0; m]).reshape(&[m,1]), 
+                               x.mul(&P).sub(c.repeat(0,m))],
                      in_quadratic_cones(&[m,n+1],1));
 
     // Objective: Maximize t

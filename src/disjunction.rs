@@ -31,11 +31,16 @@ pub trait ConicDomainTrait<const N : usize>  {
 /// conjunction of multiple affine constraints.
 pub trait ClauseTrait {
     /// Create the conjunction of two clauses, i.e. `A₁x+b₁ ∈ K₁ AND A₂x+b₂ ∈ K₂`
-    fn and<const N2 : usize, E2, D2>(self,expr : E2, dom : D2) -> ClauseAndClause<Self,Clause<N2,E2,D2>> where E2 : ExprTrait<N2>, D2 : ConicDomainTrait<N2>, Self : Sized {
+    fn and<const N2 : usize, E2, D2>(self,expr : E2, dom : D2) -> ClauseAndClause<Self,Clause<N2,E2::Result,D2>> 
+        where 
+            E2 : IntoExpr<N2>, 
+            D2 : ConicDomainTrait<N2>, 
+            Self : Sized 
+    {
         ClauseAndClause{
             clause1 : self,
             clause2 : Clause{
-                expr,
+                expr : expr.into(),
                 dom }
         }
     }
@@ -148,6 +153,7 @@ impl<C> DisjunctionTrait for C where C : ClauseTrait {
         model.end_term();
     }
 }
+
 impl<T1,T2> DisjunctionTrait for DisjunctionOrDisjunction<T1,T2> where T1 : DisjunctionTrait, T2 : DisjunctionTrait {
     fn add_to_model(&self, model : & mut Model) {
         self.term1.add_to_model(model);
@@ -177,8 +183,11 @@ impl DisjunctionTrait for DisjunctionList {
 ///    Ax+b\\in K
 /// $$
 #[doc = include_str!("../js/mathjax.tag")]
-pub fn term<const N : usize, E,D>(expr : E, dom : D) -> Clause<N,E,D> where E : ExprTrait<N>, D : ConicDomainTrait<N> {
-    Clause{ expr, dom}
+pub fn term<const N : usize, E,D>(expr : E, dom : D) -> Clause<N,E::Result,D> 
+    where 
+        E : IntoExpr<N>, 
+        D : ConicDomainTrait<N> {
+    Clause{ expr : expr.into(), dom}
 }
 
 ///  

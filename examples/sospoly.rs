@@ -64,7 +64,7 @@ fn nn_inf(model : & mut Model, x : & Variable<1>) {
 
     // x_i = Tr H(n, i) * X  i=0,...,m
     for i in 0..m+1 {
-        _ = model.constraint(None, &x.index(i).sub(hankel(n, i as isize, 1.0).dot(barx)), equal_to(0.0));
+        _ = model.constraint(None, x.index(i).sub(hankel(n, i as isize, 1.0).dot(&barx)), equal_to(0.0));
     }
 }
 
@@ -82,13 +82,13 @@ fn nn_semiinf(m : & mut Model, x : & Variable<1>) {
     // x_i = Tr H(n1, i) * X1 + Tr H(n2,i-1) * X2, i=0,...,n
     
     for i in 0..n+1 {
-        m.constraint(None, &x.clone().index(i).sub(hankel(n1,i as isize,1.0).dot(barx1.clone()).add(hankel(n2,i as isize -1,1.0).dot(barx2.clone()))), equal_to(0.0));
+        m.constraint(None, x.index(i).sub(hankel(n1,i as isize,1.0).dot(&barx1).add(hankel(n2,i as isize -1,1.0).dot(&barx2))), equal_to(0.0));
     }
     for i in 0..n+1 {
         m.constraint(None, 
-                     &x.clone().index(i).sub(
-                        hankel(n1,i as isize,1.0).dot(barx1.clone()).add(
-                            hankel(n2, i as isize -1, 1.0).dot(barx2.clone()))),
+                     x.index(i).sub(
+                        hankel(n1,i as isize,1.0).dot(&barx1).add(
+                            hankel(n2, i as isize -1, 1.0).dot(&barx2))),
                      equal_to(0.0));
     }
 }
@@ -107,10 +107,10 @@ fn nn_finite(model : & mut Model, x : & Variable<1>, a : f64, b : f64) {
         for i in 1..m+1 {
             _ = model.constraint(
                 None,
-                &hankel(n,i as isize,1.0).dot(barx1.clone())
-                    .sub(hankel(n-1,i as isize,a*b).dot(barx2.clone()))
-                    .add(hankel(n-1,i as isize-1,a+b).dot(barx2.clone())
-                         .sub(hankel(n-1,i as isize -2,1.0).dot(barx2.clone()))),
+                hankel(n,i as isize,1.0).dot(&barx1)
+                    .sub(hankel(n-1,i as isize,a*b).dot(&barx2))
+                    .add(hankel(n-1,i as isize-1,a+b).dot(&barx2)
+                         .sub(hankel(n-1,i as isize -2,1.0).dot(&barx2))),
                 equal_to(0.0));
         }
     } else {
@@ -121,10 +121,10 @@ fn nn_finite(model : & mut Model, x : & Variable<1>, a : f64, b : f64) {
         for i in 1..m+1 {
             _ = model.constraint( 
                 None,
-                &x.index(i)
+                x.index(i)
                     .sub(
-                        hankel(n,i as isize -1,1.0).dot(barx1.clone()).sub(hankel(n,i as isize,a).dot(barx1.clone()))
-                            .add(hankel(n,i as isize,b).dot(barx2.clone()).sub(hankel(n,i as isize-1,1.0).dot(barx2.clone())))),
+                        hankel(n,i as isize -1,1.0).dot(barx1.clone()).sub(hankel(n,i as isize,a).dot(&barx1))
+                            .add(hankel(n,i as isize,b).dot(&barx2).sub(hankel(n,i as isize-1,1.0).dot(&barx2)))),
                 equal_to(0.0));
         }
     }
@@ -137,7 +137,7 @@ fn diff(model : & mut Model, x : & Variable<1>) -> Variable<1> {
     let n = x.shape()[0]-1;
     let u = model.variable(None, n);
     _ = model.constraint(None,
-                         &u.clone().reshape(&[n,1]).sub(x.clone().index(1..n+1).reshape(&[n,1]).mul_elem(matrix::dense([n,1],(1..n+1).map(|v| v as f64).collect::<Vec<f64>>().as_slice()))), 
+                         u.reshape(&[n,1]).sub(x.index(1..n+1).reshape(&[n,1]).mul_elem(matrix::dense([n,1],(1..n+1).map(|v| v as f64).collect::<Vec<f64>>().as_slice()))), 
                          equal_to(vec![0.0;n].as_slice()).with_shape(&[n,1]));
     u
 }
@@ -158,12 +158,12 @@ fn fitpoly(data : & NDArray<2>, n : usize) -> Vec<f64> {
     let z = model.variable(Some("z"), 1);
     let dx = diff(& mut model, &x);
 
-    _ = model.constraint(None,&a.mul(x.clone()),equal_to(b));
+    _ = model.constraint(None,a.mul(&x),equal_to(b));
 
     // z - f'(t) >= 0, for all t \in [a, b]
     let ub = model.variable(None,n);
     _ = model.constraint(None,
-                         &ub.clone().sub(vstack![z.clone().sub(dx.clone().index(0..1)), dx.clone().index(1..n)]),
+                         ub.sub(vstack![z.sub(dx.index(0..1)), dx.index(1..n)]),
                          equal_to(vec![0.0; n]));
 
     nn_finite(&mut model, &ub, datacof[0], datacof[datacof.len()-datadim[1]]); 
@@ -171,7 +171,7 @@ fn fitpoly(data : & NDArray<2>, n : usize) -> Vec<f64> {
     // f'(t) + z >= 0, for all t \in [a, b]
     let lb = model.variable(None,n);
     _ = model.constraint(None,
-                         &lb.clone().sub(vstack![z.clone().add(dx.clone().index(0..1)), dx.clone().index(1..n)]),
+                         lb.sub(vstack![z.add(dx.index(0..1)), dx.index(1..n)]),
                          equal_to(vec![0.0; n]));
 
     nn_finite(&mut model, &lb, datacof[0], datacof[datacof.len() - datadim[1]]);

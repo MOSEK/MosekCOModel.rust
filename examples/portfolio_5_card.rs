@@ -51,23 +51,23 @@ fn markowitz_with_cardinality(mu : &[f64],
     _ = model.constraint(None, &y, less_than(vec![1.0; n]));
 
     //  Maximize expected return
-    model.objective(Some("obj"), Sense::Maximize, &mu.dot(x.clone()));
+    model.objective(Some("obj"), Sense::Maximize, mu.dot(&x));
 
     // The amount invested  must be identical to initial wealth
-    _ = model.constraint(Some("budget"), &x.clone().sum(), equal_to(w+x0.iter().sum::<f64>()));
+    _ = model.constraint(Some("budget"), x.sum(), equal_to(w+x0.iter().sum::<f64>()));
 
     // Imposes a bound on the risk
-    _ = model.constraint(Some("risk"), &Expr::from(gamma).reshape(&[1]).vstack(GT.clone().mul(x.clone())), in_quadratic_cone(m+1));
+    _ = model.constraint(Some("risk"), Expr::from(gamma).reshape(&[1]).vstack(GT.mul(&x)), in_quadratic_cone(m+1));
 
     // z >= |x-x0| 
-    _ = model.constraint(Some("buy"), &z.clone().sub(x.clone().sub(Expr::from(x0))), greater_than(vec![0.0; n]));
-    _ = model.constraint(Some("sell"), &z.clone().sub(Expr::from(x0).sub(x.clone())), greater_than(vec![0.0; n]));
+    _ = model.constraint(Some("buy"), z.sub(x.sub(Expr::from(x0))), greater_than(vec![0.0; n]));
+    _ = model.constraint(Some("sell"), z.sub(Expr::from(x0).sub(&x)), greater_than(vec![0.0; n]));
 
     // Constraints for turning y off and on. z-diag(u)*y<=0 i.e. z_j <= u_j*y_j
-    _ = model.constraint(Some("y_on_off"), &z.clone().sub(Expr::from(y.clone()).mul_elem(u)), less_than(vec![0.0;n])); 
+    _ = model.constraint(Some("y_on_off"), z.sub(y.mul_elem(u)), less_than(vec![0.0;n])); 
 
     // At most K assets change position
-    _ = model.constraint(Some("cardinality"), &Expr::from(y.clone()).sum().sub(Expr::from(K as f64)), less_than(0.0));
+    _ = model.constraint(Some("cardinality"), y.sum().sub(Expr::from(K as f64)), less_than(0.0));
 
     // Integer optimization problems can be very hard to solve so limiting the 
     // maximum amount of time is a valuable safe guard

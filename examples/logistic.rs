@@ -17,9 +17,9 @@ use mosekcomodel::*;
 fn softplus<E2>(model : & mut Model, n : usize, t : &Variable<1>, u : E2) where E2 : ExprTrait<1> {
     let z1 = model.variable(None,&[n,1]);
     let z2 = model.variable(None,&[n,1]);
-    model.constraint(None, &z1.clone().add(z2.clone()), equal_to(1.0).with_shape(&[n,1]));
-    model.constraint(None, &hstack![z1.clone(), const_expr(&[n,1],1.0), u.reshape(&[n,1]).sub(t.clone().reshape(&[n,1]))], in_exponential_cones(&[n,3],1));
-    model.constraint(None, &hstack![z2.clone(), const_expr(&[n,1],1.0), t.clone().reshape(&[n,1]).neg()], in_exponential_cones(&[n,3],1));
+    model.constraint(None, z1.add(&z2), equal_to(1.0).with_shape(&[n,1]));
+    model.constraint(None, hstack![z1.to_expr(), const_expr(&[n,1],1.0), u.reshape(&[n,1]).sub(t.reshape(&[n,1]))], in_exponential_cones(&[n,3],1));
+    model.constraint(None, hstack![z2.to_expr(), const_expr(&[n,1],1.0), t.reshape(&[n,1]).neg()], in_exponential_cones(&[n,3],1));
 }
 
 /// Model logistic regression (regularized with full 2-norm of theta)
@@ -43,12 +43,12 @@ fn logistic_regression(X : NDArray<2>,
     let t     = model.variable(None,n);
     let reg   = model.variable(None,&[]);
 
-    model.objective(None,Sense::Minimize, &t.clone().sum().add(reg.clone().mul(lamb)));
-    model.constraint(None,&vstack!(reg.clone().with_shape(&[1]), theta.clone()), in_quadratic_cone(d+1));
+    model.objective(None,Sense::Minimize, t.sum().add(reg.mul(lamb)));
+    model.constraint(None,vstack![reg.with_shape(&[1]).to_expr(), &theta], in_quadratic_cone(d+1));
 
     let signs : Vec<f64> = Y.iter().map(|&yi| if yi { -1.0 } else { 1.0 }).collect();
 
-    softplus(& mut model, n, &t, X.mul(theta.clone()).mul_elem(signs));
+    softplus(& mut model, n, &t, X.mul(&theta).mul_elem(signs));
 
     (model,theta)
 }

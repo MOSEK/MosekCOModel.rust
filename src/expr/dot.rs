@@ -52,9 +52,9 @@ impl<E> RightDottable<1,E> for Vec<f64> where E: IntoExpr<1> {
     }
 }
 
-impl<const N : usize, E> RightDottable<N,E> for &NDArray<N> where E : ExprTrait<N> {
-    type Result = ExprDot<N,E>;
-    fn dot(self,expr : E) -> Self::Result { self.clone().dot(expr) }
+impl<const N : usize, E> RightDottable<N,E> for &NDArray<N> where E : IntoExpr<N> {
+    type Result = ExprDot<N,E::Result>;
+    fn dot(self,expr : E) -> Self::Result { self.clone().dot(expr.into_expr()) }
 }
 
 impl<const N : usize, E> RightDottable<N,E> for NDArray<N> where E : IntoExpr<N> {

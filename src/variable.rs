@@ -278,11 +278,11 @@ impl Variable<2> {
         }
     }
     
-    pub fn transpose(self) -> Self {
+    pub fn transpose(&self) -> Self {
         let mut shape = [0usize; 2];
         shape[0] = self.shape[1];
         shape[1] = self.shape[0];
-        if let Some(sp) = self.sparsity {
+        if let Some(ref sp) = self.sparsity {
             let mut xsp : Vec<(usize,usize)> = sp.iter().zip(self.idxs.iter()).map(|(&i,&ni)| (( i % self.shape[1]) * self.shape[0] + i / self.shape[1], ni) ).collect();
             xsp.sort();
             let rsp = xsp.iter().map(|v| v.0).collect();
@@ -310,11 +310,11 @@ impl Variable<2> {
         }
     }
 
-//    fn tril(self,with_diag:bool) -> Self { ExprTriangularPart{item:self,upper:false,with_diag} }
-//    fn triu(self,with_diag:bool) -> Self { ExprTriangularPart{item:self,upper:true,with_diag} }
-//    fn trilvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:false,with_diag} } } 
-//    fn triuvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
-//    fn diag(self) -> ExprDiag<Self> where Self:Sized+ExprTrait<2> { ExprDiag{ item : self, anti : false, index : 0 } }
+    // TODO: These should produce a variable
+    pub fn tril(&self,with_diag:bool) -> impl ExprTrait<2> { self.to_expr().tril(with_diag) }
+    pub fn triu(&self,with_diag:bool) -> impl ExprTrait<2> { self.to_expr().triu(with_diag) }
+    pub fn trilvec(&self,with_diag:bool) -> impl ExprTrait<1> { self.to_expr().trilvec(with_diag) }
+    pub fn triuvec(&self,with_diag:bool) -> impl ExprTrait<1> { self.to_expr().triuvec(with_diag) }
 }
 
 
@@ -413,6 +413,7 @@ impl<const N : usize> Variable<N> {
         }
     }
 
+    pub fn repeat(&self, dim : usize, num : usize) -> impl ExprTrait<N> { self.to_expr().repeat(dim,num)}
     pub fn stack(dim : usize, xs : &[&Variable<N>]) -> Variable<N> {
         if xs.iter().zip(xs[1..].iter())
             .any(|(v0,v1)| v0.shape.iter().zip(v1.shape.iter()).enumerate().all(|(i,(a,b))| i != dim && *a != *b)) {
@@ -636,5 +637,4 @@ impl<const N : usize> ExprTrait<N> for ExprVariable<N> {
         Ok(())
     }
 }
-
 

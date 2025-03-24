@@ -46,29 +46,33 @@ pub fn traffic_network_model(
     // (<basetime,x> + <e,d>) / T
     model.objective(Some("Average travel time"),
                     Sense::Minimize,
-                    &x.clone().mul_elem(basetime).sum().add(d.clone().sum()));
+                    x.mul_elem(basetime).sum().add(d.sum()));
 
     // Set up constraints
     // Constraint (1a)
     // 2 d_ij z_ij > x_ij^2
     model.constraint(Some("(1a)"),
-                     &hstack![d.clone().gather().into_column(),
-                              z.clone().gather().into_column(),
-                              x.clone().gather().into_column()],
+                     hstack![d.gather().into_column().to_expr(),
+                             z.gather().into_column().to_expr(),
+                             x.gather().into_column().to_expr()],
                      in_rotated_quadratic_cones(&[m,3], 1));
+
+
+
+
 
     // Constraint (1b)
     // Bound flows on each arc
     // 2 z_ij + x_ij / (s_ij c_ij) = 1/s_ij
     model.constraint(Some("(1b)"),
-                     &z.clone().mul(2.0).add(x.clone().mul_elem(cs_inv)).sub(s_inv.to_expr()).gather(),
+                     z.mul(2.0).add(x.mul_elem(cs_inv)).sub(s_inv.to_expr()).gather(),
                      equal_to(vec![0.0; m]));
 
     // Constraint (2)
     // Network flow equations
     model.constraint(Some("(2)"),
-                     &x.clone().sum_on(&[1])
-                        .sub(x.clone().sum_on(&[0])),
+                     x.sum_on(&[1])
+                        .sub(x.sum_on(&[0])),
                      equal_to(nodes.iter().map(|n| - n.sink_source).collect::<Vec<f64>>()));
 
     //model.write_problem("trafficnetwork.ptf");

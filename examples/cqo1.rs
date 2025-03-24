@@ -33,13 +33,13 @@ fn main() {
     //  and z2 = [ y[1],y[2],x[2] ]
 
     // TODO: Variable.vstack(y[0], x[0..2]);
-    let z1 = Variable::vstack(&[&(&y).index(0..1), &(&x).index(0..2)]);
-    let z2 = Variable::vstack(&[&(&y).index(1..3), &(&x).index(2..3)]);
+    let z1 = Variable::vstack(&[&y.index(0..1), &x.index(0..2)]);
+    let z2 = Variable::vstack(&[&y.index(1..3), &x.index(2..3)]);
 
     // Create the constraint
     //      x[0] + x[1] + 2.0 x[2] = 1.0
     let aval = &[1.0, 1.0, 2.0];
-    let _ = m.constraint(Some("lc"), &aval.dot(x.clone()), equal_to(1.0));
+    let _ = m.constraint(Some("lc"), aval.dot(&x), equal_to(1.0));
 
     // Create the constraints
     //      z1 belongs to C_3
@@ -52,7 +52,7 @@ fn main() {
     let _qc2 = m.constraint(Some("qc2"), &z2, in_rotated_quadratic_cone(3));
 
     // Set the objective function to (y[0] + y[1] + y[2])
-    m.objective(Some("obj"), Sense::Minimize, &y.clone().sum());
+    m.objective(Some("obj"), Sense::Minimize, y.sum());
 
     // Solve the problem
     m.write_problem("cqo1.task");

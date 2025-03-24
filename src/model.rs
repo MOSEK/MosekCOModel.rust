@@ -1639,8 +1639,8 @@ impl Model {
     }
 
     /// Update the expression of a constraint in the Model.
-    pub fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : &E) where E : expr::ExprTrait<N> {
-        e.eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).unwrap();
+    pub fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) where E : expr::IntoExpr<N> {
+        e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).unwrap();
         {
             let (shape,_,_,_,_) = self.rs.peek_expr();
             if shape.iter().zip(item.shape.iter()).any(|(&a,&b)| a != b) {

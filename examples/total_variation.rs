@@ -30,21 +30,21 @@ fn total_var(sigma : f64, f : &NDArray<2>) -> (Model,Variable<2>,Constraint<0>) 
     // to demonstrate how to solve the same model with many data variants.
     // Of course they could simply be passed as ordinary arrays if that is not needed.
 
-    let ucore  = (&u).index([0..n,0..m]);
-    let deltax = (&u).index([1..n+1,0..m]).sub(ucore.clone()).reshape(&[n,m,1]);
-    let deltay = (&u).index([0..n,1..m+1]).sub(ucore.clone()).reshape(&[n,m,1]);
+    let ucore  = u.index([0..n,0..m]);
+    let deltax = u.index([1..n+1,0..m]).sub(ucore.clone()).reshape(&[n,m,1]);
+    let deltay = u.index([0..n,1..m+1]).sub(ucore.clone()).reshape(&[n,m,1]);
 
-    M.constraint( Some("Delta"), &stack![2; (t.clone()).reshape(&[n,m,1]), deltax, deltay], in_quadratic_cones(&[n,m,3], 2));
+    M.constraint( Some("Delta"), stack![2; t.reshape(&[n,m,1]), deltax, deltay], in_quadratic_cones(&[n,m,3], 2));
 
     let c = M.constraint(Some("TotalVar"), 
-                         &sigma.reshape(&[1,1])
+                         sigma.into_expr().reshape(&[1,1])
                             .vstack(f.to_expr().sub(ucore).reshape(&[n*m,1]))
                             .flatten(),
                          in_quadratic_cone(n*m+1));
 
-    M.objective( None, Sense::Minimize, &t.sum());
+    M.objective( None, Sense::Minimize, t.sum());
 
-    (M,(&u).index([0..n,0..m]),c.index([0..1]).reshape(&[]))
+    (M,u.index([0..n,0..m]),c.index([0..1]).reshape(&[]))
 }
 
 
@@ -69,7 +69,7 @@ fn main() {
     for sigma in [0.0004, 0.0005, 0.0006] {
         let sigma_val = sigma * (m*n) as f64;
 
-        M.update(&sigma_con, &sigma_val);
+        M.update(&sigma_con, sigma_val);
         // Example: Linear signal with Gaussian noise    
        
 

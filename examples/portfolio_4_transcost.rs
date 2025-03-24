@@ -54,27 +54,27 @@ fn markowitz_with_transactions_cost( mu : &[f64],
     _ = model.constraint(None, &y, less_than(vec![1.0; n]));
 
     //  Maximize expected return
-    model.objective(Some("obj"), Sense::Maximize, &mu.dot(x.clone()));
+    model.objective(Some("obj"), Sense::Maximize, mu.dot(&x));
 
     // Invest amount + transactions costs = initial wealth
     _ = model.constraint(Some("budget"), 
-                        & x.clone().sum().add(f.dot(y.clone())).add(g.dot(z.clone())),
+                        x.sum().add(f.dot(&y)).add(g.dot(&z)),
                         equal_to(w0));
 
     // Imposes a bound on the risk
     _ = model.constraint(Some("risk"), 
-                         &Expr::from(gamma).reshape(&[1])
-                            .vstack( GT.clone().mul(x.clone()) ),
+                         Expr::from(gamma).reshape(&[1])
+                            .vstack( GT.mul(&x) ),
                             in_quadratic_cone(m+1));
 
     // z >= |x-x0| 
-    _ = model.constraint(Some("buy"), &z.clone().sub(x.clone().sub(Expr::from(x0))), greater_than(vec![0.0;n]));
-    _ = model.constraint(Some("sell"), &z.clone().sub(Expr::from(x0).sub(x.clone())), greater_than(vec![0.0; n]));
+    _ = model.constraint(Some("buy"), z.sub(&x).sub(Expr::from(x0)), greater_than(vec![0.0;n]));
+    _ = model.constraint(Some("sell"), z.sub(Expr::from(x0).sub(&x)), greater_than(vec![0.0; n]));
     // Alternatively, formulate the two constraints as
     //model.constraint(Some("trade"), Expr.hstack(z,Expr.sub(x,x0)), Domain.inQcone())
 
     // Constraints for turning y off and on. z-diag(u)*y<=0 i.e. z_j <= u_j*y_j
-    _ = model.constraint(Some("y_on_off"), &z.clone().sub(y.clone().mul_elem(u)), less_than(vec![0.0;n]));
+    _ = model.constraint(Some("y_on_off"), z.sub(y.mul_elem(u)), less_than(vec![0.0;n]));
 
     // Integer optimization problems can be very hard to solve so limiting the 
     // maximum amount of time is a valuable safe guard

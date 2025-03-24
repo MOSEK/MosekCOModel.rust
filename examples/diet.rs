@@ -28,7 +28,7 @@ use mosekcomodel::*;
 use itertools::izip;
 
 fn diet(daily_allowance : &[f64],
-        nutritive_value : matrix::NDArray<2>) -> Result<(Vec<f64>,Vec<f64>),String> {
+        nutritive_value : &matrix::NDArray<2>) -> Result<(Vec<f64>,Vec<f64>),String> {
     let m = nutritive_value.shape()[0];
     let n = nutritive_value.shape()[1];
 
@@ -42,9 +42,9 @@ fn diet(daily_allowance : &[f64],
                                         greater_than(0.0).with_shape(&[m]));
 
     let daily_nutrients = model.constraint(Some("Nutrient Balance"),
-                                           &daily_purchase.clone().mul(nutritive_value),
+                                           daily_purchase.mul(nutritive_value),
                                            greater_than(daily_allowance.to_vec()));
-    model.objective(None, Sense::Minimize, &daily_purchase.clone().sum());
+    model.objective(None, Sense::Minimize, daily_purchase.sum());
 
     model.solve();
 
@@ -100,7 +100,7 @@ fn main() {
     let daily_allowance =
         [   3.0,     70.0,  0.8,    12.0,   5.0,      1.8,    2.7,   18.0,   75.0 ];
     let (res_purchase, res_nutrients) = diet(&daily_allowance, 
-                                             NDArray::from(&nutritive_value)).unwrap();
+                                             &NDArray::from(&nutritive_value)).unwrap();
 
     println!("Solution:");
     for (p,f) in res_purchase.iter().zip(foods.iter()).filter(|(p,_)| **p > 0.0) {

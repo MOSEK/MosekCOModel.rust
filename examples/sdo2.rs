@@ -43,13 +43,13 @@ fn main() {
     let X2 = m.variable(Some("X2"),in_psd_cone(4));
 
     // Objective
-    m.objective(None,Sense::Minimize, &C1.dot(X1.clone()).add(C2.dot(X2.clone())));
+    m.objective(None,Sense::Minimize, C1.dot(&X1).add(C2.dot(&X2)));
 
     // Equality constraint
-    m.constraint(None, & A1.dot(X1.clone()).add(A2.dot(X2.clone())), equal_to(b));
+    m.constraint(None, A1.dot(&X1).add(A2.dot(&X2)), equal_to(b));
 
     // Inequality constraint
-    m.constraint(None, &X2.clone().index([0,1]),less_than(k));
+    m.constraint(None, X2.index([0,1]),less_than(k));
 
     // Solve
     m.solve();

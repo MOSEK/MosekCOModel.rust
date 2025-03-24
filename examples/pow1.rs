@@ -11,7 +11,6 @@
 //! ```
 
 extern crate mosekcomodel;
-use expr::const_expr;
 use mosekcomodel::*;
 
 fn main() {
@@ -21,16 +20,27 @@ fn main() {
     let x4 = model.variable(None,unbounded());
 
     // Create the linear constraint
-    let aval = &[1.0, 1.0, 0.5];
-    model.constraint(None, &x.clone().dot(aval.to_vec()), equal_to(2.0));
+    let aval : &[f64] = &[1.0, 1.0, 0.5];
+    model.constraint(None, x.dot(aval), equal_to(2.0));
 
     // Create the conic constraints
-    model.constraint(None,&vstack![x.clone().index([0..2]), x3.clone().with_shape(&[1])], in_power_cone(3,&[0.2,0.8]));
-    model.constraint(None,&vstack![x.clone().index([2..3]),const_expr(&[1], 1.0),x4.clone().with_shape(&[1])],in_power_cone(3,&[0.4,0.6]));
+    model.constraint(None,
+                     vstack![x.index([0..2]),
+                             x3.flatten()], 
+                     in_power_cone(3,&[0.2,0.8]));
+    model.constraint(None,
+                     vstack![x.index([2..3]).to_expr(),
+                            (1.0).into_expr().flatten(),
+                             x4.flatten().to_expr()],
+                     in_power_cone(3,&[0.4,0.6]));
 
     // Set the objective function
-    let cval = &[1.0, 1.0, -1.0];
-    model.objective(None,Sense::Maximize, & cval.to_vec().dot(vstack![x3.clone().with_shape(&[1]), x4.clone().with_shape(&[1]), x.clone().index([0..1])]));
+    let cval : &[f64] = &[1.0, 1.0, -1.0];
+    model.objective(None,
+                    Sense::Maximize, 
+                    cval.dot(vstack![x3.with_shape(&[1]), 
+                                     x4.clone().with_shape(&[1]), 
+                                     x.clone().index([0..1])]));
 
     // Solve the problem
     model.solve();

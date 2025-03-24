@@ -44,21 +44,21 @@ fn markowitz_impact(n : usize,
     let t = model.variable(Some("t"), n);
 
     // Maximize expected return
-    model.objective(Some("obj"), Sense::Maximize, &mu.dot(x.clone()));
+    model.objective(Some("obj"), Sense::Maximize, mu.dot(&x));
 
     // Invested amount + slippage cost = initial wealth
-    model.constraint(Some("budget"), &x.clone().sum().add(m.dot(t.clone())), equal_to(w+x0.iter().sum::<f64>()));
+    model.constraint(Some("budget"), x.sum().add(m.dot(&t)), equal_to(w+x0.iter().sum::<f64>()));
 
     // Imposes a bound on the risk
     model.constraint(Some("risk"), 
-                     &vstack![Expr::from(gamma).reshape(&[1]), 
-                              gt.clone().mul(x.clone())], in_quadratic_cone(n+1));
+                     vstack![Expr::from(gamma).reshape(&[1]), 
+                             gt.mul(&x)], in_quadratic_cone(n+1));
 
     // t >= |x-x0|^1.5 using a power cone
     model.constraint(Some("tz"), 
-                     &hstack![ Expr::from(t.clone()).reshape(&[n,1]),
-                               Expr::from(vec![1.0;n]).reshape(&[n,1]),
-                               x.clone().sub(Expr::from(x0)).reshape(&[n,1]) ],
+                     hstack![ t.to_expr().reshape(&[n,1]),
+                              Expr::from(vec![1.0;n]).reshape(&[n,1]),
+                              x.sub(Expr::from(x0)).reshape(&[n,1]) ],
                      in_power_cones(&[n,3],1,&[2.0/3.0,1.0/3.0]));
 
     model.solve();

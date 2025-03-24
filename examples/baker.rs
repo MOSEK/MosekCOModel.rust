@@ -21,14 +21,14 @@ use mosekcomodel::*;
 
 fn main() {
     let _ingredientnames = [ "Flour", "Sugar", "Butter" ];
-    let stock = [ 150.0,   22.0,    25.0 ];
+    let stock : &[f64] = &[ 150.0,   22.0,    25.0 ];
 
-    let recipe_data = [ 3.0, 5.0, 
-                        1.0, 0.5,
-                        1.2, 0.5 ];
+    let recipe_data : &[f64] = &[3.0, 5.0, 
+                                 1.0, 0.5,
+                                 1.2, 0.5 ];
     let product_names = [ "Cakes", "Breads" ];
 
-    let revenue = [ 4.0, 6.0 ];
+    let revenue : &[f64] = &[ 4.0, 6.0 ];
 
     let mut model = Model::new(Some("Baker"));
     let recipe = matrix::dense([3,2],recipe_data);
@@ -39,10 +39,10 @@ fn main() {
     // The objective is to maximize the total revenue.
     model.objective(Some("revenue"),
                     Sense::Maximize,
-                    &production.clone().dot(revenue.to_vec()));
+                    production.dot(revenue));
 
     // The prodoction is constrained by stock:
-    model.constraint(None, &recipe.mul(production.clone()), less_than(stock.to_vec()));
+    model.constraint(None, recipe.mul(&production), less_than(stock));
     model.set_log_handler(|msg| print!("{}",msg));
 
     // We solve and fetch the solution:

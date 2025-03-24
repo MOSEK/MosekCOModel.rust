@@ -24,11 +24,11 @@ fn logsumexp(model : & mut Model,
 {
     let k = A.shape()[0];
     let u = model.variable(None,&[k,1]);
-    model.constraint(None,&u.clone().sum(), equal_to(1.0));
+    model.constraint(None,u.sum(), equal_to(1.0));
     model.constraint(None, 
-                     &hstack![u.clone(),
-                              ones(&[k,1]),
-                              A.clone().mul(x.clone()).add(b.to_vec()).reshape(&[k,1])],
+                     hstack![u.to_expr(),
+                             ones(&[k,1]),
+                             A.mul(x).add(b).reshape(&[k,1])],
                      in_exponential_cones(&[k,3],1));
 }
 
@@ -56,18 +56,18 @@ fn max_volume_box(Aw    : f64,
     let mut model = Model::new(Some("max_vol_box"));
 
     let xyz = model.variable(None, 3);
-    model.objective(Some("Objective"), Sense::Maximize, &xyz.clone().sum());
+    model.objective(Some("Objective"), Sense::Maximize, xyz.sum());
   
     logsumexp(&mut model, 
               &NDArray::from(&[[1.0,1.0,0.0], [1.0,0.0,1.0]]),
               &xyz,
               &[(2.0/Aw).ln(), (2.0/Aw).ln()]);
   
-    model.constraint(None,&xyz.clone().dot(vec![0.0, 1.0,1.0]), less_than(Af.ln()));
-    model.constraint(None,&xyz.clone().dot(vec![1.0,-1.0,0.0]), greater_than(alpha.ln()));
-    model.constraint(None,&xyz.clone().dot(vec![1.0,-1.0,0.0]), less_than(beta.ln()));
-    model.constraint(None,&xyz.clone().dot(vec![0.0,-1.0,1.0]), greater_than(gamma.ln()));
-    model.constraint(None,&xyz.clone().dot(vec![0.0,-1.0,1.0]), less_than(delta.ln()));
+    model.constraint(None,xyz.dot(vec![0.0, 1.0,1.0]), less_than(Af.ln()));
+    model.constraint(None,xyz.dot(vec![1.0,-1.0,0.0]), greater_than(alpha.ln()));
+    model.constraint(None,xyz.dot(vec![1.0,-1.0,0.0]), less_than(beta.ln()));
+    model.constraint(None,xyz.dot(vec![0.0,-1.0,1.0]), greater_than(gamma.ln()));
+    model.constraint(None,xyz.dot(vec![0.0,-1.0,1.0]), less_than(delta.ln()));
   
     //model.setLogHandler(new java.io.PrintWriter(System.out));
     model.solve();

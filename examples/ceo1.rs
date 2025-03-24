@@ -19,13 +19,13 @@ fn main() {
 
     // Create the constraint
     //      x[0] + x[1] + x[2] = 1.0
-    _ = m.constraint(Some("lc"), &x.clone().sum(), equal_to(1.0));
+    _ = m.constraint(Some("lc"), x.sum(), equal_to(1.0));
 
     // Create the exponential conic constraint
     let expc = m.constraint(Some("expc"), &x.clone(), in_exponential_cone());
 
     // Set the objective function to (x[0] + x[1])
-    m.objective(Some("obj"), Sense::Minimize, &x.clone().index(0..2).sum());
+    m.objective(Some("obj"), Sense::Minimize, x.index(0..2).sum());
 
     // Solve the problem
     m.solve();

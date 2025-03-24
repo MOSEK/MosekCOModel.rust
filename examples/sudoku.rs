@@ -36,23 +36,23 @@ fn main() {
     model.constraint(None,&x.clone(),less_than(1.0).with_shape(&[n,n,n]));
 
     // each value only once per dimension
-    model.constraint(None, &x.clone().sum_on(&[1,2]), equal_to(1.0).with_shape(&[n,n]));
-    model.constraint(None, &x.clone().sum_on(&[0,2]), equal_to(1.0).with_shape(&[n,n]));
-    model.constraint(None, &x.clone().sum_on(&[0,1]), equal_to(1.0).with_shape(&[n,n]));
+    model.constraint(None, x.sum_on(&[1,2]), equal_to(1.0).with_shape(&[n,n]));
+    model.constraint(None, x.sum_on(&[0,2]), equal_to(1.0).with_shape(&[n,n]));
+    model.constraint(None, x.sum_on(&[0,1]), equal_to(1.0).with_shape(&[n,n]));
 
     // each number must appear only once in a block
     for k in 0..n {
         for i in 0..m {
             for j in 0..m {
               model.constraint(None,
-                               &(&x).index([i*m..(i+1)*m, j*m..(j+1)*m, k..k+1]).sum(),
+                               x.index([i*m..(i+1)*m, j*m..(j+1)*m, k..k+1]).sum(),
                                equal_to(1.0));
             }
         }
     }
 
     model.constraint(None, 
-                     &stackvec(0,fixed.iter().map(|&i| (&x).index(i).reshape(&[1]) ).collect::<Vec<Variable<1>>>()), 
+                     stackvec(0,fixed.iter().map(|&i| x.index(i).reshape(&[1]) ).collect::<Vec<Variable<1>>>()), 
                      equal_to(1.0).with_shape(&[fixed.len()]));
 
     model.solve();
@@ -72,7 +72,7 @@ fn main() {
         let res = model.primal_solution(SolutionType::Default, &x).unwrap();
         let mut filled = vec![0usize;n*n];
     
-        for ((i,j),k,r) in 
+        for ((_i,_j),k,r) in 
             izip!(iproduct!(0..n,0..n),
                   res.chunks(n).map(|vv| vv.iter().enumerate().find_map(|(i,&v)| if v > 0.5 { Some(i+1) } else { None }).unwrap_or(0)),
                   filled.iter_mut()) {
@@ -98,58 +98,4 @@ fn print_solution(m : usize, data : &[usize]) {
     }
     println!(" +-------+-------+-------+");
 }
-
-/*
-fn print_solution(model : &Model, m : usize, x : &Variable<3>, puzzle : &[[usize;3]) {
-    let n = m * m;
-    println!();
-
-    {
-        let mut unfilled = vec![0;n*n];
-        for item in hr_fixed.iter() {
-            unfilled[ item[0]*n + item[1]] = item[2];
-        }
-        println!(" +-------+-------+-------+");
-        for i in 0..n {
-            for j in 0..n {
-                if j % m == 0 { 
-                    print!(" |");
-                }
-                for k in 0..n {
-                    if res[[i,j,k]] > 0.5 {
-                        print!(" {}",k+1);
-                    }
-                }
-            }
-            println!(" |");
-            if (i + 1) % m == 0 {
-                println!(" +-------+-------+-------+");
-            }
-        }
-    }
-
-
-    let res = NDArray::new([n,n,n],None,model.primal_solution(SolutionType::Default, x).unwrap()).unwrap();
-
-    println!("Solution:")
-    println!(" +-------+-------+-------+");
-    for i in 0..n {
-        for j in 0..n {
-            if j % m == 0 { 
-                print!(" |");
-            }
-            for k in 0..n {
-                if res[[i,j,k]] > 0.5 {
-                    print!(" {}",k+1);
-                }
-            }
-        }
-        println!(" |");
-        if (i + 1) % m == 0 {
-            println!(" +-------+-------+-------+");
-        }
-    }
-}
-*/
-
 

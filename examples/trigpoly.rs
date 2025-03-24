@@ -44,12 +44,12 @@ use std::f64::consts::PI;
 #[allow(non_snake_case)]
 fn complex_sdpvar(m : & mut Model, n : usize) -> (Variable<2>,Variable<2>) {
     let X   = m.variable(None, in_psd_cone(2*n));
-    let Xr  = (&X).index([0..n, 0..n]);
-    let Xi  = (&X).index([n..2*n, 0..n]);
-    let X22 = (&X).index([n..2*n, n..2*n]);
+    let Xr  = X.index([0..n, 0..n]);
+    let Xi  = X.index([n..2*n, 0..n]);
+    let X22 = X.index([n..2*n, n..2*n]);
     
-    _ = m.constraint(None, &Xr.clone().sub(X22.clone()), zeros(&[n,n]));
-    _ = m.constraint(None, &Xi.clone().add(Xi.clone().transpose()), zeros(&[n,n]));
+    _ = m.constraint(None, Xr.sub(&X22), zeros(&[n,n]));
+    _ = m.constraint(None, Xi.add(Xi.transpose()), zeros(&[n,n]));
     
     (Xr, Xi)
 }
@@ -109,10 +109,10 @@ fn trigpoly_0_pi(m : & mut Model, xr : & Variable<1>, xi : & Variable<1>) {
     let (Xr, Xi) = complex_sdpvar(m, n+1);
 
     _ = m.constraint(None, 
-                     &xr.clone().sub((0..n+1).genexpr(|_,i| Some(Xr.clone().dot(toeplitz(n,i as i64,1.0))))), 
+                     xr.sub((0..n+1).genexpr(|_,i| Some(Xr.dot(toeplitz(n,i as i64,1.0))))), 
                      equal_to(0.0).with_shape(&[n+1]));
     _ = m.constraint(None,
-                     &xi.clone().sub((0..n+1).genexpr(|_,i| Some(Xi.clone().dot(toeplitz(n,i as i64,1.0))))),
+                     xi.sub((0..n+1).genexpr(|_,i| Some(Xi.dot(toeplitz(n,i as i64,1.0))))),
                      equal_to(0.0).with_shape(&[n+1]));
 }
 
@@ -132,11 +132,11 @@ fn trigpoly_0_a(m : & mut Model, xr : & Variable<1>, xi : & Variable<1>, a : f64
     let Tn = (0..n+1).map(|i| toeplitz(n,i as i64,1.0));
     let Tnx = (0..n+1).map(|i| toeplitz_ext(n-1, &[i as i64+1,i as i64-1, i as i64], &[1.0,1.0,-2.0*a.cos()]));
     m.constraint(None, 
-                 &xr.clone().sub(Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some( X1r.clone().dot(Tni).add(X2r.clone().dot(Tnix))))),
+                 xr.sub(Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some( X1r.dot(Tni).add(X2r.dot(Tnix))))),
                  equal_to(0.0).with_shape(&[n+1]));
 
     m.constraint(None,
-                 &xi.clone().sub(Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some( X1i.clone().dot(Tni).add(X2i.clone().dot(Tnix))))),
+                 xi.sub(Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some( X1i.dot(Tni).add(X2i.dot(Tnix))))),
                  equal_to(0.0).with_shape(&[n+1]));
 }
 
@@ -158,10 +158,10 @@ fn trigpoly_a_pi(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, a : f64)
     let Tnx = (0..n+1).map(|i| toeplitz_ext(n-1, &[i as i64+1,i as i64-1, i as i64], &[-1.0,-1.0,2.0*a.cos()]));
 
     m.constraint(None, 
-                 &xr.clone().sub( Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some(X1r.clone().dot(Tni).add(X2r.clone().dot(Tnix))))),
+                 xr.sub( Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some(X1r.dot(Tni).add(X2r.dot(Tnix))))),
                  equal_to(0.0).with_shape(&[n+1]));
     m.constraint(None,
-                 &xi.clone().sub( Tn.zip(Tnx).genexpr(|_,(Tni,Tnix)| Some(X1i.clone().dot(Tni).add(X2i.clone().dot(Tnix))))),
+                 xi.clone().sub( Tn.zip(Tnx).genexpr(|_,(Tni,Tnix)| Some(X1i.dot(Tni).add(X2i.dot(Tnix))))),
                  equal_to(0.0).with_shape(&[n+1]));
 }
 
@@ -188,11 +188,11 @@ fn epigraph(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, t : Either<&V
     let ui = m.variable(None,n+1);
 
     match &t {
-        Either::Left(ref t)  => m.constraint(None,&(*t).clone().sub(xr.clone().index(0).add(ur.clone().index(0))), zero()),
-        Either::Right(ref t) => m.constraint(None,&t.sub(xr.clone().index(0).add(ur.clone().index(0))), zero())
+        Either::Left(ref t)  => m.constraint(None,t.sub(xr.index(0).add(ur.index(0))), zero()),
+        Either::Right(ref t) => m.constraint(None,t.into_expr().sub(xr.index(0).add(ur.index(0))), zero())
     };
-    m.constraint(None, &xr.clone().index(1..n+1).add(ur.clone().index(1..n+1)), zeros(&[n]));
-    m.constraint(None, &xi.clone().add(ui.clone()), zeros(&[n+1]));
+    m.constraint(None, xr.index(1..n+1).add(ur.index(1..n+1)), zeros(&[n]));
+    m.constraint(None, xi.add(&ui), zeros(&[n+1]));
 
     if a.abs() < 1e-12 && (b-PI).abs() < 1e-12 {
         trigpoly_0_pi(m, &ur, &ui);
@@ -228,10 +228,10 @@ fn hypograph(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, t : Either<&
     let u0 = m.variable(None,&[]);
     match t {
         Either::Left(t) => m.constraint(None,
-                 &t.clone().sub(xr.clone().index(0).sub(u0.clone())),
+                 t.sub(xr.index(0).sub(&u0)),
                  zero()),
         Either::Right(t) => m.constraint(None,
-                 &t.sub(xr.clone().index(0).sub(u0.clone())),
+                 t.into_expr().sub(xr.index(0).sub(&u0)),
                  zero())
     };
 

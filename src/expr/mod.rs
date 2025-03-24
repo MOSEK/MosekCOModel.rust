@@ -609,6 +609,11 @@ pub trait ExprTrait<const N : usize> {
 } // ExprTrait<N>
 
 
+pub trait IntoExpr<const N : usize> {
+    type Result : ExprTrait<N>;
+    fn into(self) -> Self::Result;
+    fn into_expr(self) -> Self::Result where Self : Sized { self.into() }
+}
 
 
 
@@ -1276,40 +1281,51 @@ impl<const N : usize, E:ExprTrait<N>> ExprTrait<1> for ExprGatherToVec<N,E> {
 //
 // Recursive evaluation of recursive stacking
 //
-
+ 
 /// Stack a list of expressions in dimension 1
+///
+/// TODO: Figure out how to automatically handle non-expression arguments: Variables, constants,
+/// arrays etc.
 #[macro_export]
 macro_rules! hstack {
-    [ $x0:expr ] => { $x0 };
+    [ $x0:expr ] => { $x0 . into_expr() };
     [ $x0:expr , $( $x:expr ),* ] => {
         {
-            $x0 $( .hstack( $x ) )*
+            $x0 . into_expr() $( .hstack( $x . into_expr() ) )*
         }
     }
 }
 
 /// Stack a list of expressions in dimension 0
+///
+/// TODO: Figure out how to automatically handle non-expression arguments: Variables, constants,
+/// arrays etc.
 #[macro_export]
- macro_rules! vstack {
-    [ $x0:expr ] => { $x0 };
+macro_rules! vstack {
+    [ $x0:expr ] => { into_expr() $x0 };
     [ $x0:expr , $( $x:expr ),* ] => {
         {
-            $x0 $( .vstack( $x ))*
+            $x0 . into_expr() $( .vstack( $x . into_expr() ))*
         }
     }
 }
 
 /// Stack a list of expressions in a given dimension
+///
+/// TODO: Figure out how to automatically handle non-expression arguments: Variables, constants,
+/// arrays etc.
 #[macro_export]
 macro_rules! stack {
     [ $n:expr ; $x0:expr ] => { $x0 };
     [ $n:expr ; $x0:expr , $( $x:expr ),* ] => {
-        {
+        {            
             let n = $n;
-            $x0 $( .stack( n , $x ))*
+            //mosekcomodel::expr::stack_helper(n,$x0,stack![ n; $( x ),* ])
+            $x0 . into_expr() $( .stack( n , $x . into_expr() ))*
         }
     }
 }
+
 
 #[macro_export]
 macro_rules! exprcat {
@@ -1462,7 +1478,7 @@ impl<const N : usize> ExprTrait<N> for ExprDynStack<N> {
 /// elements ay differ, we have to get the expressions as a dynamic
 /// objects.
 ///
-/// Arguments:
+/// #Argument
 ///
 /// - dim : Dimension to stack in
 /// - exprs : List of expressions
@@ -1476,8 +1492,18 @@ pub fn hstack<const N : usize>(exprs : Vec<ExprDynamic<'static,N>>) -> ExprDynSt
     ExprDynStack{exprs,dim:1}
 }
 
-pub fn stackvec<const N : usize,E>(dim : usize, exprs : Vec<E>) -> ExprStackVec<N,E> where E : ExprTrait<N> {
-    ExprStackVec{dim,items:exprs}
+/// Stack a vector of expressions of the same type.
+///
+/// # Arguments 
+/// - `dim` The dimension to stack in. This must be strictly smaller name `N`.
+/// - `exprs` Vector of expressions
+pub fn stackvec<const N : usize,E>(dim : usize, exprs : Vec<E>) -> ExprStackVec<N,E::Result> 
+    where 
+        E : IntoExpr<N> 
+{
+    ExprStackVec{
+        dim,
+        items:exprs.into_iter().map(|v| v.into()).collect() }
 }
 
 #[allow(unused)]
@@ -1869,6 +1895,11 @@ impl From<f64> for Expr<0> {
     fn from(v : f64) -> Expr<0> { Expr::new(&[], None, vec![0,1], vec![0], vec![v]) }
 }
 
+impl IntoExpr<0> for f64 {
+    type Result = Expr<0>;
+    fn into(self) -> Self::Result { Expr::new(&[], None, vec![0,1], vec![0], vec![self]) }
+}
+
 impl From<&[f64]> for Expr<1> {
     fn from(v : &[f64]) -> Expr<1> { Expr::new(&[v.len()], None, (0..v.len()+1).collect(), vec![0; v.len()], v.to_vec()) }
 }
@@ -1877,54 +1908,6 @@ impl From<Vec<f64>> for Expr<1> {
     fn from(v : Vec<f64>) -> Expr<1> { Expr::new(&[v.len()], None, (0..v.len()+1).collect(), vec![0; v.len()], v) }
 }
 
-pub trait IntoExpr<const N : usize> {
-    type Result : ExprTrait<N>;
-    fn into(self) -> Self::Result;
-    
-//    fn vstack<E>(self,other : E) -> ExprStack<N,Self,E::Result>  where Self:Sized, E:IntoExpr<N> { ExprStack::new(self,other.into(),0) }
-//    fn hstack<E>(self,other : E) -> ExprStack<N,Self,E::Result>  where Self:Sized,E:IntoExpr<N> { ExprStack::new(self,other.into(),1) }
-//    fn stack<E>(self,dim : usize, other : E) -> ExprStack<N,Self,E::Result> where Self:Sized, E:IntoExpr<N>{ ExprStack::new(self,other.into(),dim) }
-//    fn repeat(self,dim : usize, num : usize) -> ExprRepeat<N,Self> where Self:Sized { ExprRepeat{ expr : self, dim, num } }
-//    fn index<I>(self, idx : I) -> I::Output where I : ModelExprIndex<Self>, Self:Sized {
-//        idx.index(self)
-//    }
-//    fn reshape<const M : usize>(self,shape : &[usize; M]) -> ExprReshape<N,M,Self>  where Self:Sized { ExprReshape{item:self,shape:*shape} }
-//    fn into_symmetric(self, dim : usize) -> ExprIntoSymmetric<N,Self> where Self:Sized {
-//        if dim > N-2 {
-//            panic!("Invalid symmetrization dimension");
-//        }
-//        
-//        ExprIntoSymmetric{
-//            dim,
-//            expr : self
-//        }
-//    }
-//    fn flatten(self) -> ExprReshapeOneRow<N,1,Self> where Self:Sized { ExprReshapeOneRow { item:self, dim : 0 } }
-//    fn into_column(self) -> ExprReshapeOneRow<N,2,Self> where Self:Sized { ExprReshapeOneRow { item:self, dim : 0 } }
-//    fn into_vec<const M : usize>(self, i : usize) -> ExprReshapeOneRow<N,M,Self> where Self:Sized+ExprTrait<1> { 
-//        if i >= M {
-//            panic!("Invalid dimension index")
-//        }
-//        ExprReshapeOneRow{item:self, dim : i }
-//    }
-//
-//    fn map<const M : usize,F>(self, shape : &[usize;M], f : F) -> ExprMap<N,M,F,Self> 
-//        where 
-//            F : Clone+FnMut(&[usize;N]) -> Option<[usize;M]>,
-//            Self : Sized
-//    {
-//        ExprMap{ item : self, shape : *shape, f}
-//    }
-//    fn mul<RHS>(self,other : RHS) -> RHS::Result where Self: Sized, RHS : ExprRightMultipliable<N,Self> { other.mul_right(self) }
-//    fn rev_mul<LHS>(self, lhs: LHS) -> LHS::Result where Self: Sized, LHS : ExprLeftMultipliable<N,Self> { lhs.mul(self) }
-//    fn transpose(self) -> ExprPermuteAxes<2,Self> where Self:Sized+ExprTrait<2> { ExprPermuteAxes{ item : self, perm : [1,0]} }
-//    fn tril(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized+ExprTrait<2> { ExprTriangularPart{item:self,upper:false,with_diag} }
-//    fn triu(self,with_diag:bool) -> ExprTriangularPart<Self> where Self:Sized+ExprTrait<2> { ExprTriangularPart{item:self,upper:true,with_diag} }
-//    fn trilvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:false,with_diag} } } 
-//    fn triuvec(self,with_diag:bool) -> ExprGatherToVec<2,ExprTriangularPart<Self>> where Self:Sized+ExprTrait<2> { ExprGatherToVec{ item:ExprTriangularPart{item:self,upper:true,with_diag} } }
-//    fn diag(self) -> ExprDiag<Self> where Self:Sized+ExprTrait<2> { ExprDiag{ item : self, anti : false, index : 0 } }
-//    fn square_diag(self) -> ExprSquareDiag<Self> where Self:Sized+ExprTrait<1> { ExprSquareDiag{ item : self }}
-}
 
 impl<const N : usize, E> IntoExpr<N> for E where E : ExprTrait<N>+Sized {
     type Result = E;
@@ -1942,16 +1925,16 @@ impl IntoExpr<1> for Vec<f64> {
 }
     
 
-impl ExprTrait<0> for f64 {
-    fn eval(&self, rs : &mut WorkStack, _ws : &mut WorkStack, _xs : &mut WorkStack) -> Result<(),ExprEvalError> {
-        let (aptr,_,asubj,acof) = rs.alloc_expr(&[],1,1);
-        aptr[0] = 0;
-        aptr[1] = 1;
-        asubj[0] = 0;
-        acof[0] = *self;
-        Ok(())
-    }
-}
+//impl ExprTrait<0> for f64 {
+//    fn eval(&self, rs : &mut WorkStack, _ws : &mut WorkStack, _xs : &mut WorkStack) -> Result<(),ExprEvalError> {
+//        let (aptr,_,asubj,acof) = rs.alloc_expr(&[],1,1);
+//        aptr[0] = 0;
+//        aptr[1] = 1;
+//        asubj[0] = 0;
+//        acof[0] = *self;
+//        Ok(())
+//    }
+//}
 
 
 ////////////////////////////////////////////////////////////

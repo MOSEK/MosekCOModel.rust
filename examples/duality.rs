@@ -9,17 +9,17 @@ use mosekcomodel::*;
 
 #[allow(non_snake_case)]
 fn main() {
-    let A = [ [ -0.5, 1.0 ] ];
-    let b = [ 1.0 ];
-    let c =  [ 1.0, 1.0 ];
+    let A = &[ [ -0.5, 1.0 ] ];
+    let b : &[f64] = &[ 1.0 ];
+    let c : &[f64] =  &[ 1.0, 1.0 ];
 
     let mut model = Model::new(Some("duality"));
 
     let x = model.variable(Some("x"), greater_than(vec![0.0,0.0]));
 
-    let con = model.constraint(None, &NDArray::from(&A).mul(x.clone()).sub(b.to_vec()), equal_to(vec![0.0]));
+    let con = model.constraint(None, NDArray::from(A).mul(&x).sub(b), equal_to(vec![0.0]));
 
-    model.objective(Some("obj"), Sense::Minimize, &x.clone().dot(c.to_vec()));
+    model.objective(Some("obj"), Sense::Minimize, x.dot(c));
 
     model.solve();
     let xsol = model.primal_solution(SolutionType::Default, &x).unwrap();
