@@ -30,7 +30,4 @@ rand = "0.8.5"
 name="exprs"
 harness = false
 
-[[example]]
-name = "eval"
-crate-type = ["cdylib"]
 
