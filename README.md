@@ -156,6 +156,3 @@ Currently, demos include:
 - `truss` Simple 2D truss design model assigning material to bars in a truss construction.
 
 
--
--
-
