@@ -101,15 +101,14 @@ fn main() {
 
 # Compiling, testing, running
 
-To compile the project and run basic tests, do 
+First, to build simply type 
 ```sh
-cargo build && cargo test
+cargo build
 ```
+Optionally, also pass the `--release` flag as the Debug build is significantly slower that the release build.
 
-When running examples, the compiled examples cannot locate the MOSEK library 
-
-Running examples requires the MOSEK library to be available and a license file. The simplest
-solution is to download and unpack the MOSEK distro from https://www.mosek.com/downloads/, unpack the distro
+Running examples requires the MOSEK library to be available and a valid MOSEK license file. The simplest
+solution is to download and unpack the MOSEK distro from [MOSEK Downloads](https://www.mosek.com/downloads/), unpack the distro
 and set relevant environment variable:
 - On MS Windows: 
   ```set PATH=C:\full\path\to\mosek\binaries;%PATH%```
@@ -118,4 +117,45 @@ and set relevant environment variable:
 - On Linux: 
   ```export LD_LIBRARY_PATH=/full/path/to/mosek/binaries:$LD_LIBRARY_PATH```
 
-A trial license can be obtained from https://www.mosek.com/products/trial/.
+To run tests, do 
+```sh
+cargo test --all
+```
+
+A trial license can be obtained from [MOSEK Trial license](https://www.mosek.com/products/trial/).
+
+## Demos
+
+The project also contanis a set of graphical demos. These are in separate
+sub-projects in `examples/demos` since they depend on a lot of external
+libraries.
+
+To run these, go to the sub-folder with demos
+```sh
+cd examples/demos
+```
+Then to run, say `lowner-john-2d`, do 
+```sh 
+cargo run --release -p lowner-john-2d
+```
+
+Currently, demos include:
+- `lowner-john-2d` For a set of moving, rotating polygons, computes the minimal
+  bounding ellipsoid containing all polygons (or, in fact all corner points),
+  and the maximum ellipsoid contained in the intersection (when the
+  intersection is non-empty). 
+- `lowner-john-outer-3d` For a set of rotating and moving polyhedrons, compute
+  the minimal bounding ellipsoid containing all polyhedrons (or their corner
+  points).
+- `ellipsoid-approximation` For a set of moving and rotating ellipses,
+  compute the outer approximation (minimal ellipse containing all moving
+  ellipses), and inner approximation (maximum ellipe contained in the
+  intersection of all ellipses).
+- `ellipsoid-approximation-3d` For a set of moving and rotating ellipsoids, compute the minimal bounding ellipsoid.
+- `trigpoly` Simple visualization of trigonometric polynomial optimization.
+- `truss` Simple 2D truss design model assigning material to bars in a truss construction.
+
+
+-
+-
+
