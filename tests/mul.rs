@@ -378,8 +378,8 @@ fn bigmul() {
     let v = model.variable(None,&[N,1]);
     let mx = matrix::dense([N,N],vec![1.0; N*N]);
 
-    let _ = model.constraint(None, &mx.clone().mul(v.clone()).reshape(&[N]),equal_to(vec![100.0;N]));
-    let _ = model.constraint(None, &v.reshape(&[1,N]).mul(mx), equal_to(vec![100.0;N]).with_shape(&[1,N]));
+    let _ = model.constraint(None, mx.clone().mul(&v).reshape(&[N]),equal_to(vec![100.0;N]));
+    let _ = model.constraint(None, v.reshape(&[1,N]).mul(mx), equal_to(vec![100.0;N]).with_shape(&[1,N]));
 }
 
 

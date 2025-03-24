@@ -211,7 +211,7 @@ fn test_stack(d : usize, sp : bool, n : usize) {
     let mut xs = WorkStack::new(1024);
 
     rs.clear(); ws.clear(); xs.clear();
-    v.clone().stack(d,v.clone()).stack(d,v.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
+    (&v).into_expr().stack(d,&v).stack(d,&v).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
 }
 
 #[allow(non_snake_case)]

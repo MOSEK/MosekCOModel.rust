@@ -349,7 +349,7 @@ impl<const N : usize, E> ExprRightMultipliable<N,E> for f64
 ///////////////////////////////////////////////////////////////////////////////
 
 pub trait ExprLeftElmMultipliable<const N: usize, E> 
-    where E : ExprTrait<N>
+    where E : IntoExpr<N>
 {
     type Result;
     fn mul_elem(self, other : E) -> Self::Result;
@@ -358,14 +358,14 @@ pub trait ExprLeftElmMultipliable<const N: usize, E>
 impl<E,M> ExprLeftElmMultipliable<2,E> for M 
     where 
         M : Matrix,
-        E : ExprTrait<2>
+        E : IntoExpr<2>
 {
-    type Result = ExprMulElm<2,E>;
+    type Result = ExprMulElm<2,E::Result>;
 
     fn mul_elem(self,rhs : E) -> Self::Result {
         let (shape,sp,data) = self.dissolve();
         ExprMulElm{
-            expr : rhs,
+            expr : rhs.into(),
             datashape : shape,
             datasparsity : sp,
             data
@@ -375,13 +375,13 @@ impl<E,M> ExprLeftElmMultipliable<2,E> for M
 
 impl<E> ExprLeftElmMultipliable<1,E> for Vec<f64>
     where 
-        E : ExprTrait<1>
+        E : IntoExpr<1>
 {
-    type Result = ExprMulElm<1,E>;
+    type Result = ExprMulElm<1,E::Result>;
 
     fn mul_elem(self,rhs : E) -> Self::Result {
         ExprMulElm{
-            expr : rhs,
+            expr : rhs.into(),
             datashape : [self.len()],
             datasparsity : None,
             data : self
@@ -391,13 +391,13 @@ impl<E> ExprLeftElmMultipliable<1,E> for Vec<f64>
 
 impl<E> ExprLeftElmMultipliable<1,E> for &[f64] 
     where 
-        E : ExprTrait<1>
+        E : IntoExpr<1>
 {
-    type Result = ExprMulElm<1,E>;
+    type Result = ExprMulElm<1,E::Result>;
 
     fn mul_elem(self,rhs : E) -> Self::Result { 
         ExprMulElm{
-            expr : rhs,
+            expr : rhs.into(),
             datashape : [self.len()],
             datasparsity : None,
             data : self.to_vec()
@@ -564,10 +564,10 @@ mod test {
     fn mul() {
         let m = dense([2, 5], vec![1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0, 1.0,1.0]);
         let e = Expr{ shape: [2,2],
-                                    aptr : vec![0,1,2,3,4],
-                                    asubj: vec![5,6,7,8],
-                                    acof: vec![1.0,1.0,1.0,1.0],
-                                    sparsity : None};
+                      aptr : vec![0,1,2,3,4],
+                      asubj: vec![5,6,7,8],
+                      acof: vec![1.0,1.0,1.0,1.0],
+                      sparsity : None};
         let mut rs = WorkStack::new(512);
         let mut ws = WorkStack::new(512);
         let mut xs = WorkStack::new(512);

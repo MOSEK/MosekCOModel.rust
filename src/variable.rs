@@ -6,7 +6,7 @@ use expr::ExprEvalError;
 use iter::IndexIteratorExt;
 use utils::*;
 
-use crate::expr::{ExprRightElmMultipliable, ExprDotRows};
+use crate::{expr::{ExprRightElmMultipliable, ExprDotRows}, utils::iter::PermuteByEx};
 
 use super::*;
 use itertools::{iproduct, izip};
@@ -28,11 +28,11 @@ use super::utils;
 /// let mut model = Model::new(None);
 /// let x = model.variable(None,unbounded());
 /// // Explicitly convert x to expression
-/// model.constraint(None, &x.to_expr() , equal_to(1.0));
+/// model.constraint(None, x.to_expr() , equal_to(1.0));
 /// // Use x reference, indirectly causes it to be converted
 /// model.constraint(None, &x , equal_to(1.0));
 /// // Using a if it was an expression - this does not work for all operations
-/// model.constraint(None, &x.add(&x), equal_to(1.0));
+/// model.constraint(None, x.add(&x), equal_to(1.0));
 ///
 /// ```
 #[derive(Clone)]
@@ -337,8 +337,39 @@ impl<const N : usize> Variable<N> {
     /// Get the variable shape
     pub fn shape(&self) -> &[usize] { self.shape.as_slice() }
 
-    pub fn axispermute(self,_perm : &[usize; N]) -> Variable<N> {
-        unimplemented!("Not implemented: axispermute");
+    /// Perform axis-permutation. In two dimensions this is a `transpose`.
+    pub fn axispermute(&self, perm : &[usize; N]) -> Variable<N> { 
+        let mut newshape = [usize::MAX; N]; newshape.iter_mut().zip(self.shape.permute_by(perm)).for_each(|(t,&s)| *t = s);
+        let st    = utils::Strides::from_shape(&self.shape);
+        let newst = utils::Strides::from_shape(&newshape);
+
+        if let Some(ref idx) = self.sparsity {
+            let mut p : Vec<usize> = (0..idx.len()).collect();
+            p.sort_by_key(|&i| unsafe{ *idx.get_unchecked(i) });
+
+            let idxs : Vec<usize> = self.idxs.permute_by(p.as_slice()).cloned().collect();
+            let sparsity : Vec<usize> = idx.permute_by(p.as_slice()).cloned().collect();
+
+            Variable{
+                shape : newshape,
+                idxs : Rc::new(idxs),
+                sparsity : Some(Rc::new(sparsity))
+            }
+        }
+        else {
+            let idxs = (0..self.shape.iter().product())
+                .map(|i| {
+                    let mut idx = [0usize; N];
+                    st.to_index(i).permute_by(perm).zip(idx.iter_mut()).for_each(|(&s,t)| *t = s);
+                    newst.to_linear(&idx) })
+                .collect();
+
+            Variable{
+                shape : newshape,
+                idxs : Rc::new(idxs),
+                sparsity : None
+            }
+        }
     }
 
     /// Maps to [ExprTrait::sum]. 
@@ -391,7 +422,7 @@ impl<const N : usize> Variable<N> {
     pub fn index<I>(&self, idx : I) -> I::Output where I : ModelItemIndex<Self> {
         idx.index(self)
     }
-    pub fn into_column(&self) -> Variable<2> {
+pub fn into_column(&self) -> Variable<2> {
         Variable {
             shape : [self.shape.iter().product(),1],
             idxs : self.idxs.clone(),
@@ -595,16 +626,6 @@ impl<const N : usize> Variable<N> {
             Ok(sz)
         }
     }
-
-
-//    fn map<const M : usize,F>(self, shape : &[usize;M], f : F) -> ExprMap<N,M,F,Self> 
-//        where 
-//            F : Clone+FnMut(&[usize;N]) -> Option<[usize;M]>,
-//            Self : Sized
-//    {
-//        ExprMap{ item : self, shape : *shape, f}
-//    }
-
 }
 
 

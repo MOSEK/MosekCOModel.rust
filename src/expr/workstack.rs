@@ -443,17 +443,17 @@ impl WorkStack {
         let fbase = self.ftop - totalfsize;
 
         let uslice : &[usize] = & self.susize[ubase..self.utop];
-        let cof    : &[f64]   = & self.sf64[fbase..self.ftop];
+        let _cof    : &[f64]   = & self.sf64[fbase..self.ftop];
 
         let subj_base = 0;
         let sp_base = subj_base+nnz;
         let ptr_base = if nelm < totalsize { sp_base + nelm } else { sp_base };
         let shape_base = ptr_base + nelm+1;
 
-        let subj  = &uslice[subj_base..subj_base+nnz];
+        let _subj  = &uslice[subj_base..subj_base+nnz];
         let sp    = if totalsize > nelm { Some(&uslice[sp_base..sp_base+nelm]) } else { None };
         let ptr   = &uslice[ptr_base..ptr_base+nelm+1];
-        let shape = &uslice[shape_base..shape_base+nd];
+        let _shape = &uslice[shape_base..shape_base+nd];
         
         if *ptr.last().unwrap() > nnz { return Err("Ptr structure does not match nnz".to_string()); }
         if ptr.iter().zip(ptr[1..].iter()).any(|(a,b)| a > b) {

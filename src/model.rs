@@ -2217,7 +2217,7 @@ mod tests {
         //let y = m.variable(Some("y"), unbounded().with_shape(&[3,2,3]));
         let z = m.variable(Some("z"), zero());
 
-        let c = m.constraint(Some("c"), &x.sub(dense([3,2,3],vec![0.0,-1.0,-2.0,-3.0,-4.0,-5.0,-6.0,-7.0,-8.0,-9.0,-10.0,-11.0,-12.0,-13.0,-14.0,-15.0,-16.0,-17.0])), in_psd_cones(&[3,2,3],0,2));
+        let c = m.constraint(Some("c"), x.sub(dense([3,2,3],vec![0.0,-1.0,-2.0,-3.0,-4.0,-5.0,-6.0,-7.0,-8.0,-9.0,-10.0,-11.0,-12.0,-13.0,-14.0,-15.0,-16.0,-17.0])), in_psd_cones(&[3,2,3],0,2));
         m.objective(Some("obj"), Sense::Minimize, &z);
 
         m.solve();

@@ -40,6 +40,25 @@ pub enum EitherExpr<const N : usize,A,B> where A : Sized+ExprTrait<N>, B : Sized
     Right(B)
 }
 
+pub fn either_left <const N : usize,A,B>(a : A) -> EitherExpr<N,A::Result,B::Result> 
+    where 
+        A : IntoExpr<N>, 
+        B : IntoExpr<N>,
+        A::Result : Sized,
+        B::Result : Sized
+{
+    EitherExpr::Left(a.into()) 
+}
+pub fn either_right<const N : usize,A,B>(b : B) -> EitherExpr<N,A::Result,B::Result> 
+    where 
+        A : IntoExpr<N>, 
+        B : IntoExpr<N>,
+        A::Result : Sized,
+        B::Result : Sized
+{
+    EitherExpr::Right(b.into()) 
+}
+
 /// An expression that can be one of three fixed types with same dimensionality.
 ///
 /// Work the same way as [`EitherExpr`].
@@ -152,7 +171,8 @@ impl<const N : usize,E1,E2,E3,E4,E5> ExprTrait<N> for EitherExpr5<N,E1,E2,E3,E4,
 pub struct GeneratorExpr<const N : usize,F,R> 
     where 
         F : Fn(&[usize; N]) -> Option<R>,
-        R : ExprTrait<0>
+        R : IntoExpr<0>,
+        Self : Sized
 {
     shape : [usize; N],
     sp    : Option<Vec<usize>>,
@@ -186,37 +206,37 @@ pub struct GeneratorExpr<const N : usize,F,R>
 /// let x = m.variable(None, &[5,5]);
 /// // Generate expression as E + E'
 /// _ = m.constraint(None, 
-///                  & genexpr([5,5], None, |i| Some(x.clone().index(*i).add(x.clone().index([i[1],i[0]])))),
+///                  genexpr([5,5], None, |i| Some(x.index(*i).add(x.index([i[1],i[0]])))),
 ///                  greater_than(0.0).with_shape(&[5,5]));
 /// // Generate expression as E + E', except diagonal elements that are just E 
 /// _ = m.constraint(None,
-///                  & genexpr([5,5], None, 
-///                            |i| Some(if i[0] != i[1] {
-///                                       EitherExpr::Left(x.clone().index(*i).add(x.clone().index([i[1],i[0]]))) 
-///                                     }
-///                                     else {
-///                                       EitherExpr::Right(x.clone().index(*i))
-///                                     })),
+///                  genexpr([5,5], None, 
+///                          |i| Some(if i[0] != i[1] {
+///                                     EitherExpr::Left(x.index(*i).add(x.index([i[1],i[0]]).into_expr())) 
+///                                   }
+///                                   else {
+///                                     EitherExpr::Right(x.index(*i).into_expr())
+///                                   })),
 ///                  greater_than(0.0).with_shape(&[5,5]));
 /// // Generate expression as the lower triangular part if E+E'
 /// _ = m.constraint(None,
-///                  & genexpr([5,5], None,
-///                            |i| if i[0] == i[1] {
-///                                  Some(EitherExpr::Right(x.clone().index(*i)))
-///                                }
-///                                else if i[0] > i[1] {
-///                                  Some(EitherExpr::Left(x.clone().index(*i).add(x.clone().index([i[1],i[0]]))))
-///                                } 
-///                                else {
-///                                  None
-///                                }),
+///                  genexpr([5,5], None,
+///                          |i| if i[0] == i[1] {
+///                                Some(EitherExpr::Right(x.index(*i).into_expr()))
+///                              }
+///                              else if i[0] > i[1] {
+///                                Some(EitherExpr::Left(x.index(*i).add(x.index([i[1],i[0]])).into_expr()))
+///                              } 
+///                              else {
+///                                None
+///                              }),
 ///                  greater_than(0.0).with_shape(&[5,5]));
 /// ```
 ///
 pub fn genexpr<const N : usize,F,R>(shape : [usize; N], sp : Option<Vec<usize>>, f : F) -> GeneratorExpr<N,F,R>
     where 
         F : Fn(&[usize; N]) -> Option<R>,
-        R : ExprTrait<0>
+        R : IntoExpr<0>
 {
     GeneratorExpr{ shape, sp, f }
 }
@@ -225,7 +245,7 @@ pub fn genexpr<const N : usize,F,R>(shape : [usize; N], sp : Option<Vec<usize>>,
 impl<const N : usize,F,R> ExprTrait<N> for GeneratorExpr<N,F,R>
     where 
         F : Fn(&[usize; N]) -> Option<R>,
-        R : ExprTrait<0>
+        R : IntoExpr<0>
 {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> 
     {
@@ -245,7 +265,7 @@ impl<const N : usize,F,R> ExprTrait<N> for GeneratorExpr<N,F,R>
                 if let Some(e) = (self.f)(&ii) {
                     spx.push(*i);
 
-                    e.eval(ws,rs,xs)?;
+                    e.into().eval(ws,rs,xs)?;
                 }
             }
         }
@@ -254,7 +274,7 @@ impl<const N : usize,F,R> ExprTrait<N> for GeneratorExpr<N,F,R>
                 if let Some(e) = (self.f)(&ii) {
                     spx.push(i);
 
-                    e.eval(ws,rs,xs)?;
+                    e.into().eval(ws,rs,xs)?;
                 }
             }
         }
@@ -297,7 +317,7 @@ pub struct ExprGenerator1<F,E,T,I>
         T : IntoIterator<IntoIter = I>,
         I : ExactSizeIterator,
         F : Fn(usize, I::Item) -> Option<E>,
-        E : ExprTrait<0>
+        E : IntoExpr<0>
 {
     /// The object that defines the "indexes" provided to the generator function. For example
     /// `[1,7,5,9]` (integer list), `["a","b","c']` (string list), `(5..12).step_by(2)` (an
@@ -311,7 +331,7 @@ impl<F,E,T,I> ExprTrait<1> for ExprGenerator1<F,E,T,I> where
         T : IntoIterator<IntoIter = I>+Clone,
         I : ExactSizeIterator,
         F : Fn(usize, I::Item) -> Option<E>,
-        E : ExprTrait<0>
+        E : IntoExpr<0>
 {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> 
     {
@@ -323,7 +343,7 @@ impl<F,E,T,I> ExprTrait<1> for ExprGenerator1<F,E,T,I> where
         for (i,v) in it.enumerate() {
             if let Some(e) = (self.f)(i,v) {
                 spx.push(i);
-                e.eval(ws,rs,xs)?;
+                e.into().eval(ws,rs,xs)?;
             }
         }
 
@@ -343,7 +363,7 @@ pub trait ExprGenerator1Ex<F,E,T,I>
         T : IntoIterator<IntoIter = I>+Clone,
         I : ExactSizeIterator+Clone,
         I::Item : Clone,
-        E : ExprTrait<0>,
+        E : IntoExpr<0>,
         F : Fn(usize,I::Item) -> Option<E>
 {
     /// Create a generator expression using `self` for indexes.
@@ -356,7 +376,7 @@ pub trait ExprGenerator1Ex<F,E,T,I>
     ///
     /// let mut m = Model::new(None);
     /// let x = m.variable(None,unbounded().with_shape(&[5]));
-    /// let e = (0..5).rev().genexpr(|_,i| Some(x.clone().index(i)));
+    /// let e = (0..5).rev().genexpr(|_,i| Some(x.index(i)));
     /// ```
     fn genexpr(self,f : F) -> ExprGenerator1<F,E,T,I>;
 }
@@ -367,7 +387,7 @@ impl<F,E,T,I> ExprGenerator1Ex<F,E,T,I> for T
         T : IntoIterator<IntoIter = I>+Clone,
         I : ExactSizeIterator+Clone,
         I::Item : Clone,
-        E : ExprTrait<0>,
+        E : IntoExpr<0>,
         F : Fn(usize,I::Item) -> Option<E>
 {
     fn genexpr(self,f : F) -> ExprGenerator1<F,E,T,I> {
@@ -397,7 +417,7 @@ pub struct ExprGenerator2<F,E,T0,T1,I0,I1>
         I0 : ExactSizeIterator,
         I1 : ExactSizeIterator,
         F : Fn(usize,I0::Item,I1::Item) -> Option<E>,
-        E : ExprTrait<0>
+        E : IntoExpr<0>
 {
     idx : (T0,T1), 
     f : F
@@ -411,7 +431,7 @@ impl<F,E,T0,T1,I0,I1> ExprTrait<2> for ExprGenerator2<F,E,T0,T1,I0,I1> where
         I0::Item : Clone,
         I1::Item : Clone,
         F : Fn(usize,I0::Item,I1::Item) -> Option<E>,
-        E : ExprTrait<0>
+        E : IntoExpr<0>
 {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> 
     {
@@ -424,7 +444,7 @@ impl<F,E,T0,T1,I0,I1> ExprTrait<2> for ExprGenerator2<F,E,T0,T1,I0,I1> where
         for (i,(v0,v1)) in (0..).zip(iproduct!(it0,it1)) {
             if let Some(e) = (self.f)(i,v0,v1) {
                 spx.push(i);
-                e.eval(ws,rs,xs)?;
+                e.into().eval(ws,rs,xs)?;
             }
         }
 
@@ -447,7 +467,7 @@ pub trait ExprGenerator2Ex<F,E,T0,T1,I0,I1>
         I1 : ExactSizeIterator+Clone,
         I0::Item : Clone,
         I1::Item : Clone,
-        E : ExprTrait<0>,
+        E : IntoExpr<0>,
         F : Fn(usize,I0::Item,I1::Item) -> Option<E>
 {
     /// Create a generator expression using `self` for indexes.
@@ -460,7 +480,7 @@ pub trait ExprGenerator2Ex<F,E,T0,T1,I0,I1>
     ///
     /// let mut m = Model::new(None);
     /// let x = m.variable(None,unbounded().with_shape(&[5,5]));
-    /// let e = (0..4,0..4).genexpr(|_,i,j| Some(x.clone().index([i..i+2,j..j+2]).sum().mul(0.25)));
+    /// let e = (0..4,0..4).genexpr(|_,i,j| Some(x.index([i..i+2,j..j+2]).sum().mul(0.25)));
     /// ```
     fn genexpr(self,f : F) -> ExprGenerator2<F,E,T0,T1,I0,I1>;
 }
@@ -473,7 +493,7 @@ impl<F,E,T0,T1,I0,I1> ExprGenerator2Ex<F,E,T0,T1,I0,I1> for (T0,T1)
         I1 : ExactSizeIterator+Clone,
         I0::Item : Clone,
         I1::Item : Clone,
-        E : ExprTrait<0>,
+        E : IntoExpr<0>,
         F : Fn(usize,I0::Item,I1::Item) -> Option<E>
 {
     fn genexpr(self,f : F) -> ExprGenerator2<F,E,T0,T1,I0,I1> {
@@ -496,7 +516,6 @@ mod test {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::*;
     #[test]
     fn test_gen1() {
         let mut model = Model::new(None);
@@ -525,7 +544,6 @@ mod test {
             let mut xs = WorkStack::new(1024);
 
             genexpr([5,5], None, |i| {
-                println!("gen : ({},{})",i[0],i[1]);
                 if i[0] >= i[1] {
                     Some(x.clone().index(*i))
                 }
@@ -551,13 +569,13 @@ mod test {
             let mut ws = WorkStack::new(1024);
             let mut xs = WorkStack::new(1024);
 
-            genexpr([5,5], None, |i| {
+            genexpr([5,5], None, |i| 
                 match i[0].cmp(&i[1]) {
-                    std::cmp::Ordering::Equal   => Some(EitherExpr::Left(x.clone().index(*i))),
-                    std::cmp::Ordering::Greater => Some(EitherExpr::Right(x.clone().index(*i).add(x.clone().index([i[1],i[0]])))),
-                    std::cmp::Ordering::Less => Some(EitherExpr::Right(x.clone().index([i[1],i[0]]).add(x.clone().index(*i)))),
+                    std::cmp::Ordering::Equal   => Some(EitherExpr::Left(x.index(*i).into_expr())),
+                    std::cmp::Ordering::Greater => Some(EitherExpr::Right(x.index(*i).add(x.index([i[1],i[0]])))),
+                    std::cmp::Ordering::Less    => Some(EitherExpr::Right(x.index([i[1],i[0]]).add(x.index(*i)))),
                 }
-            }).eval(&mut rs, &mut ws, &mut xs).unwrap();
+            ).eval(&mut rs, &mut ws, &mut xs).unwrap();
             let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
             assert_eq!(shape, &[5,5]);
             assert!(sp.is_none());
@@ -586,7 +604,7 @@ mod test {
             let mut ws = WorkStack::new(1024);
             let mut xs = WorkStack::new(1024);
 
-            (5..10).genexpr(|_,k : usize| Some(x.clone().index(k))).eval(& mut rs, & mut ws, & mut xs).unwrap();
+            (5..10).genexpr(|_,k : usize| Some(x.index(k).into_expr())).eval(& mut rs, & mut ws, & mut xs).unwrap();
             
             let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
             assert_eq!(shape, &[5]);

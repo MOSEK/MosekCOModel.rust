@@ -244,24 +244,6 @@ pub trait ExprTrait<const N : usize> {
             mdata
         }
     }
-//    fn dot_rows<M>(self, other : M) -> ExprReduceShape<2,1,ExprSumLastDims<2,ExprMulElm<2,Self>>>
-//        where 
-//            Self : Sized+ExprTrait<2>, 
-//            M : Matrix
-//    { 
-//        let (shape,sparsity,data) = other.dissolve();
-//        ExprReduceShape{
-//            item : ExprSumLastDims{
-//                num : 1,
-//                item : ExprMulElm{
-//                    datashape : shape,
-//                    datasparsity : sparsity,
-//                    data,
-//                    expr : self,
-//                }
-//            }
-//        }
-//    }
 
     //TODO: Generalized dot_rows that perform summing in an arbitrary dimension.
 
@@ -313,7 +295,7 @@ pub trait ExprTrait<const N : usize> {
     /// // Stack three operands producing an expression of shape `[3,9]`. The type of `e` depends
     /// // on the number and types of operands, in this case it would be something like 
     /// // `ExprStack<ExprStack<Variable,Variable>,Variable>`.
-    /// let e = u.stack(1,v).stack(1,w);
+    /// let e = u.to_expr().stack(1,&v).stack(1,&w);
     /// ```
     /// # Example: Stacking a variable length list
     /// ```
@@ -445,7 +427,7 @@ pub trait ExprTrait<const N : usize> {
     /// let x = model.variable(None,unbounded().with_shape(&[10,10]));
     /// let c = model.constraint(
     ///   None, 
-    ///   &x.clone().add(x.clone().transpose())
+    ///   x.add(x.transpose())
     ///     .map(&[10],|i| if i[0] == i[1] { Some([i[0]]) } else { None }),
     ///   nonnegative().with_shape(&[10]));
     ///
@@ -1346,7 +1328,11 @@ pub struct ExprStack<const N : usize,E1:ExprTrait<N>,E2:ExprTrait<N>> {
     dim   : usize
 }
 
-pub struct ExprStackRec<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>> {
+pub struct ExprStackRec<const N : usize,E1,E2> 
+    where 
+        E1:ExprStackRecTrait<N>,
+        E2:ExprTrait<N>
+{
     item1 : E1,
     item2 : E2,
     dim   : usize
@@ -1374,15 +1360,15 @@ impl<const N : usize, E1:ExprTrait<N>,E2:ExprTrait<N>> ExprStack<N,E1,E2> {
         }
         ExprStack{item1,item2,dim}
     }
-    pub fn stack<T:ExprTrait<N>>(self, dim : usize, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim} }
-    pub fn vstack<T:ExprTrait<N>>(self, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim:0} }
-    pub fn hstack<T:ExprTrait<N>>(self, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim:1} }
+    pub fn stack<T:IntoExpr<N>>(self, dim : usize, other : T) -> ExprStackRec<N,Self,T::Result> { ExprStackRec{item1:self,item2:other.into(),dim} }
+    pub fn vstack<T:IntoExpr<N>>(self, other : T) -> ExprStackRec<N,Self,T::Result> { ExprStackRec{item1:self,item2:other.into(),dim:0} }
+    pub fn hstack<T:IntoExpr<N>>(self, other : T) -> ExprStackRec<N,Self,T::Result> { ExprStackRec{item1:self,item2:other.into(),dim:1} }
 }
 
 impl<const N : usize, E1:ExprStackRecTrait<N>,E2:ExprTrait<N>> ExprStackRec<N,E1,E2> {
-    pub fn stack<T:ExprTrait<N>>(self, dim : usize, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim} }
-    pub fn vstack<T:ExprTrait<N>>(self, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim:0} }
-    pub fn hstack<T:ExprTrait<N>>(self, other : T) -> ExprStackRec<N,Self,T> { ExprStackRec{item1:self,item2:other,dim:1} }
+    pub fn stack<T:IntoExpr<N>>(self, dim : usize, other : T) -> ExprStackRec<N,Self,T::Result> { ExprStackRec{item1:self,item2:other.into(),dim} }
+    pub fn vstack<T:IntoExpr<N>>(self, other : T) -> ExprStackRec<N,Self,T::Result> { ExprStackRec{item1:self,item2:other.into(),dim:0} }
+    pub fn hstack<T:IntoExpr<N>>(self, other : T) -> ExprStackRec<N,Self,T::Result> { ExprStackRec{item1:self,item2:other.into(),dim:1} }
 }
 
 impl<const N : usize,E1:ExprTrait<N>,E2:ExprTrait<N>> ExprTrait<N> for ExprStack<N,E1,E2> {
@@ -1667,7 +1653,7 @@ impl<const N : usize, E> ExprTrait<N> for ExprSumVec<N,E> where E : ExprTrait<N>
 /// let y = model.variable(None, 2);
 /// let z = model.variable(None, 2);
 /// 
-/// model.constraint(None, &expr::sumvec(vec![x,y,z]),equal_to(vec![1.0,2.0]));
+/// model.constraint(None, expr::sumvec(vec![&x,&y,&z]),equal_to(vec![1.0,2.0]));
 /// ```
 ///
 /// # Example
@@ -1682,18 +1668,18 @@ impl<const N : usize, E> ExprTrait<N> for ExprSumVec<N,E> where E : ExprTrait<N>
 ///
 /// let v : Vec<expr::ExprDynamic<'static,1>> = 
 ///     vec![ x.dynamic(), 
-///           y.clone().index([0..2]).sub(y.clone().index([2..4])).dynamic(),
+///           y.index([0..2]).sub(y.index([2..4])).dynamic(),
 ///           z.dynamic() ];
 /// model.constraint(None, 
-///                  &expr::sumvec(v),
+///                  expr::sumvec(v),
 ///                  equal_to(vec![1.0,2.0]));
 /// ```
-pub fn sumvec<const N : usize,E>(exprs : Vec<E>) -> ExprSumVec<N,E> where E : ExprTrait<N> {
+pub fn sumvec<const N : usize,E>(exprs : Vec<E>) -> ExprSumVec<N,E::Result> where E : IntoExpr<N> {
     if exprs.is_empty() {
         panic!("Empty operand list");
     }
     ExprSumVec{
-        exprs
+        exprs : exprs.into_iter().map(|e| e.into()).collect()
     }
 }
 
@@ -1751,36 +1737,6 @@ pub struct ExprTriangularPart<T:ExprTrait<2>> {
     with_diag : bool
 }
 
-
-
-//--fn eval_sparse_pick<F:Fn(usize) -> bool>(pick : F,
-//--                                         d:usize,ptr:&[usize],sp:&[usize],subj:&[usize],cof:&[f64],
-//--                                         rs : & mut WorkStack) {
-//--    let (rnelm,rnnz) : (usize,usize) = 
-//--        izip!(sp.iter(), ptr.iter(),ptr[1..].iter())
-//--            .filter(|(&i,_,_)| pick(i))
-//--            .map(|(_,&p0,&p1)| p1-p0)
-//--            .fold((0,0),|(elmi,nzi),n| (elmi+1,nzi+n));
-//--
-//--    let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[d,d],rnnz,rnelm);
-//--    rptr[0] = 0;
-//--    let mut nzi = 0;
-//--    izip!(sp.iter(), ptr.iter(),ptr[1..].iter())
-//--        .filter(|(&i,_,_)| pick(i))
-//--        .zip(rptr[1..].iter_mut())
-//--        .for_each(|((_,&p0,&p1),rp)| {
-//--           rsubj[nzi..nzi+p1-p0].clone_from_slice(&subj[p0..p1]);
-//--           rcof[nzi..nzi+p1-p0].clone_from_slice(&cof[p0..p1]);
-//--           nzi += p1-p0;
-//--           *rp = p1-p0;
-//--        });
-//--    if let Some(rsp) = rsp {
-//--        izip!(sp.iter()).filter(|&&i| pick(i))
-//--            .zip(rsp.iter_mut())
-//--            .for_each(|(&i,ri)| *ri = i );
-//--    }`
-//--    let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
-//--}
 impl<T:ExprTrait<2>> ExprTrait<2> for ExprTriangularPart<T> {
     fn eval(&self, rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
         self.item.eval(ws,rs,xs)?;
@@ -1923,18 +1879,6 @@ impl IntoExpr<1> for Vec<f64> {
     type Result = Expr<1>;
     fn into(self) -> Self::Result { Expr::from(self) }
 }
-    
-
-//impl ExprTrait<0> for f64 {
-//    fn eval(&self, rs : &mut WorkStack, _ws : &mut WorkStack, _xs : &mut WorkStack) -> Result<(),ExprEvalError> {
-//        let (aptr,_,asubj,acof) = rs.alloc_expr(&[],1,1);
-//        aptr[0] = 0;
-//        aptr[1] = 1;
-//        asubj[0] = 0;
-//        acof[0] = *self;
-//        Ok(())
-//    }
-//}
 
 
 ////////////////////////////////////////////////////////////
@@ -2394,14 +2338,14 @@ mod test {
         let Y = m.variable(Some("Y"), in_psd_cone(2)); // 13,14,15
         let mx = dense([2,2], vec![1.1,2.2,3.3,4.4]);
 
-        m.constraint(Some("X-Y"), &(&X).index([0..2,0..2]).sub(Y.clone().sub((&mx).mul_right(t.clone().clone().index(0)))), domain::zeros(&[2,2]));
+        m.constraint(Some("X-Y"), X.index([0..2,0..2]).sub(Y.sub((&mx).mul_right(t.index(0)))), domain::zeros(&[2,2]));
 
         let mut rs = WorkStack::new(512);
         let mut ws = WorkStack::new(512);
         let mut xs = WorkStack::new(512);
         {
             rs.clear(); ws.clear(); xs.clear();
-            X.clone().eval(&mut rs,&mut ws,&mut xs);
+            (&X).into_expr().eval(&mut rs,&mut ws,&mut xs);
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
             assert_eq!(shape,&[4,4]);
             assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]);
@@ -2410,7 +2354,7 @@ mod test {
         }
         {
             rs.clear(); ws.clear(); xs.clear();
-            (&X).index([0..2,0..2]).eval(&mut rs,&mut ws,&mut xs);
+            X.index([0..2,0..2]).into_expr().eval(&mut rs,&mut ws,&mut xs);
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
             assert_eq!(shape,&[2,2]);
             assert_eq!(ptr,&[0,1,2,3,4]);
@@ -2419,7 +2363,7 @@ mod test {
         }
         {
             rs.clear(); ws.clear(); xs.clear();
-            (&X).index([0..2,0..2]).sub(Y.sub((&mx).mul_right(t.index(0)))).eval(&mut rs,&mut ws,&mut xs);
+            X.index([0..2,0..2]).into_expr().sub(Y.sub((&mx).mul_right(t.index(0)))).eval(&mut rs,&mut ws,&mut xs);
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
             assert_eq!(shape,&[2,2]);
             assert_eq!(ptr,&[0,3,6,9,12]);
@@ -2436,7 +2380,7 @@ mod test {
         let u = m.variable(None,&[2,3,4,5,6,7]);
         let v = m.variable(None,&[2,3,4,5,6,7]);
         let w = m.variable(None,&[2,3,4,5,6,7]);
-        m.constraint(None, &u.add(v).add(w).axispermute(&[3,4,5,0,1,2]).axispermute(&[4,3,2,0,1,5]).axispermute(&[5,4,3,2,1,0]), unbounded().with_shape(&[4,6,5,7,2,3]));
+        m.constraint(None, u.add(v).add(w).axispermute(&[3,4,5,0,1,2]).axispermute(&[4,3,2,0,1,5]).axispermute(&[5,4,3,2,1,0]), unbounded().with_shape(&[4,6,5,7,2,3]));
     }
     
     #[allow(non_snake_case)]
@@ -2450,19 +2394,22 @@ mod test {
             let u = u.clone();
             let v = v.clone();
             let w = w.clone();
-            m.constraint(None, &u.add(v.axispermute(&[1,0,1,0])).add(w.axispermute(&[1,0,2,3])).sum_on(&[0,3]), unbounded().with_shape(&[3,4]));
+            m.constraint(
+                None, 
+                u.add(v.axispermute(&[1,0,1,0])).add(w.axispermute(&[1,0,2,3])).sum_on(&[0,3]), 
+                unbounded().with_shape(&[3,4]));
         }
         {
             let u = u.clone();
             let v = v.clone();
             let w = w.clone();
-            m.constraint(None, &u.add(v.axispermute(&[1,0,1,0])).add(w.axispermute(&[1,0,2,3])).sum_on(&[1,3]), unbounded().with_shape(&[4,4]));
+            m.constraint(None, u.add(v.axispermute(&[1,0,1,0])).add(w.axispermute(&[1,0,2,3])).sum_on(&[1,3]), unbounded().with_shape(&[4,4]));
         }
         {
             let u = u.clone();
             let v = v.clone();
             let w = w.clone();
-            m.constraint(None, &u.add(v.axispermute(&[1,0,1,0])).add(w.axispermute(&[1,0,2,3])).sum_on(&[2]), unbounded().with_shape(&[3]));
+            m.constraint(None, u.add(v.axispermute(&[1,0,1,0])).add(w.axispermute(&[1,0,2,3])).sum_on(&[2]), unbounded().with_shape(&[3]));
         }
     }
 
@@ -2670,7 +2617,7 @@ mod test {
         println!("s = {:?}",s);
         {
             rs.clear(); ws.clear(); xs.clear();
-            s.map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { Some([i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
+            (&s).into_expr().map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { Some([i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
 
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
 
@@ -2688,7 +2635,7 @@ mod test {
 
 
             rs.clear(); ws.clear(); xs.clear();
-            x.clone().map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { Some([i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
+            (&x).into_expr().map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { Some([i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
 
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
 
@@ -2710,7 +2657,7 @@ mod test {
             // 4 2 4 -> 114   | 0 2 -> 2
             // 4 3 4 -> 119   | 0 3 -> 3
             rs.clear(); ws.clear(); xs.clear();
-            x.clone().map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { Some([4-i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
+            (&x).into_expr().map(&[5,5],|i| if i[0] == i[2] && i[0] > i[1] { Some([4-i[0],i[1]]) } else { None }).eval(&mut rs,&mut ws,&mut xs).unwrap();
 
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
             
