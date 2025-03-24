@@ -199,23 +199,23 @@ pub fn main() {
 
             // (2)
             m.constraint(Some("t_sigma_s"),
-                         &hstack![t.clone().reshape(&[numarcs,1]),
-                                  sigma.clone().reshape(&[numarcs,1]),
-                                  s.clone().reshape(&[numarcs,1])],
+                         hstack![t.reshape(&[numarcs,1]),
+                                  sigma.reshape(&[numarcs,1]),
+                                  s.reshape(&[numarcs,1])],
                          in_rotated_quadratic_cones(&[numarcs,3], 1));
             // (3)
             m.constraint(Some("sum_sigma"),
-                         &tau.clone().sub(sigma.clone().sum()),
+                         tau.sub(sigma.clone().sum()),
                          nonnegative());
                 
             // (4) 
             m.constraint(Some("total_volume"),
-                         &t.clone().sum().sub(w.clone()),
+                         t.sum().sub(w.clone()),
                          zero());
             // (5)
             let f : Vec<f64> = forces.iter().flat_map(|row| row.iter()).cloned().collect();
             m.constraint(Some("force_balance"), 
-                         &s.clone().square_diag().mul(b.clone()).sum_on(&[1]),
+                         s.into_expr().square_diag().mul(b.clone()).sum_on(&[1]),
                          equal_to(f));
         }
 

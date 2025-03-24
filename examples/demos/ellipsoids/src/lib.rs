@@ -157,11 +157,11 @@ pub fn ellipsoid_contains<const N : usize>
 
     let A = matrix::dense([N,N],A.iter().flat_map(|arow| arow.iter()).cloned().collect::<Vec<f64>>());
 
-    _ = M.constraint(None, &P_squared.clone().sub(tau.clone().mul(&A))    .add(S11), zero().with_shape(&[n,n]));
-    _ = M.constraint(None, &Pq.clone().sub(tau.clone().mul(b.as_slice())) .add(S21), zero().with_shape(&[n]));
-    _ = M.constraint(None, &tau.clone().mul(c).add(1.0).neg()             .add(S22), zero());
-    _ = M.constraint(None, &Pq.clone()                                    .add(S32), zero().with_shape(&[n]));
-    _ = M.constraint(None, &P_squared.clone().neg()                       .add(S33), zero().with_shape(&[n,n]));
+    _ = M.constraint(None, P_squared.sub(tau.mul(&A))    .add(S11), zero().with_shape(&[n,n]));
+    _ = M.constraint(None, Pq.sub(tau.mul(b.as_slice())) .add(S21), zero().with_shape(&[n]));
+    _ = M.constraint(None, tau.mul(c).add(1.0).neg()     .add(S22), zero());
+    _ = M.constraint(None, Pq                            .add(S32), zero().with_shape(&[n]));
+    _ = M.constraint(None, P_squared.neg()               .add(S33), zero().with_shape(&[n,n]));
     _ = M.constraint(None,                                                    &S31,  zero().with_shape(&[N,N]));
 
     tau
@@ -187,7 +187,7 @@ pub fn ellipsoid_contains_points<const N : usize>
     let mx = matrix::dense([points.len(), N], points.iter().flat_map(|p| p.iter()).cloned().collect::<Vec<f64>>());
     let m = points.len();
     // 1 >=||P p_i + q||^2
-    _ = M.constraint(None, &hstack![ expr::ones(&[m,1]) , P.clone().rev_mul(mx).add( q.clone().reshape(&[1,N]).repeat(0, m))], in_quadratic_cones(&[m,N+1], 1));
+    _ = M.constraint(None, hstack![ expr::ones(&[m,1]) , P.rev_mul(mx).add( q.reshape(&[1,N]).repeat(0, m))], in_quadratic_cones(&[m,N+1], 1));
 }
 
 
@@ -206,24 +206,24 @@ pub fn ellipsoid_contained<const N : usize>
     e : &Ellipsoid<N>) {
   
     let S = M.variable(None, in_psd_cone(2*N+1));
-    let S11 = (&S).index([0..N,0..N]);
-    let S21 = (&S).index([N..N+1,0..N]);
-    let S22 = (&S).index([N..N+1,N..N+1]).reshape(&[]);
-    let S31 = (&S).index([N+1..2*N+1,0..N]);
-    let S32 = (&S).index([N+1..2*N+1,N..N+1]).reshape(&[N]);
-    let S33 = (&S).index([N+1..2*N+1,N+1..2*N+1]);
+    let S11 = S.index([0..N,0..N]);
+    let S21 = S.index([N..N+1,0..N]);
+    let S22 = S.index([N..N+1,N..N+1]).reshape(&[]);
+    let S31 = S.index([N+1..2*N+1,0..N]);
+    let S32 = S.index([N+1..2*N+1,N..N+1]).reshape(&[N]);
+    let S33 = S.index([N+1..2*N+1,N+1..2*N+1]);
     let lambda = M.variable(None, nonnegative());
 
     let (B,c) = e.get_Pq();
     let B = matrix::dense([N,N],B.iter().flat_map(|arow| arow.iter()).cloned().collect::<Vec<f64>>());
     let c = matrix::dense([1,N],&c[..]);
     
-    _ = M.constraint(None, &expr::eye(N).sub(S11),zero().with_shape(&[N,N]));
-    _ = M.constraint(None, &w.clone().reshape(&[1,N]).mul(B.clone()).add(c).sub(S21),zero().with_shape(&[1,N]));
-    _ = M.constraint(None, &Z.clone().rev_mul(B).sub(S31), zero().with_shape(&[N,N]));
-    _ = M.constraint(None, &lambda.clone().neg().add(1.0).sub(S22), zero());
-    _ = M.constraint(None, &S32, zero().with_shape(&[N]));
-    _ = M.constraint(None, &lambda.clone().mul(&matrix::speye(N)).sub(S33),zero().with_shape(&[N,N]));
+    _ = M.constraint(None, expr::eye(N).sub(S11),zero().with_shape(&[N,N]));
+    _ = M.constraint(None, w.reshape(&[1,N]).mul(B.clone()).add(c).sub(S21),zero().with_shape(&[1,N]));
+    _ = M.constraint(None, Z.rev_mul(B).sub(S31), zero().with_shape(&[N,N]));
+    _ = M.constraint(None, lambda.neg().add(1.0).sub(S22), zero());
+    _ = M.constraint(None, S32, zero().with_shape(&[N]));
+    _ = M.constraint(None, lambda.clone().mul(&matrix::speye(N)).sub(S33),zero().with_shape(&[N,N]));
 }
 
 
@@ -244,7 +244,7 @@ pub fn ellipsoid_subject_to<const N : usize>
     let A = matrix::dense([m,N],A.iter().flat_map(|a| a.iter()).cloned().collect::<Vec<f64>>());
     let b = matrix::dense([m, 1], b.to_vec());
     _ = M.constraint(Some("E_Axb"), 
-                     &hstack![ w.clone().reshape(&[2,1]).rev_mul(A.clone()).sub(b).neg(), Z.clone().rev_mul(A) ], 
+                     hstack![ w.reshape(&[2,1]).rev_mul(A.clone()).sub(b).neg(), Z.rev_mul(A) ], 
                      in_quadratic_cones(&[m,N+1],1));
 }
 
@@ -283,11 +283,11 @@ pub fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize
     let DZ = (&Y).index([n..2*n, n..2*n]);
 
     // Z is lower-triangular
-    _ = M.constraint(None, &Z.clone().triuvec(false), equal_to(vec![0.0; n*(n-1)/2].as_slice()));
+    _ = M.constraint(None, Z.clone().triuvec(false), equal_to(vec![0.0; n*(n-1)/2].as_slice()));
     // DZ = Diag(Z)
-    _ = M.constraint(None, &DZ.clone().sub(Z.mul_elem(matrix::speye(n))), equal_to(matrix::dense([n,n],vec![0.0; n*n])));
+    _ = M.constraint(None, DZ.clone().sub(Z.mul_elem(matrix::speye(n))), equal_to(matrix::dense([n,n],vec![0.0; n*n])));
     // (Z11*Z22*...*Znn) >= t^n
-    _ = M.constraint(name,&vstack![DZ.clone().diag(),t.reshape(&[1])], in_geometric_mean_cone(n+1));
+    _ = M.constraint(name, vstack![DZ.into_expr().diag(),t.reshape(&[1])], in_geometric_mean_cone(n+1));
 
     X
 }
