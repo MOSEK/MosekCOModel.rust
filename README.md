@@ -146,7 +146,7 @@ bounding ellipsoid containing all polygons (or, in fact all corner points),
 and the maximum ellipsoid contained in the intersection (when the
 intersection is non-empty). 
 
-[lowner-john-2d](./img/inner-outer-ellipses.jpeg)
+![lowner-john-2d](./img/inner-outer-ellipses.jpeg "Inner and outer ellipsoids")
 
 ### `lowner-john-outer-3d` 
 
@@ -154,7 +154,7 @@ For a set of rotating and moving polyhedrons, compute
 the minimal bounding ellipsoid containing all polyhedrons (or their corner
 points).
 
-[lowner-john-outer-3d](./img/bounding-ellipsoid.jpeg)
+![lowner-john-outer-3d](./img/bounding-ellipsoid.jpeg "3D bounding ellipsoid")
 
 ### `ellipsoid-approximation` 
 
@@ -163,18 +163,18 @@ compute the outer approximation (minimal ellipse containing all moving
 ellipses), and inner approximation (maximum ellipe contained in the
 intersection of all ellipses).
 
-[ellipsoid-approximation](./img/bounding-ellipsoid.jpeg)
+![ellipsoid-approximation](./img/bounding-ellipsoid-3d.jpeg "Inner and outer ellipsoids")
 
 ### `ellipsoid-approximation-3d` 
 For a set of moving and rotating ellipsoids, compute the minimal bounding ellipsoid.
 
-[ellipsoid-approximation-3d](./img/bounding ellipsoids.jpeg)
+![ellipsoid-approximation-3d](./img/bounding ellipsoids.jpeg "3D ellipsoids approximation")
 
 
 ### `trigpoly` 
 Simple visualization of trigonometric polynomial optimization.
 
-[trigpoly](./img/trigpoly.jpeg)
+![trigpoly](./img/trigpoly.jpeg "Trigpoly")
 
 ### `truss` 
 Simple 2D truss design model assigning material to bars in a truss construction. This requires a data file, e.g.
@@ -183,6 +183,6 @@ Simple 2D truss design model assigning material to bars in a truss construction.
 cargo run --release -p truss -- truss/data/bridge.trs
 ```
 
-[truss](./img/bridge-truss.jpeg)
+![truss](./img/bridge-truss.jpeg "Bridge Truss")
 
 
