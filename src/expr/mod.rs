@@ -604,7 +604,8 @@ pub trait IntoExpr<const N : usize> {
 
 
 
-
+///////////////////////////////////////////////////////////////////////////////
+// Indexing into expressions
 pub trait ModelExprIndex<T> {
     type Output;
     fn index(self,obj : T) -> Self::Output;

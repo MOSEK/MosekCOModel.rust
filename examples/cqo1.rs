@@ -4,7 +4,7 @@
 //! File: cqo1.rs
 //!
 //! Purpose: Demonstrates how to solve the problem
-//! ```
+//! ```math
 //! minimize y1 + y2 + y3
 //! such that
 //!          x1 + x2 + 2.0 x3  = 1.0
@@ -15,7 +15,7 @@
 //! ```
 //! where `C_3` and `K_3` are respectively the quadratic and
 //! rotated quadratic cone of size 3 defined as
-//! ```
+//! ```math
 //!     C_3 = { z1,z2,z3 :      z1 >= sqrt(z2^2 + z3^2) }
 //!     K_3 = { z1,z2,z3 : 2 z1 z2 >= z3^2              }
 //! ```
