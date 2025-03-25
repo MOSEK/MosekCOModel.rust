@@ -5,7 +5,7 @@
 use itertools::{merge_join_by, EitherOrBoth};
 use itertools::{iproduct, izip};
 use std::{iter::once, path::Path};
-use crate::{disjunction, expr, IntoExpr, ExprTrait};
+use crate::{disjunction, expr, IntoExpr, ExprTrait, NDArray};
 use crate::utils::iter::*;
 use crate::utils::*;
 use crate::domain::*;
@@ -2037,6 +2037,42 @@ impl Model {
     /// - `res`   Copy the solution values into this slice
     /// Returns: The number of values copied if solution is available, otherwise an error string.
     pub fn dual_solution_into<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> { item.primal_into(self,solid,res) }
+
+    fn evaluate_primal_internal<&mut self, solid : SolutionType, shape : & mut [usize]) -> Result<((Vec<f64>,Option<Vec<usize>>),String>
+    pub fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : &E) -> Result<NDArray<N>,String>
+        where 
+            E : ExprTrait<N>     
+    {
+        {    
+            expr.eval(& mut self.rs,&mut self.ws,&mut self.xs).map_err(|e| format!("{:?}",e))?;
+        }
+        let (shape,ptr,sp,subj,cof) = {
+            self.rs.pop_expr()
+        };
+        let sol = 
+            if let Some(sol) = self.select_sol(solid) {
+                if let SolutionStatus::Undefined = sol.primal.status {
+                    return Err("Solution part is not defined".to_string())
+                }
+                else {
+                    sol.primal.var.as_slice()
+                }
+            }
+            else {
+                return Err("Solution value is undefined".to_string());
+            };
+
+        if let Some(v) = subj.iter().max() { if *v >= sol.len() { return Err("Invalid expression: Index out of bounds for this solution".to_string()) } }
+        let mut res = vec![0.0; ptr.len()-1];
+        izip!(res.iter_mut(),subj.chunks_ptr2(ptr,&ptr[1..]),cof.chunks_ptr2(ptr,&ptr[1..]))
+            .for_each(|(r,subj,cof)| *r = subj.iter().zip(cof.iter()).map(|(&j,&c)| unsafe{ *sol.get_unchecked(j) } ).sum() );
+        let mut nshape = [0usize; N]; nshape.copy_from_slice(shape);
+        NDArray::new(nshape,sp.map(|v| Some(v.to_vec())).unwrap(),res)
+    }
+
+
+
+    
 }
 
 

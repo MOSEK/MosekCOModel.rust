@@ -41,8 +41,9 @@ pub trait Matrix  {
 /// One important limitation is that the product of the dimensions of the array cannot exceed
 /// `usize::MAX`.
 #[derive(Clone)]
-pub struct NDArray<const N : usize> {
+pub struct NDArray<const N : usize> {    
     shape : [usize; N],
+    stride : Strides<N>,
     sp    : Option<Vec<usize>>,
     data  : Vec<f64>,
 }
@@ -74,13 +75,14 @@ impl Matrix for NDArray<2> {
 
             NDArray{
                 shape,
+                stride : shape.to_strides(),
                 sp : Some(rsp),
                 data:rdata
             }
         }
         else {
             let data : Vec<f64> = (0..self.shape[1]).map(|j| self.data[j..].iter().step_by(self.shape[1])).flat_map(|it| it.clone()).map(|&i| i).collect();
-            NDArray { shape, sp : None, data }
+            NDArray { shape, stride : shape.to_strides(), sp : None, data }
         }
     }
     fn shape(&self) -> [usize; 2] { self.shape() } 
@@ -114,7 +116,7 @@ impl<const N : usize> NDArray<N> {
                 Err("Mismatching sparsity and shape".to_string())
             }
             else {
-                Ok(NDArray{ shape,sp : Some(sp),data })
+                Ok(NDArray{ shape,stride:shape.to_strides(),sp : Some(sp),data })
             }
         }
         else {
@@ -123,7 +125,7 @@ impl<const N : usize> NDArray<N> {
                 Err("Mismatching data and shape".to_string())
             }
             else {
-                Ok(NDArray{shape,sp:None,data})
+                Ok(NDArray{shape,stride:shape.to_strides(),sp:None,data})
             }
         }
     }
@@ -179,7 +181,7 @@ impl<const N : usize> NDArray<N> {
             Err("Index out of bounds".to_string())
         }
         else if index.len() == 0 {
-            Ok(NDArray{shape, sp : Some(Vec::new()), data : data.to_vec()})
+            Ok(NDArray{shape, stride:shape.to_strides(), sp : Some(Vec::new()), data : data.to_vec()})
         }
         else {
             let mut strides = [1usize; N]; _ = strides.iter_mut().zip(shape.iter()).rev().fold(1usize, |c,(s,d)| {*s = c; c*d} );
@@ -189,6 +191,9 @@ impl<const N : usize> NDArray<N> {
             NDArray::from_flat_tuples_internal(shape, sp_unordered.as_slice(), data)
         }
     }
+
+    pub fn nz_iter(&self) -> impl Iterator { self.data.iter() }
+    pub fn nz_iter_mut(&mut self) -> impl Iterator { self.data.iter_mut() }
 
     fn from_flat_tuples_internal(shape : [usize; N], sp_unordered : &[usize], data : &[f64]) -> Result<NDArray<N>,String>{
         if sp_unordered.iter().zip(sp_unordered[1..].iter()).any(|(a,b)| a >= b) {
@@ -214,17 +219,17 @@ impl<const N : usize> NDArray<N> {
                     }
                     unsafe { *rdata.get_unchecked_mut(i) += *data.get_unchecked(p1) };
                 }
-                Ok(NDArray{ shape, sp:Some(rsp), data: data.to_vec()})
+                Ok(NDArray{ shape,stride:shape.to_strides(), sp:Some(rsp), data: data.to_vec()})
             }
             else {
                 let sp = perm.iter().map(|&i| unsafe{ *sp_unordered.get_unchecked(i)} ).collect();
                 let data = perm.iter().map(|&i| unsafe{ *data.get_unchecked(i)} ).collect();
 
-                Ok(NDArray{ shape, sp : Some(sp), data })
+                Ok(NDArray{ shape,stride:shape.to_strides(),  sp : Some(sp), data })
             }
         }
         else {
-            Ok(NDArray{ shape, sp : Some(sp_unordered.to_vec()), data : data.to_vec() })
+            Ok(NDArray{ shape,stride:shape.to_strides(),  sp : Some(sp_unordered.to_vec()), data : data.to_vec() })
         }
     }
 
@@ -236,7 +241,7 @@ impl<const N : usize> NDArray<N> {
             Err(())
         }
         else {
-            Ok(NDArray{ shape,sp : self.sp, data : self.data })
+            Ok(NDArray{ shape,stride:shape.to_strides(), sp : self.sp, data : self.data })
         }
     }
     /// Return number of non-zeros.
@@ -259,6 +264,7 @@ impl<const N : usize> NDArray<N> {
             }
             NDArray{
                 shape : self.shape,
+                stride:self.shape.to_strides(), 
                 sp : None,
                 data
             }
@@ -294,6 +300,7 @@ impl<const N : usize> NDArray<N> {
         let mut rhs = rhs;
         NDArray{
             shape : lhs.shape,
+            stride:lhs.shape.to_strides(), 
             sp : 
                 match (&lhs.sp,&rhs.sp) {
                     (Some(ref lsp),Some(ref rsp)) => 
@@ -345,6 +352,13 @@ impl<const N : usize> std::ops::Index<[usize;N]> for NDArray<N> {
     }
 }
 
+impl<const N : usize> std::ops::IndexMut<[usize;N]> for NDArray<N> {
+    fn index_mut(&mut self, index: [usize;N]) -> &mut Self::Output {
+        let mut stride = [0usize;N]; stride.iter_mut().zip(self.shape.iter()).rev().fold(1,|c,(s,&d)| { *s = c; c*d} );
+        let ii : usize = index.iter().zip(stride.iter()).map(|(&i,&s)| i*s).sum();
+        self.data.index_mut(ii)
+    }
+}
 
 impl<const N : usize> std::ops::Add for NDArray<N> {
     type Output = NDArray<N>;
@@ -365,13 +379,13 @@ impl<const N : usize> std::ops::Sub for NDArray<N> {
 
 impl From<&[f64]> for NDArray<1> {
     fn from(v : &[f64]) -> NDArray<1> {
-        NDArray{ shape : [ v.len() ], sp : None, data : v.to_vec() }
+        NDArray{ shape : [ v.len() ], stride : Strides::from(&[v.len()]), sp : None, data : v.to_vec() }
     }
 }
 
 impl From<Vec<f64>> for NDArray<1> {
     fn from(v : Vec<f64>) -> NDArray<1> {
-        NDArray{ shape : [ v.len() ], sp : None, data : v }
+        NDArray{ shape : [ v.len() ], stride : Strides::from(&[v.len()]), sp : None, data : v }
     }
 }
 
