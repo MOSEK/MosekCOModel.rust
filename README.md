@@ -1,3 +1,8 @@
+[<img alt="crates.io" src="https://img.shields.io/crates/v/mosekcomodel?logo=rust" height="20">](https:/crates.io/crates/mosekcomodel)&nbsp;
+[<img alt="github.com" src="https://img.shields.io/github/last-commit/mosek/mosekcomodel.rust/master?logo=github" height="20">](https://github.com/mosek/mosekcomodel.rust)&nbsp;
+[<img alt="docs.rs" src="https://img.shields.io/docsrs/mosekcomodel" height="20">](https://docs.rs/mosekcomodel)
+ 
+
 **This is a pre-release of the `MosekCOModel` project. It is provided with
 absolutely no official support and is still to be considered highly
 experimenental.**
