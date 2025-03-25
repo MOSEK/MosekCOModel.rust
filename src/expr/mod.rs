@@ -32,7 +32,7 @@ use crate::matrix::Matrix;
 use itertools::izip;
 use workstack::WorkStack;
 use super::matrix;
-use crate::utils::{iter::*, ShapeToStridesEx};
+use crate::utils::{self, iter::*, ShapeToStridesEx};
 use std::iter::{Peekable,Zip};
 use std::slice::Iter;
 
@@ -122,6 +122,7 @@ pub trait ExprTrait<const N : usize> {
     fn neg(self) -> ExprMulScalar<N,Self> where Self:Sized {
         self.mul(-1.0)
     }
+
 
     /// Sum over a number of axes, reducing the dimensionality of the expression.
     ///
@@ -439,6 +440,23 @@ pub trait ExprTrait<const N : usize> {
     {
         ExprMap{ item : self, shape : *shape, f}
     }
+
+
+    /// Flip elements in a subset of dimensions.
+    /// 
+    /// This reverses the order of elements in a subset of dimensions, for example for a vector elements are
+    /// reversed. More generally, for an expression `e` with shape `[N,M,P,Q]`, and dims
+    /// `[true,false,true,false]`, an element `e[i,j,k,l]` is mapped to index `[N-i-1,j,P-k-1,l]`.
+    ///
+    /// # Arguments 
+    /// - `dims` Array of `bool`s indicating the dimensions to flip elements in.
+    fn flip(self, dims : &[bool;N]) -> ExprFlip<N,Self> {
+        ExprFlip{
+            dims : dims,
+            expr : self
+        }
+    }
+
 
     /// Multiply `(self * other)`, where other must be right-multipliable with `Self`.
     ///
@@ -1816,6 +1834,72 @@ impl<const N : usize, E : ExprTrait<N>> ExprIntoSymmetric<N,E> {
         eval::into_symmetric(self.dim,rs,ws,xs)
     }
 }
+
+pub struct ExprFlip<const N : usize, E : ExprTrait<N>> {
+   dims : [bool; N],
+   expr : E
+}
+
+impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprFlip<N,E> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        self.expr.eval(ws,rs,xs)?;
+    
+        let (sshape,ptr,sp,subj,cof) = ws.pop_expr();
+        let nelm = ptr.len()-1;
+        let nnz  = subj.len();
+        let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(sshape, nnz, nelm);
+        let mut shape = [0usize;N]; shape.copy_from_slice(sshape);
+
+        let (irest,_) = xs.alloc(nelm*4, 0);
+        let (perm,irest) = irest.split_at_mut(nelm);
+        let (ridxs,irest) = irest.split_at_mut(nelm);
+        let (xptrb,irest) = irest.split_at_mut(nelm);
+        let (xptre,_irest) = irest.split_at_mut(nelm);
+
+        perm.copy_from_iter(0..nelm);
+        let st = shape.to_strides();
+
+        if let Some(sp) = sp {
+            ridxs.copy_from_iter(sp.iter().map(|&i| { 
+                let mut idx = st.to_index(i); 
+                izip!(idx.iter_mut(),
+                      shape.iter(),
+                      self.dims.iter())
+                    .for_each(|(j,&d,&f)| if f { *j = d-*j-1 } );
+                st.to_linear(&idx) }));
+        }
+        else {
+            ridxs.copy_from_iter((0..nelm).scan([0usize; N], |idx,_| {
+                let mut ii = *idx;
+                izip!(ii.iter_mut(),
+                      shape.iter(),
+                      self.dims.iter())
+                    .for_each(|(j,&d,&f)| if f { *j = d-*j-1 } );
+                // inc index
+                idx.iter_mut().zip(shape.iter()).rev().fold(1,|carry,(i,&d)| { *i += carry; if *i >= d { *i = 0; 1 } else { 0 } } );
+
+                Some(st.to_linear(&ii))
+            }));
+        }
+        perm.sort_by_key(|&i| unsafe{ *ridxs.get_unchecked_mut(i) });
+        xptrb.copy_from_iter(ptr.permute_by(perm).cloned());
+        xptre.copy_from_iter(ptr[1..].permute_by(perm).cloned());
+        
+        rptr[0] = 0;
+        izip!(ptr.permute_by(perm),
+              ptr[1..].permute_by(perm),
+              rptr[1..].iter_mut())
+            .fold(0,|p,(&p0,&p1,rp)| { *rp = p+p1-p0; *rp });
+
+        izip!(rsubj.chunks_ptr_mut(rptr,&rptr[1..]),
+              rcof.chunks_ptr_mut(rptr,&rptr[1..]),
+              subj.chunks_ptr2(xptrb,xptre),
+              cof.chunks_ptr2(xptrb,xptre))
+            .for_each(|(rj,rc,j,c)| { rj.copy_from_slice(j); rc.copy_from_slice(c); });
+        Ok(())
+    }
+}
+
 
 pub struct ExprPermuteAxes<const N : usize, E:ExprTrait<N>> {
     item : E,

@@ -9,7 +9,6 @@ pub enum IndexType {
     Range(usize,usize),
     RangeFrom(usize),
     RangeFull(),
-
 }
 
 
@@ -27,7 +26,7 @@ impl ModelItemIndexElement for usize  {
 impl ModelItemIndexElement for Range<usize> { 
     fn tt(self) -> IndexType {
         if self.start <= self.end {
-            IndexType::Range(self.start,self.end-self.start,1)
+            IndexType::Range(self.start,self.end-self.start)
         }
         else {
             IndexType::RevRange(self.start,0,1)
@@ -38,23 +37,23 @@ impl ModelItemIndexElement for Range<usize> {
 impl ModelItemIndexElement for RangeInclusive<usize> { 
     fn tt(self) -> IndexType {
         if self.start() <= self.end() {
-            IndexType::Range(*self.start(), self.end()-self.start()+1,1)
+            IndexType::Range(*self.start(), self.end()-self.start()+1)
         }
         else {
-            IndexType::Range(self.start(),0,1)
+            IndexType::Range(self.start())
         }
     }
 }
 
 impl ModelItemIndexElement for RangeFrom<usize> { 
     fn tt(self) -> IndexType {
-        IndexType::RangeFrom(self.start,1)
+        IndexType::RangeFrom(self.start)
     }
 }
 
 impl ModelItemIndexElement for RangeTo<usize> { 
     fn tt(self) -> IndexType {
-        IndexType::Range(0,self.end,1)
+        IndexType::Range(0,self.end)
     }
 }
 
