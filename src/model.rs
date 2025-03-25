@@ -2038,16 +2038,9 @@ impl Model {
     /// Returns: The number of values copied if solution is available, otherwise an error string.
     pub fn dual_solution_into<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> { item.primal_into(self,solid,res) }
 
-    fn evaluate_primal_internal<&mut self, solid : SolutionType, shape : & mut [usize]) -> Result<((Vec<f64>,Option<Vec<usize>>),String>
-    pub fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : &E) -> Result<NDArray<N>,String>
-        where 
-            E : ExprTrait<N>     
-    {
-        {    
-            expr.eval(& mut self.rs,&mut self.ws,&mut self.xs).map_err(|e| format!("{:?}",e))?;
-        }
+    fn evaluate_primal_internal(&self, solid : SolutionType, resshape : & mut [usize]) -> Result<(Vec<f64>,Option<Vec<usize>>),String> {
         let (shape,ptr,sp,subj,cof) = {
-            self.rs.pop_expr()
+            self.rs.peek_expr()
         };
         let sol = 
             if let Some(sol) = self.select_sol(solid) {
@@ -2065,14 +2058,27 @@ impl Model {
         if let Some(v) = subj.iter().max() { if *v >= sol.len() { return Err("Invalid expression: Index out of bounds for this solution".to_string()) } }
         let mut res = vec![0.0; ptr.len()-1];
         izip!(res.iter_mut(),subj.chunks_ptr2(ptr,&ptr[1..]),cof.chunks_ptr2(ptr,&ptr[1..]))
-            .for_each(|(r,subj,cof)| *r = subj.iter().zip(cof.iter()).map(|(&j,&c)| unsafe{ *sol.get_unchecked(j) } ).sum() );
-        let mut nshape = [0usize; N]; nshape.copy_from_slice(shape);
-        NDArray::new(nshape,sp.map(|v| Some(v.to_vec())).unwrap(),res)
+            .for_each(|(r,subj,cof)| *r = subj.iter().zip(cof.iter()).map(|(&j,&c)| c * unsafe{ *sol.get_unchecked(j) } ).sum() );
+        resshape.copy_from_slice(shape);
+
+        Ok(( res,sp.map(|v| v.to_vec()) ))
     }
 
-
-
-    
+    /// Evaluate an expression in the (primal) solution. 
+    ///
+    /// # Arguments
+    /// - `solid` The solution in which to evaluate the expression.
+    /// - `expr` The expression to evaluate.
+    pub fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : E) -> Result<NDArray<N>,String>
+        where 
+            E : IntoExpr<N>     
+    {
+        expr.into_expr().eval(& mut self.rs,&mut self.ws,&mut self.xs).map_err(|e| format!("{:?}",e))?;
+        let mut shape = [0usize; N];
+        let (val,sp) = self.evaluate_primal_internal(solid, &mut shape)?;
+        self.rs.clear();
+        NDArray::new(shape,sp,val)
+    }
 }
 
 
@@ -2276,5 +2282,29 @@ mod tests {
 
         assert!(m1eig.iter().all(|v| *v >= 0.0));
         assert!(m2eig.iter().all(|v| *v >= 0.0));
+    }
+
+
+    #[test]
+    fn eval_expr() {
+        let mut m = Model::new(None);
+        let x = m.variable(None, equal_to(vec![1.0,2.0,3.0,4.0,5.0,6.0]));
+        let y = m.variable(None, equal_to(vec![1.0,2.0,1.0,2.0,1.0,2.0]));
+        m.solve();
+
+        {
+            let r = m.evaluate_primal(SolutionType::Default, &x).unwrap();
+            let (shape,sp,val) = r.dissolve();
+            assert!( sp.is_none());
+            assert_eq!(shape,[6]);
+            assert_eq!(val,&[1.0,2.0,3.0,4.0,5.0,6.0]);
+        }
+        {
+            let r = m.evaluate_primal(SolutionType::Default, x.add(y.mul(2.0))).unwrap();
+            let (shape,sp,val) = r.dissolve();
+            assert!(sp.is_none());
+            assert_eq!(shape,[6]);
+            assert_eq!(val,&[3.0,6.0,5.0,8.0,7.0,10.0]);
+        }
     }
 }

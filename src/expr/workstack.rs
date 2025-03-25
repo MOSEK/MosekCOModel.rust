@@ -380,7 +380,7 @@ impl WorkStack {
     ///    sparsity pattern.
     /// - `subj : &[usize]` Variable indexes. The length is `nnz`.
     /// - `cof : &[f64]` Variable coefficients. The length is `nnz`.
-    pub fn peek_expr(&mut self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
+    pub fn peek_expr(&self) -> (&[usize],&[usize],Option<&[usize]>,&[usize],&[f64]) {
         let (shape,ptr,sp,subj,cof,_nextutop,_nextftop) = self.soft_pop_validate(self.utop,self.ftop);
 
         (shape,ptr,sp,subj,cof)

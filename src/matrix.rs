@@ -192,9 +192,6 @@ impl<const N : usize> NDArray<N> {
         }
     }
 
-    pub fn nz_iter(&self) -> impl Iterator { self.data.iter() }
-    pub fn nz_iter_mut(&mut self) -> impl Iterator { self.data.iter_mut() }
-
     fn from_flat_tuples_internal(shape : [usize; N], sp_unordered : &[usize], data : &[f64]) -> Result<NDArray<N>,String>{
         if sp_unordered.iter().zip(sp_unordered[1..].iter()).any(|(a,b)| a >= b) {
             // sp is unordered
@@ -346,17 +343,13 @@ impl<const N : usize> NDArray<N> {
 impl<const N : usize> std::ops::Index<[usize;N]> for NDArray<N> {
     type Output = f64;
     fn index(&self, index: [usize;N]) -> &Self::Output {
-        let mut stride = [0usize;N]; stride.iter_mut().zip(self.shape.iter()).rev().fold(1,|c,(s,&d)| { *s = c; c*d} );
-        let ii : usize = index.iter().zip(stride.iter()).map(|(&i,&s)| i*s).sum();
-        &self.data[ii]
+        self.data.index(self.stride.to_linear(&index))
     }
 }
 
 impl<const N : usize> std::ops::IndexMut<[usize;N]> for NDArray<N> {
     fn index_mut(&mut self, index: [usize;N]) -> &mut Self::Output {
-        let mut stride = [0usize;N]; stride.iter_mut().zip(self.shape.iter()).rev().fold(1,|c,(s,&d)| { *s = c; c*d} );
-        let ii : usize = index.iter().zip(stride.iter()).map(|(&i,&s)| i*s).sum();
-        self.data.index_mut(ii)
+        self.data.index_mut(self.stride.to_linear(&index))
     }
 }
 
@@ -379,13 +372,13 @@ impl<const N : usize> std::ops::Sub for NDArray<N> {
 
 impl From<&[f64]> for NDArray<1> {
     fn from(v : &[f64]) -> NDArray<1> {
-        NDArray{ shape : [ v.len() ], stride : Strides::from(&[v.len()]), sp : None, data : v.to_vec() }
+        NDArray{ shape : [ v.len() ], stride : [v.len()].to_strides(), sp : None, data : v.to_vec() }
     }
 }
 
 impl From<Vec<f64>> for NDArray<1> {
     fn from(v : Vec<f64>) -> NDArray<1> {
-        NDArray{ shape : [ v.len() ], stride : Strides::from(&[v.len()]), sp : None, data : v }
+        NDArray{ shape : [ v.len() ], stride : [v.len()].to_strides(), sp : None, data : v }
     }
 }
 
