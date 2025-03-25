@@ -139,20 +139,50 @@ Then to run, say `lowner-john-2d`, do
 cargo run --release -p lowner-john-2d
 ```
 
-Currently, demos include:
-- `lowner-john-2d` For a set of moving, rotating polygons, computes the minimal
-  bounding ellipsoid containing all polygons (or, in fact all corner points),
-  and the maximum ellipsoid contained in the intersection (when the
-  intersection is non-empty). 
-- `lowner-john-outer-3d` For a set of rotating and moving polyhedrons, compute
-  the minimal bounding ellipsoid containing all polyhedrons (or their corner
-  points).
-- `ellipsoid-approximation` For a set of moving and rotating ellipses,
-  compute the outer approximation (minimal ellipse containing all moving
-  ellipses), and inner approximation (maximum ellipe contained in the
-  intersection of all ellipses).
-- `ellipsoid-approximation-3d` For a set of moving and rotating ellipsoids, compute the minimal bounding ellipsoid.
-- `trigpoly` Simple visualization of trigonometric polynomial optimization.
-- `truss` Simple 2D truss design model assigning material to bars in a truss construction.
+### `lowner-john-2d` 
+
+For a set of moving, rotating polygons, computes the minimal
+bounding ellipsoid containing all polygons (or, in fact all corner points),
+and the maximum ellipsoid contained in the intersection (when the
+intersection is non-empty). 
+
+[lowner-john-2d](./img/inner-outer-ellipses.jpeg)
+
+### `lowner-john-outer-3d` 
+
+For a set of rotating and moving polyhedrons, compute
+the minimal bounding ellipsoid containing all polyhedrons (or their corner
+points).
+
+[lowner-john-outer-3d](./img/bounding-ellipsoid.jpeg)
+
+### `ellipsoid-approximation` 
+
+For a set of moving and rotating ellipses,
+compute the outer approximation (minimal ellipse containing all moving
+ellipses), and inner approximation (maximum ellipe contained in the
+intersection of all ellipses).
+
+[ellipsoid-approximation](./img/bounding-ellipsoid.jpeg)
+
+### `ellipsoid-approximation-3d` 
+For a set of moving and rotating ellipsoids, compute the minimal bounding ellipsoid.
+
+[ellipsoid-approximation-3d](./img/bounding ellipsoids.jpeg)
+
+
+### `trigpoly` 
+Simple visualization of trigonometric polynomial optimization.
+
+[trigpoly](./img/trigpoly.jpeg)
+
+### `truss` 
+Simple 2D truss design model assigning material to bars in a truss construction. This requires a data file, e.g.
+
+```sh 
+cargo run --release -p truss -- truss/data/bridge.trs
+```
+
+[truss](./img/bridge-truss.jpeg)
 
 
