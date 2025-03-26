@@ -310,6 +310,7 @@ impl Variable<2> {
         }
     }
 
+
     // TODO: These should produce a variable
     pub fn tril(&self,with_diag:bool) -> impl ExprTrait<2> { self.to_expr().tril(with_diag) }
     pub fn triu(&self,with_diag:bool) -> impl ExprTrait<2> { self.to_expr().triu(with_diag) }
@@ -368,6 +369,44 @@ impl<const N : usize> Variable<N> {
                 shape : newshape,
                 idxs : Rc::new(idxs),
                 sparsity : None
+            }
+        }
+    }
+   
+    /// Reverse order of elements in a subset of dimensions
+    pub fn flip(&self, dims : &[bool;N]) -> Self {
+        let st = self.shape.to_strides();
+        if let Some(ref sp) = self.sparsity {
+            let idxs = sp.iter().map(|&i| {
+                let mut idx = st.to_index(i);
+                izip!(idx.iter_mut(),dims,self.shape.iter())
+                    .for_each(|(i,&f,&d)| if f { *i = d-*i; });
+                st.to_linear(&idx)
+                }).collect::<Vec<usize>>();
+            let mut perm = (0..idxs.len()).collect::<Vec<usize>>();
+            perm.sort_unstable_by_key(|&i| unsafe{ *idxs.get_unchecked(i) });
+
+            let rsp = idxs.as_slice().permute_by(perm.as_slice()).cloned().collect();
+            let jj  = self.idxs.as_slice().permute_by(perm.as_slice()).cloned().collect();
+            Variable {
+                shape : self.shape,
+                sparsity : Some(Rc::new(rsp)),
+                idxs : Rc::new(jj)
+            }
+        }
+        else {
+            let idxs = (0..self.idxs.len())
+                .map(|i| {
+                    let mut idx = st.to_index(i);
+                    izip!(idx.iter_mut(),dims,self.shape.iter())
+                        .for_each(|(i,&f,&d)| if f { *i = d-*i; });
+                    unsafe { *self.idxs.get_unchecked(st.to_linear(&idx)) }
+                })
+                .collect();
+            Variable{
+                idxs : Rc::new(idxs),
+                sparsity : None,
+                shape : self.shape
             }
         }
     }
