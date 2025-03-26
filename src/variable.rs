@@ -347,12 +347,59 @@ impl Variable<2> {
         }
     }
 
+    
 
     // TODO: These should produce a variable
-    pub fn tril(&self,with_diag:bool) -> impl ExprTrait<2> { self.to_expr().tril(with_diag) }
-    pub fn triu(&self,with_diag:bool) -> impl ExprTrait<2> { self.to_expr().triu(with_diag) }
-    pub fn trilvec(&self,with_diag:bool) -> impl ExprTrait<1> { self.to_expr().trilvec(with_diag) }
-    pub fn triuvec(&self,with_diag:bool) -> impl ExprTrait<1> { self.to_expr().triuvec(with_diag) }
+    pub fn tril(&self,with_diag:bool) -> Variable<2> { 
+        let (d0,d1) = (self.shape[0],self.shape[1]);
+        if with_diag {
+            self.filter(|i| i/d1 >= i%d1)
+        }
+        else {
+            self.filter(|i| i/d1 > i%d1)
+        }
+    }
+    pub fn triu(&self,with_diag:bool) -> Variable<2> {
+        let (d0,d1) = (self.shape[0],self.shape[1]);
+        if with_diag {
+            self.filter(|i| i/d1 <= i%d1)
+        }
+        else {
+            self.filter(|i| i/d1 < i%d1)
+        }
+    }
+    pub fn trilvec(&self,with_diag:bool) -> Variable<1> { 
+        let (_d0,d1) = (self.shape[0],self.shape[1]);
+        let v = self.tril(with_diag);
+        let sp = if let Some(ref sp) = v.sparsity {
+                Some(Rc::new(sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); i0*(i0+1)/2 + i1 }).collect()))
+            }
+            else {
+                None
+            };
+        Variable{
+            shape : [ self.shape.iter().product()],
+            idxs : v.idxs,
+            sparsity : sp
+        }
+
+
+    }
+    pub fn triuvec(&self,with_diag:bool) -> Variable<1> { 
+        let v = self.triu(with_diag);
+        let (_d0,d1) = (self.shape[0],self.shape[1]);
+        let sp = if let Some(ref sp) = v.sparsity {
+                Some(Rc::new(sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); i0*(i0+1)/2 + i1 }).collect()))
+            }
+            else {
+                None
+            };
+        Variable{
+            shape : [ self.shape.iter().product()],
+            idxs : v.idxs,
+            sparsity : sp
+        }
+    }
 }
 
 
@@ -702,6 +749,40 @@ impl<const N : usize> Variable<N> {
             Ok(sz)
         }
     }
+    
+    fn filter<F>(&self, mut f : F) -> Variable<N> where F : FnMut(usize) -> bool {
+        if let Some(ref sp) = self.sparsity {
+            let mut rsp = vec![0usize; sp.len()];
+            let mut idxs = vec![0usize; sp.len()];
+
+            let n = izip!(sp.iter().zip(self.idxs.iter()).filter(|(i,_)| f(**i)),
+                          rsp.iter_mut(),
+                          idxs.iter_mut())
+                .fold(0,|n,((&i,&ix),ri,ridx)| { *ri = i; *ridx = ix; n+1 });
+            rsp.resize(n, 0);
+            idxs.resize(n,0);
+            Variable{ idxs : Rc::new(idxs), sparsity : Some(Rc::new(rsp)), shape : self.shape }
+        }
+        else {
+            let mut rsp = vec![0usize; self.idxs.len()];
+            let mut idxs = vec![0usize; self.idxs.len()];
+
+            let n = izip!(self.idxs.iter().enumerate().filter(|(i,_)| f(*i)),
+                          rsp.iter_mut(),
+                          idxs.iter_mut())
+                .fold(0,|n,((i,&ix),ri,ridx)| { *ri = i; *ridx = ix; n+1 });
+            rsp.resize(n, 0);
+            idxs.resize(n,0);
+
+            if n < self.idxs.len() {
+                Variable{ idxs : Rc::new(idxs), sparsity : Some(Rc::new(rsp)), shape : self.shape }
+            }
+            else {
+                Variable{ idxs : Rc::new(idxs), sparsity : None, shape : self.shape }
+            }
+        }
+    }
+
 }
 
 
