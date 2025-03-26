@@ -23,6 +23,7 @@ pub mod workstack;
 mod dot;
 mod mul;
 mod add;
+mod index;
 
 use std::fmt::{Debug, Write};
 use std::ops::Range;
@@ -40,6 +41,8 @@ pub use dot::{RightDottable,ExprDot};
 pub use mul::*;
 pub use add::*;
 pub use super::domain;
+
+pub use index::{ModelExprIndexElement,ModelExprIndex};
 
 pub struct ExprEvalError {
     file : &'static str,
@@ -618,71 +621,6 @@ pub trait IntoExpr<const N : usize> {
 
 ///////////////////////////////////////////////////////////////////////////////
 // Indexing into expressions
-pub trait ModelExprIndex<T> {
-    type Output;
-    fn index(self,obj : T) -> Self::Output;
-}
-impl<const N : usize, E> ModelExprIndex<E> for [Range<usize>; N] 
-    where 
-        //E : ExprTrait<N>+Clone+NBoundGtOne<N>
-        E : ExprTrait<N>+Clone
-{
-    type Output = ExprSlice<N,E>;
-    fn index(self, expr : E) -> Self::Output {
-        let begin = self.clone().map(|i| i.start);
-        let end   = self.map(|i| i.end);
-
-        ExprSlice{
-            expr,
-            begin,
-            end,
-        }
-    }
-}
-
-// Once const generics allow us to exclude the case N=1 from the above implementation, we can
-// specialize for the case of a single range here:
-impl<E> ModelExprIndex<E> for Range<usize> 
-    where 
-        E : ExprTrait<1>+Clone 
-{
-    type Output = ExprSlice<1,E>;
-    fn index(self, expr : E) -> Self::Output {
-        ExprSlice{
-            expr,
-            begin : [ self.start ],
-            end   : [ self.end ],
-        }
-    }
-}
-
-impl<const N : usize, E> ModelExprIndex<E> for [usize; N] where E : ExprTrait<N>+Clone {
-    type Output = ExprReshape<N,0,ExprSlice<N,E>>;
-    fn index(self, expr : E) -> Self::Output {
-        ExprReshape{
-            shape : [],
-            item : ExprSlice{
-                expr,
-                begin : self,
-                end : self.map(|v| v+1),
-            }
-        }
-    }
-}
-
-impl<E> ModelExprIndex<E> for usize where E : ExprTrait<1>+Clone {
-    type Output = ExprReshape<1,0,ExprSlice<1,E>>;
-    fn index(self, expr : E) -> Self::Output {
-        ExprReshape{
-            shape : [],
-            item : ExprSlice{
-                expr,
-                begin : [self],
-                end : [self+1],
-            }
-        }
-    }
-}
 
 
 ////////////////////////////////////////////////////////////
@@ -1712,6 +1650,17 @@ impl<const N : usize, E> ExprTrait<N> for ExprSlice<N,E> where E : ExprTrait<N> 
     }
 }
 
+
+pub struct ExprSlice2<const N : usize, E : ExprTrait<N>> {
+    expr : E, 
+    ranges : [Range<Option<usize>>;N]
+}
+
+impl<const N : usize,E> ExprTrait<N> for ExprSlice2<N,E> where E : ExprTrait<N> {
+    fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
+        unimplemented!("ExprSlice2::eval");
+    }
+}
 
 ////////////////////////////////////////////////////////////
 //
