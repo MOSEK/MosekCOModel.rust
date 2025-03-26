@@ -2781,8 +2781,8 @@ mod test {
         // | .  . . |  | . 21 22 |  | . . 23 |
         //
         // ->
-        // | .  . . |  | .  20  . |  | . . 23 |  
-        // | 19 . . |  | 22 21  . |  | . . .  |  
+        // | .  . . |  | .  20  . |  | . . 19 |  
+        // | 23 . . |  | 22 21  . |  | . . .  |  
         {
             (&x).into_expr().flip(&[true,false,true]).eval(&mut rs,&mut ws,&mut xs).unwrap();
             let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
@@ -2798,7 +2798,7 @@ mod test {
             assert_eq!(shape,&[3,2,3]);
             assert_eq!(sp.unwrap(),&[3,7,9,10,14]);
             assert_eq!(ptr,&[0,1,2,3,4,5]);
-            assert_eq!(subj,&[19,20,22,21,23]);
+            assert_eq!(subj,&[23,20,22,21,19]);
         }
 
         {
@@ -2806,9 +2806,9 @@ mod test {
             let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
             assert_eq!(shape,&[3,2,3]);
             assert_eq!(ptr,&[0,1,2,3,5,6,7, 8,10,11,13,15,16, 17,18,20,21,22,23 ]);
-            assert_eq!(subj,&[15,14,13, 19,18,17,16,
-                              9,20,8,7,22,12,21,11,10,
-                              3,2,23,1,6,5,4 ]);
+            assert_eq!(subj,&[15,14,13, 18,23,17,16,
+                              9,8,20,7,12,22,11,21,10,
+                              3,2,1,19,6,5,4 ]);
         }
 
     }
