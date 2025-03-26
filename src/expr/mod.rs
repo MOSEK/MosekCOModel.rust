@@ -32,7 +32,7 @@ use crate::matrix::Matrix;
 use itertools::izip;
 use workstack::WorkStack;
 use super::matrix;
-use crate::utils::{self, iter::*, ShapeToStridesEx};
+use crate::utils::{iter::*, ShapeToStridesEx};
 use std::iter::{Peekable,Zip};
 use std::slice::Iter;
 
@@ -450,9 +450,10 @@ pub trait ExprTrait<const N : usize> {
     ///
     /// # Arguments 
     /// - `dims` Array of `bool`s indicating the dimensions to flip elements in.
-    fn flip(self, dims : &[bool;N]) -> ExprFlip<N,Self> {
+    fn flip(self, dims : &[bool;N]) -> ExprFlip<N,Self> where Self:Sized
+    {
         ExprFlip{
-            dims : dims,
+            dims : *dims,
             expr : self
         }
     }
@@ -1850,6 +1851,7 @@ impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprFlip<N,E> {
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(sshape, nnz, nelm);
         let mut shape = [0usize;N]; shape.copy_from_slice(sshape);
 
+
         let (irest,_) = xs.alloc(nelm*4, 0);
         let (perm,irest) = irest.split_at_mut(nelm);
         let (ridxs,irest) = irest.split_at_mut(nelm);
@@ -1890,6 +1892,10 @@ impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprFlip<N,E> {
               ptr[1..].permute_by(perm),
               rptr[1..].iter_mut())
             .fold(0,|p,(&p0,&p1,rp)| { *rp = p+p1-p0; *rp });
+        if let Some(rsp) = rsp {
+            rsp.copy_from_iter(ridxs.permute_by(perm).cloned());
+            println!("flip : sp = {:?}",rsp);
+        }
 
         izip!(rsubj.chunks_ptr_mut(rptr,&rptr[1..]),
               rcof.chunks_ptr_mut(rptr,&rptr[1..]),
@@ -2751,6 +2757,58 @@ mod test {
             assert_eq!(sp.unwrap(),&[0,1,2,3,5,6,7,10,11,15]);
             assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10]);
             assert_eq!(subj,&[105,110,115,120, 79,84,89, 53,58, 27]);
+        }
+    }
+
+    #[test]
+    fn expr_flip() {
+        let mut model = Model::new(None);
+        let x = model.variable(None,&[3,2,3]); // 1..18
+        let s = model.variable(None,unbounded().with_shape(&[3,2,3]).with_sparsity(&[[0,0,0],[1,0,1],[1,1,1],[1,1,2],[2,1,2]])); // 19..23
+                                                                                                                                 //
+        let mut rs = WorkStack::new(1024);
+        let mut ws = WorkStack::new(1024);
+        let mut xs = WorkStack::new(1024);
+        
+        // | 1 2 3 |  | 7  8  9  |  | 13 14 15 |
+        // | 4 5 6 |  | 10 11 12 |  | 16 17 18 |
+        //
+        // flip([t,f,t])->
+        // | 15 14 13 |  | 9  8  7  |  | 3 2 1 |  
+        // | 18 17 16 |  | 12 11 10 |  | 6 5 4 |  
+        //  
+        // | 19 . . |  | . 20 .  |  | . . .  |
+        // | .  . . |  | . 21 22 |  | . . 23 |
+        //
+        // ->
+        // | .  . . |  | .  20  . |  | . . 23 |  
+        // | 19 . . |  | 22 21  . |  | . . .  |  
+        {
+            (&x).into_expr().flip(&[true,false,true]).eval(&mut rs,&mut ws,&mut xs).unwrap();
+            let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+            assert_eq!(shape,&[3,2,3]);
+            assert_eq!(ptr,&[0, 1,2,3, 4,5,6,  
+                                7,8,9, 10,11,12, 
+                                13,14,15, 16,17,18]);
+            assert_eq!(subj,&[15,14,13, 18,17,16, 9,8,7, 12,11,10, 3,2,1, 6,5,4 ]);
+        }
+        {
+            (&s).into_expr().flip(&[true,false,true]).eval(&mut rs,&mut ws,&mut xs).unwrap();
+            let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+            assert_eq!(shape,&[3,2,3]);
+            assert_eq!(sp.unwrap(),&[3,7,9,10,14]);
+            assert_eq!(ptr,&[0,1,2,3,4,5]);
+            assert_eq!(subj,&[19,20,22,21,23]);
+        }
+
+        {
+            s.add(&x).flip(&[true,false,true]).eval(&mut rs,&mut ws,&mut xs).unwrap();
+            let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
+            assert_eq!(shape,&[3,2,3]);
+            assert_eq!(ptr,&[0,1,2,3,5,6,7, 8,10,11,13,15,16, 17,18,20,21,22,23 ]);
+            assert_eq!(subj,&[15,14,13, 19,18,17,16,
+                              9,20,8,7,22,12,21,11,10,
+                              3,2,23,1,6,5,4 ]);
         }
 
     }
