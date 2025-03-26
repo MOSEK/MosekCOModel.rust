@@ -616,13 +616,6 @@ pub trait IntoExpr<const N : usize> {
     fn into_expr(self) -> Self::Result where Self : Sized { self.into() }
 }
 
-
-
-
-
-
-
-
 ///////////////////////////////////////////////////////////////////////////////
 // Indexing into expressions
 pub trait ModelExprIndex<T> {

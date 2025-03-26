@@ -1,6 +1,6 @@
 //! Module for Variable object and related implementations
 
-use std::{fmt::Debug, rc::Rc};
+use std::{fmt::Debug, rc::Rc, ops::{Range, RangeFrom, RangeTo, RangeFull}};
 
 use expr::ExprEvalError;
 use iter::IndexIteratorExt;
@@ -154,36 +154,6 @@ impl<const N : usize> ModelItemIndex<Variable<N>> for [usize; N] {
     }
 }
 
-impl ModelItemIndex<Variable<1>> for std::ops::Range<usize> {
-    type Output = Variable<1>;
-    fn index(self, v : &Variable<1>) -> Variable<1> {
-        let n = self.len();
-        if let Some(ref sp) = v.sparsity {
-            let first = match sp.binary_search(&self.start) {
-                Ok(i)  => i,
-                Err(i) => i
-            };
-            let last = match sp.binary_search(&self.start) {
-                Ok(i) => i+1,
-                Err(i) => i
-            };
-
-            Variable{
-                idxs     : Rc::new(v.idxs[first..last].to_vec()), 
-                sparsity : Some(Rc::new(sp[first..last].iter().map(|&i| i - self.start).collect())),
-                shape    : [n]
-            }
-        }
-        else {
-            Variable{
-                idxs     : Rc::new(v.idxs[self].to_vec()),
-                sparsity : None,
-                shape    : [n]
-            }
-        }
-    }
-}
-
 impl<const N : usize> ModelItemIndex<Variable<N>> for [std::ops::Range<usize>; N] {
     type Output = Variable<N>;
     fn index(self, v : &Variable<N>) -> Variable<N> {
@@ -231,6 +201,73 @@ impl<const N : usize> ModelItemIndex<Variable<N>> for [std::ops::Range<usize>; N
                 sparsity : None,
                 shape    : rshape }
         }
+    }
+}
+
+trait ModelItemIndexElement { fn expand(self, d : usize) -> Range<usize>; }
+impl ModelItemIndexElement for usize { fn expand(self, d : usize) -> Range<usize> { Range { start: self.min(d), end: self.min(d) } } }
+impl ModelItemIndexElement for Range<usize> { fn expand(self, d : usize) -> Range<usize> { Range{ start: self.start.min(d), end : self.end.min(d) } } }
+impl ModelItemIndexElement for RangeFrom<usize> { fn expand(self, d : usize) -> Range<usize> { Range{ start: self.start.min(d), end : d } } }
+impl ModelItemIndexElement for RangeTo<usize> { fn expand(self, d : usize) -> Range<usize> { Range{ start : 0, end: self.end.min(d) } } }
+impl ModelItemIndexElement for RangeFull { fn expand(self, d : usize) -> Range<usize> { Range{ start : 0, end: d } } }
+
+impl<I1,I2> ModelItemIndex<Variable<2>> for (I1,I2)
+    where 
+        I1 : ModelItemIndexElement,
+        I2 : ModelItemIndexElement 
+{
+    type Output = Variable<2>;
+    fn index(self,obj : &Variable<2>) -> Self::Output { 
+        obj.index([self.0.expand(obj.shape[0]),
+                   self.1.expand(obj.shape[1])])
+    }
+}
+
+impl<I1,I2,I3> ModelItemIndex<Variable<3>> for (I1,I2,I3)
+    where 
+        I1 : ModelItemIndexElement,
+        I2 : ModelItemIndexElement,
+        I3 : ModelItemIndexElement 
+{
+    type Output = Variable<3>;
+    fn index(self,obj : &Variable<3>) -> Self::Output { 
+        obj.index([self.0.expand(obj.shape[0]),
+                  self.1.expand(obj.shape[1]),
+                  self.2.expand(obj.shape[2])]) 
+    }
+}
+
+impl<I1,I2,I3,I4> ModelItemIndex<Variable<4>> for (I1,I2,I3,I4)
+    where 
+        I1 : ModelItemIndexElement,
+        I2 : ModelItemIndexElement,
+        I3 : ModelItemIndexElement,
+        I4 : ModelItemIndexElement 
+{
+    type Output = Variable<4>;
+    fn index(self,obj : &Variable<4>) -> Self::Output { 
+        obj.index([self.0.expand(obj.shape[0]),
+                   self.1.expand(obj.shape[1]),
+                   self.2.expand(obj.shape[2]),
+                   self.3.expand(obj.shape[3])]) 
+    }
+}
+
+impl<I1,I2,I3,I4,I5> ModelItemIndex<Variable<5>> for (I1,I2,I3,I4,I5)
+    where 
+        I1 : ModelItemIndexElement,
+        I2 : ModelItemIndexElement,
+        I3 : ModelItemIndexElement,
+        I4 : ModelItemIndexElement,
+        I5 : ModelItemIndexElement 
+{
+    type Output = Variable<5>;
+    fn index(self,obj : &Variable<5>) -> Self::Output { 
+        obj.index([self.0.expand(obj.shape[0]),
+                   self.1.expand(obj.shape[1]),
+                   self.2.expand(obj.shape[2]),
+                   self.3.expand(obj.shape[3]),
+                   self.4.expand(obj.shape[4])]) 
     }
 }
 
@@ -461,7 +498,7 @@ impl<const N : usize> Variable<N> {
     pub fn index<I>(&self, idx : I) -> I::Output where I : ModelItemIndex<Self> {
         idx.index(self)
     }
-pub fn into_column(&self) -> Variable<2> {
+    pub fn into_column(&self) -> Variable<2> {
         Variable {
             shape : [self.shape.iter().product(),1],
             idxs : self.idxs.clone(),
