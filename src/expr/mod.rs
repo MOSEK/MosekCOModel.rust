@@ -334,13 +334,50 @@ pub trait ExprTrait<const N : usize> {
     fn repeat(self,dim : usize, num : usize) -> ExprRepeat<N,Self> where Self:Sized { ExprRepeat{ expr : self, dim, num } }
 
     /// Indexing or slicing an expression. This is not compatible with `std::ops::Index` since we
-    /// need to return a new object rather than a reference to an object.
+    /// need to return a new object rather than a reference to an object, so sugary syntax is not
+    /// possible here.
     ///
-    /// Create an expression representing a slice of this expression. The exact result depends on
-    /// the type of the indexer, which can be an 
-    /// - `usize`, `[usize;N]`, which results in a scalar expression, 
-    /// - or `Range<usize>`, `[Range<usize;N>]` resulting in an expression with the same number of
-    ///   dimensions as this expression.
+    /// # Arguments
+    /// - `idx` this is the index(es) or the range(s). By default following are accepted
+    ///     - Single element index:
+    ///         - `usize` for `Variable<1>`: produces a scalar expression
+    ///         - `[usize; N]` `variable<N>`: produces a scalar expression
+    ///     - Ranges of elements. Either a single range or an array of ranges resulting in a
+    ///       `impl` [ExprTrait]`<N>`:
+    ///         - One of [std::ops::Range]`<usize>`, [std::ops::RangeFrom]`<usize>`,
+    ///           [std::ops::RangeTo]`<usize>`, [std::ops::RangeFull] for [Variable]`<1>`: produces a
+    ///           [Variable]`<1>`
+    ///         - An array `[T; N]` where `T` is one of the range types above.
+    ///     - Tuples of length `N` for `N` betweem 2 and 5, where each element is [usize] or one of the range types
+    ///       above. 
+    ///
+    /// # Example
+    /// ```rust
+    /// use mosekcomodel::*;
+    /// 
+    /// let mut m = Model::new(None);
+    /// let x1 = m.variable(None, 10);
+    /// let y1 = m.variable(None, 10);
+    /// let x2 = m.variable(None, &[10,10]);
+    /// let y2 = m.variable(None, &[10,10]);
+    ///
+    /// let e1_1 = (x1.add(&y1)).index(5); // ExprTrait<0>
+    /// let e1_2 = (x1.add(&y1)).index([5]); // ExprTrait<0>
+    /// let e1_3 = (x1.add(&y1)).index(1..3); // ExprTrait<1>
+    /// let e1_4 = (x1.add(&y1)).index([1..3]); // ExprTrait<1>
+    /// let e1_5 = (x1.add(&y1)).index(2..); // ExprTrait<1>
+    /// let e1_6 = (x1.add(&y1)).index(..3); // ExprTrait<1>
+    /// let e1_7 = (x1.add(&y1)).index(..); // ExprTrait<1>, effectively .clone()
+    /// // Index a scalar
+    /// let e2_1 = (x2.add(&y2)).index([2,2]); // ExprTrait<0>
+    /// // Index an array of ranges
+    /// let e2_2 = (x2.add(&y2)).index([1..3,1..3]); // ExprTrait<2>
+    /// // Indexing with tuples
+    /// let e2_3 = (x2.add(&y2)).index((2,1..3)); // ExprTrait<2>
+    /// let e2_4 = (x2.add(&y2)).index((2,3)); // ExprTrait<2>
+    /// let e2_5 = (x2.add(&y2)).index((..2,1..3)); // ExprTrait<2>
+    /// let e2_6 = (x2.add(&y2)).index((1..,..3)); // ExprTrait<2>
+    /// ```
     fn index<I>(self, idx : I) -> I::Output where I : ModelExprIndex<Self>, Self:Sized {
         idx.index(self)
     }
