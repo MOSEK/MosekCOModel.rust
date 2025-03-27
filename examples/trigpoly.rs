@@ -44,9 +44,9 @@ use std::f64::consts::PI;
 #[allow(non_snake_case)]
 fn complex_sdpvar(m : & mut Model, n : usize) -> (Variable<2>,Variable<2>) {
     let X   = m.variable(None, in_psd_cone(2*n));
-    let Xr  = X.index([0..n, 0..n]);
-    let Xi  = X.index([n..2*n, 0..n]);
-    let X22 = X.index([n..2*n, n..2*n]);
+    let Xr  = X.index((..n, ..n));
+    let Xi  = X.index((n.., ..n));
+    let X22 = X.index((n.., n..));
     
     _ = m.constraint(None, Xr.sub(&X22), zeros(&[n,n]));
     _ = m.constraint(None, Xi.add(Xi.transpose()), zeros(&[n,n]));
@@ -191,7 +191,7 @@ fn epigraph(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, t : Either<&V
         Either::Left(ref t)  => m.constraint(None,t.sub(xr.index(0).add(ur.index(0))), zero()),
         Either::Right(ref t) => m.constraint(None,t.into_expr().sub(xr.index(0).add(ur.index(0))), zero())
     };
-    m.constraint(None, xr.index(1..n+1).add(ur.index(1..n+1)), zeros(&[n]));
+    m.constraint(None, xr.index(1..).add(ur.index(1..)), zeros(&[n]));
     m.constraint(None, xi.add(&ui), zeros(&[n+1]));
 
     if a.abs() < 1e-12 && (b-PI).abs() < 1e-12 {
