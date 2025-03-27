@@ -345,8 +345,8 @@ pub trait ExprTrait<const N : usize> {
     ///     - Ranges of elements. Either a single range or an array of ranges resulting in a
     ///       `impl` [ExprTrait]`<N>`:
     ///         - One of [std::ops::Range]`<usize>`, [std::ops::RangeFrom]`<usize>`,
-    ///           [std::ops::RangeTo]`<usize>`, [std::ops::RangeFull] for [Variable]`<1>`: produces a
-    ///           [Variable]`<1>`
+    ///           [std::ops::RangeTo]`<usize>`, [std::ops::RangeFull] for ExprTrait]`<1>`: produces a
+    ///           [ExprTrait]`<1>`
     ///         - An array `[T; N]` where `T` is one of the range types above.
     ///     - Tuples of length `N` for `N` betweem 2 and 5, where each element is [usize] or one of the range types
     ///       above. 

@@ -75,12 +75,12 @@
 //! expressions have to implement, and [IntoExpr] which is anything that can be turned into an
 //! [ExprTrait]. For example, [Variable] `Vec<f64>`, `f64` and [NDArray] implement [IntoExpr] since
 //! they can be turned into a expression, while the various expression structs (e.g. [Expr],
-//! [ExprAdd], [ExprStack] etc.) implement [ExprTrait]. Note that expressions are *consumed* when
+//! [expr::ExprAdd], [expr::ExprStack] etc.) implement [ExprTrait]. Note that expressions are *consumed* when
 //! creating new expressions, while variables and constants can be passed by reference and will be
 //! cloned. This is because the expression constructing functions accept [IntoExpr]s rather than
 //! [ExprTrait]s. For example, an `add` function might look like this:
 //! ```
-//! use mosekcomodel::*;
+//! use mosekcomodel::{ExprTrait,IntoExpr};
 //!
 //! struct ExprAdd<const N : usize,E1,E2> 
 //!     where 
