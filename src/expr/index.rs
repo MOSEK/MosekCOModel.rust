@@ -1,6 +1,6 @@
 use std::ops::{Range, RangeFrom, RangeFull, RangeTo};
 
-use super::{ExprReshape, ExprSlice, ExprSlice2, ExprTrait};
+use super::{ExprReshape, ExprSlice2, ExprTrait};
 
 pub trait ModelExprIndexElement { 
     fn expand(self) -> Range<Option<usize>>; 
