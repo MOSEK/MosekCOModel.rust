@@ -1650,7 +1650,6 @@ impl<const N : usize, E> ExprTrait<N> for ExprSlice<N,E> where E : ExprTrait<N> 
     }
 }
 
-
 pub struct ExprSlice2<const N : usize, E : ExprTrait<N>> {
     expr : E, 
     ranges : [Range<Option<usize>>;N]
@@ -1658,7 +1657,19 @@ pub struct ExprSlice2<const N : usize, E : ExprTrait<N>> {
 
 impl<const N : usize,E> ExprTrait<N> for ExprSlice2<N,E> where E : ExprTrait<N> {
     fn eval(&self,rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
-        unimplemented!("ExprSlice2::eval");
+        self.expr.eval(ws,rs,xs)?;
+
+        let mut begin = vec![0usize; N];
+        let mut end = vec![0usize; N];
+        {
+            let (shape,_,_,_,_) = ws.peek_expr();
+
+            for (b,e,d,r) in izip!(begin.iter_mut(),end.iter_mut(),shape.iter(),self.ranges.iter()) {
+                *b = r.start.unwrap_or(0);
+                *e = r.end.unwrap_or(*d);
+            }
+        }
+        eval::slice(begin.as_slice(),end.as_slice(),rs,ws,xs)
     }
 }
 

@@ -349,9 +349,13 @@ impl Variable<2> {
 
     
 
-    // TODO: These should produce a variable
+    /// From a 2-dimensional variable, create a sparse variable of the same shape, but with only
+    /// non-zeros in the lower triangular part.
+    ///
+    /// # Arguments
+    /// - `with_diag` Indicates if the diagonal should be included.
     pub fn tril(&self,with_diag:bool) -> Variable<2> { 
-        let (d0,d1) = (self.shape[0],self.shape[1]);
+        let (_d0,d1) = (self.shape[0],self.shape[1]);
         if with_diag {
             self.filter(|i| i/d1 >= i%d1)
         }
@@ -359,8 +363,13 @@ impl Variable<2> {
             self.filter(|i| i/d1 > i%d1)
         }
     }
+    /// From a 2-dimensional variable, create a sparse variable of the same shape, but with only
+    /// non-zeros in the upper triangular part.
+    ///
+    /// # Arguments
+    /// - `with_diag` Indicates if the diagonal should be included.
     pub fn triu(&self,with_diag:bool) -> Variable<2> {
-        let (d0,d1) = (self.shape[0],self.shape[1]);
+        let (_d0,d1) = (self.shape[0],self.shape[1]);
         if with_diag {
             self.filter(|i| i/d1 <= i%d1)
         }
@@ -368,36 +377,105 @@ impl Variable<2> {
             self.filter(|i| i/d1 < i%d1)
         }
     }
+
+    /// From a 2-dimensional variable, create a 1-dimensional variable with the elements from the
+    /// lower triangular par in row-major format. 
+    ///
+    /// # Arguments
+    /// - `with_diag` Indicates if the diagonal should be included.
+
     pub fn trilvec(&self,with_diag:bool) -> Variable<1> { 
-        let (_d0,d1) = (self.shape[0],self.shape[1]);
+        let (d0,d1) = (self.shape[0],self.shape[1]);
         let v = self.tril(with_diag);
-        let sp = if let Some(ref sp) = v.sparsity {
-                Some(Rc::new(sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); i0*(i0+1)/2 + i1 }).collect()))
+        
+        let rshape = 
+            if d0 == 0 && d1 == 0 {
+                [0]
+            }
+            else if d0 > d1 { 
+                if with_diag { [d1 * (d1+1)/2 + d1 * (d0-d1)] }
+                else         { [d1 * (d1-1)/2 + d1 * (d0-d1)] }
             }
             else {
-                None
+                if with_diag { [d0 * (d0 + 1)/2] }
+                else         { [d0 * (d0 - 1)/2] }
             };
-        Variable{
-            shape : [ self.shape.iter().product()],
-            idxs : v.idxs,
-            sparsity : sp
+
+        if let Some(ref sp) = v.sparsity {
+            if sp.len() < rshape[0] {
+                Variable{
+                    shape : rshape,
+                    idxs : v.idxs,
+                    sparsity : None
+                }
+            } else {
+                let sp : Vec<usize> = match (d0 > d1,with_diag) {
+                    (false,true)  => sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); i0 * (i0+1) / 2 + i1}).collect(),
+                    (false,false) => sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); i0 * (i0-1) / 2 + i1}).collect(),
+                    (true,true)   => sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); let (i00,i01) = (i0.min(d1), i0.max(d1)-d1) ; i00 * (i00+1) / 2 + i01 * d1 + i1 }).collect(),
+                    (true,false)  => sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); let (i00,i01) = (i0.min(d1), i0.max(d1)-d1) ; i00 * (i00-1) / 2 + i01 * d1 + i1 }).collect(),
+                };
+                Variable{
+                    shape : rshape,
+                    idxs : v.idxs,
+                    sparsity : Some(Rc::new(sp))
+                }
+            }
         }
-
-
+        else {
+            Variable{
+                shape : rshape,
+                idxs : v.idxs,
+                sparsity : None
+            }
+        }
     }
     pub fn triuvec(&self,with_diag:bool) -> Variable<1> { 
+        let (d0,d1) = (self.shape[0],self.shape[1]);
         let v = self.triu(with_diag);
-        let (_d0,d1) = (self.shape[0],self.shape[1]);
-        let sp = if let Some(ref sp) = v.sparsity {
-                Some(Rc::new(sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); i0*(i0+1)/2 + i1 }).collect()))
+        
+        let rshape = 
+            if d0 == 0 && d1 == 0 {
+                [0]
+            }
+            else if d0 < d1 { 
+                if with_diag { [d0 * (d0+1)/2 + d0 * (d1-d0)] }
+                else         { [d0 * (d0-1)/2 + d0 * (d1-d0)] }
             }
             else {
-                None
+                if with_diag { [d1 * (d1 + 1)/2] }
+                else         { [d1 * (d1 - 1)/2] }
             };
-        Variable{
-            shape : [ self.shape.iter().product()],
-            idxs : v.idxs,
-            sparsity : sp
+
+        if let Some(ref sp) = v.sparsity {
+            if sp.len() < rshape[0] {
+                Variable{
+                    shape : rshape,
+                    idxs : v.idxs,
+                    sparsity : None
+                }
+            } else {
+                let sp : Vec<usize> = match (d1 > d0,with_diag) { 
+                    // d1*i0+i1 - i0*(i0-1)/2 
+                    // i0*(2 d1 - i0 + 1)/2 + i1
+                    (false,true)  => sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); i0*(2 * d1 - i0 + 1)/2 + i1}).collect(),
+                    (false,false) => sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); i0*(2 * d1 - i0 - 1)/2 + i1}).collect(),
+                    (true,true)   => sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); let (i00,i01) = (i0.min(d1), i0.max(d1)-d1) ; ... }).collect(),
+                    (true,false)  => sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); let (i00,i01) = (i0.min(d1), i0.max(d1)-d1) ; ... }).collect(),
+                };
+                Variable{
+                    shape : rshape,
+                    idxs : v.idxs,
+                    sparsity : Some(Rc::new(sp))
+                }
+            }
+        }
+        else {
+            Variable{
+                shape : rshape,
+                idxs : v.idxs,
+                sparsity : None
+            }
         }
     }
 }
