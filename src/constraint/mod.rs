@@ -6,8 +6,8 @@ use crate::{utils::{iter::IndexIteratorExt, ShapeToStridesEx}, ConDomainTrait, C
 /// indexes and a shape. Note that constraint objects are never sparse.
 #[derive(Clone)]
 pub struct Constraint<const N : usize> {
-    pub(crate) idxs     : Vec<usize>,
-    pub(crate) shape    : [usize; N]
+    pub(crate) idxs  : Vec<usize>,
+    pub(crate) shape : [usize; N]
 }
 
 impl<const N : usize> Constraint<N> {
