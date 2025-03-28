@@ -1268,6 +1268,10 @@ impl Model {
     /// ```
     //
     pub fn disjunction<D>(& mut self, name : Option<&str>, terms : & D) -> Disjunction where D : disjunction::DisjunctionTrait {
+            
+        ...........
+
+
         self.djc_temp_termsize.clear();
         self.djc_temp_domidx.clear();
         self.djc_temp_afeidx.clear();
