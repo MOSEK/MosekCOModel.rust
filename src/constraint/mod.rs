@@ -1,4 +1,5 @@
-use crate::{utils::{iter::IndexIteratorExt, ShapeToStridesEx}, ConDomainTrait, ConicDomain, LinearDomain, Model, ModelItemIndex};
+use crate::*;
+use crate::utils::{iter::IndexIteratorExt, ShapeToStridesEx};
 
 
 
@@ -23,106 +24,36 @@ impl<const N : usize> Constraint<N> {
             shape : *shape
         }
     }
+    // TODO implement more stacking and reshaping functions here, similar to Variable
 }
 
 //======================================================
-// Domain
+// Domain use
 //======================================================
 
 /// Represents something that can be used as a domain for a constraint.
 pub trait ConstraintDomain<const N : usize> {
     fn add_constraint(self, m : & mut Model, name : Option<&str>) -> Result<Constraint<N>,String>;
 }
-pub trait IntoConstraintDomain<const N : usize> {
-    type Result : ConstraintDomain<N>;
-    fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String>;
-}
-
-impl IntoConstraintDomain<1> for usize {
-    type Result = LinearDomain<1>;
-    fn try_into_domain(self,shape : [usize;1]) -> Result<Self::Result,String> {
-        [self].try_into_domain(shape)
-    }
-}
-
-impl<const N : usize> IntoConstraintDomain<N> for [usize;N] {
-    type Result = LinearDomain<N>;
-    fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
-        if shape[0] != self {
-            Err(format!("Mismatching expression shape {:?} and domain shape [{:?}]",shape,self))
-        }
-        else {
-            let totalsize = shape.iter().product();
-            Ok(LinearDomain{
-                shape,
-                sp : None,
-                ofs : crate::LinearDomainOfsType::M(vec![0; totalsize]),
-                dt : crate::LinearDomainType::Free,
-                is_integer : false
-            })
-        }
-    }
-}
-
-impl<const N : usize> IntoConstraintDomain<N> for LinearDomain<N> {
-    type Result = LinearDomain<N>;
-    fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
-        if self.shape
-    }
-}
-
-
-impl<const N : usize> ConstraintDomain<N> for LinearDomain<N> {
-    fn add_constraint(self, m : & mut Model, name : Option<&str>) -> Result<Constraint<N>,String> {
-       m.linear_constraint(name, self)
-    }
-}
 
 /// Implement LinearDomain as constraint domain
-impl<const N : usize> ConDomainTrait<N> for LinearDomain<N> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
+impl<const N : usize> ConstraintDomain<N> for LinearDomain<N> {
+    fn add_constraint(self, m : & mut Model, name : Option<&str>) -> Result<Constraint<N>,String> {
         m.linear_constraint(name,self)
     }
 
 }
 
 /// Implement ConicDomain as a constraint domain
-impl<const N : usize> ConDomainTrait<N> for ConicDomain<N> {
+impl<const N : usize> ConstraintDomain<N> for ConicDomain<N> {
     /// Add a constraint with expression expected to be on the top of the rs stack.
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
+    fn add_constraint(self, m : & mut Model, name : Option<&str>) -> Result<Constraint<N>,String> {
         m.conic_constraint(name,self)
     }
 }
 
-/// Implement a fixed-size integer array as domain for constraint, meaning unbounded with the array
-/// as shape.
-impl<const N : usize> ConDomainTrait<N> for &[usize;N] {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
-        m.linear_constraint(name,
-                            LinearDomain{
-                                dt:LinearDomainType::Free,
-                                ofs:LinearDomainOfsType::Scalar(0.0),
-                                shape:*self,
-                                sp:None,
-                                is_integer: false})
-    }
-}
-
-/// Implement integer as domain for constraint, producing a vector variable if the given size.
-impl ConDomainTrait<1> for usize {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<1> {
-        m.linear_constraint(name,
-                            LinearDomain{
-                                dt:LinearDomainType::Free,
-                                ofs:LinearDomainOfsType::Scalar(0.0),
-                                shape:[self],
-                                sp:None,
-                                is_integer:false})
-    }
-}
-
-impl<const N : usize> ConDomainTrait<N> for PSDDomain<N> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
+impl<const N : usize> ConstraintDomain<N> for PSDDomain<N> {
+    fn add_constraint(self, m : & mut Model, name : Option<&str>) -> Result<Constraint<N>,String> {
         m.psd_constraint(name,self)
     }
 }

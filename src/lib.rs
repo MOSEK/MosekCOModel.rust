@@ -213,10 +213,7 @@ pub use model::{Sense,
                 ModelItem,
                 ModelItemIndex,
                 Model,
-                SolverParameterValue,
-                Constraint,
-                ConDomainTrait,
-                VarDomainTrait};
+                SolverParameterValue};
 pub use matrix::{Matrix,NDArray,IntoIndexes};
 pub use expr::{ExprTrait,
                ExprRightMultipliable,
@@ -226,14 +223,14 @@ pub use expr::{ExprTrait,
                Expr,
                RightDottable,
                stack,hstack,vstack,stackvec,sumvec};
-pub use constraint::{Constraint};
-pub use variable::Variable;
-pub use domain::{LinearDomain,
+pub use constraint::{Constraint,ConstraintDomain};
+pub use variable::{Variable,VarDomainTrait};
+pub use domain::{IntoDomain,
+                 LinearDomain,
                  ConicDomain,
+                 PSDDomain,
                  LinearDomainType,
                  ConicDomainType,
-                 LinearDomainOfsType,
-                 PSDDomain,
                  unbounded,
                  less_than,
                  greater_than,

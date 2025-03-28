@@ -663,33 +663,30 @@ impl Model {
         where
             E : IntoExpr<N>, 
             <E as IntoExpr<N>>::Result : ExprTrait<N>,
-            D : IntoConstraintDomain<N> 
+            D : IntoDomain<N>,
+            D::Result : ConstraintDomain<N>
     {
         expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
         let (eshape,_,_,_,_) = self.rs.peek_expr();
         if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
-        let shape = [0usize; N]; shape.copy_from_slice(eshape);
+        let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
 
         dom.try_into_domain(shape)?.add_constraint(self,name)
     }
 
-    fn psd_constraint<const N : usize>(& mut self, name : Option<&str>, dom : PSDDomain<N>) -> Constraint<N> {
+    pub(crate) fn psd_constraint<const N : usize>(& mut self, name : Option<&str>, dom : PSDDomain<N>) -> Result<Constraint<N>,String> {
+        let (shape,(conedim0,conedim1)) = dom.dissolve();
         // validate domain
-        let (conedim0,conedim1) = if dom.conedims.0 < dom.conedims.1 { (dom.conedims.0,dom.conedims.1) } else { (dom.conedims.1,dom.conedims.0) } ;
-        if dom.conedims.0 >= dom.conedims.1 { panic!("Invalid cone dimension specification"); }
-        if dom.conedims.1 >= N { panic!("Invalid cone dimension specification"); }
-        if dom.shape[conedim0] != dom.shape[conedim1] { panic!("Invalid cone shape"); }
        
-        let conearrshape : Vec<usize> = dom.shape.iter().enumerate().filter(|v| v.0 != conedim0 && v.0 != conedim1).map(|v| v.1).cloned().collect();
+        let conearrshape : Vec<usize> = shape.iter().enumerate().filter(|v| v.0 != conedim0 && v.0 != conedim1).map(|v| v.1).cloned().collect();
         let numcone : usize = conearrshape.iter().product();
-        let conesize = dom.shape[conedim0] * (dom.shape[conedim0]+1) / 2;
+        let conesize = shape[conedim0] * (shape[conedim0]+1) / 2;
         
         // Pop expression and validate 
         let (expr_shape,ptr,expr_sp,subj,cof) = self.rs.pop_expr();
         let nelm = ptr.len()-1;
         let nnz  = ptr.last().unwrap();
         
-        let shape = dom.shape;
         // Check that expression shape matches domain shape
         if expr_shape.iter().zip(shape.iter()).any(|v| v.0 != v.1) { panic!("Mismatching shapes of expression {:?} and domain {:?}",expr_shape,&shape); }
         if expr_sp.is_some() { panic!("Constraint expression cannot be sparse") };
@@ -787,7 +784,7 @@ impl Model {
              abarsubl,
              abarcof) = split_expr(rptr,rsubj,rcof,self.vars.as_slice());
 
-        let conedim = dom.shape[dom.conedims.0];
+        let conedim = shape[dom.conedims.0];
         let nelm : usize = conesize*numcone;
 
         let barvar0 = self.task.get_num_barvar().unwrap();
@@ -903,38 +900,24 @@ impl Model {
             .for_each(|(t,&s,_)| { *t = s; })
             ;
 
-        Constraint{
+        Ok(Constraint{
             idxs,
             shape,
-        }
+        })
     }
 
 
     pub(crate) fn linear_constraint<const N : usize>(& mut self,
                                           name : Option<&str>,
                                           dom  : LinearDomain<N>) -> Result<Constraint<N>,String> {
-        let (dt,b,dshape,_,_) = dom.into_dense().extract();
-        let (eshape,ptr,_,subj,cof) = self.rs.pop_expr();
-        let mut shape = [0usize; N]; shape.clone_from_slice(eshape);
-
-        if eshape.len() != N { 
-            panic!("Invalid expression shape {:?}",eshape);
-        }
-        else if izip!(eshape.iter(),shape.iter()).any(|(&a,&b)| a != b) {
-            panic!("Mismatching shapes of expression {:?} and domain {:?}",shape,dshape);
-        }
+        let (dt,b,_,shape,is_integer) =  dom.into_dense().dissolve();
+        let (_,ptr,_,subj,cof) = self.rs.pop_expr();
 
         // let nnz = subj.len();
         let nelm = ptr.len()-1;
-        if shape.iter().product::<usize>() != nelm {
-            panic!("Mismatching expression and shape");
-        }
-        if nelm != b.len() {
-            panic!("Invalid expression size {} relative to domain size {}", nelm, b.len())
-        }
 
         if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
-            panic!("Invalid subj index in evaluated expression");
+            return Err("Expression is invalid: Variable subscript out of bound for this Model".to_string());
         }
 
         let coni = self.task.get_num_con().unwrap();
@@ -1006,24 +989,19 @@ impl Model {
 
         Ok(Constraint{
             idxs : (firstcon..firstcon+nelm).collect(),
-            shape : dshape,
+            shape,
         })
     }
 
     pub(crate) fn conic_constraint<const N : usize>(& mut self,
                         name : Option<&str>,
                         dom  : ConicDomain<N>) -> Result<Constraint<N>,String> {
-        let (shape,ptr,_,subj,cof) = self.rs.pop_expr();
-        if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
-            panic!("Mismatching shapes of expression and domain: {:?} vs {:?}",shape,dom.shape);
-        }
+        let (dt,offset,shape,conedim,is_integer) = dom.dissolve();
+        let (eshape,ptr,_,subj,cof) = self.rs.pop_expr();
         let nelm = ptr.len()-1;
 
         if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
-            panic!("Invalid subj index in evaluated expression");
-        }
-        if ! shape.iter().zip(dom.shape.iter()).all(|(&d0,&d1)| d0==d1 ) {
-            panic!("Mismatching domain/expression shapes: {:?} vs {:?}",shape,dom.shape);
+            return Err("Expression is invalid: Variable subscript out of bound for this Model".to_string());
         }
 
         let acci = self.task.get_num_acc().unwrap();
@@ -1038,10 +1016,10 @@ impl Model {
              abarsubk,
              abarsubl,
              abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
-        let conesize = shape[dom.conedim];
+        let conesize = shape[conedim];
         let numcone  = shape.iter().product::<usize>() / conesize;
 
-        let domidx = match dom.dt {
+        let domidx = match dt {
             ConicDomainType::NonNegative           => self.task.append_rplus_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::NonPositive           => self.task.append_rminus_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap()).unwrap(),
@@ -1061,10 +1039,10 @@ impl Model {
         self.task.append_accs_seq(vec![domidx; numcone].as_slice(),
                                   nelm as i64,
                                   afei,
-                                  dom.ofs.as_slice()).unwrap();
-        let d0 : usize = shape[0..dom.conedim].iter().product();
-        let d1 : usize = shape[dom.conedim];
-        let d2 : usize = shape[dom.conedim+1..].iter().product();
+                                  offset.as_slice()).unwrap();
+        let d0 : usize = shape[0..conedim].iter().product();
+        let d1 : usize = shape[conedim];
+        let d2 : usize = shape[conedim+1..].iter().product();
         let afeidxs : Vec<i64> = iproduct!(0..d0,0..d2,0..d1)
             .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64)
             .collect();
@@ -1072,9 +1050,9 @@ impl Model {
         if let Some(name) = name {
             let _numcone = d0*d2;
             let mut xshape = [1usize; N]; 
-            xshape[0..dom.conedim].copy_from_slice(&shape[0..dom.conedim]);
-            if dom.conedim < N-1 {
-                xshape[dom.conedim+1..N-1].copy_from_slice(&shape[dom.conedim+1..N]);
+            xshape[0..conedim].copy_from_slice(&shape[0..conedim]);
+            if conedim < N-1 {
+                xshape[conedim+1..N-1].copy_from_slice(&shape[conedim+1..N]);
             }
             let mut idx = [1usize; N];
             for i in acci..acci+(d0*d2) as i64 {                
@@ -1120,25 +1098,23 @@ impl Model {
 
         Ok(Constraint{
             idxs : (coni..coni+nelm).collect(),
-            shape : dom.shape
+            shape 
         })
     }
 
 
     pub(crate) fn add_disjunction_clause<const N : usize, E>(&mut self, e : &E, dom : &ConicDomain<N>) where E : expr::ExprTrait<N> {
+        let (dt,offset,shape,conedim,is_integer) = dom.dissolve();
         e.eval(& mut self.rs, & mut self.ws, & mut self.xs).unwrap();
 
-        let (shape,ptr,_,subj,cof) = self.rs.pop_expr();
-        if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
-            panic!("Mismatching shapes of expression and domain: {:?} vs {:?}",shape,dom.shape);
+        let (eshape,ptr,_,subj,cof) = self.rs.pop_expr();
+        if ! shape.iter().zip(eshape.iter()).all(|(&a,&b)| a==b) {
+            panic!("Mismatching shapes of expression and domain: {:?} vs {:?}",eshape,shape);
         }
         let nelm = ptr.len()-1;
 
         if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
             panic!("Invalid subj index in evaluated expression");
-        }
-        if ! shape.iter().zip(dom.shape.iter()).all(|(&d0,&d1)| d0==d1 ) {
-            panic!("Mismatching domain/expression shapes: {:?} vs {:?}",shape,dom.shape);
         }
 
         let afei = self.task.get_num_afe().unwrap();
@@ -1152,10 +1128,10 @@ impl Model {
              abarsubk,
              abarsubl,
              abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
-        let conesize = if N == 0 { 1 } else { shape[dom.conedim] };
+        let conesize = if N == 0 { 1 } else { shape[conedim] };
         let numcone  = shape.iter().product::<usize>() / conesize;
 
-        let domidx = match dom.dt {
+        let domidx = match dt {
             ConicDomainType::NonNegative           => self.task.append_rplus_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::NonPositive           => self.task.append_rminus_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap()).unwrap(),
@@ -1179,12 +1155,12 @@ impl Model {
         self.djc_temp_b.resize(dstafe0+nelm,0.0);
         self.djc_temp_domidx.resize(dstdom0+numcone,domidx);
 
-        self.djc_temp_b[dstafe0..].copy_from_slice(dom.ofs.as_slice());
+        self.djc_temp_b[dstafe0..].copy_from_slice(offset.as_slice());
         self.djc_temp_afeidx[dstafe0..].iter_mut().zip(afei..afei+nelm as i64).for_each(|(d,s)| *d = s);
 
-        let d0 : usize = if N == 0 { 1 } else { shape[0..dom.conedim].iter().product() };
-        let d1 : usize = if N == 0 { 1 } else { shape[dom.conedim] };
-        let d2 : usize = if N == 0 { 1 } else { shape[dom.conedim+1..].iter().product() };
+        let d0 : usize = if N == 0 { 1 } else { shape[0..conedim].iter().product() };
+        let d1 : usize = if N == 0 { 1 } else { shape[conedim] };
+        let d2 : usize = if N == 0 { 1 } else { shape[conedim+1..].iter().product() };
         let afeidxs : Vec<i64> = iproduct!(0..d0,0..d2,0..d1)
             .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64)
             .collect();

@@ -482,7 +482,7 @@ impl<const N :usize> ConicDomain<N> {
     pub fn dissolve(self) -> (ConicDomainType,Vec<f64>,[usize;N],usize,bool) { (self.domain_type,self.offset,self.shape,self.conedim,self.is_integer) }
 }
 impl<const N : usize> LinearDomain<N> {
-    pub fn dissolve(self) -> (LinearDomainType,Vec<f64>,Option<Vec<usize>>,[usize;N],usize,bool) { (self.domain_type,self.offset,self.sparsity,self.shape,self.conedim,self.is_integer) }
+    pub fn dissolve(self) -> (LinearDomainType,Vec<f64>,Option<Vec<usize>>,[usize;N],bool) { (self.domain_type,self.offset,self.sparsity,self.shape,self.is_integer) }
     /// Create a [ConicDomain] equivalent to the linear domain.
     pub fn to_conic(&self) -> ConicDomain<N> {
         let conedim = if self.shape.len() > 0 { self.shape.len() - 1} else { 0 };
@@ -627,25 +627,25 @@ pub fn in_rotated_quadratic_cone()             -> ScalableConicDomain { Scalable
 /// Domain of a single scaled vectorized PSD cone of size `dim`, where `dim = n(n+1)/2` for some integer `n` The result is a vector domain of size `dim`.
 pub fn in_svecpsd_cone()                       -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::SVecPSDCone,           is_integer : false, cone_dim : None} }
 /// Domain of a single geometric mean cone ofsize `dim`. The result is a vector domain of size `dim`.
-pub fn in_geometric_mean_cone_cone()           -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::GeometricMeanCone,     is_integer : false, cone_dim : None} }
+pub fn in_geometric_mean_cone()           -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::GeometricMeanCone,     is_integer : false, cone_dim : None} }
 /// domain of a single dual geometric mean cone ofsize `dim`. the result is a vector domain of size `dim`.
-pub fn in_dual_geometric_mean_cone_cone()      -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::DualGeometricMeanCone, is_integer : false, cone_dim : None} }
+pub fn in_dual_geometric_mean_cone()      -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::DualGeometricMeanCone, is_integer : false, cone_dim : None} }
 /// domain of a single exponential cone of size 3. the result is a vector domain of size 3.
-pub fn in_exponential_cone_cone()              -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::ExponentialCone,       is_integer : false, cone_dim : None} }
+pub fn in_exponential_cone()              -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::ExponentialCone,       is_integer : false, cone_dim : None} }
 /// Domain of a single dual exponential cone ofsize `dim`. The result is a vector domain of size `dim`.
-pub fn in_dual_exponential_cone_cone()         -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::DualExponentialCone,   is_integer : false, cone_dim : None} }
+pub fn in_dual_exponential_cone()         -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::DualExponentialCone,   is_integer : false, cone_dim : None} }
 /// Domain of a single power cone.
 ///
 /// # Arguments
 /// - `alpha` The powers of the power cone. This will be normalized, i.e. each element is divided
 ///   by `sum(alpha)`
-pub fn in_power_cone_cone(alpha : &[f64])      -> ScalableConicDomain { let s = alpha.iter().sum(); ScalableConicDomain{ domain_type: ConicDomainType::PowerCone(alpha.iter().map(|a| a/s).collect()), is_integer : false, cone_dim : None} }
+pub fn in_power_cone(alpha : &[f64])      -> ScalableConicDomain { let s = alpha.iter().sum(); ScalableConicDomain{ domain_type: ConicDomainType::PowerCone(alpha.iter().map(|a| a/s).collect()), is_integer : false, cone_dim : None} }
 /// Domain of a single power cone.
 ///
 /// # Arguments
 /// - `alpha` The powers of the power cone. This will be normalized, i.e. each element is divided
 ///   by `sum(alpha)`
-pub fn in_dual_power_cone_cone(alpha : &[f64]) -> ScalableConicDomain { let s = alpha.iter().sum(); ScalableConicDomain{ domain_type: ConicDomainType::DualPowerCone(alpha.iter().map(|a| a/s).collect()), is_integer : false, cone_dim : None } }
+pub fn in_dual_power_cone(alpha : &[f64]) -> ScalableConicDomain { let s = alpha.iter().sum(); ScalableConicDomain{ domain_type: ConicDomainType::DualPowerCone(alpha.iter().map(|a| a/s).collect()), is_integer : false, cone_dim : None } }
 
 fn in_cones<const N : usize>(shape : &[usize; N], cone_dim : usize,domain_type : ConicDomainType) -> ConicProtoDomain<N> {
     if cone_dim >= shape.len() {
