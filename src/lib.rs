@@ -194,6 +194,7 @@
 extern crate mosek;
 extern crate itertools;
 
+pub mod constraint;
 pub mod variable;
 pub mod domain;
 pub mod matrix;
@@ -225,6 +226,7 @@ pub use expr::{ExprTrait,
                Expr,
                RightDottable,
                stack,hstack,vstack,stackvec,sumvec};
+pub use constraint::{Constraint};
 pub use variable::Variable;
 pub use domain::{LinearDomain,
                  ConicDomain,

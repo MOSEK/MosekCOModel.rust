@@ -40,6 +40,23 @@ pub enum LinearDomainOfsType {
 }
 
 
+pub trait IntoDomain<const N : usize> {
+    type Result;
+    fn try_into_domain(self,shape : [usize;1]) -> Result<Self::Result,String>;
+    fn into_domain(self) -> Result<Self::Result,String>;
+
+}
+
+/// The [LinearProtoDomain] defines an incomplete linear domain - incomplete in the sense that it
+/// may not be internally consistent, or it may allow being scaled.
+pub struct LinearProtoDomain<const N : usize> {
+    shape : [usize;N],
+    sp    : Option<Vec<usize>>,
+
+}
+
+
+
 
 /// A Linear domain defines bounds, shape and sparsity for a model item.
 ///

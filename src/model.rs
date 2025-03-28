@@ -4,6 +4,7 @@
 
 use itertools::{merge_join_by, EitherOrBoth};
 use itertools::{iproduct, izip};
+use std::fmt::Debug;
 use std::{iter::once, path::Path};
 use crate::{disjunction, expr, IntoExpr, ExprTrait, NDArray};
 use crate::utils::iter::*;
@@ -11,6 +12,8 @@ use crate::utils::*;
 use crate::domain::*;
 use crate::variable::*;
 use crate::WorkStack;
+use crate::constraint::*;
+
 
 /// Objective sense
 #[derive(Clone,Copy)]
@@ -98,31 +101,10 @@ impl Solution {
     fn new() -> Solution { Solution{primal : SolutionPart::new(0,0) , dual : SolutionPart::new(0,0)  } }
 }
 
-//======================================================
-// Domain
-//======================================================
 
-/// Represents something that can be used as a domain for a constraint.
-pub trait ConDomainTrait<const N : usize> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N>;
-}
 /// Represents something that can be used as a domain for a variable.
 pub trait VarDomainTrait<const N : usize> {
     fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N>;
-}
-
-/// Implement LinearDomain as variable domain
-impl<const N : usize> VarDomainTrait<N> for LinearDomain<N> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
-        m.linear_variable(name,self)
-    }
-}
-/// Implement LinearDomain as constraint domain
-impl<const N : usize> ConDomainTrait<N> for LinearDomain<N> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
-        m.linear_constraint(name,self)
-    }
-
 }
 
 /// Implement ConicDomain as a variable domain
@@ -131,14 +113,6 @@ impl<const N : usize> VarDomainTrait<N> for ConicDomain<N> {
         m.conic_variable(name,self)
     }
 }
-/// Implement ConicDomain as a constraint domain
-impl<const N : usize> ConDomainTrait<N> for ConicDomain<N> {
-    /// Add a constraint with expression expected to be on the top of the rs stack.
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
-        m.conic_constraint(name,self)
-    }
-}
-
 /// Implement a fixed-size integer array as domain for variable, meaning unbounded with the array
 /// as shape.
 impl<const N : usize> VarDomainTrait<N> for &[usize;N] {
@@ -147,17 +121,10 @@ impl<const N : usize> VarDomainTrait<N> for &[usize;N] {
     }
 }
 
-/// Implement a fixed-size integer array as domain for constraint, meaning unbounded with the array
-/// as shape.
-impl<const N : usize> ConDomainTrait<N> for &[usize;N] {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
-        m.linear_constraint(name,
-                            LinearDomain{
-                                dt:LinearDomainType::Free,
-                                ofs:LinearDomainOfsType::Scalar(0.0),
-                                shape:*self,
-                                sp:None,
-                                is_integer: false})
+/// Implement LinearDomain as variable domain
+impl<const N : usize> VarDomainTrait<N> for LinearDomain<N> {
+    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
+        m.linear_variable(name,self)
     }
 }
 
@@ -167,18 +134,6 @@ impl VarDomainTrait<1> for usize {
         m.free_variable(name,&[self])
     }
 }
-/// Implement integer as domain for constraint, producing a vector variable if the given size.
-impl ConDomainTrait<1> for usize {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<1> {
-        m.linear_constraint(name,
-                            LinearDomain{
-                                dt:LinearDomainType::Free,
-                                ofs:LinearDomainOfsType::Scalar(0.0),
-                                shape:[self],
-                                sp:None,
-                                is_integer:false})
-    }
-}
 /// Implements PSD domain for variables.
 impl<const N : usize> VarDomainTrait<N> for PSDDomain<N> {
     fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
@@ -186,11 +141,6 @@ impl<const N : usize> VarDomainTrait<N> for PSDDomain<N> {
     }
 }
 
-impl<const N : usize> ConDomainTrait<N> for PSDDomain<N> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Constraint<N> {
-        m.psd_constraint(name,self)
-    }
-}
 
 //======================================================
 // Model
@@ -275,88 +225,6 @@ pub trait ModelItem<const N : usize> {
 pub trait ModelItemIndex<T> {
     type Output;
     fn index(self,obj : &T) -> Self::Output;
-}
-
-/// A Constraint object is a wrapper around an array of constraint
-/// indexes and a shape. Note that constraint objects are never sparse.
-#[derive(Clone)]
-pub struct Constraint<const N : usize> {
-    idxs     : Vec<usize>,
-    shape    : [usize; N]
-}
-
-impl<const N : usize> Constraint<N> {
-    pub fn index<I>(&self, idx : I) -> I::Output where I : ModelItemIndex<Self> {
-        idx.index(self)
-    }
-    pub fn reshape<const M : usize>(self, shape : &[usize; M]) -> Constraint<M> {
-        if shape.iter().product::<usize>() != self.shape.iter().product::<usize>() {
-            panic!("Mismatching shapes");
-        }
-        Constraint{
-            idxs : self.idxs,
-            shape : *shape
-        }
-    }
-}
-
-impl ModelItemIndex<Constraint<1>> for usize {
-    type Output = Constraint<0>;
-    fn index(self, v : &Constraint<1>) -> Constraint<0> {
-        if v.shape.len() != 1 { panic!("Cannot index into multi-dimensional variable"); }
-        Constraint{
-            idxs     : vec![v.idxs[self]],
-            shape    : []
-        }
-    }
-}
-
-impl<const N : usize> ModelItemIndex<Constraint<N>> for [usize; N] {
-    type Output = Constraint<0>;
-    fn index(self, v : &Constraint<N>) -> Constraint<0> {
-        let index = v.shape.iter().zip(self.iter()).fold(0,|v,(&d,&i)| v*d+i);
-        Constraint{
-            idxs     : vec![v.idxs[index]],
-            shape    : []
-        }
-    }
-}
-
-impl ModelItemIndex<Constraint<1>> for std::ops::Range<usize> {
-    type Output = Constraint<1>;
-    fn index(self, v : &Constraint<1>) -> Constraint<1> {
-        let n = self.len();
-        Constraint{
-            idxs     : v.idxs[self].to_vec(),
-            shape    : [n]
-        }
-    }
-}
-
-impl<const N : usize> ModelItemIndex<Constraint<N>> for [std::ops::Range<usize>; N] {
-    type Output = Constraint<N>;
-    fn index(self, v : &Constraint<N>) -> Constraint<N> {
-        if !self.iter().zip(v.shape.iter()).any(|(r,&d)| r.start > r.end || r.end <= d ) { panic!("The range is out of bounds in the the shape: {:?} in {:?}",self,v.shape) }
-
-        let mut rshape = [0usize;N]; rshape.iter_mut().zip(self.iter()).for_each(|(rs,ra)| *rs = ra.end-ra.start);
-        let strides = v.shape.to_strides();
-
-        fn addvec<const N : usize>(lhs : &[usize;N], rhs : &[usize;N]) -> [usize;N] {
-            let mut r = [0usize;N]; 
-            r.iter_mut().zip(lhs.iter().zip(rhs.iter())).for_each(|(d,(&s0,&s1))| *d = s0+s1 );
-            r
-        }
-
-        let mut offset = [0usize; N]; offset.iter_mut().zip(self.iter()).for_each(|(o,i)| *o = i.start);
-        let ridxs : Vec<usize> = 
-            rshape.index_iterator()
-                .map(|index| strides.to_linear(&addvec(&index,&offset)))
-                .map(|i| v.idxs[i] /*TODO: unsafe get*/)
-                .collect();
-
-        Constraint{idxs     : ridxs,
-                 shape    : rshape}
-    }
 }
 
 
@@ -791,14 +659,18 @@ impl Model {
     ///   the underlting task.
     /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
     /// - `dom`  The domain of the constraint. This defines the bound type and shape.
-    pub fn constraint<const N : usize,E,D>(& mut self, name : Option<&str>, expr :  E, dom : D) -> Constraint<N> 
+    pub fn constraint<const N : usize,E,D>(& mut self, name : Option<&str>, expr :  E, dom : D) -> Result<Constraint<N>,String>
         where
             E : IntoExpr<N>, 
             <E as IntoExpr<N>>::Result : ExprTrait<N>,
-            D : ConDomainTrait<N> 
+            D : IntoConstraintDomain<N> 
     {
-        IntoExpr::<N>::into(expr).eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).unwrap();
-        dom.create(self,name)
+        expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
+        let (eshape,_,_,_,_) = self.rs.peek_expr();
+        if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
+        let shape = [0usize; N]; shape.copy_from_slice(eshape);
+
+        dom.try_into_domain(shape)?.add_constraint(self,name)
     }
 
     fn psd_constraint<const N : usize>(& mut self, name : Option<&str>, dom : PSDDomain<N>) -> Constraint<N> {
@@ -1038,9 +910,9 @@ impl Model {
     }
 
 
-    fn linear_constraint<const N : usize>(& mut self,
+    pub(crate) fn linear_constraint<const N : usize>(& mut self,
                                           name : Option<&str>,
-                                          dom  : LinearDomain<N>) -> Constraint<N> {
+                                          dom  : LinearDomain<N>) -> Result<Constraint<N>,String> {
         let (dt,b,dshape,_,_) = dom.into_dense().extract();
         let (eshape,ptr,_,subj,cof) = self.rs.pop_expr();
         let mut shape = [0usize; N]; shape.clone_from_slice(eshape);
@@ -1132,15 +1004,15 @@ impl Model {
             }
         }
 
-        Constraint{
+        Ok(Constraint{
             idxs : (firstcon..firstcon+nelm).collect(),
             shape : dshape,
-        }
+        })
     }
 
-    fn conic_constraint<const N : usize>(& mut self,
+    pub(crate) fn conic_constraint<const N : usize>(& mut self,
                         name : Option<&str>,
-                        dom  : ConicDomain<N>) -> Constraint<N> {
+                        dom  : ConicDomain<N>) -> Result<Constraint<N>,String> {
         let (shape,ptr,_,subj,cof) = self.rs.pop_expr();
         if ! dom.shape.iter().zip(shape.iter()).all(|(&a,&b)| a==b) {
             panic!("Mismatching shapes of expression and domain: {:?} vs {:?}",shape,dom.shape);
@@ -1246,10 +1118,10 @@ impl Model {
         iproduct!(0..d0,0..d1,0..d2).enumerate() 
             .for_each(|(k,(i0,i1,i2))| self.cons.push(ConAtom::ConicElm{acci:acci+(i0*d2+i2) as i64, afei : afei+k as i64,accoffset : i1}));
 
-        Constraint{
+        Ok(Constraint{
             idxs : (coni..coni+nelm).collect(),
             shape : dom.shape
-        }
+        })
     }
 
 
