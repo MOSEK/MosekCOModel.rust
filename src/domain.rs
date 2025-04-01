@@ -351,16 +351,21 @@ impl<const N : usize> IntoShapedDomain<N> for ConicProtoDomain<N> {
 
 
 impl IntoDomain for usize {
-    type Result = LinearDomain<0>;
+    type Result = LinearDomain<1>;
     fn try_into_domain(self) -> Result<Self::Result,String> {
-        Ok(LinearDomain { domain_type: LinearDomainType::Free, offset: vec![0.0], shape: [], sparsity: None, is_integer: false })
+        Ok(LinearDomain { domain_type: LinearDomainType::Free, offset: vec![0.0;self], shape: [self], sparsity: None, is_integer: false })
     }
 }
 
-impl IntoShapedDomain<0> for usize {
-    type Result = LinearDomain<0>;
-    fn try_into_domain(self,_shape : [usize;0]) -> Result<Self::Result,String> {
-        Ok(LinearDomain { domain_type: LinearDomainType::Free, offset: vec![0.0], shape: [], sparsity: None, is_integer: false })
+impl IntoShapedDomain<1> for usize {
+    type Result = LinearDomain<1>;
+    fn try_into_domain(self,shape : [usize;1]) -> Result<Self::Result,String> {
+        if shape[0] != self {
+            Err("Domain does not match the given shape".to_string())
+        }
+        else {
+            Ok(LinearDomain { domain_type: LinearDomainType::Free, offset: vec![0.0;self], shape: [self], sparsity: None, is_integer: false })
+        }
     }
 }
 
@@ -408,6 +413,12 @@ pub struct ScalablePSDDomain {
 
 impl ScalablePSDDomain {
     pub fn with_conedims(self,conedim0 : usize, conedim1 : usize) -> Self { ScalablePSDDomain{ cone_dims : Some((conedim0,conedim1)) }}
+    pub fn with_dim(self,dim : usize) -> PSDProtoDomain<2> { 
+        PSDProtoDomain{
+            shape : [dim,dim],
+            cone_dims : self.cone_dims,
+        }
+    }
     pub fn with_shape<const N : usize>(self, shape : &[usize;N]) -> PSDProtoDomain<N> { 
         let cone_dims = if let Some(cd) = self.cone_dims { cd } else { (N.max(2)-2,N.max(2)-1) };
         PSDProtoDomain{shape:*shape, cone_dims : Some(cone_dims) } 
@@ -506,6 +517,59 @@ impl<const N : usize> IntoShapedDomain<N> for PSDProtoDomain<N> {
     }
 }
 
+
+impl IntoDomain for f64 {
+    type Result = LinearDomain<0>;
+    fn try_into_domain(self) -> Result<Self::Result,String> {
+        Ok(LinearDomain { domain_type: LinearDomainType::Zero, offset: vec![self], shape: [], sparsity: None, is_integer: false })
+    }
+}
+
+impl<const N : usize> IntoShapedDomain<N> for f64 {
+    type Result = LinearDomain<N>;
+    fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
+        Ok(LinearDomain { domain_type: LinearDomainType::Zero, offset: vec![self; shape.iter().product()], shape, sparsity: None, is_integer: false })
+    }
+}
+
+impl IntoDomain for Vec<f64> {
+    type Result = LinearDomain<1>;
+    fn try_into_domain(self) -> Result<Self::Result,String> {
+        let n = self.len();
+        Ok(LinearDomain { domain_type: LinearDomainType::Zero, offset: self, shape: [n], sparsity: None, is_integer: false })
+    }
+}
+
+impl<const N : usize> IntoShapedDomain<N> for Vec<f64> {
+    type Result = LinearDomain<N>;
+    fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
+        let n = self.len();
+        if n != shape.iter().product() {
+            Err(format!("Vector cannot be reshaped into a {:?} object",shape))
+        }
+        else {
+            Ok(LinearDomain { domain_type: LinearDomainType::Zero, offset: self, shape, sparsity: None, is_integer: false })
+        }
+    }
+}
+
+impl IntoDomain for &[f64] {
+    type Result = LinearDomain<1>;
+    fn try_into_domain(self) -> Result<Self::Result,String> {
+        IntoDomain::try_into_domain(self.to_vec())
+    }
+}
+
+impl<const N : usize> IntoShapedDomain<N> for &[f64] {
+    type Result = LinearDomain<N>;
+    fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
+        IntoShapedDomain::try_into_domain(self.to_vec(),shape)
+    }
+}
+
+
+
+
 ///////////////////////////////////////////////////////////////////////////////
 // LinearDomain
 ///////////////////////////////////////////////////////////////////////////////
@@ -539,6 +603,7 @@ pub struct ConicDomain<const N : usize> {
     /// Cone type
     domain_type : ConicDomainType,
     /// Offset 
+    /// nm
     offset  : Vec<f64>,
     /// Shape if the domain
     shape   : [usize; N],

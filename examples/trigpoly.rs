@@ -35,6 +35,7 @@ extern crate mosekcomodel;
 use mosekcomodel::*;
 use mosekcomodel::experimental::*;
 use std::f64::consts::PI;
+use itertools::Either;
 
 /// Creates a complex semidefinite variable `(Xr + J*Xi) >= 0`, using the equivalent
 /// representation
@@ -43,12 +44,12 @@ use std::f64::consts::PI;
 /// ```
 #[allow(non_snake_case)]
 fn complex_sdpvar(m : & mut Model, n : usize) -> (Variable<2>,Variable<2>) {
-    let X   = m.variable(None, in_psd_cone(2*n));
+    let X   = m.variable(None, in_psd_cone().with_dim(2*n));
     let Xr  = X.index((..n, ..n));
     let Xi  = X.index((n.., ..n));
     let X22 = X.index((n.., n..));
     
-    _ = m.constraint(None, Xr.sub(&X22), zeros(&[n,n]));
+    _ = m.constraint(None, Xr.sub(&X22), zero());
     _ = m.constraint(None, Xi.add(Xi.transpose()), zeros(&[n,n]));
     
     (Xr, Xi)
@@ -110,10 +111,10 @@ fn trigpoly_0_pi(m : & mut Model, xr : & Variable<1>, xi : & Variable<1>) {
 
     _ = m.constraint(None, 
                      xr.sub((0..n+1).genexpr(|_,i| Some(Xr.dot(toeplitz(n,i as i64,1.0))))), 
-                     equal_to(0.0).with_shape(&[n+1]));
+                     equal_to(0.0));
     _ = m.constraint(None,
                      xi.sub((0..n+1).genexpr(|_,i| Some(Xi.dot(toeplitz(n,i as i64,1.0))))),
-                     equal_to(0.0).with_shape(&[n+1]));
+                     equal_to(0.0));
 }
 
 /// Models the equation
@@ -133,11 +134,11 @@ fn trigpoly_0_a(m : & mut Model, xr : & Variable<1>, xi : & Variable<1>, a : f64
     let Tnx = (0..n+1).map(|i| toeplitz_ext(n-1, &[i as i64+1,i as i64-1, i as i64], &[1.0,1.0,-2.0*a.cos()]));
     m.constraint(None, 
                  xr.sub(Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some( X1r.dot(Tni).add(X2r.dot(Tnix))))),
-                 equal_to(0.0).with_shape(&[n+1]));
+                 equal_to(0.0));
 
     m.constraint(None,
                  xi.sub(Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some( X1i.dot(Tni).add(X2i.dot(Tnix))))),
-                 equal_to(0.0).with_shape(&[n+1]));
+                 equal_to(0.0));
 }
 
 /// Models the equation
@@ -159,15 +160,10 @@ fn trigpoly_a_pi(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, a : f64)
 
     m.constraint(None, 
                  xr.sub( Tn.clone().zip(Tnx.clone()).genexpr(|_,(Tni,Tnix)| Some(X1r.dot(Tni).add(X2r.dot(Tnix))))),
-                 equal_to(0.0).with_shape(&[n+1]));
+                 equal_to(0.0));
     m.constraint(None,
                  xi.clone().sub( Tn.zip(Tnx).genexpr(|_,(Tni,Tnix)| Some(X1i.dot(Tni).add(X2i.dot(Tnix))))),
-                 equal_to(0.0).with_shape(&[n+1]));
-}
-
-enum Either<A,B> {
-    Left(A),
-    Right(B)
+                 equal_to(0.0));
 }
 
 /// Models the epigraph 
@@ -191,8 +187,8 @@ fn epigraph(m : & mut Model, xr : &Variable<1>, xi : &Variable<1>, t : Either<&V
         Either::Left(ref t)  => m.constraint(None,t.sub(xr.index(0).add(ur.index(0))), zero()),
         Either::Right(ref t) => m.constraint(None,t.into_expr().sub(xr.index(0).add(ur.index(0))), zero())
     };
-    m.constraint(None, xr.index(1..).add(ur.index(1..)), zeros(&[n]));
-    m.constraint(None, xi.add(&ui), zeros(&[n+1]));
+    m.constraint(None, xr.index(1..).add(ur.index(1..)), zero());
+    m.constraint(None, xi.add(&ui), zero());
 
     if a.abs() < 1e-12 && (b-PI).abs() < 1e-12 {
         trigpoly_0_pi(m, &ur, &ui);
