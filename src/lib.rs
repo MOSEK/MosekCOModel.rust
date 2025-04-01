@@ -226,7 +226,7 @@ pub use expr::{ExprTrait,
                RightDottable,
                stack,hstack,vstack,stackvec,sumvec};
 pub use constraint::{Constraint,ConstraintDomain};
-pub use variable::{Variable};
+pub use variable::Variable;
 pub use domain::{IntoDomain,
                  IntoShapedDomain,
                  LinearDomain,
@@ -234,6 +234,7 @@ pub use domain::{IntoDomain,
                  PSDDomain,
                  LinearDomainType,
                  ConicDomainType,
+                 OffsetTrait,
                  unbounded,
                  less_than,
                  greater_than,

@@ -134,9 +134,9 @@ impl<const N : usize> LinearProtoDomain<N> {
     pub fn continuous(self) -> Self { LinearProtoDomain{ is_integer : false, ..self } }
     pub fn with_offset(self,offset : Vec<f64>) -> Self { LinearProtoDomain{ offset, ..self } }
     // TODO: Check sparsity pattern indexes against shape?
-    pub fn with_shape<const M : usize>(self, shape : [usize;M]) -> LinearProtoDomain<M> {
+    pub fn with_shape<const M : usize>(self, shape : &[usize;M]) -> LinearProtoDomain<M> {
         LinearProtoDomain{ 
-            shape,
+            shape : *shape,
             domain_type : self.domain_type,
             offset : self.offset,
             sparsity : self.sparsity,
@@ -144,11 +144,11 @@ impl<const N : usize> LinearProtoDomain<N> {
         }
     }
 
-    pub fn with_shape_and_sparsity<const M : usize>(self, shape : [usize;M], sparsity : &[[usize;M]]) -> LinearProtoDomain<M> {
+    pub fn with_shape_and_sparsity<const M : usize>(self, shape : &[usize;M], sparsity : &[[usize;M]]) -> LinearProtoDomain<M> {
         let st = shape.to_strides();
         let sparsity = sparsity.iter().map(|i| st.to_linear(i)).collect();
         LinearProtoDomain{ 
-            shape, 
+            shape : *shape, 
             sparsity : Some(sparsity),
             domain_type : self.domain_type,
             offset : self.offset,
@@ -212,10 +212,10 @@ pub struct ScalableConicDomain {
 }
 
 impl ScalableConicDomain {
-    pub fn with_shape<const N : usize>(self, shape : [usize;N]) -> ConicProtoDomain<N> { 
+    pub fn with_shape<const N : usize>(self, shape : &[usize;N]) -> ConicProtoDomain<N> { 
         let cone_dim = if let Some(cd) = self.cone_dim { cd } else { N.max(1) - 1 };
         ConicProtoDomain{ 
-            shape,             
+            shape : *shape,             
             cone_dim,
             offset : vec![0.0; shape.iter().product()],
             domain_type : self.domain_type,
@@ -282,9 +282,9 @@ pub struct ConicProtoDomain<const N : usize> {
 }
 
 impl<const N : usize> ConicProtoDomain<N> {
-    pub fn with_shape<const M : usize>(self, shape : [usize;M]) -> ConicProtoDomain<M> { 
+    pub fn with_shape<const M : usize>(self, shape : &[usize;M]) -> ConicProtoDomain<M> { 
         ConicProtoDomain{ 
-            shape, 
+            shape : *shape, 
             domain_type : self.domain_type,
             offset : self.offset,
             cone_dim : self.cone_dim, 
@@ -350,6 +350,54 @@ impl<const N : usize> IntoShapedDomain<N> for ConicProtoDomain<N> {
 }
 
 
+impl IntoDomain for usize {
+    type Result = LinearDomain<0>;
+    fn try_into_domain(self) -> Result<Self::Result,String> {
+        Ok(LinearDomain { domain_type: LinearDomainType::Free, offset: vec![0.0], shape: [], sparsity: None, is_integer: false })
+    }
+}
+
+impl IntoShapedDomain<0> for usize {
+    type Result = LinearDomain<0>;
+    fn try_into_domain(self,_shape : [usize;0]) -> Result<Self::Result,String> {
+        Ok(LinearDomain { domain_type: LinearDomainType::Free, offset: vec![0.0], shape: [], sparsity: None, is_integer: false })
+    }
+}
+
+impl<const N : usize> IntoDomain for [usize;N] {
+    type Result = LinearDomain<N>;
+    fn try_into_domain(self) -> Result<Self::Result,String> {
+        let n = self.iter().product();
+        Ok(LinearDomain { domain_type: LinearDomainType::Free, offset: vec![0.0; n], shape: self, sparsity: None, is_integer: false })
+    }
+}
+
+impl<const N : usize> IntoShapedDomain<N> for [usize;N] {
+    type Result = LinearDomain<N>;
+    fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
+        if shape != self {
+            Err("Domain shape did not match the expected shape".to_string())
+        }
+        else {
+            let n = self.iter().product();
+            Ok(LinearDomain { domain_type: LinearDomainType::Free, offset: vec![0.0; n], shape: self, sparsity: None, is_integer: false })
+        }
+    }
+}
+
+
+impl<const N : usize> IntoDomain for &[usize;N] {
+    type Result = LinearDomain<N>;
+    fn try_into_domain(self) -> Result<Self::Result,String> { IntoDomain::try_into_domain(*self) }
+}
+
+impl<const N : usize> IntoShapedDomain<N> for &[usize;N] {
+    type Result = LinearDomain<N>;
+    fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
+        IntoShapedDomain::try_into_domain(*self,shape)
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // ScalablePSDDomain 
 ///////////////////////////////////////////////////////////////////////////////
@@ -359,33 +407,33 @@ pub struct ScalablePSDDomain {
 }
 
 impl ScalablePSDDomain {
-    pub fn with_conedims(self,cone_dims : (usize,usize)) -> Self { ScalablePSDDomain{ cone_dims : Some(cone_dims) }}
-    pub fn with_shape<const N : usize>(self, shape : [usize;N]) -> PSDProtoDomain<N> { 
+    pub fn with_conedims(self,conedim0 : usize, conedim1 : usize) -> Self { ScalablePSDDomain{ cone_dims : Some((conedim0,conedim1)) }}
+    pub fn with_shape<const N : usize>(self, shape : &[usize;N]) -> PSDProtoDomain<N> { 
         let cone_dims = if let Some(cd) = self.cone_dims { cd } else { (N.max(2)-2,N.max(2)-1) };
-        PSDProtoDomain{shape, cone_dims : Some(cone_dims) } 
+        PSDProtoDomain{shape:*shape, cone_dims : Some(cone_dims) } 
     }
 }
 
 impl IntoDomain for ScalablePSDDomain {
     type Result = PSDDomain<0>;
     fn try_into_domain(self) -> Result<Self::Result,String> {
-        Err(format!("PSD Domain has no shape"))
+        Err("PSD Domain has no shape".to_string())
     }
 }
 impl<const N : usize> IntoShapedDomain<N> for ScalablePSDDomain {
     type Result = PSDDomain<N>;
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
         if N < 2 {
-            return Err(format!("PSD Domains by be at least two-dimensional"));
+            return Err("PSD Domains by be at least two-dimensional".to_string());
         }
 
         let conedims = 
             if let Some((d0,d1)) = self.cone_dims {
                 if d0 == d1 {
-                    return Err(format!("PSD domains cone dimensions must be different"));
+                    return Err("PSD domains cone dimensions must be different".to_string());
                 }
                 else if d0.max(d1) >= N {
-                    return Err(format!("Invalid cone dimensions for PSD domain"));
+                    return Err("Invalid cone dimensions for PSD domain".to_string());
                 }
                 (d0,d1)
             }
@@ -408,7 +456,7 @@ pub struct PSDProtoDomain<const N : usize> {
 
 impl<const N : usize> PSDProtoDomain<N> {
     pub fn dissolve(self) -> ([usize;N],Option<(usize,usize)>) { (self.shape,self.cone_dims) }
-    pub fn with_conedims(self,cone_dims : (usize,usize)) -> Self { PSDProtoDomain{ cone_dims : Some(cone_dims), ..self }}
+    pub fn with_conedims(self,conedim0 : usize, conedim1 : usize) -> Self { PSDProtoDomain{ cone_dims : Some((conedim0,conedim1)), ..self }}
     pub fn with_shape<const M : usize>(self, shape : [usize;M]) -> PSDProtoDomain<M> { 
         PSDProtoDomain{
             shape, 
@@ -623,17 +671,17 @@ pub fn zeros<const N : usize>(shape : &[usize; N]) -> LinearProtoDomain<N> { zer
 /// 
 /// # Arguments
 /// - `v` - Offset, the shape of the domain is taken from the shape of `v`
-pub fn greater_than<const N : usize, T : OffsetTrait>(v : T) -> T::Result { v.greater_than() }
+pub fn greater_than<T : OffsetTrait>(v : T) -> T::Result { v.greater_than() }
 /// Domain of values less than the offset `v`. 
 /// 
 /// # Arguments
 /// - `v` - Offset, the shape of the domain is taken from the shape of `v`
-pub fn less_than<const N : usize, T : OffsetTrait>(v : T) -> T::Result { v.less_than() }
+pub fn less_than<T : OffsetTrait>(v : T) -> T::Result { v.less_than() }
 /// Domain of values equal to the offset `v`. 
 /// 
 /// # Arguments
 /// - `v` - Offset, the shape of the domain is taken from the shape of `v`
-pub fn equal_to<const N : usize, T : OffsetTrait>(v : T) -> T::Result { v.equal_to() }
+pub fn equal_to<T : OffsetTrait>(v : T) -> T::Result { v.equal_to() }
 
 
 

@@ -351,14 +351,40 @@ impl Model {
     ///   variables, elements outside of the sparsity pattern are
     ///   treated as variables fixed to 0.0.
     /// # Returns
-    /// An `N`-dimensional variable object is returned. The `Variable` object may be dense or
-    /// sparse, where "sparse" means that all entries outside the sparsity pattern are fixed to 0.
-    pub fn variable<I,D>(& mut self, name : Option<&str>, dom : I) -> Result<D::Result,String>
+    /// - On success, return an `N`-dimensional variable object is returned. The `Variable` object
+    ///   may be dense or sparse, where "sparse" means that all entries outside the sparsity
+    ///   pattern are fixed to 0.
+    /// - On a recoverable failure (i.e. when the [Model] is in a consistent state), return a
+    ///   string describing the error.
+    /// - On non-recoverable errors: Panic.
+    pub fn try_variable<I,D>(& mut self, name : Option<&str>, dom : I) -> Result<D::Result,String>
         where 
             I : IntoDomain<Result = D>,
             D : VarDomainTrait,
     {
         Ok(dom.try_into_domain()?.create(self,name))
+    }
+
+    /// Add a Variable.
+    ///
+    /// # Arguments
+    /// - `name` Optional constraint name. This is currently only used to generate names passed to
+    ///   the underlying task.
+    /// - `dom` The domain of the variable. This defines the bound
+    ///   type, shape and sparsity of the variable. For sparse
+    ///   variables, elements outside of the sparsity pattern are
+    ///   treated as variables fixed to 0.0.
+    /// # Returns
+    /// An `N`-dimensional variable object is returned. The `Variable` object may be dense or
+    /// sparse, where "sparse" means that all entries outside the sparsity pattern are fixed to 0.
+    ///
+    /// Panics on any error.
+    pub fn variable<I,D>(& mut self, name : Option<&str>, dom : I) -> D::Result
+        where 
+            I : IntoDomain<Result = D>,
+            D : VarDomainTrait,
+    {
+        dom.try_into_domain().unwrap().create(self,name)
     }
 
     fn var_names<const N : usize>(& mut self, name : &str, first : i32, shape : &[usize;N], sp : Option<&[usize]>) {
@@ -617,7 +643,36 @@ impl Model {
     ///   the underlting task.
     /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
     /// - `dom`  The domain of the constraint. This defines the bound type and shape.
-    pub fn constraint<const N : usize,E,D>(& mut self, name : Option<&str>, expr :  E, dom : D) -> Result<Constraint<N>,String>
+    /// # Returns
+    /// - On success, return a N-dimensional constraint object that can be used to access
+    ///   solution values.
+    /// - On any failure: Panic.
+    pub fn constraint<const N : usize,E,D>(& mut self, name : Option<&str>, expr :  E, dom : D) -> Constraint<N>
+        where
+            E : IntoExpr<N>, 
+            <E as IntoExpr<N>>::Result : ExprTrait<N>,
+            D : IntoShapedDomain<N>,
+            D::Result : ConstraintDomain<N>
+    {
+        self.try_constraint(name, expr, dom).unwrap()
+    }
+    
+    /// Add a constraint
+    ///
+    /// Note that even if the domain or the expression are sparse, a constraint will always be full.
+    ///
+    /// # Arguments
+    /// - `name` Optional constraint name. Currently this is only used to generate names passed to
+    ///   the underlting task.
+    /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
+    /// - `dom`  The domain of the constraint. This defines the bound type and shape.
+    /// # Returns
+    /// - On success, return a N-dimensional constraint object that can be used to access
+    ///   solution values.
+    /// - On any recoverable failure, i.e. failure where the [Model] is in a consistent state:
+    ///   Return a string describing the error.
+    /// - On any non-recoverable error: Panic.
+    pub fn try_constraint<const N : usize,E,D>(& mut self, name : Option<&str>, expr :  E, dom : D) -> Result<Constraint<N>,String>
         where
             E : IntoExpr<N>, 
             <E as IntoExpr<N>>::Result : ExprTrait<N>,
@@ -2334,7 +2389,7 @@ mod tests {
         let _v1 = m.variable(None, greater_than(5.0));
         let _v2 = m.variable(None, 10);
         let _v3 = m.variable(None, &[3,3]);
-        let _v4 = m.variable(None, in_quadratic_cone(5));
+        let _v4 = m.variable(None, in_quadratic_cone().with_shape(&[5]));
         let _v5 = m.variable(None, greater_than(vec![1.0,2.0,3.0,4.0]).with_shape(&[2,2]));
         let _v6 = m.variable(None, greater_than(vec![1.0,3.0]).with_shape_and_sparsity(&[2,2],&[[0,0],[1,1]]));
     }
@@ -2377,7 +2432,7 @@ mod tests {
         //let y = m.variable(Some("y"), unbounded().with_shape(&[3,2,3]));
         let z = m.variable(Some("z"), zero());
 
-        let c = m.constraint(Some("c"), x.sub(dense([3,2,3],vec![0.0,-1.0,-2.0,-3.0,-4.0,-5.0,-6.0,-7.0,-8.0,-9.0,-10.0,-11.0,-12.0,-13.0,-14.0,-15.0,-16.0,-17.0])), in_psd_cones(&[3,2,3],0,2));
+        let c = m.constraint(Some("c"), x.sub(dense([3,2,3],vec![0.0,-1.0,-2.0,-3.0,-4.0,-5.0,-6.0,-7.0,-8.0,-9.0,-10.0,-11.0,-12.0,-13.0,-14.0,-15.0,-16.0,-17.0])), in_psd_cones(&[3,2,3]).with_conedims(0,2));
         m.objective(Some("obj"), Sense::Minimize, &z);
 
         m.solve();
