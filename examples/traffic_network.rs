@@ -66,7 +66,7 @@ pub fn traffic_network_model(
     // 2 z_ij + x_ij / (s_ij c_ij) = 1/s_ij
     model.constraint(Some("(1b)"),
                      z.mul(2.0).add(x.mul_elem(cs_inv)).sub(s_inv.to_expr()).gather(),
-                     equal_to(vec![0.0; m]));
+                     zero());
 
     // Constraint (2)
     // Network flow equations

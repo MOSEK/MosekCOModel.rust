@@ -48,8 +48,8 @@ fn main() {
     // rotated quadratic cone of size 3, i.e.
     //                 z1[0] >= sqrt(z1[1]^2 + z1[2]^2)
     //  and  2.0 z2[0] z2[1] >= z2[2]^2
-    let qc1 = m.constraint(Some("qc1"), &z1, in_quadratic_cone(3));
-    let _qc2 = m.constraint(Some("qc2"), &z2, in_rotated_quadratic_cone(3));
+    let qc1 = m.constraint(Some("qc1"), &z1, in_quadratic_cone());
+    let _qc2 = m.constraint(Some("qc2"), &z2, in_rotated_quadratic_cone());
 
     // Set the objective function to (y[0] + y[1] + y[2])
     m.objective(Some("obj"), Sense::Minimize, y.sum());

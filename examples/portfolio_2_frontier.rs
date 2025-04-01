@@ -39,7 +39,7 @@ fn efficient_frontier( n : usize,
     model.constraint(Some("variance"), 
                      vstack![s.to_expr().flatten(), 
                              Expr::from(0.5).flatten(), 
-                             GT.clone().mul(&x)], in_rotated_quadratic_cone(n+2));
+                             GT.clone().mul(&x)], in_rotated_quadratic_cone());
 
     // Solve the problem for many values of parameter alpha
 

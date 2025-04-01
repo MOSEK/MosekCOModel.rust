@@ -40,7 +40,7 @@ fn total_var(sigma : f64, f : &NDArray<2>) -> (Model,Variable<2>,Constraint<0>) 
                          sigma.into_expr().reshape(&[1,1])
                             .vstack(f.to_expr().sub(ucore).reshape(&[n*m,1]))
                             .flatten(),
-                         in_quadratic_cone(n*m+1));
+                         in_quadratic_cone());
 
     M.objective( None, Sense::Minimize, t.sum());
 

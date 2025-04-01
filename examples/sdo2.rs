@@ -30,17 +30,17 @@ fn main() {
     let k = -3.0;
 
     // Convert input data into Fusion sparse matrices
-    let C1 = matrix::sparse([3, 3], vec![[0,0],[2,2]],            &[1.0, 6.0]);
-    let C2 = matrix::sparse([4, 4], vec![[0,0],[1,0],[1,1],[2,2]],&[1.0,-3.0,2.0,1.0]);
-    let A1 = matrix::sparse([3, 3], vec![[0,0],[2,0],[2,2]],      &[1.0,1.0,2.0]);
-    let A2 = matrix::sparse([4, 4], vec![[1,0],[1,1],[3,3]],      &[1.0,-1.0,-3.0]);
+    let C1 = matrix::sparse([3, 3], vec![[0,0],[2,2]],            [1.0, 6.0]);
+    let C2 = matrix::sparse([4, 4], vec![[0,0],[1,0],[1,1],[2,2]],[1.0,-3.0,2.0,1.0]);
+    let A1 = matrix::sparse([3, 3], vec![[0,0],[2,0],[2,2]],      [1.0,1.0,2.0]);
+    let A2 = matrix::sparse([4, 4], vec![[1,0],[1,1],[3,3]],      [1.0,-1.0,-3.0]);
 
     // Define the model
     let mut m = Model::new(Some("sdo2"));
     m.set_log_handler(|msg| print!("{}",msg));
     // Two semidefinite variables
-    let X1 = m.variable(Some("X1"),in_psd_cone(3));
-    let X2 = m.variable(Some("X2"),in_psd_cone(4));
+    let X1 = m.variable(Some("X1"),in_psd_cone().with_dim(3));
+    let X2 = m.variable(Some("X2"),in_psd_cone().with_dim(4));
 
     // Objective
     m.objective(None,Sense::Minimize, C1.dot(&X1).add(C2.dot(&X2)));

@@ -27,12 +27,12 @@ fn main() {
     model.constraint(None,
                      vstack![x.index([0..2]),
                              x3.flatten()], 
-                     in_power_cone(3,&[0.2,0.8]));
+                     in_power_cone(&[0.2,0.8]));
     model.constraint(None,
                      vstack![x.index([2..3]).to_expr(),
                             (1.0).into_expr().flatten(),
                              x4.flatten().to_expr()],
-                     in_power_cone(3,&[0.4,0.6]));
+                     in_power_cone(&[0.4,0.6]));
 
     // Set the objective function
     let cval : &[f64] = &[1.0, 1.0, -1.0];

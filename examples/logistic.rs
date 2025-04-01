@@ -15,9 +15,9 @@ use mosekcomodel::*;
 
 
 fn softplus<E2>(model : & mut Model, n : usize, t : &Variable<1>, u : E2) where E2 : ExprTrait<1> {
-    let z1 = model.variable(None,&[n,1]);
-    let z2 = model.variable(None,&[n,1]);
-    model.constraint(None, z1.add(&z2), equal_to(1.0).with_shape(&[n,1]));
+    let z1 = model.variable(None,[n,1]);
+    let z2 = model.variable(None,[n,1]);
+    model.constraint(None, z1.add(&z2), equal_to(1.0));
     model.constraint(None, hstack![z1.to_expr(), const_expr(&[n,1],1.0), u.reshape(&[n,1]).sub(t.reshape(&[n,1]))], in_exponential_cones(&[n,3],1));
     model.constraint(None, hstack![z2.to_expr(), const_expr(&[n,1],1.0), t.reshape(&[n,1]).neg()], in_exponential_cones(&[n,3],1));
 }
@@ -41,10 +41,10 @@ fn logistic_regression(X : NDArray<2>,
 
     let theta = model.variable(Some("theta"), d);
     let t     = model.variable(None,n);
-    let reg   = model.variable(None,&[]);
+    let reg   = model.variable(None,[]);
 
     model.objective(None,Sense::Minimize, t.sum().add(reg.mul(lamb)));
-    model.constraint(None,vstack![reg.with_shape(&[1]).to_expr(), &theta], in_quadratic_cone(d+1));
+    model.constraint(None,vstack![reg.with_shape(&[1]).to_expr(), &theta], in_quadratic_cone());
 
     let signs : Vec<f64> = Y.iter().map(|&yi| if yi { -1.0 } else { 1.0 }).collect();
 

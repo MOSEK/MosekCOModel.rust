@@ -57,7 +57,7 @@ fn markowitz_with_cardinality(mu : &[f64],
     _ = model.constraint(Some("budget"), x.sum(), equal_to(w+x0.iter().sum::<f64>()));
 
     // Imposes a bound on the risk
-    _ = model.constraint(Some("risk"), Expr::from(gamma).reshape(&[1]).vstack(GT.mul(&x)), in_quadratic_cone(m+1));
+    _ = model.constraint(Some("risk"), Expr::from(gamma).reshape(&[1]).vstack(GT.mul(&x)), in_quadratic_cone());
 
     // z >= |x-x0| 
     _ = model.constraint(Some("buy"), z.sub(x.sub(Expr::from(x0))), greater_than(vec![0.0; n]));

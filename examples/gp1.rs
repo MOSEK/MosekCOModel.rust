@@ -23,7 +23,7 @@ fn logsumexp(model : & mut Model,
              b : &[f64])
 {
     let k = A.shape()[0];
-    let u = model.variable(None,&[k,1]);
+    let u = model.variable(None,[k,1]);
     model.constraint(None,u.sum(), equal_to(1.0));
     model.constraint(None, 
                      hstack![u.to_expr(),

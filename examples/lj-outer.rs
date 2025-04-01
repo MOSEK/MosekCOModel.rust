@@ -29,7 +29,7 @@ use mosekcomodel::matrix::{speye,dense};
 #[allow(non_snake_case)]
 fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) -> Variable<2> {
     // Setup variables
-    let Y = M.variable(name, in_psd_cone(2*n));
+    let Y = M.variable(name, in_psd_cone().with_dim(2*n));
 
     // Setup Y = [X, Z; Z^T , diag(Z)]
     let X  = Y.index([0..n, 0..n]);
@@ -42,7 +42,7 @@ fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) ->
     // DZ = Diag(Z)
     _ = M.constraint(Some("DZ=Diag(Z)"), DZ.sub(Z.mul_elem(speye(n))).reshape(&[n*n]), equal_to(vec![0.0; n*n]));
     // (Z11*Z22*...*Znn) >= t^n
-    _ = M.constraint(name,vstack!(DZ.diag().to_expr(),t.reshape(&[1])), in_geometric_mean_cone(n+1));
+    _ = M.constraint(name,vstack!(DZ.diag().to_expr(),t.reshape(&[1])), in_geometric_mean_cone());
 
     // Return an n x n PSD variable which satisfies t <= det(X)^(1/n)
     X

@@ -42,7 +42,7 @@ fn main() {
     let mut m = Model::new(Some("sdo3"));
     m.set_log_handler(|msg| print!("{}",msg));
     // Create a model with n semidefinite variables of dimension d x d
-    let X = m.variable(Some("X"),in_psd_cones(&[n,d,d],1,2));
+    let X = m.variable(Some("X"),in_psd_cones(&[n,d,d]));
 
     // Pick indexes of diagonal entries for the objective
 

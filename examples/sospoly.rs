@@ -60,7 +60,7 @@ fn nn_inf(model : & mut Model, x : & Variable<1>) {
     let m = x.shape()[0] - 1;
     let n = m / 2; 
     // Setup variables
-    let barx = model.variable(None, in_psd_cone(n+1));
+    let barx = model.variable(None, in_psd_cone().with_dim(n+1));
 
     // x_i = Tr H(n, i) * X  i=0,...,m
     for i in 0..m+1 {
@@ -76,8 +76,8 @@ fn nn_semiinf(m : & mut Model, x : & Variable<1>) {
     let n2 = (n - 1) / 2;  
 
     // Setup variables
-    let barx1 = m.variable(None, in_psd_cone(n1+1));
-    let barx2 = m.variable(None, in_psd_cone(n2+1));
+    let barx1 = m.variable(None, in_psd_cone().with_dim(n1+1));
+    let barx2 = m.variable(None, in_psd_cone().with_dim(n2+1));
 
     // x_i = Tr H(n1, i) * X1 + Tr H(n2,i-1) * X2, i=0,...,n
     
@@ -99,8 +99,8 @@ fn nn_finite(model : & mut Model, x : & Variable<1>, a : f64, b : f64) {
     let n = m / 2;
 
     if m == 2 * n {
-        let barx1 = model.variable(None,in_psd_cone(n+1));
-        let barx2 = model.variable(None,in_psd_cone(n));
+        let barx1 = model.variable(None,in_psd_cone().with_dim(n+1));
+        let barx2 = model.variable(None,in_psd_cone().with_dim(n));
 
         // x_i = Tr H(n,i)*X1 + (a+b)*Tr H(n-1,i-1) * X2 - a*b*Tr H(n-1,i)*X2 - Tr H(n-1,i-2)*X2, i=0,...,m
     
@@ -114,8 +114,8 @@ fn nn_finite(model : & mut Model, x : & Variable<1>, a : f64, b : f64) {
                 equal_to(0.0));
         }
     } else {
-        let barx1 = model.variable(None, in_psd_cone(n+1));
-        let barx2 = model.variable(None, in_psd_cone(n+1));
+        let barx1 = model.variable(None, in_psd_cone().with_dim(n+1));
+        let barx2 = model.variable(None, in_psd_cone().with_dim(n+1));
 
         // x_i = Tr H(n,i-1)*X1 - a*Tr H(n,i)*X1 + b*Tr H(n,i)*X2 - Tr H(n,i-1)*X2, i=0,...,m
         for i in 1..m+1 {

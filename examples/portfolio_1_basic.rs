@@ -34,7 +34,7 @@ fn basic_markowitz( n : usize,
     // Imposes a bound on the risk
     model.constraint(Some("risk"), 
                      vstack![Expr::from(gamma).reshape(&[1]), 
-                             gt.mul(&x)], in_quadratic_cone(n+1));
+                             gt.mul(&x)], in_quadratic_cone());
 
     model.write_problem("portfolio-1.ptf");
     // Solves the model.

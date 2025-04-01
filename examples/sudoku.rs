@@ -36,9 +36,9 @@ fn main() {
     model.constraint(None,&x.clone(),less_than(1.0).with_shape(&[n,n,n]));
 
     // each value only once per dimension
-    model.constraint(None, x.sum_on(&[1,2]), equal_to(1.0).with_shape(&[n,n]));
-    model.constraint(None, x.sum_on(&[0,2]), equal_to(1.0).with_shape(&[n,n]));
-    model.constraint(None, x.sum_on(&[0,1]), equal_to(1.0).with_shape(&[n,n]));
+    model.constraint(None, x.sum_on(&[1,2]), equal_to(1.0));
+    model.constraint(None, x.sum_on(&[0,2]), equal_to(1.0));
+    model.constraint(None, x.sum_on(&[0,1]), equal_to(1.0));
 
     // each number must appear only once in a block
     for k in 0..n {

@@ -26,8 +26,8 @@ use mosekcomodel::*;
 fn main() {
     let mut m = Model::new(Some("sdo1"));
     // Setting up the variables
-    let barx  = m.variable(Some("X"),  in_psd_cone(3));
-    let x     = m.variable(Some("x"),  in_quadratic_cone(3));
+    let barx  = m.variable(Some("X"),  in_psd_cone().with_dim(3));
+    let x     = m.variable(Some("x"),  in_quadratic_cone().with_shape(&[3]));
 
     // Setting up constant coefficient matrices
     let barc  = matrix::dense([3, 3], vec![2., 1., 0., 
