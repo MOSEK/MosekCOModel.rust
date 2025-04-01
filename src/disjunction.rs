@@ -65,7 +65,7 @@ pub trait ConjunctionTrait
     /// - `element_ptr` Vector of pointers to consraint blocks. `element_ptr[i]` points to the
     ///   first item in `element_afei` of constraint block `i`.
     fn append_clause_data(&self, 
-                          task  : & mut mosek::Task,
+                          task  : & mut mosek::TaskCB,
                           vars  : &[VarAtom],
                           exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
                           
@@ -129,7 +129,7 @@ pub trait DisjunctionTrait
     /// - `term_ptr` Pointers to disjunction clauses. `term_ptr[i]` is the index into `element_ptr`
     ///   and `element_dom` of the first constraint block of disjunction term `i`.
     fn append_disjunction_data(&self, 
-                               task  : & mut mosek::Task,
+                               task  : & mut mosek::TaskCB,
                                vars  : &[VarAtom],
                                exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
                               
