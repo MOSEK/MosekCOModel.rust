@@ -212,8 +212,10 @@ pub use model::{Sense,
                 SolutionStatus,
                 ModelItem,
                 ModelItemIndex,
+                VarDomainTrait,
                 Model,
-                SolverParameterValue};
+                SolverParameterValue,
+                term};
 pub use matrix::{Matrix,NDArray,IntoIndexes};
 pub use expr::{ExprTrait,
                ExprRightMultipliable,
@@ -224,8 +226,9 @@ pub use expr::{ExprTrait,
                RightDottable,
                stack,hstack,vstack,stackvec,sumvec};
 pub use constraint::{Constraint,ConstraintDomain};
-pub use variable::{Variable,VarDomainTrait};
+pub use variable::{Variable};
 pub use domain::{IntoDomain,
+                 IntoShapedDomain,
                  LinearDomain,
                  ConicDomain,
                  PSDDomain,
@@ -260,4 +263,4 @@ pub use domain::{IntoDomain,
                  in_psd_cone,
                  in_psd_cones 
                  };
-pub use disjunction::{ClauseTrait,DisjunctionTrait,term};
+pub use disjunction::{ConjunctionTrait,DisjunctionTrait};

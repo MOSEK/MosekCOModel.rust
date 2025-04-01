@@ -52,6 +52,12 @@ pub struct ExprEvalError {
 impl ExprEvalError {
     fn new<S>(file : &'static str, line : u32, msg : S) -> ExprEvalError where S : Into<String> { ExprEvalError{ file,line,msg:msg.into() } } 
 }
+
+impl ToString for ExprEvalError {
+    fn to_string(&self) -> String {
+        format!("{}:{}: {}",self.file,self.line,self.msg)
+    }
+}
 impl Debug for ExprEvalError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.file)?;

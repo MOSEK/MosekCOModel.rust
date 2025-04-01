@@ -3,9 +3,10 @@
 #[doc = include_str!("../js/mathjax.tag")]
 
 use itertools::{merge_join_by, EitherOrBoth};
-use itertools::{iproduct, izip};
+use itertools::{iproduct, izip, Either};
 use std::fmt::Debug;
 use std::{iter::once, path::Path};
+use crate::disjunction::ConjunctionTrait;
 use crate::{disjunction, expr, IntoExpr, ExprTrait, NDArray};
 use crate::utils::iter::*;
 use crate::utils::*;
@@ -23,7 +24,7 @@ pub enum Sense {
 }
 
 #[derive(Clone,Copy,Debug)]
-enum VarAtom {
+pub(crate) enum VarAtom {
     // Task variable index
     Linear(i32),
     // Task bar element (barj,k,l)
@@ -103,40 +104,46 @@ impl Solution {
 
 
 /// Represents something that can be used as a domain for a variable.
-pub trait VarDomainTrait<const N : usize> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N>;
+pub trait VarDomainTrait {
+    type Result; 
+    fn create(self, m : & mut Model, name : Option<&str>) -> Self::Result;
 }
 
 /// Implement ConicDomain as a variable domain
-impl<const N : usize> VarDomainTrait<N> for ConicDomain<N> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
+impl<const N : usize> VarDomainTrait for ConicDomain<N> {
+    type Result = Variable<N>;
+    fn create(self, m : & mut Model, name : Option<&str>) -> Self::Result {
         m.conic_variable(name,self)
     }
 }
 /// Implement a fixed-size integer array as domain for variable, meaning unbounded with the array
 /// as shape.
-impl<const N : usize> VarDomainTrait<N> for &[usize;N] {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
+impl<const N : usize> VarDomainTrait for &[usize;N] {
+    type Result = Variable<N>;
+    fn create(self, m : & mut Model, name : Option<&str>) -> Self::Result {
         m.free_variable(name,self)
     }
 }
 
 /// Implement LinearDomain as variable domain
-impl<const N : usize> VarDomainTrait<N> for LinearDomain<N> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
+impl<const N : usize> VarDomainTrait for LinearDomain<N> {
+    type Result = Variable<N>;
+    fn create(self, m : & mut Model, name : Option<&str>) -> Self::Result {
         m.linear_variable(name,self)
     }
 }
 
 /// Implement integer as domain for variable, producing a vector variable if the given size.
-impl VarDomainTrait<1> for usize {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<1> {
+impl VarDomainTrait for usize {
+    type Result = Variable<1>;
+    fn create(self, m : & mut Model, name : Option<&str>) -> Self::Result {
         m.free_variable(name,&[self])
     }
 }
 /// Implements PSD domain for variables.
-impl<const N : usize> VarDomainTrait<N> for PSDDomain<N> {
-    fn create(self, m : & mut Model, name : Option<&str>) -> Variable<N> {
+impl<const N : usize> VarDomainTrait for PSDDomain<N> {
+    type Result = Variable<N>;
+    fn create(self, m : & mut Model, name : Option<&str>) -> Self::Result {
         m.psd_variable(name,self)
     }
 }
@@ -358,11 +365,12 @@ impl Model {
     /// # Returns
     /// An `N`-dimensional variable object is returned. The `Variable` object may be dense or
     /// sparse, where "sparse" means that all entries outside the sparsity pattern are fixed to 0.
-    pub fn variable<const N : usize, D>(& mut self, name : Option<&str>, dom : D) -> Variable<N> 
+    pub fn variable<I,D>(& mut self, name : Option<&str>, dom : I) -> Result<D::Result,String>
         where 
-            D : VarDomainTrait<N> 
+            I : IntoDomain<Result = D>,
+            D : VarDomainTrait,
     {
-        dom.create(self,name)
+        Ok(dom.try_into_domain()?.create(self,name))
     }
 
     fn var_names<const N : usize>(& mut self, name : &str, first : i32, shape : &[usize;N], sp : Option<&[usize]>) {
@@ -468,18 +476,17 @@ impl Model {
     }
 
     fn psd_variable<const N : usize>(&mut self, name : Option<&str>, dom : PSDDomain<N>) -> Variable<N> {
-        let nd = dom.shape.len();
-        let (conedim0,conedim1) = dom.conedims;
-        if conedim0 == conedim1 || conedim0 >= nd || conedim1 >= nd { panic!("Invalid cone dimensions") };
-        if dom.shape[conedim0] != dom.shape[conedim1] { panic!("Mismatching cone dimensions") };
+        let (shape,(conedim0,conedim1)) = dom.dissolve();
+        if conedim0 == conedim1 || conedim0 >= N || conedim1 >= N { panic!("Invalid cone dimensions") };
+        if shape[conedim0] != shape[conedim1] { panic!("Mismatching cone dimensions") };
 
         let (cdim0,cdim1) = if conedim0 < conedim1 { (conedim0,conedim1) } else { (conedim1,conedim0) };
 
-        let d0 = dom.shape[0..cdim0].iter().product();
-        let d1 = dom.shape[cdim0];
-        let d2 = dom.shape[cdim0+1..cdim1].iter().product();
-        let d3 = dom.shape[cdim1];
-        let d4 = dom.shape[cdim1+1..].iter().product();
+        let d0 = shape[0..cdim0].iter().product();
+        let d1 = shape[cdim0];
+        let d2 = shape[cdim0+1..cdim1].iter().product();
+        let d3 = shape[cdim1];
+        let d4 = shape[cdim1+1..].iter().product();
 
         let numcone = d0*d2*d4;
         let conesz  = d1*(d1+1)/2;
@@ -499,7 +506,7 @@ impl Model {
         if let Some(name) = name {
             //let mut xstrides = [0usize; N];
             let mut xshape = [0usize; N];
-            xshape.iter_mut().zip(dom.shape[0..cdim0].iter().chain(dom.shape[cdim0+1..cdim1].iter()).chain(dom.shape[cdim1+1..].iter())).for_each(|(t,&s)| *t = s);
+            xshape.iter_mut().zip(shape[0..cdim0].iter().chain(shape[cdim0+1..cdim1].iter()).chain(shape[cdim1+1..].iter())).for_each(|(t,&s)| *t = s);
             //xstrides.iter_mut().zip(xshape[0..N-2].iter()).rev().fold(1|v,(t,*s)| { *t = v; s * v});
             let mut idx = [1usize; N];
             for barj in barvar0..barvar0+numcone as i32 {
@@ -537,11 +544,12 @@ impl Model {
         //println!("PSD variable indexes = {:?}",idxs);
         Variable::new(idxs,
                       None,
-                      &dom.shape)
+                      &shape)
     }
 
     fn conic_variable<const N : usize>(&mut self, name : Option<&str>, dom : ConicDomain<N>) -> Variable<N> {
-        let n    = dom.shape.iter().product();
+        let (ct,offset,shape,conedim,is_integer) = dom.dissolve();
+        let n    = shape.iter().product();
         let acci = self.task.get_num_acc().unwrap();
         let afei = self.task.get_num_afe().unwrap();
         let vari = self.task.get_num_var().unwrap();
@@ -550,13 +558,13 @@ impl Model {
         let asubj : Vec<i32> = (vari..vari+n as i32).collect();
         let acof  : Vec<f64> = vec![1.0; n];
 
-        let d0 : usize = dom.shape[0..dom.conedim].iter().product();
-        let d1 : usize = dom.shape[dom.conedim];
-        let d2 : usize = dom.shape[dom.conedim+1..].iter().product();
+        let d0 : usize = shape[0..conedim].iter().product();
+        let d1 : usize = shape[conedim];
+        let d2 : usize = shape[conedim+1..].iter().product();
         let conesize = d1;
         let numcone  = d0*d2;
 
-        let domidx = match dom.dt {
+        let domidx = match ct {
             ConicDomainType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
             ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
@@ -575,18 +583,18 @@ impl Model {
         self.task.append_afes(n as i64).unwrap();
         self.task.append_vars(n.try_into().unwrap()).unwrap();
         self.task.put_var_bound_slice_const(vari, vari+n as i32, mosek::Boundkey::FR, 0.0, 0.0).unwrap();
-        if dom.is_integer {
+        if is_integer {
             self.task.put_var_type_list((vari..vari+n as i32).collect::<Vec<i32>>().as_slice(), vec![mosek::Variabletype::TYPE_INT; n].as_slice()).unwrap();
         }
-        self.task.append_accs_seq(vec![domidx; numcone].as_slice(),n as i64,afei,dom.ofs.as_slice()).unwrap();
+        self.task.append_accs_seq(vec![domidx; numcone].as_slice(),n as i64,afei,offset.as_slice()).unwrap();
         self.task.put_afe_f_entry_list(asubi.as_slice(),asubj.as_slice(),acof.as_slice()).unwrap();
 
         if let Some(name) = name {
-            self.var_names(name,vari,&dom.shape,None);
+            self.var_names(name,vari,&shape,None);
             let mut xshape = [0usize; N];
-            xshape[0..dom.conedim].copy_from_slice(&dom.shape[0..dom.conedim]);
-            if dom.conedim < N-1 {
-                xshape[dom.conedim..N-1].copy_from_slice(&dom.shape[dom.conedim+1..N]);
+            xshape[0..conedim].copy_from_slice(&shape[0..conedim]);
+            if conedim < N-1 {
+                xshape[conedim..N-1].copy_from_slice(&shape[conedim+1..N]);
             }
             let mut idx = [1usize; N];
             for i in acci..acci+numcone as i64 {
@@ -608,7 +616,7 @@ impl Model {
 
         Variable::new((firstvar..firstvar+n).collect(),
                       None,
-                      &dom.shape)
+                      &shape)
     }
 
 
@@ -663,7 +671,7 @@ impl Model {
         where
             E : IntoExpr<N>, 
             <E as IntoExpr<N>>::Result : ExprTrait<N>,
-            D : IntoDomain<N>,
+            D : IntoShapedDomain<N>,
             D::Result : ConstraintDomain<N>
     {
         expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
@@ -1268,8 +1276,31 @@ impl Model {
     /// ```
     //
     pub fn disjunction<D>(& mut self, name : Option<&str>, terms : & D) -> Disjunction where D : disjunction::DisjunctionTrait {
-            
-        ...........
+        let n = terms.eval(self.vars.len(), &mut self.rs, &mut self.ws, &mut self.xs)?;
+        let exprs = self.rs.pop_exprs(n);
+        let term_ptr = Vec::new();
+        let element_dom = Vec::new();
+        let element_ptr = Vec::new();
+        let element_afei = Vec::new();
+        let element_b = Vec::new();
+
+        terms.append_disjunction_data(&mut self.task, self.vars.as_slice(), &mut exprs, &mut term_ptr, &mut element_dom, &mut element_ptr, &mut element_afei);
+    
+        let term_size = element_ptr.iter().zip(element_ptr[1..].iter()).map(|(a,b)| b-a).collect();
+        
+        let djci = self.task.get_num_djc().unwrap();
+        self.task.append_djcs(1).unwrap();
+        if let Some(name) = name { self.task.put_djc_name(djci,name).unwrap(); }
+        self.task.put_djc(djci.as_slice(), 
+                          element_dom.as_slice(),
+                          element_afei.as_slice(),
+                          element_b.as_slice(),
+                          term_size.as_slice()).unwrap();
+
+             
+
+
+
 
 
         self.djc_temp_termsize.clear();
@@ -1924,14 +1955,315 @@ impl Model {
     pub fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : E) -> Result<NDArray<N>,String>
         where 
             E : IntoExpr<N>     
-    {
+{
         expr.into_expr().eval(& mut self.rs,&mut self.ws,&mut self.xs).map_err(|e| format!("{:?}",e))?;
         let mut shape = [0usize; N];
         let (val,sp) = self.evaluate_primal_internal(solid, &mut shape)?;
         self.rs.clear();
         NDArray::new(shape,sp,val)
     }
+} // impl Model
+
+
+//-----------------------------------------------------------------------------
+// Single affine constraint
+
+/// A single constraint block `A x + b ∈ D`.
+pub struct AffineConstraint<const N : usize,E,D> 
+    where E : ExprTrait<N>,
+          D : IntoShapedDomain<N, Result = ConicDomain<N>>,
+{
+    expr   : E,
+    domain : Either<D,ConicDomain<N>>
 }
+
+pub fn term<const N : usize,I,E,D>(expr : E, domain : D) -> AffineConstraint<N,E,D>
+    where I : IntoExpr<N,Result=E>,
+          E : ExprTrait<N>,
+          D : IntoShapedDomain<N,Result=ConicDomain<N>>
+{
+    AffineConstraint{
+        expr : expr.into_expr(),
+        domain : Either::Left(domain),
+    }    
+}
+
+
+impl<const N : usize,E,D> disjunction::ConjunctionTrait for AffineConstraint<N,E,D> 
+    where E : ExprTrait<N>,
+          D : IntoShapedDomain<N, Result = ConicDomain<N>>,
+{
+    fn eval(&mut self,
+            numvarelm : usize,
+            rs : &mut WorkStack,
+            ws : &mut WorkStack,
+            xs : &mut WorkStack) -> Result<usize,String> 
+    {
+        self.expr.eval_finalize(rs,ws,xs).map_err(|e| format!("{:?}",e))?;
+        let (eshape,_,_,subj,_) = rs.peek_expr();
+        let shape = [0usize;N]; shape.copy_from_slice(eshape);
+        if let Either::Left(d) = self.domain { 
+            self.domain = Either::Right(d.try_into_domain(shape)?);
+        }
+
+        let (_,_,dshape,_,is_integer) = self.domain.expect_right("Internal: Expected finalized domain").get();
+
+        
+        if let Some(&i) = subj.iter().max() {
+            if i >= numvarelm {
+                return Err(format!("Expression has variable element index that is out of bounds for the Model"))
+            }
+        }
+
+        if is_integer {
+            Err(format!("Constraint domains cannot be integer"))
+        }
+        else if eshape != dshape {
+            Err(format!("Mismatching expression and domain shapes"))
+        }
+        else {
+            Ok(1)
+        }
+    }
+
+    fn append_clause_data(&self, 
+                              task  : & mut mosek::Task,
+                              vars  : &[VarAtom],
+                              exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
+
+                              element_dom  : &mut Vec<i64>,
+                              element_ptr  : &mut Vec<usize>,
+                              element_afei : &mut Vec<i64>,
+                              element_b    : &mut Vec<f64>)
+    {
+        let domain = if let Either::Right(d) = &self.domain { d } else { panic!("Internal: Expected finalized domain") };
+        let (dt,offset,shape,conedim,_) = domain.get();
+        let (_,ptr,_,subj,cof) = exprs.pop().unwrap();
+        let conesize = if N == 0 { 1 } else { shape[conedim] };
+        let numcone  = shape.iter().product::<usize>() / conesize;
+
+        let nelm = ptr.len()-1;
+
+        let afei = task.get_num_afe().unwrap();
+
+        let (asubj,
+             acof,
+             aptr,
+             afix,
+             abarsubi,
+             abarsubj,
+             abarsubk,
+             abarsubl,
+             abarcof) = split_expr(ptr,subj,cof,vars);
+
+
+        let domidx = match dt {
+            ConicDomainType::NonNegative                => task.append_rplus_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::NonPositive                => task.append_rminus_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::Free                       => task.append_r_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::Zero                       => task.append_rzero_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::SVecPSDCone                => task.append_svec_psd_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::QuadraticCone              => task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::RotatedQuadraticCone       => task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::GeometricMeanCone          => task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::DualGeometricMeanCone      => task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
+            ConicDomainType::ExponentialCone            => task.append_primal_exp_cone_domain().unwrap(),
+            ConicDomainType::DualExponentialCone        => task.append_dual_exp_cone_domain().unwrap(),
+            ConicDomainType::PrimalPowerCone(ref alpha) => task.append_primal_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice()).unwrap(),
+            ConicDomainType::DualPowerCone(ref alpha)   => task.append_dual_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice()).unwrap(),
+        };
+        
+        let d0 : usize = if N == 0 { 1 } else { shape[0..conedim].iter().product() };
+        let d1 : usize = if N == 0 { 1 } else { shape[conedim] };
+        let d2 : usize = if N == 0 { 1 } else { shape[conedim+1..].iter().product() };
+
+        let element_afefi_p0 = element_afei.len();
+        element_afei.resize(element_afefi_p0+nelm,0);
+        let afeidxs = &mut element_afei[element_afefi_p0..];
+        afeidxs.copy_from_iter(
+            iproduct!(0..d0,0..d2,0..d1)
+                .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64));
+
+        element_b.extend_from_slice(offset);
+        element_dom.resize(numcone,domidx);
+        element_ptr.reserve(numcone);
+        {
+            let n0 = *element_ptr.last().unwrap();
+            for i in n0..n0+numcone*conesize { element_ptr.push(i) }
+        }
+
+
+        task.append_afes(nelm as i64).unwrap();
+        if asubj.len() > 0 {
+            task.put_afe_f_row_list(afeidxs,
+                                    aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
+                                    &aptr[..nelm],
+                                    asubj.as_slice(),
+                                    acof.as_slice()).unwrap();
+        }        
+       
+        task.put_afe_g_list(afeidxs,afix.as_slice()).unwrap();
+        if abarsubi.len() > 0 {
+            let mut p0 = 0usize;
+            for (i,j,p) in izip!(abarsubi.iter(),
+                                 abarsubi[1..].iter(),
+                                 abarsubj.iter(),
+                                 abarsubj[1..].iter())
+                .enumerate()
+                .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
+                .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+               
+                let subk = &abarsubk[p0..p];
+                let subl = &abarsubl[p0..p];
+                let cof  = &abarcof[p0..p];
+                p0 = p;
+
+                let dimbarj = task.get_dim_barvar_j(j).unwrap();
+                let matidx = task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
+                task.put_afe_barf_entry(afei+i,j,&[matidx],&[1.0]).unwrap();
+            }
+        }
+    }
+}
+
+impl<C> disjunction::DisjunctionTrait for C
+    where C : ConjunctionTrait,
+{
+    fn eval(&mut self,
+            numvarelm : usize,
+            rs : &mut WorkStack,
+            ws : &mut WorkStack,
+            xs : &mut WorkStack) -> Result<usize,String> {
+        disjunction::ConjunctionTrait::eval(self,numvarelm,rs,ws,xs)
+    }
+    fn append_disjunction_data(&self, 
+                                      task  : & mut mosek::Task,
+                                      vars  : &[VarAtom],
+                                      exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
+
+                                      term_ptr     : &mut Vec<usize>,
+                                      element_dom  : &mut Vec<i64>,
+                                      element_ptr  : &mut Vec<usize>,
+                                      element_afei : &mut Vec<i64>,
+                                      element_b    : &mut Vec<f64>) {
+        disjunction::ConjunctionTrait::append_clause_data(self,task, vars, exprs, element_dom, element_ptr, element_afei,element_b);
+        term_ptr.push(element_dom.len());
+    }
+}
+
+
+//-----------------------------------------------------------------------------
+// AffineConstraintsAnd
+
+/// Represents the construction `A_1x+b_1 ∈ K_1 AND A_2x+b_2 ∈ K_2`.
+pub struct AffineConstraintsAnd<C0,C1> 
+    where 
+        C0 : disjunction::ConjunctionTrait,
+        C1 : disjunction::ConjunctionTrait
+{
+     c0 : C0,
+     c1 : C1
+}
+
+impl<C0,C1> disjunction::ConjunctionTrait for AffineConstraintsAnd<C0,C1> 
+    where 
+        C0 : disjunction::ConjunctionTrait,
+        C1 : disjunction::ConjunctionTrait
+{
+    fn eval(&mut self,
+                numvarelm : usize,
+                rs : &mut WorkStack,
+                ws : &mut WorkStack,
+                xs : &mut WorkStack) -> Result<usize,String> {
+        Ok(self.c0.eval(numvarelm,rs,ws,xs)? + self.c1.eval(numvarelm,rs,ws,xs)?)
+    }
+
+    fn append_clause_data(&self, 
+                              task  : & mut mosek::Task,
+                              vars  : &[VarAtom],
+                              exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
+
+                              element_dom  : &mut Vec<i64>,
+                              element_ptr  : &mut Vec<usize>,
+                              element_afei : &mut Vec<i64>,
+                              element_b    : &mut Vec<f64>) {
+        self.c0.append_clause_data(task, vars, exprs, element_dom, element_ptr, element_afei, element_b);
+        self.c1.append_clause_data(task, vars, exprs, element_dom, element_ptr, element_afei, element_b);
+    }
+}
+
+
+//-----------------------------------------------------------------------------
+// DisjunctionOr
+
+/// Represents the construction `A OR B` where `A` is set of affine constraints and `B` is another
+/// disjunction clause
+pub struct DisjunctionOr<C0,C1> 
+    where 
+        C0 : disjunction::ConjunctionTrait,
+        C1 : disjunction::DisjunctionTrait
+{
+     c0 : C0,
+     c1 : C1
+}
+
+impl<C0,C1> disjunction::DisjunctionTrait for DisjunctionOr<C0,C1> 
+    where 
+        C0 : disjunction::ConjunctionTrait,
+        C1 : disjunction::DisjunctionTrait
+{
+    fn eval(&mut self,
+            numvarelm : usize,
+            rs : &mut WorkStack,
+            ws : &mut WorkStack,
+            xs : &mut WorkStack) -> Result<usize,String> {
+        Ok(self.c0.eval(numvarelm, rs, ws, xs).map_err(|e| e.to_string())? +
+            self.c1.eval(numvarelm, rs, ws, xs)?)
+    }
+    fn append_disjunction_data(&self, 
+                               task  : & mut mosek::Task,
+                               vars  : &[VarAtom],
+                               exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
+
+                               term_ptr     : &mut Vec<usize>,
+                               element_dom  : &mut Vec<i64>,
+                               element_ptr  : &mut Vec<usize>,
+                               element_afei : &mut Vec<i64>,
+                               element_b    : &mut Vec<f64>) {
+        self.c0.append_clause_data(task, vars, exprs, element_dom, element_ptr, element_afei,element_b);
+        term_ptr.push(element_dom.len());
+        self.c1.append_disjunction_data(task, vars, exprs, term_ptr, element_dom, element_ptr, element_afei,element_b);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 /// Split an evaluated expression into linear and semidefinite parts
