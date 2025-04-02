@@ -48,7 +48,7 @@ use gtk::{glib,Application, DrawingArea, ApplicationWindow};
 /// ```
 #[allow(non_snake_case)]
 fn complex_sdpvar(m : & mut Model, n : usize) -> (Variable<2>,Variable<2>) {
-    let X   = m.variable(None, in_psd_cone(2*n));
+    let X   = m.variable(None, in_psd_cone().with_dim(2*n));
     let Xr  = (&X).index([0..n, 0..n]);
     let Xi  = (&X).index([n..2*n, 0..n]);
     let X22 = (&X).index([n..2*n, n..2*n]);

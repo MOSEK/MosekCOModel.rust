@@ -146,7 +146,7 @@ pub fn ellipsoid_contains<const N : usize>
     }
     let n = qshp[0];
    
-    let S = M.variable(Some("S"), in_psd_cone(2*n+1));
+    let S = M.variable(Some("S"), in_psd_cone().with_dim(2*n+1));
     let S11 = (&S).index([0..n,0..n]);
     let S21 = (&S).index([n..n+1,0..n]).reshape(&[n]);
     let S22 = (&S).index([n..n+1,n..n+1]).reshape(&[]);
@@ -205,7 +205,7 @@ pub fn ellipsoid_contained<const N : usize>
     w : &Variable<1>,
     e : &Ellipsoid<N>) {
   
-    let S = M.variable(None, in_psd_cone(2*N+1));
+    let S = M.variable(None, in_psd_cone().with_dim(2*N+1));
     let S11 = S.index([0..N,0..N]);
     let S21 = S.index([N..N+1,0..N]);
     let S22 = S.index([N..N+1,N..N+1]).reshape(&[]);
@@ -275,7 +275,7 @@ pub fn ellipsoid_subject_to<const N : usize>
 #[allow(non_snake_case)]
 pub fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize) -> Variable<2> {
     // Setup variables
-    let Y = M.variable(name, in_psd_cone(2*n));
+    let Y = M.variable(name, in_psd_cone().with_dim(2*n));
 
     // Setup Y = [X, Z; Z^T , diag(Z)]
     let X  = (&Y).index([0..n, 0..n]);
@@ -287,7 +287,7 @@ pub fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize
     // DZ = Diag(Z)
     _ = M.constraint(None, DZ.clone().sub(Z.mul_elem(matrix::speye(n))), equal_to(matrix::dense([n,n],vec![0.0; n*n])));
     // (Z11*Z22*...*Znn) >= t^n
-    _ = M.constraint(name, vstack![DZ.into_expr().diag(),t.reshape(&[1])], in_geometric_mean_cone(n+1));
+    _ = M.constraint(name, vstack![DZ.into_expr().diag(),t.reshape(&[1])], in_geometric_mean_cone());
 
     X
 }
