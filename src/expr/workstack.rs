@@ -254,7 +254,8 @@ impl WorkStack {
     }
 
     /// Returns and validatas a list of views of the `n` top-most expressions on the stack, first
-    /// in the result list if the top-most. 
+    /// in the result list is the top-most, i.e. the order of the list is reverse of the order in
+    /// which expressions were evaluated.
     ///
     /// # Arguments
     /// - `n` Number of expressions to pop. Will panic if less than `n` are available.

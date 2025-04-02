@@ -157,7 +157,7 @@ impl ConjunctionTrait for Box<dyn ConjunctionTrait> {
                               exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
 
                               element_dom  : &mut Vec<i64>,
-                              element_ptr  : &mut Vec<usize>,
+                              element_ptr   : &mut Vec<usize>,
                               element_afei : &mut Vec<i64>,
                               element_b    : &mut Vec<f64>) {
         self.as_ref().append_clause_data(task, vars, exprs, element_dom, element_ptr, element_afei, element_b)

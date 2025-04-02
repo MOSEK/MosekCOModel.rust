@@ -1288,9 +1288,8 @@ impl Model {
         let mut element_b = Vec::new();
 
         terms.append_disjunction_data(&mut self.task, self.vars.as_slice(), &mut exprs, &mut term_ptr, &mut element_dom, &mut element_ptr, &mut element_afei, &mut element_b);
-    
-        let term_size : Vec<i64> = element_ptr.iter().zip(element_ptr[1..].iter()).map(|(a,b)| (b-a) as i64).collect();
-        
+
+        let term_size : Vec<i64> = term_ptr.iter().zip(term_ptr[1..].iter()).map(|(a,b)| (b-a) as i64).collect();
         let djci = self.task.get_num_djc().unwrap();
         self.task.append_djcs(1).unwrap();
         if let Some(name) = name { self.task.put_djc_name(djci,name).unwrap(); }
@@ -1688,9 +1687,6 @@ impl Model {
                             VarAtom::ConicElm(j,_coni) => xx[j as usize]
                         };
                     });
-                    //println!("{}:{}: cons = {:?}",file!(),line!(),&self.cons);
-                    //println!("{}:{}: numacc = {:?}",file!(),line!(),numacc);
-                    //println!("{}:{}: accptr = {:?}",file!(),line!(),accptr);
                     self.cons.iter().zip(sol.primal.con.iter_mut()).for_each(|(&v,r)| {
                         *r = match v {
                             ConAtom::ConicElm{acci,accoffset,..}=> { 
@@ -2098,14 +2094,13 @@ impl<const N : usize,E,D> disjunction::ConjunctionTrait for AffineConstraint<N,E
             iproduct!(0..d0,0..d2,0..d1)
                 .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64));
 
-        element_b.extend_from_slice(offset);
-        element_dom.resize(numcone,domidx);
+        element_dom.resize(element_dom.len()+numcone,domidx);
         element_ptr.reserve(numcone);
         {
-            let n0 = *element_ptr.last().unwrap();
-            for i in n0..n0+numcone*conesize { element_ptr.push(i) }
+            let n0 = element_b.len();
+            for i in (n0..n0+numcone*conesize).step_by(conesize) { element_ptr.push(i+conesize) }
         }
-
+        element_b.extend_from_slice(offset);
 
         task.append_afes(nelm as i64).unwrap();
         if asubj.len() > 0 {
