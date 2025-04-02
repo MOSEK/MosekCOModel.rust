@@ -20,10 +20,7 @@
 //!
 #![doc = include_str!("../js/mathjax.tag")]
 
-use crate::model::VarAtom;
-
-use super::*;
-
+use crate::{model::VarAtom, expr::workstack::WorkStack};
 
 
 /// Trait represeting one or more constraint blocks, i.e.
@@ -73,8 +70,10 @@ pub trait ConjunctionTrait
                           element_ptr  : &mut Vec<usize>,
                           element_afei : &mut Vec<i64>,
                           element_b    : &mut Vec<f64>);
+    /// Create an object that hides the underlying object types. This allows putting objects of
+    /// different types into a heterogenous container like a `Vec`.
+    fn dynamic(self) -> Box<dyn ConjunctionTrait> where Self:Sized+'static { Box::new(self) }
 }
-
 /// Trait representing a disjunction of two or more conjunction blocks:
 ///
 /// $$
@@ -138,10 +137,60 @@ pub trait DisjunctionTrait
                                element_ptr  : &mut Vec<usize>,
                                element_afei : &mut Vec<i64>,
                                element_b    : &mut Vec<f64>);
+    /// Create an object that hides the underlying object types. This allows putting objects of
+    /// different types into a heterogenous container like a `Vec`.
+    fn dynamic(self) -> Box<dyn DisjunctionTrait> where Self: Sized+'static { Box::new(self) }
+}
+
+impl ConjunctionTrait for Box<dyn ConjunctionTrait> {
+    fn dynamic(self) -> Box<dyn ConjunctionTrait> {
+        self
+    }
+    fn eval(&mut self,
+                numvarelm : usize,
+                rs : &mut WorkStack,
+                ws : &mut WorkStack,
+                xs : &mut WorkStack) -> Result<usize,String> {
+        self.as_mut().eval(numvarelm, rs, ws, xs)
+    }
+    fn append_clause_data(&self, 
+                              task  : & mut mosek::TaskCB,
+                              vars  : &[VarAtom],
+                              exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
+
+                              element_dom  : &mut Vec<i64>,
+                              element_ptr  : &mut Vec<usize>,
+                              element_afei : &mut Vec<i64>,
+                              element_b    : &mut Vec<f64>) {
+        self.as_ref().append_clause_data(task, vars, exprs, element_dom, element_ptr, element_afei, element_b)
+    }
 }
 
 
+impl DisjunctionTrait for Box<dyn DisjunctionTrait> {
+    fn eval(&mut self,
+            numvarelm : usize,
+            rs : &mut WorkStack,
+            ws : &mut WorkStack,
+            xs : &mut WorkStack) -> Result<usize,String> {
+        self.as_mut().eval(numvarelm, rs, ws, xs)
+    }
+    fn dynamic(self) -> Box<dyn DisjunctionTrait> {
+        self
+    }
+    fn append_disjunction_data(&self, 
+                               task  : & mut mosek::TaskCB,
+                               vars  : &[VarAtom],
+                               exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
 
+                               term_ptr     : &mut Vec<usize>,
+                               element_dom  : &mut Vec<i64>,
+                               element_ptr  : &mut Vec<usize>,
+                               element_afei : &mut Vec<i64>,
+                               element_b    : &mut Vec<f64>) {
+        (&self).as_ref().append_disjunction_data(task, vars, exprs, term_ptr, element_dom, element_ptr, element_afei, element_b)
+    }
+}
 
 
 

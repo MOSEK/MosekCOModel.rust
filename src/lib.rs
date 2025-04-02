@@ -215,7 +215,7 @@ pub use model::{Sense,
                 VarDomainTrait,
                 Model,
                 SolverParameterValue,
-                term};
+                constraint};
 pub use matrix::{Matrix,NDArray,IntoIndexes};
 pub use expr::{ExprTrait,
                ExprRightMultipliable,

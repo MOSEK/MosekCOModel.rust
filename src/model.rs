@@ -7,7 +7,7 @@ use itertools::{iproduct, izip};
 use std::fmt::Debug;
 use std::{iter::once, path::Path};
 use crate::disjunction::ConjunctionTrait;
-use crate::{disjunction, expr, IntoExpr, ExprTrait, NDArray};
+use crate::{disjunction, expr, IntoExpr, ExprTrait, NDArray, DisjunctionTrait};
 use crate::utils::iter::*;
 use crate::utils::*;
 use crate::domain::*;
@@ -1279,8 +1279,7 @@ impl Model {
     ///                         .or(term(z, equal_to(1.0))
     ///                                 .and(x.dot(a), equal_to(1.0)))));
     /// ```
-    //
-    pub fn disjunction<D>(& mut self, name : Option<&str>, mut terms : D) -> Result<Disjunction,String> where D : disjunction::DisjunctionTrait {
+    pub fn try_disjunction<D>(& mut self, name : Option<&str>, mut terms : D) -> Result<Disjunction,String> where D : disjunction::DisjunctionTrait {
         let nexprs = terms.eval(self.vars.len(), &mut self.rs, &mut self.ws, &mut self.xs)?;
         let mut exprs = self.rs.pop_exprs(nexprs);
         let mut term_ptr = Vec::new();
@@ -1303,6 +1302,10 @@ impl Model {
                           term_size.as_slice()).unwrap();
         
         Ok(Disjunction{ index : djci })
+    }
+    
+    pub fn disjunction<D>(& mut self, name : Option<&str>, terms : D) -> Disjunction where D : disjunction::DisjunctionTrait {
+        self.try_disjunction(name, terms).unwrap()
     }
 
     fn update_internal(&mut self, idxs : &[usize]) {
@@ -1956,29 +1959,53 @@ impl Model {
 /// A single constraint block `A x + b ∈ D`.
 pub struct AffineConstraint<const N : usize,E,D> 
     where E : ExprTrait<N>,
-          D : IntoShapedDomain<N, Result = ConicDomain<N>>,
+          D : IntoShapedDomain<N>,
+          D::Result : IntoConicDomain<N>,
 {
     expr    : E,
     pdomain : Option<D>,
     domain  : Option<ConicDomain<N>>
 }
 
-pub fn term<const N : usize,I,E,D>(expr : E, domain : D) -> AffineConstraint<N,E,D>
+
+/// Create a structure encapsulating an expression and a domain for constructing disjunctive
+/// constraints.
+///
+/// # Arguments
+/// - `expr` Something that can be turned into an expression via [IntoExpr]. 
+/// - `domain` Something that can be turned into a [ConicDomain]. Currently this is any linear or
+///    conic domain, but not semidefinite domain.
+pub fn constraint<const N : usize,I,E,D>(expr : I, domain : D) -> AffineConstraint<N,E,D>
     where I : IntoExpr<N,Result=E>,
           E : ExprTrait<N>,
-          D : IntoShapedDomain<N,Result=ConicDomain<N>>
+          D : IntoShapedDomain<N>,
+          D::Result : IntoConicDomain<N>,
 {
     AffineConstraint{
-        expr : expr.into_expr(),
+        expr    : expr.into_expr(),
         pdomain : Some(domain),
-        domain : None,
-    }    
+        domain  : None,
+    }
 }
 
+impl<const N : usize,E,D> AffineConstraint<N,E,D> 
+    where E : ExprTrait<N>,
+          D : IntoShapedDomain<N>,
+          D::Result : IntoConicDomain<N>
+{
+    pub fn and<C2>(self, other : C2) -> AffineConstraintsAnd<Self,C2> where C2 : ConjunctionTrait {
+        AffineConstraintsAnd { c0: self, c1: other }
+    }
+
+    pub fn or<D2>(self, other : D2) -> DisjunctionOr<Self,D2> where D2 : DisjunctionTrait {
+        DisjunctionOr { c0: self, c1: other }
+    }
+}
 
 impl<const N : usize,E,D> disjunction::ConjunctionTrait for AffineConstraint<N,E,D> 
     where E : ExprTrait<N>,
-          D : IntoShapedDomain<N, Result = ConicDomain<N>>,
+          D : IntoShapedDomain<N>,
+          D::Result : IntoConicDomain<N>
 {
     fn eval(&mut self,
             numvarelm : usize,
@@ -1989,10 +2016,9 @@ impl<const N : usize,E,D> disjunction::ConjunctionTrait for AffineConstraint<N,E
         self.expr.eval_finalize(rs,ws,xs).map_err(|e| format!("{:?}",e))?;
         let (eshape,_,_,subj,_) = rs.peek_expr();        
         let mut shape = [0usize;N]; shape.copy_from_slice(eshape);
-        
-        let dom = std::mem::replace(&mut self.pdomain, None);
-        if let Some(dom) = dom {
-            self.domain = Some(dom.try_into_domain(shape)?);
+       
+        if let Some(dom) = self.pdomain.take() {
+            self.domain = Some(dom.try_into_domain(shape)?.into_conic());
         }
 
 
@@ -2140,6 +2166,35 @@ impl<C> disjunction::DisjunctionTrait for C
     }
 }
 
+impl<C> disjunction::DisjunctionTrait for Vec<C> where C : ConjunctionTrait {
+    fn eval(&mut self,
+            numvarelm : usize,
+            rs : &mut WorkStack,
+            ws : &mut WorkStack,
+            xs : &mut WorkStack) -> Result<usize,String> {
+        let mut n = 0;
+        for c in self.iter_mut() {
+            n += c.eval(numvarelm, rs, ws, xs)?;
+        }
+        Ok(n)
+    }
+    fn append_disjunction_data(&self, 
+                               task  : & mut mosek::TaskCB,
+                               vars  : &[VarAtom],
+                               exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
+
+                               term_ptr     : &mut Vec<usize>,
+                               element_dom  : &mut Vec<i64>,
+                               element_ptr  : &mut Vec<usize>,
+                               element_afei : &mut Vec<i64>,
+                               element_b    : &mut Vec<f64>) {
+        for c in self.iter() {
+            disjunction::ConjunctionTrait::append_clause_data(c,task, vars, exprs, element_dom, element_ptr, element_afei,element_b);
+            term_ptr.push(element_dom.len());
+        }
+    }
+
+}
 
 //-----------------------------------------------------------------------------
 // AffineConstraintsAnd
@@ -2154,6 +2209,18 @@ pub struct AffineConstraintsAnd<C0,C1>
      c1 : C1
 }
 
+impl<C0,C1> AffineConstraintsAnd<C0,C1> 
+    where 
+        C0 : disjunction::ConjunctionTrait,
+        C1 : disjunction::ConjunctionTrait
+{
+    pub fn and<C2>(self, other : C2) -> AffineConstraintsAnd<Self,C2> where C2 : ConjunctionTrait {
+        AffineConstraintsAnd { c0: self, c1: other }
+    }
+    pub fn or<D2>(self, other : D2) -> DisjunctionOr<Self,D2> where D2 : DisjunctionTrait {
+        DisjunctionOr { c0: self, c1: other }
+    }
+}
 impl<C0,C1> disjunction::ConjunctionTrait for AffineConstraintsAnd<C0,C1> 
     where 
         C0 : disjunction::ConjunctionTrait,
@@ -2194,6 +2261,16 @@ pub struct DisjunctionOr<C0,C1>
 {
      c0 : C0,
      c1 : C1
+}
+
+impl<C0,C1> DisjunctionOr<C0,C1> 
+    where 
+        C0 : disjunction::ConjunctionTrait,
+        C1 : disjunction::DisjunctionTrait
+{
+    pub fn or<C2>(self, other : C2) -> DisjunctionOr<C2,Self> where C2 : ConjunctionTrait {
+        DisjunctionOr { c0: other, c1: self }
+    }
 }
 
 impl<C0,C1> disjunction::DisjunctionTrait for DisjunctionOr<C0,C1> 

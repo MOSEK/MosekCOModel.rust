@@ -52,6 +52,10 @@ pub trait IntoShapedDomain<const N : usize> {
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String>;
 }
 
+pub trait IntoConicDomain<const N : usize> {
+    fn into_conic(self) -> ConicDomain<N>;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // ScalableLinearDomain
 ///////////////////////////////////////////////////////////////////////////////
@@ -624,6 +628,19 @@ pub struct PSDDomain<const N : usize> {
 
 /////////////////////////////////////////////////////////////////////
 // Domain implementations
+
+impl<const N : usize> IntoConicDomain<N> for ConicDomain<N> {
+    fn into_conic(self) -> ConicDomain<N> {
+        self
+    }
+}
+
+impl<const N : usize> IntoConicDomain<N> for LinearDomain<N> {
+    fn into_conic(self) -> ConicDomain<N> {
+        self.to_conic()
+    }
+}
+
 impl<const N :usize> PSDDomain<N> {
     pub fn dissolve(self) -> ([usize;N],(usize,usize)) { (self.shape,self.conedims) }
 }
