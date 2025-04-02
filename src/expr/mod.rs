@@ -2418,12 +2418,12 @@ mod test {
     fn slice() {
         let mut m = Model::new(None);
         let t = m.variable(Some("t"),unbounded().with_shape(&[2])); // 1,2
-        let X = m.variable(Some("X"), in_psd_cone(4)); // 3,4,5,6, 7,8,9, 10,11, 12
+        let X = m.variable(Some("X"), in_psd_cone().with_dim(4)); // 3,4,5,6, 7,8,9, 10,11, 12
         //     | 3 4  5  6 |
         // X = | 4 7  8  9 |
         //     | 5 8 10 11 |
         //     | 6 9 11 12 |
-        let Y = m.variable(Some("Y"), in_psd_cone(2)); // 13,14,15
+        let Y = m.variable(Some("Y"), in_psd_cone().with_dim(2)); // 13,14,15
         let mx = dense([2,2], vec![1.1,2.2,3.3,4.4]);
 
         m.constraint(Some("X-Y"), X.index([0..2,0..2]).sub(Y.sub((&mx).mul_right(t.index(0)))), domain::zeros(&[2,2]));

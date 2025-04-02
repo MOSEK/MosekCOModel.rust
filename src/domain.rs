@@ -1,4 +1,5 @@
 use iter::PermuteByMutEx;
+use itertools::Either;
 use super::matrix::NDArray;
 use crate::utils::*;
 
@@ -75,7 +76,7 @@ impl ScalableLinearDomain {
         LinearProtoDomain{
             shape : *shape,
             domain_type : self.domain_type,
-            offset : vec![self.offset; shape.iter().product()],
+            offset : Either::Left(self.offset),
             sparsity : None,
             is_integer : self.is_integer
         }
@@ -87,7 +88,7 @@ impl ScalableLinearDomain {
         LinearProtoDomain{
             shape : *shape,
             domain_type : self.domain_type,
-            offset : vec![self.offset; shape.iter().product()],
+            offset : Either::Left(self.offset),
             sparsity : Some(sparsity.iter().map(|i| st.to_linear(i)).collect()),
             is_integer : self.is_integer
         }
@@ -99,7 +100,7 @@ impl<const N : usize> IntoShapedDomain<N> for ScalableLinearDomain {
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
         Ok(LinearDomain{
             shape,
-            offset      : vec![self.offset;shape.iter().product()],
+            offset : vec![self.offset; shape.iter().product()],
             sparsity    : None,
             domain_type : self.domain_type,
             is_integer  : self.is_integer
@@ -111,7 +112,7 @@ impl IntoDomain for ScalableLinearDomain {
     fn try_into_domain(self) -> Result<Self::Result,String> {
         Ok(LinearDomain{
             shape : [],
-            offset  : vec![self.offset],
+            offset : vec![self.offset],
             sparsity : None,
             domain_type    : self.domain_type,
             is_integer : self.is_integer
@@ -128,7 +129,7 @@ impl IntoDomain for ScalableLinearDomain {
 pub struct LinearProtoDomain<const N : usize> {
     shape : [usize;N],
     domain_type : LinearDomainType,
-    offset : Vec<f64>,
+    offset : Either<f64,Vec<f64>>,
     sparsity : Option<Vec<usize>>,
     is_integer : bool
 }
@@ -136,7 +137,7 @@ pub struct LinearProtoDomain<const N : usize> {
 impl<const N : usize> LinearProtoDomain<N> {
     pub fn integer(self) -> Self { LinearProtoDomain{ is_integer : true, ..self } }
     pub fn continuous(self) -> Self { LinearProtoDomain{ is_integer : false, ..self } }
-    pub fn with_offset(self,offset : Vec<f64>) -> Self { LinearProtoDomain{ offset, ..self } }
+    pub fn with_offset(self,offset : Vec<f64>) -> Self { LinearProtoDomain{ offset : Either::Right(offset), ..self } }
     // TODO: Check sparsity pattern indexes against shape?
     pub fn with_shape<const M : usize>(self, shape : &[usize;M]) -> LinearProtoDomain<M> {
         LinearProtoDomain{ 
@@ -145,6 +146,16 @@ impl<const N : usize> LinearProtoDomain<N> {
             offset : self.offset,
             sparsity : self.sparsity,
             is_integer: self.is_integer
+        }
+    }
+
+    pub fn with_sparsity(self, sparsity : &[[usize;N]]) -> Self {
+        let st = self.shape.to_strides();
+        let sparsity = sparsity.iter().map(|i| st.to_linear(i)).collect();
+
+        LinearProtoDomain{
+            sparsity : Some(sparsity),
+            ..self
         }
     }
 
@@ -165,32 +176,49 @@ impl<const N : usize> IntoDomain for LinearProtoDomain<N> {
     type Result = LinearDomain<N>;
     fn try_into_domain(self) -> Result<Self::Result,String> {
         let st = self.shape.to_strides();                
+        let totalsize : usize = self.shape.iter().product();
         if let Some(sp) = &self.sparsity {
             if let Some((a,b)) = sp.iter().zip(sp[1..].iter()).find(|(a,b)| a >= b) {
                 return Err(format!("Sparsity pattern unsorted or contains duplicates: {:?} and {:?}", st.to_index(*a), st.to_index(*b)));
             }
             if let Some(i) = sp.iter().max() {
-                if *i >= self.shape.iter().product() {
+                if *i >= totalsize {
                     return Err(format!("Element in sparsity pattern is out of bounds: {:?}", st.to_index(*i)));
                 }
             }
-            if sp.len() != self.offset.len() {
-                return Err(format!("Sparsity and offset lengths do not match"));
+            if let Either::Right(offset) = &self.offset {
+                if sp.len() != offset.len() {
+                    return Err(format!("Sparsity and offset lengths do not match"));
+                }
+            }
+
+
+        }
+        else if let Either::Right(v) = &self.offset {
+            if totalsize != v.len() {
+                return Err(format!("Offset and shape lengths do not match"));
             }
         }
-        else if self.shape.iter().product::<usize>() != self.offset.len() {
-            return Err(format!("Offset and shape lengths do not match"));
-        }
+
+        let offset = 
+            match self.offset {
+                Either::Right(v) => v,
+                Either::Left(v) => {
+                    let n = self.sparsity.as_ref().map(|v| v.len()).unwrap_or(totalsize);
+                    vec![v; n]
+                }
+            };
 
         Ok(LinearDomain{
             shape       : self.shape,
-            offset      : self.offset,
+            offset,
             sparsity    : self.sparsity,
             domain_type : self.domain_type,
             is_integer  : self.is_integer
         })
     }
 }
+
 impl<const N : usize> IntoShapedDomain<N> for LinearProtoDomain<N> {
     type Result = LinearDomain<N>;
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
@@ -712,9 +740,9 @@ impl OffsetTrait for f64 {
 /// Let `Vec<f64>` act as a vector offset value.
 impl OffsetTrait for Vec<f64> {
     type Result = LinearProtoDomain<1>;
-    fn greater_than(self) -> Self::Result { let n = self.len(); LinearProtoDomain{ domain_type : LinearDomainType::NonNegative, offset:self, shape:[n], sparsity : None, is_integer : false } }
-    fn less_than(self)    -> Self::Result { let n = self.len(); LinearProtoDomain{ domain_type : LinearDomainType::NonPositive, offset:self, shape:[n], sparsity : None, is_integer : false } }
-    fn equal_to(self)     -> Self::Result { let n = self.len(); LinearProtoDomain{ domain_type : LinearDomainType::Zero,        offset:self, shape:[n], sparsity : None, is_integer : false } }
+    fn greater_than(self) -> Self::Result { let n = self.len(); LinearProtoDomain{ domain_type : LinearDomainType::NonNegative, offset:Either::Right(self), shape:[n], sparsity : None, is_integer : false } }
+    fn less_than(self)    -> Self::Result { let n = self.len(); LinearProtoDomain{ domain_type : LinearDomainType::NonPositive, offset:Either::Right(self), shape:[n], sparsity : None, is_integer : false } }
+    fn equal_to(self)     -> Self::Result { let n = self.len(); LinearProtoDomain{ domain_type : LinearDomainType::Zero,        offset:Either::Right(self), shape:[n], sparsity : None, is_integer : false } }
 }
 
 /// Let `&[f64]` act as a vector offset value.
@@ -728,9 +756,9 @@ impl OffsetTrait for &[f64] {
 
 impl<const N : usize> OffsetTrait for NDArray<N> {
     type Result = LinearProtoDomain<N>;
-    fn greater_than(self) -> Self::Result { let (shape,sparsity,data) = self.dissolve(); LinearProtoDomain{ domain_type : LinearDomainType::NonNegative, offset:data, shape, sparsity, is_integer : false } }
-    fn less_than(self)    -> Self::Result { let (shape,sparsity,data) = self.dissolve(); LinearProtoDomain{ domain_type : LinearDomainType::NonPositive, offset:data, shape, sparsity, is_integer : false } }
-    fn equal_to(self)     -> Self::Result { let (shape,sparsity,data) = self.dissolve(); LinearProtoDomain{ domain_type : LinearDomainType::Zero,        offset:data, shape, sparsity, is_integer : false } }
+    fn greater_than(self) -> Self::Result { let (shape,sparsity,data) = self.dissolve(); LinearProtoDomain{ domain_type : LinearDomainType::NonNegative, offset:Either::Right(data), shape, sparsity, is_integer : false } }
+    fn less_than(self)    -> Self::Result { let (shape,sparsity,data) = self.dissolve(); LinearProtoDomain{ domain_type : LinearDomainType::NonPositive, offset:Either::Right(data), shape, sparsity, is_integer : false } }
+    fn equal_to(self)     -> Self::Result { let (shape,sparsity,data) = self.dissolve(); LinearProtoDomain{ domain_type : LinearDomainType::Zero,        offset:Either::Right(data), shape, sparsity, is_integer : false } }
 }
 
 ////////////////////////////////////////////////////////////

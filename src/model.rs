@@ -1252,8 +1252,8 @@ impl Model {
     /// let a = vec![1.0,2.0,3.0,4.0,5.0];
     /// let b = vec![5.0,4.0,3.0];
     /// model.disjunction(None, 
-    ///                   &(term(x.dot(a), equal_to(3.0))
-    ///                         .or(term(y.dot(b), equal_to(1.0)))));
+    ///                   constraint(x.dot(a), equal_to(3.0))
+    ///                     .or(constraint(y.dot(b), equal_to(1.0))));
     /// ```
     ///
     /// # Example: Indicator constraint
@@ -1273,18 +1273,17 @@ impl Model {
     /// let x = model.variable(Some("x"), 5);
     /// let z = model.variable(Some("z"), nonnegative().integer());
     /// model.constraint(None,&z,less_than(1.0));
-    ///
     /// model.disjunction(None,
-    ///                   &(term(z.clone(),equal_to(0.0))
-    ///                         .or(term(z, equal_to(1.0))
-    ///                                 .and(x.dot(a), equal_to(1.0)))));
+    ///                   constraint(z.clone(),equal_to(0.0))
+    ///                     .or(constraint(z, equal_to(1.0))
+    ///                           .and(constraint(x.dot(a), equal_to(1.0)))));
     /// ```
     pub fn try_disjunction<D>(& mut self, name : Option<&str>, mut terms : D) -> Result<Disjunction,String> where D : disjunction::DisjunctionTrait {
         let nexprs = terms.eval(self.vars.len(), &mut self.rs, &mut self.ws, &mut self.xs)?;
         let mut exprs = self.rs.pop_exprs(nexprs);
-        let mut term_ptr = Vec::new();
+        let mut term_ptr = Vec::new(); term_ptr.push(0);
         let mut element_dom = Vec::new();
-        let mut element_ptr = Vec::new();
+        let mut element_ptr = Vec::new();element_ptr.push(0);
         let mut element_afei = Vec::new();
         let mut element_b = Vec::new();
 
