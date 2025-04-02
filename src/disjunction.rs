@@ -2,9 +2,9 @@
 //!
 //! A disjunctive constraint is a constraint of the form 
 //! $$
-//!   A_1x+b_1\\in K_1\\mathbb{ or }\\ldots A_nx+b_n\\in K_n
+//!   A_1x+b_1\\in K_1\\ \\mathrm{or}\\ldots\\ \\mathrm{or}\\ A_nx+b_n\\in K_n
 //! $$
-//! Each \\(A_ix+b_i\\) is called a _term_ (see [term]). A term can be composed if multiple _clauses_:
+//! Each \\(A_ix+b_i\\) is called a _term_ (see [crate::model::constraint]). A term can be composed if multiple _clauses_:
 //! $$
 //!   \\left[
 //!     \\begin{array}{c}

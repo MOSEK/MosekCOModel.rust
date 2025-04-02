@@ -4,7 +4,7 @@
  
 
 **`MosekCOModel` is still an experimental project project. Use with caution,
-expect rough corners and untested cases.**
+expect rough corners and untested cases, and the API is subject to change**
 
 # MosekCOModel
 

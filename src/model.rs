@@ -381,7 +381,7 @@ impl Model {
         Ok(dom.try_into_domain()?.create(self,name))
     }
 
-    /// Add a Variable. See [try_variable].
+    /// Add a Variable. See [Model::try_variable].
     ///
     /// # Returns
     /// An `N`-dimensional variable object is returned. The `Variable` object may be dense or
@@ -698,7 +698,7 @@ impl Model {
         dom.try_into_domain(shape)?.add_constraint(self,name)
     }
 
-    /// Add a constraint. See [try_constraint].
+    /// Add a constraint. See [Model::try_constraint].
     ///
     /// # Returns
     /// - On success, return a N-dimensional constraint object that can be used to access
