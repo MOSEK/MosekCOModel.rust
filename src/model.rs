@@ -343,6 +343,22 @@ impl Model {
 
     /// Add a Variable.
     ///
+    ///
+    /// If the domain defines a sparsity pattern, elements outside of the sparsity pattern are treated as
+    /// fixed to 0.0. For example, for
+    ///  ```rust
+    ///  use mosekcomodel::*;
+    ///  let dom = greater_than(vec![1.0,1.0,1.0]).with_shape_and_sparsity(&[6],&[[0],[2],[4]]);
+    ///  ```
+    ///  `dom` would define a variable of length 6 where element 0, 2 and 4 are greater than 1.0,
+    ///  while elements 1,3,5 are fixed to 0.0.
+    ///
+    ///  The domain is required to define the shape in some meaningful way. For example,
+    ///  - [LinearProtoDomain], [ConicProtoDomain], [PSDProtoDomain] for example from [zeros],
+    ///   `greater_than(vec![1.0,1.0])` will produce a variable of the shape defined by the domain.
+    ///  - [ScalableLinearDomain] as produced by for example [zero], [unbounded] or `greater_than(1.0)` the result is a scalar variable.
+    ///  - [ScalableConicDomain], [ScalablePSDDomain] will fail as they define no meaningful shape.
+    ///
     /// # Arguments
     /// - `name` Optional constraint name. This is currently only used to generate names passed to
     ///   the underlying task.
@@ -365,15 +381,8 @@ impl Model {
         Ok(dom.try_into_domain()?.create(self,name))
     }
 
-    /// Add a Variable.
+    /// Add a Variable. See [try_variable].
     ///
-    /// # Arguments
-    /// - `name` Optional constraint name. This is currently only used to generate names passed to
-    ///   the underlying task.
-    /// - `dom` The domain of the variable. This defines the bound
-    ///   type, shape and sparsity of the variable. For sparse
-    ///   variables, elements outside of the sparsity pattern are
-    ///   treated as variables fixed to 0.0.
     /// # Returns
     /// An `N`-dimensional variable object is returned. The `Variable` object may be dense or
     /// sparse, where "sparse" means that all entries outside the sparsity pattern are fixed to 0.
@@ -634,33 +643,35 @@ impl Model {
     }
 
 
-    /// Add a constraint
-    ///
-    /// Note that even if the domain or the expression are sparse, a constraint will always be full.
-    ///
-    /// # Arguments
-    /// - `name` Optional constraint name. Currently this is only used to generate names passed to
-    ///   the underlting task.
-    /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
-    /// - `dom`  The domain of the constraint. This defines the bound type and shape.
-    /// # Returns
-    /// - On success, return a N-dimensional constraint object that can be used to access
-    ///   solution values.
-    /// - On any failure: Panic.
-    pub fn constraint<const N : usize,E,D>(& mut self, name : Option<&str>, expr :  E, dom : D) -> Constraint<N>
-        where
-            E : IntoExpr<N>, 
-            <E as IntoExpr<N>>::Result : ExprTrait<N>,
-            D : IntoShapedDomain<N>,
-            D::Result : ConstraintDomain<N>
-    {
-        self.try_constraint(name, expr, dom).unwrap()
-    }
     
     /// Add a constraint
     ///
-    /// Note that even if the domain or the expression are sparse, a constraint will always be full.
+    /// Note that even if the domain or the expression are sparse, a constraint will always be
+    /// full, and all elements outside of the sparsity pattern are intereted as zeros. Unlike for
+    /// variables, an entry in the domain outside the sparsity pattern will NOT cause the
+    /// corresponding expression element to be fixed to 0.0. So, for example in
+    ///  ```rust
+    ///  use mosekcomodel::*;
+    ///  let mut m = Model::new(None);
+    ///  let x = m.variable(None, unbounded().with_shape(&[3]));
+    ///  let c1 = m.constraint(None, &x,greater_than(vec![1.0,1.0]).with_shape_and_sparsity(&[3],&[[0],[2]]));
+    ///  let c2 = m.constraint(None, &x,greater_than(vec![1.0,0.0,1.0]));
+    ///  ```
+    ///  The constraints `c1` and `c2` mean exactly the same.
     ///
+    ///  The domain is checked or expanded according to the shape of the `expr` argument. For
+    ///  example:
+    ///  - [LinearProtoDomain], [ConicProtoDomain], [PSDProtoDomain] for example from [zeros],
+    ///   `greater_than(vec![1.0,1.0])`, the expression shape must exactly match the domain shape.
+    ///  - [ScalableLinearDomain], [ScalableConicDomain] will be expanded to match the shape of the
+    ///    expression, and it will be checked that the shape is valid for the domain type - like
+    ///    that an exponential cone has size 3. For conic domains, the cones are by default in the inner-most
+    ///    dimension, so if  the expression shape is `[2,3,4]`, the cones in the domain will have
+    ///    size 4. This can be changed with the `::cone_dim` method.
+    ///  - [ScalablePSDDomain] will be expanded to match the domain, and as above, the cones are by
+    ///    default placed in the inner-most dimensions, so if the expression shape is `[2,3,4,4]` the PSD
+    ///    cones will have dimension 4. If the two cone dimensions to not have the same size, it
+    ///    will cause an error.
     /// # Arguments
     /// - `name` Optional constraint name. Currently this is only used to generate names passed to
     ///   the underlting task.
@@ -685,6 +696,22 @@ impl Model {
         let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
 
         dom.try_into_domain(shape)?.add_constraint(self,name)
+    }
+
+    /// Add a constraint. See [try_constraint].
+    ///
+    /// # Returns
+    /// - On success, return a N-dimensional constraint object that can be used to access
+    ///   solution values.
+    /// - On any failure: Panic.
+    pub fn constraint<const N : usize,E,D>(& mut self, name : Option<&str>, expr :  E, dom : D) -> Constraint<N>
+        where
+            E : IntoExpr<N>, 
+            <E as IntoExpr<N>>::Result : ExprTrait<N>,
+            D : IntoShapedDomain<N>,
+            D::Result : ConstraintDomain<N>
+    {
+        self.try_constraint(name, expr, dom).unwrap()
     }
 
     pub(crate) fn psd_constraint<const N : usize>(& mut self, name : Option<&str>, dom : PSDDomain<N>) -> Result<Constraint<N>,String> {
@@ -1114,102 +1141,6 @@ impl Model {
             shape 
         })
     }
-
-
-//    pub(crate) fn add_disjunction_clause<const N : usize, E>(&mut self, e : &E, dom : ConicDomain<N>) where E : expr::ExprTrait<N> {
-//        let (dt,offset,shape,conedim,is_integer) = dom.dissolve();
-//        e.eval(& mut self.rs, & mut self.ws, & mut self.xs).unwrap();
-//
-//        let (eshape,ptr,_,subj,cof) = self.rs.pop_expr();
-//        if ! shape.iter().zip(eshape.iter()).all(|(&a,&b)| a==b) {
-//            panic!("Mismatching shapes of expression and domain: {:?} vs {:?}",eshape,shape);
-//        }
-//        let nelm = ptr.len()-1;
-//
-//        if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
-//            panic!("Invalid subj index in evaluated expression");
-//        }
-//
-//        let afei = self.task.get_num_afe().unwrap();
-//
-//        let (asubj,
-//             acof,
-//             aptr,
-//             afix,
-//             abarsubi,
-//             abarsubj,
-//             abarsubk,
-//             abarsubl,
-//             abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
-//        let conesize = if N == 0 { 1 } else { shape[conedim] };
-//        let numcone  = shape.iter().product::<usize>() / conesize;
-//
-//        let domidx = match dt {
-//            ConicDomainType::NonNegative           => self.task.append_rplus_domain(conesize.try_into().unwrap()).unwrap(),
-//            ConicDomainType::NonPositive           => self.task.append_rminus_domain(conesize.try_into().unwrap()).unwrap(),
-//            ConicDomainType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap()).unwrap(),
-//            ConicDomainType::Zero                  => self.task.append_rzero_domain(conesize.try_into().unwrap()).unwrap(),
-//            ConicDomainType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap()).unwrap(),
-//            ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
-//            ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
-//            ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
-//            ConicDomainType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
-//            ConicDomainType::ExponentialCone       => self.task.append_primal_exp_cone_domain().unwrap(),
-//            ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain().unwrap(),
-//            ConicDomainType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice()).unwrap(),
-//            ConicDomainType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice()).unwrap(),
-//        };
-//
-//        self.task.append_afes(nelm as i64).unwrap();
-//
-//        let dstafe0 = self.djc_temp_afeidx.len();
-//        let dstdom0 = self.djc_temp_domidx.len();
-//        self.djc_temp_afeidx.resize(dstafe0+nelm,0);
-//        self.djc_temp_b.resize(dstafe0+nelm,0.0);
-//        self.djc_temp_domidx.resize(dstdom0+numcone,domidx);
-//
-//        self.djc_temp_b[dstafe0..].copy_from_slice(offset.as_slice());
-//        self.djc_temp_afeidx[dstafe0..].iter_mut().zip(afei..afei+nelm as i64).for_each(|(d,s)| *d = s);
-//
-//        let d0 : usize = if N == 0 { 1 } else { shape[0..conedim].iter().product() };
-//        let d1 : usize = if N == 0 { 1 } else { shape[conedim] };
-//        let d2 : usize = if N == 0 { 1 } else { shape[conedim+1..].iter().product() };
-//        let afeidxs : Vec<i64> = iproduct!(0..d0,0..d2,0..d1)
-//            .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64)
-//            .collect();
-//
-//        if asubj.len() > 0 {
-//            self.task.put_afe_f_row_list(afeidxs.as_slice(),
-//                                         aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
-//                                         &aptr[..nelm],
-//                                         asubj.as_slice(),
-//                                         acof.as_slice()).unwrap();
-//        }
-//        self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
-//        if abarsubi.len() > 0 {
-//            let mut p0 = 0usize;
-//            for (i,j,p) in izip!(abarsubi.iter(),
-//                                 abarsubi[1..].iter(),
-//                                 abarsubj.iter(),
-//                                 abarsubj[1..].iter())
-//                .enumerate()
-//                .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
-//                .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
-//               
-//                let subk = &abarsubk[p0..p];
-//                let subl = &abarsubl[p0..p];
-//                let cof  = &abarcof[p0..p];
-//                p0 = p;
-//
-//                let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
-//                let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
-//                self.task.put_afe_barf_entry(afei+i,j,&[matidx],&[1.0]).unwrap();
-//            }
-//        }
-//        self.djc_temp_cur_termsize += 1;
-//    }
-//    pub(crate) fn start_term(& mut self) { self.djc_temp_cur_termsize = 0; }
-//    pub(crate) fn end_term(& mut self) { self.djc_temp_termsize.push(self.djc_temp_cur_termsize); self.djc_temp_cur_termsize = 0 }    
 
     /// Add a disjunctive constraint to the model. A disjunctive constraint is a logical constraint
     /// of the form
@@ -2295,35 +2226,6 @@ impl<C0,C1> disjunction::DisjunctionTrait for DisjunctionOr<C0,C1>
         self.c1.append_disjunction_data(task, vars, exprs, term_ptr, element_dom, element_ptr, element_afei,element_b);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 /// Split an evaluated expression into linear and semidefinite parts

@@ -128,8 +128,11 @@
 //! 
 //! A domain is an object that indicates things like type (cone type or domain type), cone
 //! parameters, right-hand sides, shape and sparsity pattern. This is used when creating constraint
-//! or variables to define their
-//! properties.
+//! or variables to define their properties. Normally, the domain is not created directly, but
+//! rather an object implementing [IntoDomain] (for variables) or [IntoShapedDomain] (for
+//! constraints) is created and passed to the relevant function that will then validate it. Such an
+//! object may be incomplete and even inconsistent. It is completed and validated when used to
+//! create varibles and constraints.
 //!
 //! ## Variables
 //!
