@@ -860,6 +860,25 @@ impl<const N : usize> LinearRangeDomain<N> {
          self.sparsity,
          self.is_integer)
     }
+    pub fn dense(self) -> Self {
+        if let Some(sp) = self.sparsity {
+            let n = self.shape.iter().product();
+            let mut lower = vec![0.0; n];
+            let mut upper = vec![0.0; n];
+            lower.permute_by_mut(sp.as_slice()).zip(self.lower.iter()).for_each(|(t,s)| *t = *s);
+            upper.permute_by_mut(sp.as_slice()).zip(self.upper.iter()).for_each(|(t,s)| *t = *s);
+
+            LinearRangeDomain{ 
+                lower,
+                upper,
+                sparsity : None,
+                ..self
+            }
+        }
+        else { 
+            self
+        }
+    }
 }
 //-----------------------------------------------------------------------------
 // LinearDomain

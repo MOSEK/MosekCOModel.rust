@@ -434,6 +434,37 @@ impl Model {
             });
     }
 
+
+    pub fn try_ranged_variable<const N : usize,D>(&mut self, name : Option<&str>, dom : D) -> Result<(Variable<N>,Variable<N>),String> 
+        where 
+            D : IntoLinearRange<Result = LinearRangeDomain<N>>
+    {
+        let domain = dom.into_range()?;
+        let vari = self.task.get_num_var().unwrap();
+        let n : usize = domain.shape.iter().product();
+        let varend : i32 = ((vari as usize) + n).try_into().unwrap();
+        let firstvar = self.vars.len();
+        self.vars.reserve(n*2);
+
+        (vari..vari+n as i32).for_each(|j| self.vars.push(VarAtom::Linear(j,WhichLinearBound::Lower)));
+        (vari..vari+n as i32).for_each(|j| self.vars.push(VarAtom::Linear(j,WhichLinearBound::Upper)));
+        self.task.append_vars(n as i32).unwrap();
+        if let Some(name) = name {
+            self.var_names(name,vari,&domain.shape,None)
+        }
+        
+        self.task.put_var_bound_slice(vari,varend,vec![mosek::Boundkey::RA;n].as_slice(),domain.lower.as_slice(),domain.upper.as_slice()).unwrap();
+        Ok((Variable::new((firstvar..firstvar+n).collect(),     None, &domain.shape),
+            Variable::new((firstvar+n..firstvar+n*2).collect(), None, &domain.shape)))
+    }
+
+    pub fn ranged_variable<const N : usize,D>(&mut self, name : Option<&str>, dom : D) -> (Variable<N>,Variable<N>) 
+        where 
+            D : IntoLinearRange<Result = LinearRangeDomain<N>>
+    {
+        self.try_ranged_variable(name, dom).unwrap()
+    }
+
     fn linear_variable<const N : usize>(&mut self, name : Option<&str>,dom : LinearDomain<N>) -> Variable<N> {
         let (dt,b,shape_,sp,isint) = dom.extract();
         let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
@@ -653,7 +684,7 @@ impl Model {
         let (eshape,ptr,_,subj,cof) = self.rs.pop_expr();
         let nelm = *ptr.last().unwrap();
         let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
-        let domain = dom.into_range(shape)?;
+        let domain = dom.into_range(shape)?.dense();
       
         if domain.is_integer {
             return Err("Constraint cannt be integer".to_string());
@@ -727,6 +758,14 @@ impl Model {
 
         Ok((Constraint{ idxs : (firstcon..firstcon+nelm).collect(),        shape },
             Constraint{ idxs : (firstcon+nelm..firstcon+2*nelm).collect(), shape }))
+    }
+
+    pub fn ranged_constraint<const N : usize,E,D>(&mut self, name : Option<&str>, expr : E, dom : D) -> (Constraint<N>,Constraint<N>)
+        where E : IntoExpr<N>,
+              E::Result : ExprTrait<N>,
+              D : IntoShapedLinearRange<N>
+    {
+        self.try_ranged_constraint(name,expr,dom).unwrap()
     }
 
     /// Add a constraint
