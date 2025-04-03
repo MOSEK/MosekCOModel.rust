@@ -24,9 +24,16 @@ pub enum Sense {
 }
 
 #[derive(Clone,Copy,Debug)]
+pub enum WhichLinearBound {
+    Lower,
+    Upper,
+    Both
+}
+
+#[derive(Clone,Copy,Debug)]
 pub enum VarAtom {
     // Task variable index
-    Linear(i32),
+    Linear(i32, WhichLinearBound), // (vari,which bound)
     // Task bar element (barj,k,l)
     BarElm(i32,usize),
     // Conic variable (j,offset)
@@ -38,7 +45,7 @@ enum ConAtom {
     // Conic constraint element (acci, offset)
     ConicElm{acci : i64, afei : i64, accoffset : usize},
     BarElm{acci : i64, accoffset : i64, afei : i64, barj : i32, offset : usize},
-    Linear(i32,f64,i32) // (coni, rhs,bk)
+    Linear(i32,f64,i32,WhichLinearBound) // (coni, rhs,bk, which bound)
 }
 
 /// Solution type selector
@@ -215,7 +222,6 @@ pub trait ModelItem<const N : usize> {
     }
     fn primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64]) -> Result<usize,String>;
     fn dual_into(&self,m : &Model,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String>;
-
 }
 
 //======================================================
@@ -228,18 +234,11 @@ pub trait ModelItemIndex<T> {
     fn index(self,obj : &T) -> Self::Output;
 }
 
-
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct Disjunction {
     index : i64
 }
-
-
-
-
-
-
 
 impl<const N : usize> ModelItem<N> for Constraint <N> {
     fn len(&self) -> usize { return self.shape.iter().product(); }
@@ -303,7 +302,7 @@ impl Model {
         task.put_int_param(mosek::Iparam::PTF_WRITE_SOLUTIONS, 1).unwrap();
         Model{
             task,
-            vars    : vec![VarAtom::Linear(-1)],
+            vars    : vec![VarAtom::Linear(-1,WhichLinearBound::Both)],
             cons    : Vec::new(),
 
             sol_bas : Solution::new(),
@@ -458,7 +457,7 @@ impl Model {
         self.vars.reserve(n);
 
         let firstvar = self.vars.len();
-        (vari..vari+n as i32).for_each(|j| self.vars.push(VarAtom::Linear(j)));
+        (vari..vari+n as i32).for_each(|j| self.vars.push(VarAtom::Linear(j,WhichLinearBound::Both)));
 
         match dt {
             LinearDomainType::Free        => self.task.put_var_bound_slice_const(vari,vari+n as i32,mosek::Boundkey::FR,0.0,0.0).unwrap(),
@@ -487,7 +486,7 @@ impl Model {
         let varend : i32 = ((vari as usize) + n).try_into().unwrap();
         let firstvar = self.vars.len();
         self.vars.reserve(n);
-        (vari..vari+n as i32).for_each(|j| self.vars.push(VarAtom::Linear(j)));
+        (vari..vari+n as i32).for_each(|j| self.vars.push(VarAtom::Linear(j,WhichLinearBound::Both)));
         self.task.append_vars(n as i32).unwrap();
         if let Some(name) = name {
             self.var_names(name,vari,shape,None)
@@ -637,13 +636,99 @@ impl Model {
                 self.cons.push(ConAtom::ConicElm{acci : acci+(i0*d2+i2) as i64, afei: afei+i as i64,accoffset : i1})
             } );
 
-        Variable::new((firstvar..firstvar+n).collect(),
-                      None,
-                      &shape)
+        Variable::new((firstvar..firstvar+n).collect(), None, &shape)
     }
 
 
+    /// Add a ranged constraint. 
+    ///
+    ///
+    /// # Arguments
+    pub fn try_ranged_constraint<const N : usize,E,D>(&mut self, name : Option<&str>, expr : E, dom : D) -> Result<(Constraint<N>,Constraint<N>),String> 
+        where E : IntoExpr<N>,
+              E::Result : ExprTrait<N>,
+              D : IntoShapedLinearRange<N>
+    {
+        expr.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).map_err(|e| e.to_string())?;
+        let (eshape,ptr,_,subj,cof) = self.rs.pop_expr();
+        let nelm = *ptr.last().unwrap();
+        let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
+        let domain = dom.into_range(shape)?;
+      
+        if domain.is_integer {
+            return Err("Constraint cannt be integer".to_string());
+        }
     
+        if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
+            return Err("Expression is invalid: Variable subscript out of bound for this Model".to_string());
+        }
+
+        let coni = self.task.get_num_con().unwrap();
+        self.task.append_cons(i32::try_from(nelm).unwrap()).unwrap();
+
+        if let Some(name) = name {
+            Self::con_names(& mut self.task,name,coni,&shape);
+        }
+
+        self.cons.reserve(nelm*2);
+        let firstcon = self.cons.len();
+        (coni..coni+nelm as i32).zip(domain.lower.iter()).for_each(|(i,&c)| self.cons.push(ConAtom::Linear(i,c,mosek::Boundkey::RA,WhichLinearBound::Lower)));
+        (coni..coni+nelm as i32).zip(domain.upper.iter()).for_each(|(i,&c)| self.cons.push(ConAtom::Linear(i,c,mosek::Boundkey::RA,WhichLinearBound::Upper)));
+
+        self.cons.reserve(nelm);
+
+        let (asubj,
+             acof,
+             aptr,
+             afix,
+             abarsubi,
+             abarsubj,
+             abarsubk,
+             abarsubl,
+             abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
+
+        if !asubj.is_empty() {
+            self.task.put_a_row_slice(
+                coni,coni+nelm as i32,
+                &aptr[0..aptr.len()-1],
+                &aptr[1..],
+                asubj.as_slice(),
+                acof.as_slice()).unwrap();
+        }
+
+        let lower : Vec<f64> = domain.lower.iter().zip(afix.iter()).map(|(&ofs,&b)| ofs-b).collect();
+        let upper : Vec<f64> = domain.upper.iter().zip(afix.iter()).map(|(&ofs,&b)| ofs-b).collect();
+        self.task.put_con_bound_slice(coni,
+                                      coni+nelm as i32,
+                                      vec![mosek::Boundkey::RA; nelm].as_slice(),
+                                      lower.as_slice(),
+                                      upper.as_slice()).unwrap();
+
+        if ! abarsubi.is_empty() {
+            let mut p0 = 0usize;
+            for (i,j,p) in izip!(abarsubi.iter(),
+                                 abarsubi[1..].iter(),
+                                 abarsubj.iter(),
+                                 abarsubj[1..].iter())
+                .enumerate()
+                .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
+                .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+               
+                let subk = &abarsubk[p0..p];
+                let subl = &abarsubl[p0..p];
+                let cof  = &abarcof[p0..p];
+                p0 = p;
+
+                let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
+                let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
+                self.task.put_bara_ij(coni+i as i32, j,&[matidx],&[1.0]).unwrap();
+            }
+        }
+
+        Ok((Constraint{ idxs : (firstcon..firstcon+nelm).collect(),        shape },
+            Constraint{ idxs : (firstcon+nelm..firstcon+2*nelm).collect(), shape }))
+    }
+
     /// Add a constraint
     ///
     /// Note that even if the domain or the expression are sparse, a constraint will always be
@@ -976,7 +1061,7 @@ impl Model {
 
         self.cons.reserve(nelm);
         let firstcon = self.cons.len();
-        (coni..coni+nelm as i32).zip(b.iter()).for_each(|(i,&c)| self.cons.push(ConAtom::Linear(i,c,bk)));
+        (coni..coni+nelm as i32).zip(b.iter()).for_each(|(i,&c)| self.cons.push(ConAtom::Linear(i,c,bk,WhichLinearBound::Both)));
 
         self.cons.reserve(nelm);
 
@@ -1290,7 +1375,7 @@ impl Model {
                     match c {
                       ConAtom::ConicElm{afei,..} => conic_afe.push(*afei),
                       ConAtom::BarElm{afei,..} => conic_afe.push(*afei),
-                      ConAtom::Linear(coni,rhs,bk) => { lin_subi.push(*coni); lin_rhs.push(*rhs); lin_bk.push(*bk); },
+                      ConAtom::Linear(coni,rhs,bk,_) => { lin_subi.push(*coni); lin_rhs.push(*rhs); lin_bk.push(*bk); },
                      }
                 }
             }
@@ -1322,7 +1407,7 @@ impl Model {
                           conic_cof.extend_from_slice(cc);
                           conic_afe.push(*afei);
                       }
-                      ConAtom::Linear(coni,rhs,bk)       => {
+                      ConAtom::Linear(coni,rhs,bk,_)       => {
                           lin_ptr.push(jj.len());
                           lin_subj.extend_from_slice(jj);
                           lin_cof.extend_from_slice(cc);
@@ -1613,7 +1698,7 @@ impl Model {
 
                     self.vars[1..].iter().zip(sol.primal.var[1..].iter_mut()).for_each(|(&v,r)| {
                         *r = match v {
-                            VarAtom::Linear(j) => xx[j as usize],
+                            VarAtom::Linear(j,_) => xx[j as usize],
                             VarAtom::BarElm(j,ofs) => barx[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                             VarAtom::ConicElm(j,_coni) => xx[j as usize]
                         };
@@ -1643,12 +1728,22 @@ impl Model {
 
                     self.vars[1..].iter().zip(sol.dual.var.iter_mut()).for_each(|(&v,r)| {
                         *r = match v {
-                            VarAtom::Linear(j) => slx[j as usize] - sux[j as usize],
+                            VarAtom::Linear(j,which) => 
+                                match which {
+                                    WhichLinearBound::Both  => slx[j as usize] - sux[j as usize],
+                                    WhichLinearBound::Lower => slx[j as usize],
+                                    WhichLinearBound::Upper => - sux[j as usize],
+                                },
                             VarAtom::BarElm(j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                             VarAtom::ConicElm(_j,coni) => {
                                 match self.cons[coni] {
                                     ConAtom::ConicElm{acci,accoffset:ofs,..} => doty[accptr[acci as usize]+ofs],
-                                    ConAtom::Linear(i,..) => y[i as usize],
+                                    ConAtom::Linear(i,_,_,which) => 
+                                        match which {
+                                            WhichLinearBound::Both  => y[i as usize],
+                                            WhichLinearBound::Lower => slc[i as usize],
+                                            WhichLinearBound::Upper => - suc[i as usize],
+                                        },
                                     ConAtom::BarElm{barj:j,offset:ofs,..} => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                                 }
                             }
@@ -1657,7 +1752,12 @@ impl Model {
                     self.cons.iter().zip(sol.dual.con.iter_mut()).for_each(|(&v,r)| {
                         *r = match v {
                             ConAtom::ConicElm{acci,accoffset:ofs,..} => doty[accptr[acci as usize]+ofs],
-                            ConAtom::Linear(i,..) => y[i as usize],
+                            ConAtom::Linear(i,_,_,which) => 
+                                match which {
+                                    WhichLinearBound::Both  => y[i as usize],
+                                    WhichLinearBound::Lower => slc[i as usize],
+                                    WhichLinearBound::Upper => -suc[i as usize],
+                                },
                             ConAtom::BarElm{barj:j,offset:ofs,..} => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
                         };
                     });
@@ -2265,7 +2365,7 @@ fn split_expr(eptr    : &[usize],
             }
             else if c < 0.0 || c > 0.0 {
                 match *unsafe{ vars.get_unchecked(idx) } {
-                    VarAtom::Linear(j) => {
+                    VarAtom::Linear(j,_) => {
                         subj.push(j);
                         cof.push(c);
                     },
