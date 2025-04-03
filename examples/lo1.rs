@@ -6,13 +6,13 @@
 //! Purpose: Demonstrates how to solve the problem
 //! ```
 //! maximize 3*x0 + 1*x1 + 5*x2 + x3
-//! such that
+//! such that              
 //!          3*x0 + 1*x1 + 2*x2        = 30,
 //!          2*x0 + 1*x1 + 3*x2 + 1*x3 > 15,
 //!                 2*x1 +      + 3*x3 < 25
 //! and
-//!          x0,x1,x2,x3 > 0,
 //!          0 < x1 < 10
+//!          x0,x2,x3 > 0,
 //! ```
 extern crate mosekcomodel;
 
@@ -27,7 +27,7 @@ fn lo1() -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>) {
     // Create a model with the name 'lo1'
     let mut m = Model::new(Some("lo1"));
     // Create variable 'x' of length 4
-    let x = m.variable(Some("x"), greater_than(vec![0.0,0.0,0.0,0.0]));
+    let x = m.variable(Some("x0"), nonnegative().with_shape(&[4]));
 
     // Create constraints
     let _ = m.constraint(None, x.index(1), less_than(10.0));

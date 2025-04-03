@@ -42,12 +42,13 @@ fn markowitz_with_cardinality(mu : &[f64],
 
     let mut model = Model::new(Some("Markowitz portfolio with cardinality bound"));
     // Defines the variables. No shortselling is allowed.
-    let x = model.variable(Some("x"), greater_than(vec![0.0;n]));
+    let x = model.variable(Some("x"), nonnegative().with_shape(&[n]));
 
     // Additional "helper" variables 
     let z = model.variable(Some("z"), unbounded().with_shape(&[n]));
     // Binary variables  - do we change position in assets
-    let y = model.variable(Some("y"), greater_than(vec![0.0; n]).integer());
+    let (y,_) = model.ranged_variable(Some("y"), range(0.0,1.0).with_shape(&[n]).integer());
+    //let y = model.variable(Some("y"), greater_than(vec![0.0; n]).integer());
     _ = model.constraint(None, &y, less_than(vec![1.0; n]));
 
     //  Maximize expected return
@@ -64,7 +65,7 @@ fn markowitz_with_cardinality(mu : &[f64],
     _ = model.constraint(Some("sell"), z.sub(Expr::from(x0).sub(&x)), greater_than(vec![0.0; n]));
 
     // Constraints for turning y off and on. z-diag(u)*y<=0 i.e. z_j <= u_j*y_j
-    _ = model.constraint(Some("y_on_off"), z.sub(y.mul_elem(u)), less_than(vec![0.0;n])); 
+    _ = model.constraint(Some("y_on_off"), z.sub(y.mul_elem(u)), less_than(0.0)); 
 
     // At most K assets change position
     _ = model.constraint(Some("cardinality"), y.sum().sub(Expr::from(K as f64)), less_than(0.0));

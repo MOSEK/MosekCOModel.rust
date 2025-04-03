@@ -435,6 +435,18 @@ impl Model {
     }
 
 
+    /// Create a ranged variable
+    ///
+    /// # Arguments
+    /// - `name` Optional variable name
+    /// - `dom` variable domain range, see [crate::domain::range].
+    ///
+    /// # Returns
+    /// Ok success, return a pair if variables. When used as variables or for getting the primal
+    /// solution values, they are identical, but when getting the dual solution values, the first
+    /// of the pair will fetch the dual bound corresponding to the lower bound, and the second the
+    /// dual values for the upper bound.
+    /// On error, return a string with the reason.
     pub fn try_ranged_variable<const N : usize,D>(&mut self, name : Option<&str>, dom : D) -> Result<(Variable<N>,Variable<N>),String> 
         where 
             D : IntoLinearRange<Result = LinearRangeDomain<N>>
@@ -442,22 +454,31 @@ impl Model {
         let domain = dom.into_range()?;
         let vari = self.task.get_num_var().unwrap();
         let n : usize = domain.shape.iter().product();
-        let varend : i32 = ((vari as usize) + n).try_into().unwrap();
+        let nelm = domain.sparsity.as_ref().map(|v| v.len()).unwrap_or(n);
+        let varend : i32 = ((vari as usize) + nelm).try_into().unwrap();
         let firstvar = self.vars.len();
-        self.vars.reserve(n*2);
+        self.vars.reserve(nelm*2);
 
-        (vari..vari+n as i32).for_each(|j| self.vars.push(VarAtom::Linear(j,WhichLinearBound::Lower)));
-        (vari..vari+n as i32).for_each(|j| self.vars.push(VarAtom::Linear(j,WhichLinearBound::Upper)));
-        self.task.append_vars(n as i32).unwrap();
+        (vari..vari+nelm as i32).for_each(|j| self.vars.push(VarAtom::Linear(j,WhichLinearBound::Lower)));
+        (vari..vari+nelm as i32).for_each(|j| self.vars.push(VarAtom::Linear(j,WhichLinearBound::Upper)));
+        self.task.append_vars(nelm as i32).unwrap();
         if let Some(name) = name {
             self.var_names(name,vari,&domain.shape,None)
         }
+
+        if domain.is_integer {
+            self.task.put_var_type_list((vari..varend).collect::<Vec<i32>>().as_slice(), vec![mosek::Variabletype::TYPE_INT;nelm].as_slice()).unwrap();
+        }
         
         self.task.put_var_bound_slice(vari,varend,vec![mosek::Boundkey::RA;n].as_slice(),domain.lower.as_slice(),domain.upper.as_slice()).unwrap();
-        Ok((Variable::new((firstvar..firstvar+n).collect(),     None, &domain.shape),
-            Variable::new((firstvar+n..firstvar+n*2).collect(), None, &domain.shape)))
+        Ok((Variable::new((firstvar..firstvar+nelm).collect(),        domain.sparsity.clone(), &domain.shape),
+            Variable::new((firstvar+nelm..firstvar+nelm*2).collect(), domain.sparsity, &domain.shape)))
     }
 
+
+    /// Create a ranged variable. See [Model::try_ranged_variable].
+    ///
+    /// It will panic on any error.
     pub fn ranged_variable<const N : usize,D>(&mut self, name : Option<&str>, dom : D) -> (Variable<N>,Variable<N>) 
         where 
             D : IntoLinearRange<Result = LinearRangeDomain<N>>
@@ -673,8 +694,17 @@ impl Model {
 
     /// Add a ranged constraint. 
     ///
-    ///
     /// # Arguments
+    /// - `name` Optional variable name
+    /// - `expr` Constraint expression
+    /// - `dom` variable domain range, see [crate::domain::range].
+    ///
+    /// # Returns
+    /// Ok success, return a pair of constraints. When used for getting the primal
+    /// solution values, they are identical, but when getting the dual solution values, the first
+    /// of the pair will fetch the dual bound corresponding to the lower bound, and the second the
+    /// dual values for the upper bound.
+    /// On error, return a string with the reason.
     pub fn try_ranged_constraint<const N : usize,E,D>(&mut self, name : Option<&str>, expr : E, dom : D) -> Result<(Constraint<N>,Constraint<N>),String> 
         where E : IntoExpr<N>,
               E::Result : ExprTrait<N>,

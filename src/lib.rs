@@ -265,6 +265,7 @@ pub use domain::{IntoDomain,
                  in_dual_power_cone,
                  in_dual_power_cones,
                  in_psd_cone,
-                 in_psd_cones 
+                 in_psd_cones,
+                 range,
                  };
 pub use disjunction::{ConjunctionTrait,DisjunctionTrait};
