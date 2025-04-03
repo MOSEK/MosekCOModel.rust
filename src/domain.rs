@@ -747,9 +747,6 @@ impl IntoProtoRangeBound for &[f64] {
     fn make(self, other : Self) -> Self::Result { self.to_vec().make(other.to_vec()) }
 }
 
-pub fn in_range<T>(lower : T, upper : T) -> T::Result where T : IntoProtoRangeBound {
-    lower.make(upper)
-}
 
 pub trait IntoLinearRange {
     type Result;
@@ -1239,10 +1236,10 @@ pub fn in_psd_cone() -> ScalablePSDDomain {
 /// Domain of a multiple symmetric positive semidefinite cones. The cones are aligned in the two
 /// dimensions give by `conedim1` and `conedim2`. For constraints this means that each slice in `conedim1,
 /// conedim2` defines the constraint
-/// ```math 
-/// 1/2 (E+E') ≽ 0
-/// ```
-/// If the expression is already symmetric, this simply means `E≽0`.
+/// $$ 
+/// 1/2 (E+E^T) \\succ 0
+/// $$
+/// If the expression is already symmetric, this simply means \\(E\\succ 0\\)`.
 ///
 /// For variables is produces a stack of positive symmetric semidefinite cones.
 /// 
@@ -1250,9 +1247,15 @@ pub fn in_psd_cone() -> ScalablePSDDomain {
 /// - `shape` - shape of the cone, where `shape[conedim1]==shape[conedim2]`.
 /// - `conedim1` - first cone dimension
 /// - `conedim2` - second cone dimension. `conedim2` must be different from `conedim1`.
+#![doc = include_str!("../js/mathjax.tag")]
 pub fn in_psd_cones<const N : usize>(shape : &[usize; N]) -> PSDProtoDomain<N> {
     PSDProtoDomain{
         shape : *shape,
         cone_dims : None
     }
+}
+
+
+pub fn in_range<T>(lower : T, upper : T) -> T::Result where T : IntoProtoRangeBound {
+    lower.make(upper)
 }

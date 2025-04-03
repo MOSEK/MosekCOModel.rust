@@ -6,6 +6,7 @@
 //! interface currently supports 
 //! - Linear and conic variables and constraints
 //! - Integer variables
+//! - Disjunctive constraints
 //!
 //! The [Model] object encapsulates a model of the form
 //! $$
