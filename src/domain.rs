@@ -1,3 +1,4 @@
+#![doc = include_str!("../js/mathjax.tag")]
 use iter::PermuteByMutEx;
 use itertools::Either;
 use super::matrix::NDArray;
@@ -308,7 +309,7 @@ impl<const N : usize> IntoShapedDomain<N> for ScalableConicDomain {
 /// A struct that can be turned into [ConicDomain] via [IntoDomain] or [IntoShapedDomain].
 ///
 /// The struct acts as a factory where the domain properties can be updated. Internally in the
-/// [Model] object it is turned into a [ConicDomain] and consistency is checked.
+/// [crate::Model] object it is turned into a [ConicDomain] and consistency is checked.
 pub struct ConicProtoDomain<const N : usize> {
     shape       : [usize;N],
     domain_type : ConicDomainType,
@@ -1057,59 +1058,135 @@ pub fn zeros<const N : usize>(shape : &[usize; N]) -> LinearProtoDomain<N> { zer
 /// Domain of values greater than the offset `v`. 
 /// 
 /// # Arguments
-/// - `v` - Offset, the shape of the domain is taken from the shape of `v`
+/// - `v` - Offset, the shape of the domain is taken from the shape of `v`. If `v` is a scalar, the
+///   result is a scalable domain.
+
 pub fn greater_than<T : OffsetTrait>(v : T) -> T::Result { v.greater_than() }
 /// Domain of values less than the offset `v`. 
 /// 
 /// # Arguments
-/// - `v` - Offset, the shape of the domain is taken from the shape of `v`
+/// - `v` - Offset, the shape of the domain is taken from the shape of `v`. If `v` is a scalar, the
+///   result is a scalable domain.
+
 pub fn less_than<T : OffsetTrait>(v : T) -> T::Result { v.less_than() }
 /// Domain of values equal to the offset `v`. 
 /// 
 /// # Arguments
-/// - `v` - Offset, the shape of the domain is taken from the shape of `v`
+/// - `v` - Offset, the shape of the domain is taken from the shape of `v`. If `v` is a scalar, the
+///   result is a scalable domain.
 pub fn equal_to<T : OffsetTrait>(v : T) -> T::Result { v.equal_to() }
 
 
-
-
-
-
 /// Domain of a single quadratic cone of unknown size. The size can subsequently be defined, or it
-/// can be deduced when used in a constraint.
+/// can be deduced when used in a constraint. By default the cones are aligned in the inner-most
+/// dimension.
+///
+/// The cone has the form
+/// $$
+/// \\left\\{ x \\in R^n | x_1^2 \\geq \\left\\Vert x_2^2 + \\cdots + x_n^2 \\right\\Vert^2, x₁ \\geq 0 \\right\\}
+/// $$
+///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
 pub fn in_quadratic_cone()                     -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::QuadraticCone,         is_integer : false, cone_dim : None} }
 /// Domain of a single rotated quadratic cone of unknown size. The size can subsequently be defined, or it
-/// can be deduced when used in a constraint.
+/// can be deduced when used in a constraint. By default the cones are aligned in the inner-most
+/// dimension.
+///
+/// The cone has the form
+/// $$
+/// \\left\\{ x \in R^n | \\frac{1}{2} x_1 x_2 \geq \\left\\Vert x_3^2 + \\cdots + x_n^2 \\right\\Vert^2, x_1, x_2 \\geq 0 \\right\\}
+/// $$
+///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
 pub fn in_rotated_quadratic_cone()             -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::RotatedQuadraticCone,  is_integer : false, cone_dim : None} }
 /// Domain of a single scaled vectorized PSD cone of unknown size. The size can subsequently be defined, or it
-/// can be deduced when used in a constraint.
+/// can be deduced when used in a constraint. By default the cones are aligned in the inner-most
+/// dimension.
+///
+/// For an `n` dimensional positive symmetric matrix this
+/// is the scaled lower triangular part of the matrix in column-major format, i.e. 
+/// $$
+/// \\left\\{ x \\in R^{n(n+1)/2} | \\mathrm{sMat}(x) \\in S_+^n \\right\\}
+/// $$
+/// where
+/// $$
+/// \\mathrm{sMat}(x) = \\left[ \\begin{array}{cccc} 
+///   x_1            & x_2/\\sqrt{2} & \\cdots & x_n/\\sqrt{2}      \\\\
+///   x_2/\\sqrt{2}  & x_n+1         & \\cdots & x_{2n-1}/\\sqrt{2} \\\\
+///                  &               & \\cdots &                    \\\\
+///   x_n/\\sqrt{2}  & x_{2n-1}/\\sqrt{2} & \\cdots & x_{n(n+1_/2}^2
+/// \\end{array} \\right]
+/// $$
+///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
 pub fn in_svecpsd_cone()                       -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::SVecPSDCone,           is_integer : false, cone_dim : None} }
 /// Domain of a single geometric mean cone of unknown size. The size can subsequently be defined, or it
-/// can be deduced when used in a constraint.
-pub fn in_geometric_mean_cone()           -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::GeometricMeanCone,     is_integer : false, cone_dim : None} }
-/// domain of a single dual geometric mean cone of unknown size. The size can subsequently be defined, or it
-/// can be deduced when used in a constraint.
-pub fn in_dual_geometric_mean_cone()      -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::DualGeometricMeanCone, is_integer : false, cone_dim : None} }
-/// domain of a single exponential cone of size 3. The result is a vector domain of size 3.
-pub fn in_exponential_cone()              -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::ExponentialCone,       is_integer : false, cone_dim : None} }
-/// Domain of a single dual exponential cone ofsize `dim`. The result is a vector domain of size `dim`.
-pub fn in_dual_exponential_cone()         -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::DualExponentialCone,   is_integer : false, cone_dim : None} }
-/// Domain of a power cone of unknown size.
+/// can be deduced when used in a constraint. By default the cones are aligned in the inner-most
+/// dimension.
 ///
+/// The cone is defined as
+/// $$
+/// \\left\\{ x \\in R^n| (x_1\\cdots x_{n-1})^{1/(n-1)} |x_n|, x_1,\\ldots,x_{n-1} \\geq 0\\right\\}
+/// $$
+///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
+pub fn in_geometric_mean_cone()           -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::GeometricMeanCone,     is_integer : false, cone_dim : None} }
+
+
+/// domain of a single dual geometric mean cone of unknown size. The size can subsequently be defined, or it
+/// can be deduced when used in a constraint. By default the cones are aligned in the inner-most
+/// dimension.
+///
+/// The cone is defined as
+/// $$
+/// \\left\\{ x \\in R^n | (n-1)(x_1 \\cdots x_{n-1})^{1/(n-1)} |x_n|, x_1,\\ldots,x_{n-1} \\geq 0\\right\\}
+/// $$
+///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
+pub fn in_dual_geometric_mean_cone()      -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::DualGeometricMeanCone, is_integer : false, cone_dim : None} }
+/// domain of a single exponential cone of unknown size. By default the cones are aligned in the inner-most
+/// dimension, which must be 3
+///
+/// The cone is defined as
+/// $$
+/// \\left\\{ x \\in R^3 | x_1 \\geq x_1 e^{x_3/x_2}, x_0, x_1 \geq 0 \\right\\}
+/// $$
+pub fn in_exponential_cone()              -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::ExponentialCone,       is_integer : false, cone_dim : None} }
+
+/// Domain of a single dual exponential cone of unknown size. The result is a vector domain of size `dim`. By default the cones are aligned in the inner-most
+/// dimension, which must be 3.
+///
+/// The cone is defined as
+/// $$
+/// \\left\\{ x \\in R^3 | x_1 \\geq -x_3 e^{-1} e^{x_2/x_3}, x_3 \\geq 0, x_1 \\geq 0 \\right\\}
+/// $$
+///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
+pub fn in_dual_exponential_cone()         -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::DualExponentialCone,   is_integer : false, cone_dim : None} }
+
+/// Domain of a power cone of unknown size. By default the cones are aligned in the inner-most
+/// dimension.
+///
+/// The cone is defined as 
+/// $$
+/// \\left\\{ x \\in R^n | x_2^{\\beta_1} \\cdots x_k^{\\beta_k} \\geq \\sqrt{x_{k+1}^2 \\cdots x_n^2}, x_0,\\ldots, x_k \geq 0 \\right\\}
+/// $$
 /// # Arguments
 /// - `alpha` The powers of the power cone. This will be normalized, i.e. each element is divided
 ///   by `sum(alpha)`
+///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
 pub fn in_power_cone(alpha : &[f64]) -> ScalableConicDomain {
     let s : f64 = alpha.iter().sum(); 
     ScalableConicDomain{ 
         domain_type : ConicDomainType::PrimalPowerCone(alpha.iter().map(|a| a/s).collect()),
         is_integer  : false, 
         cone_dim    : None} }
-/// Domain of a single power cone.
+/// Domain of a single power cone. By default the cones are aligned in the inner-most
+/// dimension.
+///
+/// The cone is defined as:
+/// $$
+/// \\left\\{ x \\in R^n | (x_1/\\beta_1)^{\\beta_1} \\cdots (x_k)^{\\beta_k} \geq \\sqrt{x_{k+1}^2 \\cdots x_n^2}, x_0,\\ldots, x_k \\geq 0 \\right\\}
+/// $$
 ///
 /// # Arguments
 /// - `alpha` The powers of the power cone. This will be normalized, i.e. each element is divided
 ///   by `sum(alpha)`
+///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
 pub fn in_dual_power_cone(alpha : &[f64]) -> ScalableConicDomain { 
     let s : f64 = alpha.iter().sum();
     ScalableConicDomain{ 
@@ -1131,18 +1208,23 @@ fn in_cones<const N : usize>(shape : &[usize; N], cone_dim : usize,domain_type :
 
 /// Domain of a multiple quadratic cones.
 /// 
+/// See [in_quadratic_cone].
+///
 /// # Arguments
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
 pub fn in_quadratic_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> ConicProtoDomain<N> { in_cones(shape,conedim,ConicDomainType::QuadraticCone) }
 /// domain of a multiple rotated quadratic cones.
 /// 
+/// See [in_rotated_quadratic_cone].
+///
 /// # arguments
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
 pub fn in_rotated_quadratic_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> ConicProtoDomain<N> { in_cones(shape,conedim,ConicDomainType::RotatedQuadraticCone) }
 /// Domain of a multiple scaled vectorized PSD cones.
 /// 
+/// See [in_svecpsd_cone].
 /// # Arguments
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
@@ -1155,18 +1237,21 @@ pub fn in_svecpsd_cones<const N : usize>(shape : &[usize; N], conedim : usize) -
 }
 /// Domain of a multiple geometric mean cones.
 /// 
+/// See [in_geometric_mean_cone].
 /// # Arguments
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
 pub fn in_geometric_mean_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> ConicProtoDomain<N> { in_cones(shape,conedim,ConicDomainType::GeometricMeanCone) }
 /// Domain of a multiple dual geometric mean cones.
-/// 
+///
+/// See [in_dual_geometric_mean_cone]
 /// # Arguments
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
 pub fn in_dual_geometric_mean_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> ConicProtoDomain<N> { in_cones(shape,conedim,ConicDomainType::DualGeometricMeanCone) }
 /// domain of a multiple exponential cones.
 /// 
+/// See [in_exponential_cone].
 /// # arguments
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
@@ -1176,6 +1261,8 @@ pub fn in_exponential_cones<const N : usize>(shape : &[usize; N], conedim : usiz
 }
 /// Domain of a multiple dual exponential cones.
 /// 
+/// See [in_dual_exponential_cone].
+///
 /// # Arguments
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
@@ -1186,6 +1273,7 @@ pub fn in_dual_exponential_cones<const N : usize>(shape : &[usize; N], conedim :
 
 /// Domain of a number of power cones.
 ///
+/// See [in_power_cone].
 /// # Arguments
 /// - `shape` Shape of the domain
 /// - `conedim` Index of the dimension in which the individual cones are alighed.
@@ -1203,6 +1291,7 @@ pub fn in_power_cones<const N : usize>(shape : &[usize;N], cone_dim : usize, alp
 
 /// Domain of a number of dual power cones.
 ///
+/// See [in_dual_power_cone].
 /// # Arguments
 /// - `shape` Shape of the domain
 /// - `conedim` Index of the dimension in which the individual cones are alighed.
@@ -1218,36 +1307,46 @@ pub fn in_dual_power_cones<const N : usize>(shape : &[usize;N], cone_dim : usize
         is_integer : false}
 }
 
-/// Domain of a single symmetric positive semidefinite cones. For constraints this defines the constraint 
-/// ```math 
-/// 1/2 (E+E') ≽ 0
-/// ```
-/// If the expression is already symmetric, this simply means `E≽0`. For variables it is simply the
-/// symmetric positive semidefinite cone.
+/// Scalable domain of symmetric positive definite cones of unknown size. By default the cones will
+/// be aligned in the two last dimensions, but this as well as shape can be changed subsequently. 
 ///
+/// The exact meaning of the constraint is that each slice in the two cone dimensions define a
+/// constraint of the form
+/// $$ 
+/// 1/2 (E+E^T) \\succ 0
+/// $$
+/// So _symmetry_ of E is not enforced.
 ///
-/// # Arguments
-/// - `dim` - Dimension of the PSD cone.
+/// If the expression is already symmetric, this simply means \\(E\\succ 0\\).
+///
+/// For variables, a shape must be defined.
+///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
 pub fn in_psd_cone() -> ScalablePSDDomain {
     ScalablePSDDomain{
         cone_dims : None
     }
 }
-/// Domain of a multiple symmetric positive semidefinite cones. The cones are aligned in the two
-/// dimensions give by `conedim1` and `conedim2`. For constraints this means that each slice in `conedim1,
-/// conedim2` defines the constraint
+
+
+/// Domain of a multiple symmetric positive semidefinite cones. 
+///
+/// By default the cones are aligned in the two innermost dimensions, but this can be changed. See
+/// [PSDProtoDomain]. The size of the two cone dimensions must be the same. 
+///
+/// The exact meaning of the constraint is that each slice in the two cone dimensions define a
+/// constraint of the form
 /// $$ 
 /// 1/2 (E+E^T) \\succ 0
 /// $$
-/// If the expression is already symmetric, this simply means \\(E\\succ 0\\)`.
+/// So _symmetry_ of E is not enforced.
 ///
-/// For variables is produces a stack of positive symmetric semidefinite cones.
+/// If the expression is already symmetric, this simply means \\(E\\succ 0\\).
+///
+/// For variables this produces a stack of positive symmetric semidefinite cones.
 /// 
 /// # Arguments
 /// - `shape` - shape of the cone, where `shape[conedim1]==shape[conedim2]`.
-/// - `conedim1` - first cone dimension
-/// - `conedim2` - second cone dimension. `conedim2` must be different from `conedim1`.
-#![doc = include_str!("../js/mathjax.tag")]
+///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
 pub fn in_psd_cones<const N : usize>(shape : &[usize; N]) -> PSDProtoDomain<N> {
     PSDProtoDomain{
         shape : *shape,
@@ -1255,7 +1354,14 @@ pub fn in_psd_cones<const N : usize>(shape : &[usize; N]) -> PSDProtoDomain<N> {
     }
 }
 
-
+/// Define a range for use with [crate::Model::ranged_constraint] and
+/// [crate::Model::ranged_variable] to create ranged variables and constraints.
+/// 
+/// The two bounds must have same type and can be either a scalar or a vector. Shape and sparsity
+/// can be defined subsequently.
+/// # Arguments
+/// - `lower` Lower bound
+/// - `upper` Upper bound
 pub fn in_range<T>(lower : T, upper : T) -> T::Result where T : IntoProtoRangeBound {
     lower.make(upper)
 }

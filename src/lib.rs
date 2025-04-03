@@ -2,7 +2,7 @@
 //! # MosekModel library
 //!
 //! MosekModel is a crate for setting up conic optimization models to be solved with
-//! (MOSEK)[https://mosek.com] via (mosek.rust)[https://crates.io/crates/mosek]. The
+//! [MOSEK](https://mosek.com) via [mosek.rust](https://crates.io/crates/mosek). The
 //! interface currently supports 
 //! - Linear and conic variables and constraints
 //! - Integer variables
@@ -56,7 +56,7 @@
 //!   $$
 //!   \\left\\{ x \\in R^n | (n-1)(x_1 \\cdots x_{n-1})^{1/(n-1)} |x_n|, x_1,\\ldots,x_{n-1} \\geq 0\\right\\}
 //!   $$
-//! - Scaled vectorized positive semidefinite cone(s) (see [in_svecpsd_cone], [in_svecpsd_cones]). For a `n` dimensional positive symmetric this
+//! - Scaled vectorized positive semidefinite cone(s) (see [in_svecpsd_cone], [in_svecpsd_cones]). For a `n` dimensional positive symmetric matrix this
 //!   is the scaled lower triangular part of the matrix in column-major format, i.e. 
 //!   $$
 //!   \\left\\{ x \\in R^{n(n+1)/2} | \\mathrm{sMat}(x) \\in S_+^n \\right\\}
