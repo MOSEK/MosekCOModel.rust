@@ -1,4 +1,3 @@
-//! The model module implements the Model and Constraint objects.
 //!
 #[doc = include_str!("../js/mathjax.tag")]
 
@@ -165,6 +164,25 @@ impl<const N : usize> VarDomainTrait for PSDDomain<N> {
 ///
 /// Variables and constraints are created through the `Model` object and belong to exactly that
 /// model.
+///
+/// # Example
+///
+/// A Basic example setting up a model and adding variables and constraints:
+/// ```rust
+/// use mosekcomodel::*;
+///
+/// // Create a model with a name
+/// let mut model = Model::new(Some("MyModel"));
+/// // Create a scalar unbounded variable
+/// let x = model.variable(Some("x"), unbounded());
+/// // Create a conic variable consisting of 4 quadratic cones of size 3
+/// let y = model.variable(Some("y"), in_quadratic_cone().with_shape(&[4,3]));
+/// // Create a binary variable
+/// let z = model.ranged_variable(Some("z"),in_range(0.0, 1.0).integer()).0;
+/// 
+/// // Create a scalar constraint
+/// _ = model.constraint(Some("C1"), x.add(y.index([0,0])), equal_to(5.0));
+/// ```
 #[doc = include_str!("../js/mathjax.tag")]
 pub struct Model {
     /// The MOSEK task
@@ -439,7 +457,7 @@ impl Model {
     ///
     /// # Arguments
     /// - `name` Optional variable name
-    /// - `dom` variable domain range, see [crate::domain::range].
+    /// - `dom` variable domain range, see [in_range].
     ///
     /// # Returns
     /// Ok success, return a pair if variables. When used as variables or for getting the primal
@@ -697,7 +715,7 @@ impl Model {
     /// # Arguments
     /// - `name` Optional variable name
     /// - `expr` Constraint expression
-    /// - `dom` variable domain range, see [crate::domain::range].
+    /// - `dom` variable domain range, see [in_range].
     ///
     /// # Returns
     /// Ok success, return a pair of constraints. When used for getting the primal

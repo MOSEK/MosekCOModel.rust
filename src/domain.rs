@@ -743,7 +743,7 @@ impl IntoProtoRangeBound for &[f64] {
     fn make(self, other : Self) -> Self::Result { self.to_vec().make(other.to_vec()) }
 }
 
-pub fn range<T>(lower : T, upper : T) -> T::Result where T : IntoProtoRangeBound {
+pub fn in_range<T>(lower : T, upper : T) -> T::Result where T : IntoProtoRangeBound {
     lower.make(upper)
 }
 

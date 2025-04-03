@@ -6,7 +6,7 @@
 //! - Linear and conic variables and constraints
 //! - Integer variables
 //!
-//! The model used is this:
+//! The [Model] object encapsulates a model of the form
 //! $$
 //! \begin{array}{ll}
 //! \\mathrm{min/max}  & c^t x \\\\
@@ -134,9 +134,17 @@
 //! object may be incomplete and even inconsistent. It is completed and validated when used to
 //! create varibles and constraints.
 //!
-//! ## Variables
+//! ## Constraints and Variables
+//! 
+//! Variables and constraints are created through the [Model] object. Functions creating variables
+//! and constraints have two versions, a `try_` and a plain version. The former will return a
+//! [Result::Err] whenever an error was encountered that left the [Model] in a consistent state.
+//! The latter version will `panic!` on any error.
 //!
-//! When a [Variable] is created in a model, the model adds the necessary
+//! ### Variables
+//!
+//! When a [Variable] is created in a model as [Model::variable] or [Model::ranged_variable], the
+//! model adds the necessary
 //! internal information to map a linear variable index to something in the underlying task, but
 //! after that, a variable is essentially a list of indexes of the scalar variables t a shape and
 //! sparsity. Variable objects can be stacked, indexed and sliced to obtain new variable objects.
@@ -144,9 +152,10 @@
 //! When a model has been optimized, the variable object is used to access the parts of the
 //! solution it represents through the [Model] object.
 //!
-//! ## Constraints
+//! ### Constraints
 //! A constraint is created in a [Model] from an expression (something implementing [ExprTrait])
-//! and a domain. The sparsity pattern of the domain is ignored, and a constraint is always dense.
+//! and a domain using [Model::constraint] or [Model::ranged_constraint]. The sparsity pattern of
+//! the domain is ignored, and a constraint is always dense.
 //! When a constraint has been created it can be indexed, sliced and stacked like a variable, and
 //! it can be used to access the relevant parts of the solution through the [Model] object.
 //!
@@ -266,6 +275,6 @@ pub use domain::{IntoDomain,
                  in_dual_power_cones,
                  in_psd_cone,
                  in_psd_cones,
-                 range,
+                 in_range,
                  };
 pub use disjunction::{ConjunctionTrait,DisjunctionTrait};
