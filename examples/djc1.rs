@@ -46,7 +46,7 @@ fn djc1() -> (SolutionStatus,Result<Vec<f64>,String>) {
     model.objective(None, Sense::Minimize, x.dot(vec![2.0,1.0,3.0,1.0]));
 
     // Useful for debugging
-    //model.setLogHandler(new java.io.PrintWriter(System.out));   // Enable log output
+    model.set_log_handler(|msg| print!("{}",msg));
 
     // Solve the problem
     model.solve();
