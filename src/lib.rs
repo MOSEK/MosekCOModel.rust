@@ -1,7 +1,8 @@
 //!
 //! # MosekModel library
 //!
-//! MosekModel is a crate for setting up conic optimization models to be solved with MOSEK. The
+//! MosekModel is a crate for setting up conic optimization models to be solved with
+//! (MOSEK)[https://mosek.com] via (mosek.rust)[https://crates.io/crates/mosek]. The
 //! interface currently supports 
 //! - Linear and conic variables and constraints
 //! - Integer variables

@@ -190,3 +190,12 @@ cargo run --release -p truss -- truss/data/bridge.trs
 ![truss](./img/bridge-truss.jpeg "Bridge Truss")
 
 
+# Dependencies
+
+The amount of external dependencies is minimal.
+
+- The crate directly depend in `itertools` and `mosek`. 
+- Some examples depend no `rand_distr`
+- Benchmarking tests require `criterion` and `rand`.
+
+

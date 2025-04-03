@@ -305,6 +305,10 @@ impl<const N : usize> IntoShapedDomain<N> for ScalableConicDomain {
 // ConicProtoDomain
 ///////////////////////////////////////////////////////////////////////////////
 
+/// A struct that can be turned into [ConicDomain] via [IntoDomain] or [IntoShapedDomain].
+///
+/// The struct acts as a factory where the domain properties can be updated. Internally in the
+/// [Model] object it is turned into a [ConicDomain] and consistency is checked.
 pub struct ConicProtoDomain<const N : usize> {
     shape       : [usize;N],
     domain_type : ConicDomainType,
@@ -1041,13 +1045,13 @@ impl<const N : usize> OffsetTrait for NDArray<N> {
 // Domain constructors
 ////////////////////////////////////////////////////////////
 
-/// Unbounded scalar domain.
+/// Unbounded scalable domain.
 pub fn unbounded() -> ScalableLinearDomain { ScalableLinearDomain{offset : 0.0, domain_type : LinearDomainType::Free, is_integer : false } }
-/// Scalar domain of nonnegative values
+/// Scalable domain of nonnegative values
 pub fn nonnegative() -> ScalableLinearDomain { ScalableLinearDomain{ offset : 0.0, domain_type : LinearDomainType::NonNegative, is_integer : false } }
-/// Scalar domain of nonpositive values
+/// Scalable domain of nonpositive values
 pub fn nonpositive() -> ScalableLinearDomain { ScalableLinearDomain{ offset : 0.0, domain_type : LinearDomainType::NonPositive, is_integer : false } }
-/// Scalar domain of zeros
+/// Scalable domain of zeros
 pub fn zero() -> ScalableLinearDomain { ScalableLinearDomain{ offset : 0.0, domain_type : LinearDomainType::Zero, is_integer : false } }
 
 
@@ -1074,17 +1078,22 @@ pub fn equal_to<T : OffsetTrait>(v : T) -> T::Result { v.equal_to() }
 
 
 
-/// Domain of a single quadratic cone ofsize `dim`. The result is a vector domain of size `dim`.
+/// Domain of a single quadratic cone of unknown size. The size can subsequently be defined, or it
+/// can be deduced when used in a constraint.
 pub fn in_quadratic_cone()                     -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::QuadraticCone,         is_integer : false, cone_dim : None} }
-/// Domain of a single rotated quadratic cone ofsize `dim`. The result is a vector domain of size `dim`.
+/// Domain of a single rotated quadratic cone of unknown size. The size can subsequently be defined, or it
+/// can be deduced when used in a constraint.
 pub fn in_rotated_quadratic_cone()             -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::RotatedQuadraticCone,  is_integer : false, cone_dim : None} }
-/// Domain of a single scaled vectorized PSD cone of size `dim`, where `dim = n(n+1)/2` for some integer `n` The result is a vector domain of size `dim`.
+/// Domain of a single scaled vectorized PSD cone of unknown size. The size can subsequently be defined, or it
+/// can be deduced when used in a constraint.
 pub fn in_svecpsd_cone()                       -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::SVecPSDCone,           is_integer : false, cone_dim : None} }
-/// Domain of a single geometric mean cone ofsize `dim`. The result is a vector domain of size `dim`.
+/// Domain of a single geometric mean cone of unknown size. The size can subsequently be defined, or it
+/// can be deduced when used in a constraint.
 pub fn in_geometric_mean_cone()           -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::GeometricMeanCone,     is_integer : false, cone_dim : None} }
-/// domain of a single dual geometric mean cone ofsize `dim`. the result is a vector domain of size `dim`.
+/// domain of a single dual geometric mean cone of unknown size. The size can subsequently be defined, or it
+/// can be deduced when used in a constraint.
 pub fn in_dual_geometric_mean_cone()      -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::DualGeometricMeanCone, is_integer : false, cone_dim : None} }
-/// domain of a single exponential cone of size 3. the result is a vector domain of size 3.
+/// domain of a single exponential cone of size 3. The result is a vector domain of size 3.
 pub fn in_exponential_cone()              -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::ExponentialCone,       is_integer : false, cone_dim : None} }
 /// Domain of a single dual exponential cone ofsize `dim`. The result is a vector domain of size `dim`.
 pub fn in_dual_exponential_cone()         -> ScalableConicDomain { ScalableConicDomain{ domain_type: ConicDomainType::DualExponentialCone,   is_integer : false, cone_dim : None} }
