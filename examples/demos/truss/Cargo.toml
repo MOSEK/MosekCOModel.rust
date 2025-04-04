@@ -7,5 +7,5 @@ edition = "2021"
 cairo-rs = "0.19.4"
 gtk = { version = "0.8.0", package = "gtk4", features = ["v4_6"] }
 itertools = "0.13.0"
-mosekcomodel = { version = "0.1.0-alpha.3", path = "../../.." }
+mosekcomodel = { version = "0.1.1", path = "../../.." }
 mosek = "11.0"

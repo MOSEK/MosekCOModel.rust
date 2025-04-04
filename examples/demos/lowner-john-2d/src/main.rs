@@ -11,12 +11,8 @@ use gtk::prelude::*;
 use itertools::izip;
 
 use cairo::Context;
-//use cairo::glib::controlflow;
 use gtk::{glib,Application, DrawingArea, ApplicationWindow};
-use mosekcomodel::{in_psd_cone, matrix, unbounded, zero, Model};
-use mosekcomodel::expr::*;
-//use gtk::prelude::*;
-//use rand::random;
+use mosekcomodel::*;
 
 const APP_ID : &str = "com.mosek.lowner-john";
 

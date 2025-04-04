@@ -1,5 +1,5 @@
 [package]
-name = "lowner-john-2d"
+name = "total-variation"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,5 +8,8 @@ cairo-rs = "0.19.4"
 ellipsoids = { version = "0.1.0", path = "../ellipsoids" }
 glam = "0.28.0"
 gtk = { version = "0.8.0", package = "gtk4", features = ["v4_6"] }
+image = "0.25.6"
 itertools = "0.13.0"
 mosekcomodel = { version = "0.1.1", path = "../../.." }
+rand = "0.9.0"
+rand_distr = "0.5.1"

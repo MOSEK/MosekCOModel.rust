@@ -5,6 +5,14 @@ edition = "2021"
 
 [workspace]
 
-members = [ "ellipsoid-approximation", "ellipsoid-approximation-3d", "lowner-john-2d","lowner-john-outer-3d","ellipsoids","truss","trigpoly" ]
+members = [ "ellipsoid-approximation", 
+            "ellipsoid-approximation-3d", 
+            "lowner-john-2d",
+            "lowner-john-outer-3d",
+            "ellipsoids",
+            "truss",
+            "trigpoly",
+            "total-variation",
+            ]
 
 [dependencies]
