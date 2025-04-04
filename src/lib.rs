@@ -11,9 +11,9 @@
 //! The [Model] object encapsulates a model of the form
 //! $$
 //! \begin{array}{ll}
-//! \\mathrm{min/max}  & c^t x \\\\
-//! \mathrm{such that} & A x + b \\in K_c\\\\
-//!                    & X \\in K_x
+//! \\mathrm{min/max}     & c^t x \\\\
+//! \\mathrm{such\\ that} & A x + b \\in K_c\\\\
+//!                       & X \\in K_x
 //! \\end{array}
 //! $$
 //!
@@ -69,6 +69,10 @@
 //!                    &               & \\cdots &                    \\\\
 //!     x_n/\\sqrt{2}  & x_{2n-1}/\\sqrt{2} & \\cdots & x_{n(n+1_/2}^2
 //!   \\end{array} \\right]
+//!   $$
+//! - Symmetric positive semidefinite cones
+//!   $$
+//!   X \\in \\mathcal{S}^n_+
 //!   $$
 //! 
 //! # Expressions and shapes
