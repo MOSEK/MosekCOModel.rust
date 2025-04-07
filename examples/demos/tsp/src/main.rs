@@ -14,6 +14,7 @@ extern crate itertools;
 
 use std::{cell::RefCell, sync::mpsc::{self, Sender}, thread::JoinHandle};
 
+use gtk::glib::ControlFlow;
 use itertools::iproduct;
 use mosekcomodel::*;
 use rand::Rng;
@@ -26,6 +27,7 @@ const APP_ID : &str = "com.mosek.example.tsp";
 
 struct DrawData {
     points : Vec<[f64;2]>,
+    sol : Vec<usize>,
 }
 
 
@@ -73,7 +75,10 @@ fn main() {
 }
 
 fn build_ui(app : &Application, points : &Vec<[f64;2]>, threads : Rc<RefCell<Vec<JoinHandle<()>>>>) {
-    let drawdata = DrawData{ points : points.clone() };
+    let drawdata = Rc::new(RefCell::new(DrawData{ 
+        points : points.clone(),
+        sol    : Vec::new(),
+    }));
 
     let darea = DrawingArea::builder()
         .width_request(1500) 
@@ -94,12 +99,33 @@ fn build_ui(app : &Application, points : &Vec<[f64;2]>, threads : Rc<RefCell<Vec
         threads.borrow_mut().push(std::thread::spawn(move|| optimize(points,tx)));
     }
 
-
     let window = ApplicationWindow::builder()
         .application(app)
-        .title("Hello Löwner-John")
+        .title("TSP")
         .child(&darea)
         .build();
+
+    { // Time callback
+        let darea = darea.clone();
+        glib::source::timeout_add_local(
+            Duration::from_millis(10), 
+            move || {
+                match rx.try_recv() {
+                    Ok(data) => {
+                        let dd = drawdata.borrow_mut();
+                        dd.sol.clear();
+                        dd.sol.extend_from_slice(data.as_slice());
+                      
+                        darea.queue_draw();
+
+                        ControlFlow::Continue
+                    },
+                    Err(mpsc::TryRecvError::Empty) => ControlFlow::Continue,
+                    Err(mpsc::TryRecvError::Disconnected) => ControlFlow::Break,
+                }
+            })
+    }
+    
 }
 
 fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, data : &DrawData) {
@@ -109,11 +135,19 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     let w : f64 = w.into();
     let h : f64 = h.into();
     let s = w.min(h);
-
+    
     context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
     context.translate(s/2.0, s/2.0);
     context.scale(0.8*s, 0.8*s);
-    context.set_source_rgb(0.0, 0.0, 0.0);
+
+    context.set_source_rgb(0.5, 0.5, 0.5);
+    for (p0,p1) in iproduct!(data.points.iter(),data.points.iter()) {
+        context.move_to(p0[0],p0[1]);
+        context.line_to(p1[0],p1[1]);
+
+
+
+    }
 
 
 }
