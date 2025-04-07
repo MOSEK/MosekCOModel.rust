@@ -1,6 +1,18 @@
+//!
+//! Implements the total variation problem for image improvement. See Donald Goldfarb and Wotao
+//! Yin. Second-order cone programming methods for total variation-based image restoration. SIAM
+//! Journal on Scientific Computing, 27(2):622–645, 2005.
+//! 
+//! The idea is to minimize the sum of pixel correction to an image, subject to a limit on the
+//! total magniture of the correction.
+//!
+//! If a filename is passed, that file is used as the noise source image, otherwise an image with
+//! random noise is generated. If a filename is given, two images are displayed: The original
+//! image, the noisy image and the result of the optimization. If no filename is given, three
+//! images are show: the original, the noisy image and the result of the optimization.
 extern crate mosekcomodel; extern crate rand;
-extern crate rand_distr;
 extern crate image;
+extern crate itertools;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -140,14 +152,11 @@ impl Data {
     }
     fn solve(&mut self) {
         self.model_red.solve();
-        self.model_red.write_problem("red.ptf");
         self.sol_red = Some(self.model_red.primal_solution(SolutionType::Default,&self.ucore_red).unwrap());
 
-        self.model_blue.write_problem("blue.ptf");
         self.model_blue.solve();
         self.sol_blue = Some(self.model_blue.primal_solution(SolutionType::Default,&self.ucore_blue).unwrap());
         
-        self.model_green.write_problem("green.ptf");
         self.model_green.solve();
         self.sol_green = Some(self.model_green.primal_solution(SolutionType::Default,&self.ucore_green).unwrap());
     }
@@ -252,7 +261,7 @@ fn build_ui(app  : &Application,
 
 #[allow(non_snake_case)]
 fn total_var(sigma : f64, f : &NDArray<2>) -> (Model,Variable<2>) {
-    let mut M = Model::new(Some("TV"));
+    let mut M = Model::new(Some("TotalVariation"));
     M.set_log_handler(|msg| print!("{}",msg));
     let n = f.height();
     let m = f.width();
