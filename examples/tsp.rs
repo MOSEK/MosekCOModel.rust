@@ -32,7 +32,13 @@ fn tsp(n : usize, A : & NDArray<2>, C : &NDArray<2>, remove_selfloops: bool, rem
         M.constraint(None, x.diag(), equal_to(0.0).with_shape(&[n]));
     }
 
-    //M.write_problem(format!("tsp-0-{}-{}.ptf",if remove_selfloops {'t'} else {'f'}, if remove_2_hop_loops {'t'} else {'f'}));
+    {
+        let x = x.clone();
+        M.set_solution_callback(move |M| 
+            if let Ok(xx) = M.primal_solution(SolutionType::Integer, &x) {
+                println!("New Solution: {:?}",xx)
+            });
+    }
    
     for it in 0.. {
         println!("--------------------\nIteration {}",it);

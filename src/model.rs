@@ -343,6 +343,38 @@ impl Model {
         self.task.put_stream_callback(mosek::Streamtype::LOG,func).unwrap();
     }
 
+    /// Attach a solution callback function. This is called for each new integer solution 
+    pub fn set_solution_callback<F>(&mut self, mut func : F) where F : 'static+FnMut(&Model) {
+        // NOTE: We cheat here. We pass self as a pointer to bypass the whole lifetime issue. This
+        // is acceptable because we KNOW self will outlive the underlying Task.
+        let modelp :  *const Model = self;
+
+        self.task.put_intsolcallback(move |xx| {
+            let model : & mut Model = unsafe { & mut (* (modelp as * mut Model)) };
+            model.sol_bas.primal.status = SolutionStatus::Undefined;
+            model.sol_bas.dual.status = SolutionStatus::Undefined;
+            model.sol_itr.primal.status = SolutionStatus::Undefined;
+            model.sol_itr.dual.status = SolutionStatus::Undefined;
+            model.sol_itg.primal.status = SolutionStatus::Feasible;
+            model.sol_itg.dual.status = SolutionStatus::Undefined;
+            if model.sol_itg.primal.var.len() != model.vars.len() {
+                model.sol_itg.primal.var = vec![0.0; model.vars.len()];
+            }
+            if model.sol_itg.primal.con.len() != model.cons.len() {
+                model.sol_itg.primal.con = vec![0.0; model.cons.len()];
+            }
+
+            for (s,v) in model.sol_itr.primal.var.iter_mut().zip(model.vars.iter()) {
+                match v {
+                    VarAtom::Linear(i,_) => if (*i as usize) < xx.len() { unsafe{ *s = *xx.get_unchecked(*i as usize) } },
+                    _ => {}
+                }
+            }
+
+            func(model);
+        }).unwrap();
+    }
+
     /// Write problem to a file. The file is written by the underlying solver task, so no
     /// structural information will be written.
     ///
