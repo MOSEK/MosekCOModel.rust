@@ -4,6 +4,7 @@
 use itertools::{merge_join_by, EitherOrBoth};
 use itertools::{iproduct, izip};
 use std::fmt::Debug;
+use std::ops::ControlFlow;
 use std::{iter::once, path::Path};
 use crate::disjunction::ConjunctionTrait;
 use crate::{disjunction, expr, IntoExpr, ExprTrait, NDArray, DisjunctionTrait};
@@ -153,7 +154,6 @@ impl<const N : usize> VarDomainTrait for PSDDomain<N> {
         m.psd_variable(name,self)
     }
 }
-
 
 //======================================================
 // Model
@@ -372,6 +372,15 @@ impl Model {
             }
 
             func(model);
+        }).unwrap();
+    }
+
+    pub fn set_callback<F>(&mut self, mut func : F) where F : 'static+FnMut() -> ControlFlow<(),()> {
+        self.task.put_codecallback(move |_code| {
+            match func() {
+                ControlFlow::Break(_) => false,
+                ControlFlow::Continue(_) => true,
+            }
         }).unwrap();
     }
 

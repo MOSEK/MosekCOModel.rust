@@ -11,11 +11,14 @@ extern crate itertools;
 use std::{cell::RefCell, rc::Rc, sync::mpsc::{self, Receiver, Sender}, thread::JoinHandle, time::Duration};
 
 use cairo::Context;
-use gtk::{glib::{self, ControlFlow}, prelude::{ApplicationExt, ApplicationExtManual, DrawingAreaExtManual, WidgetExt}, Application, ApplicationWindow, DrawingArea};
+use gtk::prelude::*;
+use gtk::{Application, DrawingArea, ApplicationWindow};
+use gtk::glib::{self, ControlFlow};
+
+
 use itertools::iproduct;
 use mosekcomodel::*;
 use rand::Rng;
-use utils::AppliedPermutation;
 
 const APP_ID : &str = "com.mosek.example.tsp";
 
@@ -23,11 +26,20 @@ const APP_ID : &str = "com.mosek.example.tsp";
 struct DrawData {
     points : Vec<[f64;2]>,
     sol : Vec<(usize,usize)>,
+    done : bool,
+    iteration : usize
 }
 
 enum Command {
     Terminate
 }
+
+enum Response {
+    Solution(Vec<(usize,usize)>),
+    Iteration(usize),
+    Done,
+}
+
 #[derive(Copy,Clone)]
 struct Config {
     n : usize,
@@ -45,9 +57,13 @@ fn main() {
     let mut args = std::env::args(); args.next();
     while let Some(a) = args.next() {
         match a.as_str() {
+            "-h"|"--help" => {
+                println!("tsp [ -n NUM ] [ --remove-2-hop-loops ] [ --remove-self-loops ]");
+                return;
+            },
             "-n" => if let Some(v) = args.next() { if let Ok(v) = v.parse::<usize>() { conf.n = v }},
             "--remove-2-hop-loops" => conf.remove_selfloops = true,
-            "--remove-self-loops" => conf.remove_selfloops = true,
+            "--remove-self-loops"  => conf.remove_selfloops = true,
             _ => {},
         }
     }
@@ -60,6 +76,7 @@ fn main() {
         .application_id(APP_ID)
         .build();
 
+
     let threads = Rc::new(RefCell::new(Vec::new()));
 
     {
@@ -68,7 +85,7 @@ fn main() {
     }
 
     let r = app.run_with_args::<&str>(&[]);
-    for t in threads.borrow_mut().iter() {
+    for t in threads.take().into_iter() {
         t.join(); 
     }
     println!("Main loop exit!");
@@ -79,6 +96,8 @@ fn build_ui(app : &Application, conf : Config,points : &Vec<[f64;2]>, threads : 
     let drawdata = Rc::new(RefCell::new(DrawData{ 
         points : points.clone(),
         sol    : Vec::new(),
+        iteration : 0,
+        done : false,
     }));
 
     let darea = DrawingArea::builder()
@@ -97,7 +116,7 @@ fn build_ui(app : &Application, conf : Config,points : &Vec<[f64;2]>, threads : 
 
     {
         let points = points.clone();
-        threads.borrow_mut().push(std::thread::spawn(move|| optimize(&conf,points,tx)));
+        threads.borrow_mut().push(std::thread::spawn(move|| optimize(&conf,points,tx,rrx)));
     }
 
     let window = ApplicationWindow::builder()
@@ -105,6 +124,13 @@ fn build_ui(app : &Application, conf : Config,points : &Vec<[f64;2]>, threads : 
         .title("TSP")
         .child(&darea)
         .build();
+    {
+        let rtx = rtx.clone();
+        window.connect_unmap(move |_| {
+            rtx.send(Command::Terminate);
+        });
+    }
+
 
     { // Time callback
       // For each tick we check if any solutions were sent from the solver thread until the solver
@@ -115,11 +141,19 @@ fn build_ui(app : &Application, conf : Config,points : &Vec<[f64;2]>, threads : 
             move || {
                 loop {
                     match rx.try_recv() {
-                        Ok(data) => {
-                            let dd = drawdata.borrow_mut();
+                        Ok(Response::Done) => {
+                            drawdata.borrow_mut().done = true;
+                            darea.queue_draw();
+                            return ControlFlow::Break
+                        },
+                        Ok(Response::Iteration(i)) => {
+                            drawdata.borrow_mut().iteration = i;
+                            darea.queue_draw();
+                        },
+                        Ok(Response::Solution(data)) => {
+                            let mut dd = drawdata.borrow_mut();
                             dd.sol.clear();
                             dd.sol.extend_from_slice(data.as_slice());
-                          
                             darea.queue_draw();
                         },
                         Err(mpsc::TryRecvError::Empty) => return ControlFlow::Continue,
@@ -128,7 +162,7 @@ fn build_ui(app : &Application, conf : Config,points : &Vec<[f64;2]>, threads : 
                 }
             });
     }
-    
+    window.present();
 }
 
 fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, data : &DrawData) {
@@ -140,31 +174,47 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     let s = w.min(h);
     
     context.set_matrix(cairo::Matrix::new(1.0,0.0,0.0,1.0,0.0,0.0));
-    context.translate(s/2.0, s/2.0);
-    context.scale(0.8*s, 0.8*s);
 
-    context.set_source_rgb(0.8, 0.8, 0.8);
-    for (p0,p1) in iproduct!(data.points.iter(),data.points.iter()) {
-        context.move_to(p0[0],p0[1]);
-        context.line_to(p1[0],p1[1]);
-    }
-    context.paint();
-    
+    context.set_line_width(1.0);
     context.set_source_rgb(0.0, 0.0, 0.0);
-    for (&i,&j) in data.sol.iter() {
-        let p0 = data.points[i];
-        let p1 = data.points[j];
-        context.move_to(p0[0],p0[1]);
-        context.line_to(p1[0],p1[1]);
+    context.move_to(20.0,20.0);
+    if ! data.done {
+        context.text_path(format!("[{}]",data.iteration).as_str());
     }
-    context.paint();
+    else {
+        context.text_path(format!("[{}] : DONE",data.iteration).as_str());
+    }
+    context.stroke();
+
+
+    context.set_line_width(3.0);
+    context.set_source_rgb(0.0, 0.0, 0.7);
+    for p in data.points.iter() {
+        
+        context.arc(p[0]*s, p[1]*s, 5.0, 0.0, std::f64::consts::PI*2.0);
+        context.stroke();
+    }
+
+    context.set_source_rgb(0.0, 0.0, 0.0);
+    for (i,j) in data.sol.iter() {
+        let p0 = data.points[*i];
+        let p1 = data.points[*j];
+        context.move_to(p0[0]*s,p0[1]*s);
+        context.line_to(p1[0]*s,p1[1]*s);
+    }
+    context.stroke();
 }
 
-fn optimize(conf : &Config, points : Vec<[f64;2]>,tx : Sender<Vec<(usize,usize)>>,rx : Receiver<Command>) {
+fn optimize(conf   : &Config, 
+            points : Vec<[f64;2]>,
+            tx     : Sender<Response>,
+            rx     : Receiver<Command>) 
+{
     let n = conf.n;
     let arc_w = matrix::dense([n,n], iproduct!(points.iter(),points.iter()).map(|(p0,p1)| ((p0[0]-p1[0]).powi(2) + (p0[1]-p1[1]).powi(2)).sqrt()).collect::<Vec<f64>>());
 
     let mut model  = Model::new(None);
+    //model.set_log_handler(|msg| print!("{}",msg));
 
     let x = model.ranged_variable(None, in_range(0.0,1.0).with_shape(&[n,n]).integer()).0;
 
@@ -181,37 +231,43 @@ fn optimize(conf : &Config, points : Vec<[f64;2]>,tx : Sender<Vec<(usize,usize)>
         model.constraint(None, x.diag(), equal_to(0.0));
     }
 
+    let stop = Rc::new(RefCell::new(false));
     {
         let x = x.clone();
         let tx = tx.clone();
+        let stop = stop.clone();
         model.set_solution_callback(move |model| 
             if let Ok(xx) = model.primal_solution(SolutionType::Integer, &x) {
-                tx.send(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>());
+                tx.send(Response::Solution(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
             });
         model.set_callback(move || {
-            loop {
+            loop {                
                 match rx.try_recv() {
-                    Ok(Command::Terminate) => return Callback::Break,
-                    Err(mpsc::TryRecvError::Empty) => return Callback::Continue,
-                    Err(mpsc::TryRecvError::Disconnected) => return Callback::Break,
+                    Ok(Command::Terminate) => { 
+                        *stop.borrow_mut() = true;
+                        return std::ops::ControlFlow::Break(());
+                    },
+                    Err(mpsc::TryRecvError::Empty) => return std::ops::ControlFlow::Continue(()),
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        *stop.borrow_mut() = true;
+                        return std::ops::ControlFlow::Break(()); 
+                    },
                 }
             }
-            Callback::Continue
+            std::ops::ControlFlow::Continue(())
         });
     }
    
     for it in 0.. {
-        println!("--------------------\nIteration {}",it);
+        if *stop.borrow() { break; }
+        println!("Iteration {}",it);
+        tx.send(Response::Iteration(it));
         model.solve();
-
-        //println!("\nsolution cost: {}", model.primal_objective(SolutionType::Default).unwrap());
-        //println!("\nsolution:");
 
         let mut cycles : Vec<Vec<[usize;2]>> = Vec::new();
 
         for i in 0..n {
             let xi = model.primal_solution(SolutionType::Default, &(&x).index([i..i+1, 0..n])).unwrap();
-            //println!("x[{{}},:] = {:?}",xi);
 
             for (j,_xij) in xi.iter().enumerate().filter(|(_,v)| **v > 0.5) {
                 if let Some(c) = cycles.iter_mut()
@@ -224,11 +280,9 @@ fn optimize(conf : &Config, points : Vec<[f64;2]>,tx : Sender<Vec<(usize,usize)>
             }
         }
 
-        //println!("\ncycles: {:?}",cycles);
-
         if cycles.len() == 1 {
             if let Ok(xx) = model.primal_solution(SolutionType::Integer, &x) {
-                tx.send(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>());
+                tx.send(Response::Solution(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
             }
             break;
         }
@@ -241,6 +295,10 @@ fn optimize(conf : &Config, points : Vec<[f64;2]>,tx : Sender<Vec<(usize,usize)>
                          less_than((ni-1) as f64));
         }
     }
+    if let Ok(xx) = model.primal_solution(SolutionType::Integer, &x) {
+        tx.send(Response::Solution(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
+    }
+    tx.send(Response::Done);
 }
 
 
