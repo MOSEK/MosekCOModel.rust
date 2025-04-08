@@ -1,16 +1,12 @@
 //!
-//!  Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
+//! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
 //!
-//!  File:      `tsp.py`
-//!
-//!  Purpose: Demonstrates a simple technique to the TSP
-//!           usign the Fusion API.
+//! Purpose: Demonstrates a simple technique to the TSP.
 //!
 //!
 extern crate mosekcomodel;
 extern crate rand;
 extern crate itertools;
-
 
 use std::{cell::RefCell, sync::mpsc::{self, Sender}, thread::JoinHandle};
 
@@ -23,15 +19,10 @@ use utils::AppliedPermutation;
 const APP_ID : &str = "com.mosek.example.tsp";
 
 
-
-
 struct DrawData {
     points : Vec<[f64;2]>,
-    sol : Vec<usize>,
+    sol : Vec<(usize,usize)>,
 }
-
-
-
 
 
 
@@ -64,7 +55,7 @@ fn main() {
 
     {
         let threads = threads.clone();
-        app.connect_activate(move | app : &Application | build_ui(app,&points,threads.clone()));
+        app.connect_activate(move | app : &Application | build_ui(app,n,&points,threads.clone()));
     }
 
     let r = app.run_with_args::<&str>(&[]);
@@ -74,7 +65,7 @@ fn main() {
     println!("Main loop exit!");
 }
 
-fn build_ui(app : &Application, points : &Vec<[f64;2]>, threads : Rc<RefCell<Vec<JoinHandle<()>>>>) {
+fn build_ui(app : &Application, n : usize,points : &Vec<[f64;2]>, threads : Rc<RefCell<Vec<JoinHandle<()>>>>) {
     let drawdata = Rc::new(RefCell::new(DrawData{ 
         points : points.clone(),
         sol    : Vec::new(),
@@ -96,7 +87,7 @@ fn build_ui(app : &Application, points : &Vec<[f64;2]>, threads : Rc<RefCell<Vec
 
     {
         let points = points.clone();
-        threads.borrow_mut().push(std::thread::spawn(move|| optimize(points,tx)));
+        threads.borrow_mut().push(std::thread::spawn(move|| optimize(n,points,tx)));
     }
 
     let window = ApplicationWindow::builder()
@@ -106,22 +97,24 @@ fn build_ui(app : &Application, points : &Vec<[f64;2]>, threads : Rc<RefCell<Vec
         .build();
 
     { // Time callback
+      // For each tick we check if any solutions were sent from the solver thread until the solver
+      // thread closes the pipe.
         let darea = darea.clone();
         glib::source::timeout_add_local(
-            Duration::from_millis(10), 
+            Duration::from_millis(50), 
             move || {
-                match rx.try_recv() {
-                    Ok(data) => {
-                        let dd = drawdata.borrow_mut();
-                        dd.sol.clear();
-                        dd.sol.extend_from_slice(data.as_slice());
-                      
-                        darea.queue_draw();
-
-                        ControlFlow::Continue
-                    },
-                    Err(mpsc::TryRecvError::Empty) => ControlFlow::Continue,
-                    Err(mpsc::TryRecvError::Disconnected) => ControlFlow::Break,
+                loop {
+                    match rx.try_recv() {
+                        Ok(data) => {
+                            let dd = drawdata.borrow_mut();
+                            dd.sol.clear();
+                            dd.sol.extend_from_slice(data.as_slice());
+                          
+                            darea.queue_draw();
+                        },
+                        Err(mpsc::TryRecvError::Empty) => return ControlFlow::Continue,
+                        Err(mpsc::TryRecvError::Disconnected) => return ControlFlow::Break,
+                    }
                 }
             })
     }
@@ -140,19 +133,24 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     context.translate(s/2.0, s/2.0);
     context.scale(0.8*s, 0.8*s);
 
-    context.set_source_rgb(0.5, 0.5, 0.5);
+    context.set_source_rgb(0.8, 0.8, 0.8);
     for (p0,p1) in iproduct!(data.points.iter(),data.points.iter()) {
         context.move_to(p0[0],p0[1]);
         context.line_to(p1[0],p1[1]);
-
-
-
     }
-
-
+    context.paint();
+    
+    context.set_source_rgb(0.0, 0.0, 0.0);
+    for (i,j) in data.sol.iter() {
+        let p0 = data.points[i];
+        let p1 = data.points[j];
+        context.move_to(p0[0],p0[1]);
+        context.line_to(p1[0],p1[1]);
+    }
+    context.paint();
 }
 
-fn optimize(points : Vec<[f64;2]>,tx : Sender<Vec<usize>>) {
+fn optimize(n : usize, points : Vec<[f64;2]>,tx : Sender<Vec<(usize,usize)>>) {
     let arc_w = matrix::dense([n,n], iproduct!(points.iter(),points.iter()).map(|(p0,p1)| ((p0[0]-p1[0]).pow(2.0) + (p0[1]-p1[1]).pow(2)).sqrt()).collect());
 
     let mut model  = Model::new(None);
@@ -174,9 +172,11 @@ fn optimize(points : Vec<[f64;2]>,tx : Sender<Vec<usize>>) {
 
     {
         let x = x.clone();
+        let tx = tx.clone();
         model.set_solution_callback(move |model| 
             if let Ok(xx) = model.primal_solution(SolutionType::Integer, &x) {
-                println!("New Solution: {:?}",xx)
+                let mut res = Vec::new();
+                tx.send(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|(_,&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>());
             });
     }
    
@@ -184,14 +184,14 @@ fn optimize(points : Vec<[f64;2]>,tx : Sender<Vec<usize>>) {
         println!("--------------------\nIteration {}",it);
         model.solve();
 
-        println!("\nsolution cost: {}", model.primal_objective(SolutionType::Default).unwrap());
-        println!("\nsolution:");
+        //println!("\nsolution cost: {}", model.primal_objective(SolutionType::Default).unwrap());
+        //println!("\nsolution:");
 
         let mut cycles : Vec<Vec<[usize;2]>> = Vec::new();
 
         for i in 0..n {
             let xi = model.primal_solution(SolutionType::Default, &(&x).index([i..i+1, 0..n])).unwrap();
-            println!("x[{{}},:] = {:?}",xi);
+            //println!("x[{{}},:] = {:?}",xi);
 
             for (j,_xij) in xi.iter().enumerate().filter(|(_,&v)| v > 0.5) {
                 if let Some(c) = cycles.iter_mut()
@@ -204,7 +204,7 @@ fn optimize(points : Vec<[f64;2]>,tx : Sender<Vec<usize>>) {
             }
         }
 
-        println!("\ncycles: {:?}",cycles);
+        //println!("\ncycles: {:?}",cycles);
 
         if cycles.len() == 1 {
             return (model.primal_solution(SolutionType::Default, &x).unwrap(), cycles[0].clone())
@@ -218,29 +218,8 @@ fn optimize(points : Vec<[f64;2]>,tx : Sender<Vec<usize>>) {
                          less_than((ni-1) as f64));
         }
     }
-    (vec![],vec![])
+    tx.close();
 }
-
-
-
-//    let A_ij : &[[usize;2]] = &[[0,1],[0,2],[0,3],[1,0],[1,2],[2,1],[2,3],[3,0]];
-//    let C_v : &[f64]        = &[   1.,  0.1,  0.1,  0.1,   1.,  0.1,   1.,   1.];
-//
-//    let n = *A_ij.iter().flat_map(|r| r.iter()).max().unwrap()+1;
-//    let costs = matrix::sparse([n,n],A_ij.to_vec(),C_v);
-//    {
-//        println!("TSP, remove self loops");
-//        let (x,c) = tsp(n, &matrix::sparse([n,n],A_ij.to_vec(),vec![1.0; C_v.len()]), &costs , true, true);
-//        println!("x = {:?}, c = {:?}",x,c);
-//    }
-//    {
-//        println!("TSP, remove self loops and 2-hop loops");
-//        let (x,c) = tsp(n, &matrix::sparse([n,n],A_ij.to_vec(),vec![1.0; C_v.len()]), &costs , true, false);
-//        println!("x = {:?}, c = {:?}",x,c);
-//    }
-}
-
-
 
 
 fn random_n_swap<T>(source : & mut Vec<T>, n : usize) {
@@ -251,90 +230,3 @@ fn random_n_swap<T>(source : & mut Vec<T>, n : usize) {
     }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-#[allow(non_snake_case)]
-fn tsp(n : usize, A : & NDArray<2>, C : &NDArray<2>, remove_selfloops: bool, remove_2_hop_loops: bool) -> (Vec<f64>,Vec<[usize;2]>) {
-    let mut M  = Model::new(None);
-
-
-    let x = M.variable(None, domain::nonnegative().with_shape(&[n,n]).integer());
-    _ = M.constraint(None, &x, domain::less_than(A.clone()));
-
-    _ = M.constraint(None,  x.sum_on(&[1]), equal_to(1.0).with_shape(&[n]));
-    _ = M.constraint(None,  x.sum_on(&[0]), equal_to(1.0).with_shape(&[n]));
-
-    M.objective(None, Sense::Minimize, C.dot(&x));
-
-    if remove_2_hop_loops {
-        M.constraint(None,  x.add(x.transpose()), less_than(1.0).with_shape(&[n,n]));
-    }
-
-    if remove_selfloops {
-        M.constraint(None, x.diag(), equal_to(0.0).with_shape(&[n]));
-    }
-
-    //M.write_problem(format!("tsp-0-{}-{}.ptf",if remove_selfloops {'t'} else {'f'}, if remove_2_hop_loops {'t'} else {'f'}));
-    {
-        let x = x.clone();
-        M.set_solution_callback(move |M| 
-            if let Ok(xx) = M.primal_solution(SolutionType::Integer, &x) {
-                println!("New Solution: {:?}",xx)
-            });
-    }
-   
-    for it in 0.. {
-        println!("--------------------\nIteration {}",it);
-        M.solve();
-
-        println!("\nsolution cost: {}", M.primal_objective(SolutionType::Default).unwrap());
-        println!("\nsolution:");
-
-        let mut cycles : Vec<Vec<[usize;2]>> = Vec::new();
-
-        for i in 0..n {
-            let xi = M.primal_solution(SolutionType::Default, &(&x).index([i..i+1, 0..n])).unwrap();
-            println!("x[{{}},:] = {:?}",xi);
-
-            for (j,_xij) in xi.iter().enumerate().filter(|(_,&v)| v > 0.5) {
-                if let Some(c) = cycles.iter_mut()
-                    .find(|c| c.iter().filter(|ij| ij[0] == i || ij[1] == i || ij[0] == j || ij[1] == j ).count() > 0) {
-                    c.push([i,j]);
-                }
-                else {
-                    cycles.push(vec![ [ i,j ] ]);
-                }
-            }
-        }
-
-        println!("\ncycles: {:?}",cycles);
-
-        if cycles.len() == 1 {
-            return (M.primal_solution(SolutionType::Default, &x).unwrap(), cycles[0].clone())
-        }
-
-        for c in cycles.iter_mut() {
-            c.sort_by_key(|i| i[0]*n+i[1]);
-            let ni = c.len();
-            M.constraint(Some(format!("cycle-{:?}",c).as_str()), 
-                         x.dot(matrix::sparse([n,n], c.to_vec(), vec![1.0; ni])), 
-                         less_than((ni-1) as f64));
-        }
-    }
-    (vec![],vec![])
-}
-*/
