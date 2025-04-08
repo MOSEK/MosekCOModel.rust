@@ -1,9 +1,9 @@
 //!
 //! Copyright: Copyright (c) MOSEK ApS, Denmark. All rights reserved.
 //!
-//! Purpose: Demonstrates a simple technique to the TSP.
-//!
-//!
+//! Purpose: Demonstrates a simple technique to the TSP and interaction between a GUI and a running
+//! optimization process.
+//! 
 extern crate mosekcomodel;
 extern crate rand;
 extern crate itertools;
@@ -22,7 +22,7 @@ use rand::Rng;
 
 const APP_ID : &str = "com.mosek.example.tsp";
 
-
+/// Structure encapsulating the data used to draw the graphical window.
 struct DrawData {
     points : Vec<[f64;2]>,
     sol : Vec<(usize,usize)>,
@@ -30,10 +30,12 @@ struct DrawData {
     iteration : usize
 }
 
+/// Commands that can be sent from the GUI to the solver.
 enum Command {
     Terminate
 }
 
+/// Responses send from the solver to the GUI
 enum Response {
     Solution(Vec<(usize,usize)>),
     Iteration(usize),
@@ -58,12 +60,13 @@ fn main() {
     while let Some(a) = args.next() {
         match a.as_str() {
             "-h"|"--help" => {
-                println!("tsp [ -n NUM ] [ --remove-2-hop-loops ] [ --remove-self-loops ]");
+                println!("tsp [ -n NUM ] [ --remove-2-hop-loops ] [ --remove-self-loops ] [ --remove-all ]");
                 return;
             },
             "-n" => if let Some(v) = args.next() { if let Ok(v) = v.parse::<usize>() { conf.n = v }},
             "--remove-2-hop-loops" => conf.remove_selfloops = true,
             "--remove-self-loops"  => conf.remove_selfloops = true,
+            "--remove-all"         => { conf.remove_selfloops = true; conf.remove_selfloops = true; },
             _ => {},
         }
     }
@@ -84,15 +87,14 @@ fn main() {
         app.connect_activate(move | app : &Application | build_ui(app,conf,&points,threads.clone()));
     }
 
-    let r = app.run_with_args::<&str>(&[]);
+    _ = app.run_with_args::<&str>(&[]);
     for t in threads.take().into_iter() {
-        t.join(); 
+        _ = t.join(); 
     }
     println!("Main loop exit!");
 }
 
 fn build_ui(app : &Application, conf : Config,points : &Vec<[f64;2]>, threads : Rc<RefCell<Vec<JoinHandle<()>>>>) {
-    let n = conf.n;
     let drawdata = Rc::new(RefCell::new(DrawData{ 
         points : points.clone(),
         sol    : Vec::new(),
@@ -101,8 +103,8 @@ fn build_ui(app : &Application, conf : Config,points : &Vec<[f64;2]>, threads : 
     }));
 
     let darea = DrawingArea::builder()
-        .width_request(1500) 
-        .height_request(1500)
+        .width_request(1000) 
+        .height_request(1000)
         .build();
 
     // Redraw callback
@@ -127,7 +129,7 @@ fn build_ui(app : &Application, conf : Config,points : &Vec<[f64;2]>, threads : 
     {
         let rtx = rtx.clone();
         window.connect_unmap(move |_| {
-            rtx.send(Command::Terminate);
+            _ = rtx.send(Command::Terminate);
         });
     }
 
@@ -184,7 +186,7 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     else {
         context.text_path(format!("[{}] : DONE",data.iteration).as_str());
     }
-    context.stroke();
+    _ = context.stroke();
 
 
     context.set_line_width(3.0);
@@ -192,7 +194,7 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     for p in data.points.iter() {
         
         context.arc(p[0]*s, p[1]*s, 5.0, 0.0, std::f64::consts::PI*2.0);
-        context.stroke();
+        _ = context.stroke();
     }
 
     context.set_source_rgb(0.0, 0.0, 0.0);
@@ -202,9 +204,10 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
         context.move_to(p0[0]*s,p0[1]*s);
         context.line_to(p1[0]*s,p1[1]*s);
     }
-    context.stroke();
+    _ = context.stroke();
 }
 
+/// Construct the Model and run the solver while reporting back found solutions.
 fn optimize(conf   : &Config, 
             points : Vec<[f64;2]>,
             tx     : Sender<Response>,
@@ -238,7 +241,7 @@ fn optimize(conf   : &Config,
         let stop = stop.clone();
         model.set_solution_callback(move |model| 
             if let Ok(xx) = model.primal_solution(SolutionType::Integer, &x) {
-                tx.send(Response::Solution(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
+                _ = tx.send(Response::Solution(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
             });
         model.set_callback(move || {
             loop {                
@@ -254,14 +257,13 @@ fn optimize(conf   : &Config,
                     },
                 }
             }
-            std::ops::ControlFlow::Continue(())
         });
     }
    
     for it in 0.. {
         if *stop.borrow() { break; }
         println!("Iteration {}",it);
-        tx.send(Response::Iteration(it));
+        _ = tx.send(Response::Iteration(it));
         model.solve();
 
         let mut cycles : Vec<Vec<[usize;2]>> = Vec::new();
@@ -282,7 +284,7 @@ fn optimize(conf   : &Config,
 
         if cycles.len() == 1 {
             if let Ok(xx) = model.primal_solution(SolutionType::Integer, &x) {
-                tx.send(Response::Solution(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
+                _ = tx.send(Response::Solution(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
             }
             break;
         }
@@ -296,17 +298,10 @@ fn optimize(conf   : &Config,
         }
     }
     if let Ok(xx) = model.primal_solution(SolutionType::Integer, &x) {
-        tx.send(Response::Solution(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
+        _ = tx.send(Response::Solution(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
     }
-    tx.send(Response::Done);
+    _ = tx.send(Response::Done);
 }
 
 
-fn random_n_swap<T>(source : & mut Vec<T>, n : usize) {
-    let mut rng = rand::rng();
-    for k in 0..n.max(source.len()) {
-        let i = rng.random_range(k..source.len());
-        source.swap(k,i);
-    }
-}
 
