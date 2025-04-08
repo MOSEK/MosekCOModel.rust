@@ -8,9 +8,10 @@ extern crate mosekcomodel;
 extern crate rand;
 extern crate itertools;
 
-use std::{cell::RefCell, sync::mpsc::{self, Sender}, thread::JoinHandle};
+use std::{cell::RefCell, rc::Rc, sync::mpsc::{self, Receiver, Sender}, thread::JoinHandle, time::Duration};
 
-use gtk::glib::ControlFlow;
+use cairo::Context;
+use gtk::{glib::{self, ControlFlow}, prelude::{ApplicationExt, ApplicationExtManual, DrawingAreaExtManual, WidgetExt}, Application, ApplicationWindow, DrawingArea};
 use itertools::iproduct;
 use mosekcomodel::*;
 use rand::Rng;
@@ -24,28 +25,36 @@ struct DrawData {
     sol : Vec<(usize,usize)>,
 }
 
-
+enum Command {
+    Terminate
+}
+#[derive(Copy,Clone)]
+struct Config {
+    n : usize,
+    remove_2_hop_loops : bool,
+    remove_selfloops : bool,
+}
 
 fn main() {
-    let mut n : usize = 15;
-    let remove_2_hop_loops = false;
-    let remove_selfloops = false;
+    let mut conf = Config{
+        n : 15,
+        remove_2_hop_loops : false,
+        remove_selfloops : false,
+    };
 
     let mut args = std::env::args(); args.next();
     while let Some(a) = args.next() {
-        match s.as_str() {
-            "-n" => if let Some(v) = args.next() { n = v.parse::<usize>() },
-            "--remote-2-hop-loops" => remove_selfloops = true,
-            "--remove-self-loops" => remove_selfloops = true,
+        match a.as_str() {
+            "-n" => if let Some(v) = args.next() { if let Ok(v) = v.parse::<usize>() { conf.n = v }},
+            "--remove-2-hop-loops" => conf.remove_selfloops = true,
+            "--remove-self-loops" => conf.remove_selfloops = true,
             _ => {},
         }
     }
 
     let mut rng = rand::rng();
 
-    let points = (0..n).map(|_| [ rng.random_range(0..1000) as f64 / 1000.0, rng.random_range(0..1000) as f64 / 1000.0]).collect();
-
-
+    let points = (0..conf.n).map(|_| [ rng.random_range(0..1000) as f64 / 1000.0, rng.random_range(0..1000) as f64 / 1000.0]).collect();
 
     let app = Application::builder()
         .application_id(APP_ID)
@@ -55,7 +64,7 @@ fn main() {
 
     {
         let threads = threads.clone();
-        app.connect_activate(move | app : &Application | build_ui(app,n,&points,threads.clone()));
+        app.connect_activate(move | app : &Application | build_ui(app,conf,&points,threads.clone()));
     }
 
     let r = app.run_with_args::<&str>(&[]);
@@ -65,7 +74,8 @@ fn main() {
     println!("Main loop exit!");
 }
 
-fn build_ui(app : &Application, n : usize,points : &Vec<[f64;2]>, threads : Rc<RefCell<Vec<JoinHandle<()>>>>) {
+fn build_ui(app : &Application, conf : Config,points : &Vec<[f64;2]>, threads : Rc<RefCell<Vec<JoinHandle<()>>>>) {
+    let n = conf.n;
     let drawdata = Rc::new(RefCell::new(DrawData{ 
         points : points.clone(),
         sol    : Vec::new(),
@@ -78,16 +88,16 @@ fn build_ui(app : &Application, n : usize,points : &Vec<[f64;2]>, threads : Rc<R
 
     // Redraw callback
     {
-        let data = data.clone();
+        let data = drawdata.clone();
         darea.set_draw_func(move |widget,context,w,h| redraw_window(widget,context,w,h,&data.borrow()));
     }
 
-    let current_solution = Box::new(RefCell::new(Vec::new()));
     let (tx,rx) = mpsc::channel();
+    let (rtx,rrx) = mpsc::channel();
 
     {
         let points = points.clone();
-        threads.borrow_mut().push(std::thread::spawn(move|| optimize(n,points,tx)));
+        threads.borrow_mut().push(std::thread::spawn(move|| optimize(&conf,points,tx)));
     }
 
     let window = ApplicationWindow::builder()
@@ -116,7 +126,7 @@ fn build_ui(app : &Application, n : usize,points : &Vec<[f64;2]>, threads : Rc<R
                         Err(mpsc::TryRecvError::Disconnected) => return ControlFlow::Break,
                     }
                 }
-            })
+            });
     }
     
 }
@@ -141,7 +151,7 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     context.paint();
     
     context.set_source_rgb(0.0, 0.0, 0.0);
-    for (i,j) in data.sol.iter() {
+    for (&i,&j) in data.sol.iter() {
         let p0 = data.points[i];
         let p1 = data.points[j];
         context.move_to(p0[0],p0[1]);
@@ -150,8 +160,9 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     context.paint();
 }
 
-fn optimize(n : usize, points : Vec<[f64;2]>,tx : Sender<Vec<(usize,usize)>>) {
-    let arc_w = matrix::dense([n,n], iproduct!(points.iter(),points.iter()).map(|(p0,p1)| ((p0[0]-p1[0]).pow(2.0) + (p0[1]-p1[1]).pow(2)).sqrt()).collect());
+fn optimize(conf : &Config, points : Vec<[f64;2]>,tx : Sender<Vec<(usize,usize)>>,rx : Receiver<Command>) {
+    let n = conf.n;
+    let arc_w = matrix::dense([n,n], iproduct!(points.iter(),points.iter()).map(|(p0,p1)| ((p0[0]-p1[0]).powi(2) + (p0[1]-p1[1]).powi(2)).sqrt()).collect::<Vec<f64>>());
 
     let mut model  = Model::new(None);
 
@@ -162,11 +173,11 @@ fn optimize(n : usize, points : Vec<[f64;2]>,tx : Sender<Vec<(usize,usize)>>) {
 
     model.objective(None, Sense::Minimize, arc_w.dot(&x));
 
-    if remove_2_hop_loops {
+    if conf.remove_2_hop_loops {
         model.constraint(None,  x.add(x.transpose()), less_than(1.0));
     }
 
-    if remove_selfloops {
+    if conf.remove_selfloops {
         model.constraint(None, x.diag(), equal_to(0.0));
     }
 
@@ -175,9 +186,18 @@ fn optimize(n : usize, points : Vec<[f64;2]>,tx : Sender<Vec<(usize,usize)>>) {
         let tx = tx.clone();
         model.set_solution_callback(move |model| 
             if let Ok(xx) = model.primal_solution(SolutionType::Integer, &x) {
-                let mut res = Vec::new();
-                tx.send(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|(_,&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>());
+                tx.send(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>());
             });
+        model.set_callback(move || {
+            loop {
+                match rx.try_recv() {
+                    Ok(Command::Terminate) => return Callback::Break,
+                    Err(mpsc::TryRecvError::Empty) => return Callback::Continue,
+                    Err(mpsc::TryRecvError::Disconnected) => return Callback::Break,
+                }
+            }
+            Callback::Continue
+        });
     }
    
     for it in 0.. {
@@ -193,7 +213,7 @@ fn optimize(n : usize, points : Vec<[f64;2]>,tx : Sender<Vec<(usize,usize)>>) {
             let xi = model.primal_solution(SolutionType::Default, &(&x).index([i..i+1, 0..n])).unwrap();
             //println!("x[{{}},:] = {:?}",xi);
 
-            for (j,_xij) in xi.iter().enumerate().filter(|(_,&v)| v > 0.5) {
+            for (j,_xij) in xi.iter().enumerate().filter(|(_,v)| **v > 0.5) {
                 if let Some(c) = cycles.iter_mut()
                     .find(|c| c.iter().filter(|ij| ij[0] == i || ij[1] == i || ij[0] == j || ij[1] == j ).count() > 0) {
                     c.push([i,j]);
@@ -207,7 +227,10 @@ fn optimize(n : usize, points : Vec<[f64;2]>,tx : Sender<Vec<(usize,usize)>>) {
         //println!("\ncycles: {:?}",cycles);
 
         if cycles.len() == 1 {
-            return (model.primal_solution(SolutionType::Default, &x).unwrap(), cycles[0].clone())
+            if let Ok(xx) = model.primal_solution(SolutionType::Integer, &x) {
+                tx.send(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>());
+            }
+            break;
         }
 
         for c in cycles.iter_mut() {
@@ -218,7 +241,6 @@ fn optimize(n : usize, points : Vec<[f64;2]>,tx : Sender<Vec<(usize,usize)>>) {
                          less_than((ni-1) as f64));
         }
     }
-    tx.close();
 }
 
 
