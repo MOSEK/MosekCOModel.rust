@@ -190,6 +190,25 @@ cargo run --release -p truss -- truss/data/bridge.trs
 ![truss](./img/bridge-truss.jpeg "Bridge Truss")
 
 
+### Total Variation
+Implements a simple image enhancement method as a optimization problem.
+Originally, the method was designed for use with a large scale first-order
+method, so this is mostly just a visual demonstration of an optimization
+result.
+
+Run with `--help` to see further command line options.
+
+```sh 
+cargo run --release -p total-variation
+```
+
+### Traveling Salesman
+Very simple implementation of the traveling salesman problem. Run with `--help` to see further command line options.
+
+```sh 
+cargo run --release -p tsp
+```
+
 # Dependencies
 
 The amount of external dependencies is minimal.
