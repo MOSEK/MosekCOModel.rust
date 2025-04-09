@@ -30,8 +30,9 @@ fn main() {
     let fixed = hr_fixed.map(|v| v.map(|w| w - 1));
 
     let mut model = Model::new(Some("SUDOKU"));
-    
+
     model.set_log_handler(|msg| print!("{}",msg));
+
     let x = model.variable(None, nonnegative().with_shape(&[n,n,n]).integer());
     model.constraint(None,&x.clone(),less_than(1.0).with_shape(&[n,n,n]));
 
@@ -53,7 +54,7 @@ fn main() {
 
     model.constraint(None, 
                      stackvec(0,fixed.iter().map(|&i| x.index(i).reshape(&[1]) ).collect::<Vec<Variable<1>>>()), 
-                     equal_to(1.0).with_shape(&[fixed.len()]));
+                     equal_to(1.0));
 
     model.solve();
 
