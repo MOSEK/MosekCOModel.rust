@@ -192,7 +192,8 @@ pub struct Model {
     /// Vector of scalar constraint atoms
     cons : Vec<ConAtom>,
 
-
+    optserver_host : Option<(String,Option<String>)>,
+        
     /// Basis solution
     sol_bas : Solution,
     /// Interior solution
@@ -322,6 +323,8 @@ impl Model {
             task,
             vars    : vec![VarAtom::Linear(-1,WhichLinearBound::Both)],
             cons    : Vec::new(),
+
+            optserver_host : None,
 
             sol_bas : Solution::new(),
             sol_itr : Solution::new(),
@@ -1760,6 +1763,14 @@ impl Model {
         self.task.put_na_str_param(parname, parval).unwrap();
     }
 
+    pub fn put_optserver(&mut self, hostname : &str, access_token : Option<&str>) {
+        self.optserver_host = Some((hostname.to_string(),access_token.map(|v| v.to_string())));
+    }
+
+    pub fn clear_optserver(&mut self) {
+        self.optserver_host = None;
+    }
+
     /// Solve the problem and extract the solution.
     ///
     /// This will fail if the optimizer fails with an error. Not producing a solution (stalling or
@@ -1767,7 +1778,12 @@ impl Model {
     /// is *not* an error.
     pub fn solve(& mut self) {
         self.task.put_int_param(mosek::Iparam::REMOVE_UNUSED_SOLUTIONS, 1).unwrap();
-        self.task.optimize().unwrap();
+        if let Some((hostname,accesstoken)) = self.optserver_host.as_ref() {
+            self.task.optimize_rmt(hostname.as_str(), accesstoken.as_ref().map(|v| v.as_str()).unwrap_or("")).unwrap();
+        }
+        else {
+            self.task.optimize().unwrap();
+        }
 
         let numvar = self.task.get_num_var().unwrap() as usize;
         let numcon = self.task.get_num_con().unwrap() as usize;
