@@ -514,7 +514,7 @@ impl Model {
             D : IntoLinearRange<Result = LinearRangeDomain<N>>
     {
         let domain = dom.into_range()?;
-        let vari = self.task.get_num_var().unwrap();
+        let vari = self.task.get_num_var()?;
         let n : usize = domain.shape.iter().product();
         let nelm = domain.sparsity.as_ref().map(|v| v.len()).unwrap_or(n);
         let varend : i32 = ((vari as usize) + nelm).try_into().unwrap();

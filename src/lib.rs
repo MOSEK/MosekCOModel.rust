@@ -292,6 +292,7 @@
 extern crate mosek;
 extern crate itertools;
 
+pub mod solver;
 pub mod constraint;
 pub mod variable;
 pub mod domain;
