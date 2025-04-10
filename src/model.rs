@@ -123,6 +123,7 @@ impl<const N : usize> VarDomainTrait for ConicDomain<N> {
         m.conic_variable(name,self)
     }
 }
+
 /// Implement a fixed-size integer array as domain for variable, meaning unbounded with the array
 /// as shape.
 impl<const N : usize> VarDomainTrait for &[usize;N] {
@@ -147,6 +148,7 @@ impl VarDomainTrait for usize {
         m.free_variable(name,&[self])
     }
 }
+
 /// Implements PSD domain for variables.
 impl<const N : usize> VarDomainTrait for PSDDomain<N> {
     type Result = Variable<N>;
@@ -1741,8 +1743,14 @@ impl Model {
     /// # Arguments
     /// - `parname` The name is the full name as listed in the MOSEK C manual, that is `MSK_DPAR_...`.
     /// - `parval` Parameter value 
+    pub fn try_set_double_parameter(&mut self, parname : &str, parval : f64) -> Result<(),String> {
+        self.task.put_na_dou_param(parname, parval)
+    }
+
+    /// Set a double parameter in the underlying task object. See
+    /// [Model::try_set_double_parameter].
     pub fn set_double_parameter(&mut self, parname : &str, parval : f64) {
-        self.task.put_na_dou_param(parname, parval).unwrap();
+        self.try_set_double_parameter(parname,parval).unwrap();
     }
 
     /// Set a integer parameter in the underlying task object.
@@ -1750,8 +1758,13 @@ impl Model {
     /// # Arguments
     /// - `parname` The name is the full name as listed in the MOSEK C manual, that is `MSK_IPAR_...`.
     /// - `parval` Parameter value 
+    pub fn try_set_int_parameter(&mut self, parname : &str, parval : i32) -> Result<(),String> {
+        self.task.put_na_int_param(parname, parval)
+    }
+    
+    /// Set a integer parameter in the underlying task object. See [Model::try_set_int_parameter].
     pub fn set_int_parameter(&mut self, parname : &str, parval : i32) {
-        self.task.put_na_int_param(parname, parval).unwrap();
+        self.try_set_int_parameter(parname, parval).unwrap();
     }
 
     /// Set a double parameter in the underlying task object.
@@ -1759,14 +1772,20 @@ impl Model {
     /// # Arguments
     /// - `parname` The name is the full name as listed in the MOSEK C manual, that is `MSK_SPAR_...`.
     /// - `parval` Parameter value 
+    pub fn try_set_str_parameter(&mut self, parname : &str, parval : &str) -> Result<(),String> {
+        self.task.put_na_str_param(parname, parval)
+    }
     pub fn set_str_parameter(&mut self, parname : &str, parval : &str) {
-        self.task.put_na_str_param(parname, parval).unwrap();
+        self.try_set_str_parameter(parname, parval).unwrap();
     }
 
+    /// Set address and optionally access token for an optserver instance. When this is set it will
+    /// override local solving.
     pub fn put_optserver(&mut self, hostname : &str, access_token : Option<&str>) {
         self.optserver_host = Some((hostname.to_string(),access_token.map(|v| v.to_string())));
     }
 
+    /// Clear optserver information. 
     pub fn clear_optserver(&mut self) {
         self.optserver_host = None;
     }
