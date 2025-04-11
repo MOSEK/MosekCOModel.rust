@@ -102,7 +102,7 @@ impl<const N : usize> IntoShapedDomain<N> for ScalableLinearDomain {
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
         Ok(LinearDomain{
             shape,
-            offset : vec![self.offset; shape.iter().product()],
+            offset      : vec![self.offset; shape.iter().product()],
             sparsity    : None,
             domain_type : self.domain_type,
             is_integer  : self.is_integer
@@ -114,11 +114,11 @@ impl IntoDomain for ScalableLinearDomain {
     type Result = LinearDomain<0>;
     fn try_into_domain(self) -> Result<Self::Result,String> {
         Ok(LinearDomain{
-            shape : [],
-            offset : vec![self.offset],
-            sparsity : None,
-            domain_type    : self.domain_type,
-            is_integer : self.is_integer
+            shape       : [],
+            offset      : vec![self.offset],
+            sparsity    : None,
+            domain_type : self.domain_type,
+            is_integer  : self.is_integer
         })
     }
 }

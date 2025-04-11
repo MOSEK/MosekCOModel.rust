@@ -1,4 +1,7 @@
+
 use crate::*;
+use crate::domain::LinearRangeDomain;
+use crate::model::{BaseModelTrait, ConicModelTrait, PSDModelTrait};
 use crate::utils::{iter::IndexIteratorExt, ShapeToStridesEx};
 
 
@@ -32,32 +35,50 @@ impl<const N : usize> Constraint<N> {
 //======================================================
 
 /// Represents something that can be used as a domain for a constraint.
-pub trait ConstraintDomain<const N : usize,M> {
+pub trait ConstraintDomain<const N : usize,M> 
+{
     type Result;
     fn add_constraint(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String>;
 }
 
-/// Implement LinearDomain as constraint domain
-impl<const N : usize,M> ConstraintDomain<N,M> for LinearDomain<N> {
-    fn add_constraint(self, m : & mut Model, name : Option<&str>) -> Result<Constraint<N>,String> {
-        m.linear_constraint(name,self)
-    }
+impl<const N : usize,M> ConstraintDomain<N,M> for LinearDomain<N> where M : BaseModelTrait 
+{
+    type Result = Constraint<N>;
 
+    fn add_constraint(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
+        m.try_linear_constraint(name,self)
+    }
+}
+
+impl<const N : usize,M> ConstraintDomain<N,M> for LinearRangeDomain<N> where M : BaseModelTrait 
+{
+    type Result = (Constraint<N>,Constraint<N>);
+    fn add_constraint(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
+        m.try_ranged_constraint(name,self)
+    }
 }
 
 /// Implement ConicDomain as a constraint domain
-impl<const N : usize> ConstraintDomain<N> for ConicDomain<N> {
+impl<const N : usize,M> ConstraintDomain<N,M> for ConicDomain<N> where M : ConicModelTrait 
+{
+    type Result = Constraint<N>;
     /// Add a constraint with expression expected to be on the top of the rs stack.
-    fn add_constraint(self, m : & mut Model, name : Option<&str>) -> Result<Constraint<N>,String> {
-        m.conic_constraint(name,self)
+    fn add_constraint(self, m : & mut M, name : Option<&str>) -> Result<Constraint<N>,String> {
+        m.try_conic_constraint(name,self)
     }
 }
 
-impl<const N : usize> ConstraintDomain<N> for PSDDomain<N> {
-    fn add_constraint(self, m : & mut Model, name : Option<&str>) -> Result<Constraint<N>,String> {
-        m.psd_constraint(name,self)
+impl<const N : usize,M> ConstraintDomain<N,M> for PSDDomain<N> where M : PSDModelTrait
+{
+    type Result = Constraint<N>;
+    fn add_constraint(self, m : & mut M, name : Option<&str>) -> Result<Constraint<N>,String> {
+        m.try_psd_constraint(name,self)
     }
 }
+
+
+
+
 
 
 
