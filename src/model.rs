@@ -172,6 +172,146 @@ impl<const N : usize, M> VarDomainTrait<M> for PSDDomain<N> where M : PSDModelTr
 // Model
 //======================================================
 
+
+/// This defines the public interface for a Model object. 
+pub trait ModelAPI {
+    /// Add a Variable.
+    ///
+    ///
+    /// If the domain defines a sparsity pattern, elements outside of the sparsity pattern are treated as
+    /// fixed to 0.0. For example, for
+    ///  ```rust
+    ///  use mosekcomodel::*;
+    ///  let dom = greater_than(vec![1.0,1.0,1.0]).with_shape_and_sparsity(&[6],&[[0],[2],[4]]);
+    ///  ```
+    ///  `dom` would define a variable of length 6 where element 0, 2 and 4 are greater than 1.0,
+    ///  while elements 1,3,5 are fixed to 0.0.
+    ///
+    ///  The domain is required to define the shape in some meaningful way. For example,
+    ///  - [LinearProtoDomain], [ConicProtoDomain], [PSDProtoDomain] for example from [zeros],
+    ///   `greater_than(vec![1.0,1.0])` will produce a variable of the shape defined by the domain.
+    ///  - [ScalableLinearDomain] as produced by for example [zero], [unbounded] or `greater_than(1.0)` the result is a scalar variable.
+    ///  - [ScalableConicDomain], [ScalablePSDDomain] will fail as they define no meaningful shape.
+    ///
+    /// # Arguments
+    /// - `name` Optional constraint name. This is currently only used to generate names passed to
+    ///   the underlying task.
+    /// - `dom` The domain of the variable. This defines the bound
+    ///   type, shape and sparsity of the variable. For sparse
+    ///   variables, elements outside of the sparsity pattern are
+    ///   treated as variables fixed to 0.0.
+    /// # Returns
+    /// - On success, return an `N`-dimensional variable object is returned. The `Variable` object
+    ///   may be dense or sparse, where "sparse" means that all entries outside the sparsity
+    ///   pattern are fixed to 0.
+    /// - On a recoverable failure (i.e. when the [Model] is in a consistent state), return a
+    ///   string describing the error.
+    /// - On non-recoverable errors: Panic.
+    fn try_variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> Result<R,String>
+        where 
+            I : IntoDomain<Result = D>,
+            D : VarDomainTrait<Self,Result = R>,
+            Self : Sized
+    {
+        dom.try_into_domain()?.create(self,name)
+    }
+
+    /// Add a Variable. See [Model::try_variable].
+    ///
+    /// # Returns
+    /// An `N`-dimensional variable object is returned. The `Variable` object may be dense or
+    /// sparse, where "sparse" means that all entries outside the sparsity pattern are fixed to 0.
+    ///
+    /// Panics on any error.
+    fn variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> R
+        where 
+            I : IntoDomain<Result = D>,
+            D : VarDomainTrait<Self,Result = R>,
+            Self : Sized
+    {
+        dom.try_into_domain().unwrap().create(self,name).unwrap()
+    }
+
+    /// Add a constraint
+    ///
+    /// Note that even if the domain or the expression are sparse, a constraint will always be
+    /// full, and all elements outside of the sparsity pattern are intereted as zeros. Unlike for
+    /// variables, an entry in the domain outside the sparsity pattern will NOT cause the
+    /// corresponding expression element to be fixed to 0.0. So, for example in
+    ///  ```rust
+    ///  use mosekcomodel::*;
+    ///  let mut m = Model::new(None);
+    ///  let x = m.variable(None, unbounded().with_shape(&[3]));
+    ///  let c1 = m.constraint(None, &x,greater_than(vec![1.0,1.0]).with_shape_and_sparsity(&[3],&[[0],[2]]));
+    ///  let c2 = m.constraint(None, &x,greater_than(vec![1.0,0.0,1.0]));
+    ///  ```
+    ///  The constraints `c1` and `c2` mean exactly the same.
+    ///
+    ///  The domain is checked or expanded according to the shape of the `expr` argument. For
+    ///  example:
+    ///  - [LinearProtoDomain], [ConicProtoDomain], [PSDProtoDomain] for example from [zeros],
+    ///   `greater_than(vec![1.0,1.0])`, the expression shape must exactly match the domain shape.
+    ///  - [ScalableLinearDomain], [ScalableConicDomain] will be expanded to match the shape of the
+    ///    expression, and it will be checked that the shape is valid for the domain type - like
+    ///    that an exponential cone has size 3. For conic domains, the cones are by default in the inner-most
+    ///    dimension, so if  the expression shape is `[2,3,4]`, the cones in the domain will have
+    ///    size 4. This can be changed with the `::cone_dim` method.
+    ///  - [ScalablePSDDomain] will be expanded to match the domain, and as above, the cones are by
+    ///    default placed in the inner-most dimensions, so if the expression shape is `[2,3,4,4]` the PSD
+    ///    cones will have dimension 4. If the two cone dimensions to not have the same size, it
+    ///    will cause an error.
+    /// # Arguments
+    /// - `name` Optional constraint name. Currently this is only used to generate names passed to
+    ///   the underlting task.
+    /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
+    /// - `dom`  The domain of the constraint. This defines the bound type and shape.
+    /// # Returns
+    /// - On success, return a N-dimensional constraint object that can be used to access
+    ///   solution values.
+    /// - On any recoverable failure, i.e. failure where the [Model] is in a consistent state:
+    ///   Return a string describing the error.
+    /// - On any non-recoverable error: Panic.
+    fn try_constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> Result<D::Result,String>
+        where
+            E : IntoExpr<N>, 
+            <E as IntoExpr<N>>::Result : ExprTrait<N>,
+            I : IntoShapedDomain<N,Result=D>,
+            D : ConstraintDomain<N,Self>,
+            Self : Sized;
+
+    /// Add a constraint. See [Model::try_constraint].
+    ///
+    /// # Returns
+    /// - On success, return a N-dimensional constraint object that can be used to access
+    ///   solution values.
+    /// - On any failure: Panic.
+    fn constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> D::Result
+        where
+            E : IntoExpr<N>, 
+            <E as IntoExpr<N>>::Result : ExprTrait<N>,
+            I : IntoShapedDomain<N,Result = D>,
+            D : ConstraintDomain<N,Self>,
+            Self : Sized
+    {
+        self.try_constraint(name, expr, dom).unwrap()
+    }
+    
+    /// Update the expression of a constraint in the Model.
+    fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) -> Result<(),String>
+        where 
+            E    : expr::IntoExpr<N>,
+            Self : BaseModelTrait;
+    
+    /// Write problem to a file. The file is written by the underlying solver task, so no
+    /// structural information will be written.
+    ///
+    /// # Arguments
+    /// - `filename` The filename extension determines the file format to use. If the
+    ///   file extension is not recognized, the MPS format is used.
+    ///
+    fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path>;
+}
+
 pub trait BaseModelTrait {
     fn try_free_variable<const N : usize>
         (&mut self,
@@ -388,133 +528,133 @@ impl Model {
         }
     }
 
-    /// Add a Variable.
-    ///
-    ///
-    /// If the domain defines a sparsity pattern, elements outside of the sparsity pattern are treated as
-    /// fixed to 0.0. For example, for
-    ///  ```rust
-    ///  use mosekcomodel::*;
-    ///  let dom = greater_than(vec![1.0,1.0,1.0]).with_shape_and_sparsity(&[6],&[[0],[2],[4]]);
-    ///  ```
-    ///  `dom` would define a variable of length 6 where element 0, 2 and 4 are greater than 1.0,
-    ///  while elements 1,3,5 are fixed to 0.0.
-    ///
-    ///  The domain is required to define the shape in some meaningful way. For example,
-    ///  - [LinearProtoDomain], [ConicProtoDomain], [PSDProtoDomain] for example from [zeros],
-    ///   `greater_than(vec![1.0,1.0])` will produce a variable of the shape defined by the domain.
-    ///  - [ScalableLinearDomain] as produced by for example [zero], [unbounded] or `greater_than(1.0)` the result is a scalar variable.
-    ///  - [ScalableConicDomain], [ScalablePSDDomain] will fail as they define no meaningful shape.
-    ///
-    /// # Arguments
-    /// - `name` Optional constraint name. This is currently only used to generate names passed to
-    ///   the underlying task.
-    /// - `dom` The domain of the variable. This defines the bound
-    ///   type, shape and sparsity of the variable. For sparse
-    ///   variables, elements outside of the sparsity pattern are
-    ///   treated as variables fixed to 0.0.
-    /// # Returns
-    /// - On success, return an `N`-dimensional variable object is returned. The `Variable` object
-    ///   may be dense or sparse, where "sparse" means that all entries outside the sparsity
-    ///   pattern are fixed to 0.
-    /// - On a recoverable failure (i.e. when the [Model] is in a consistent state), return a
-    ///   string describing the error.
-    /// - On non-recoverable errors: Panic.
-    pub fn try_variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> Result<R,String>
-        where 
-            I : IntoDomain<Result = D>,
-            D : VarDomainTrait<Self,Result = R>,
-    {
-        dom.try_into_domain()?.create(self,name)
-    }
-
-    /// Add a Variable. See [Model::try_variable].
-    ///
-    /// # Returns
-    /// An `N`-dimensional variable object is returned. The `Variable` object may be dense or
-    /// sparse, where "sparse" means that all entries outside the sparsity pattern are fixed to 0.
-    ///
-    /// Panics on any error.
-    pub fn variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> R
-        where 
-            I : IntoDomain<Result = D>,
-            D : VarDomainTrait<Self,Result = R>,
-    {
-        dom.try_into_domain().unwrap().create(self,name).unwrap()
-    }
-
-    /// Add a constraint
-    ///
-    /// Note that even if the domain or the expression are sparse, a constraint will always be
-    /// full, and all elements outside of the sparsity pattern are intereted as zeros. Unlike for
-    /// variables, an entry in the domain outside the sparsity pattern will NOT cause the
-    /// corresponding expression element to be fixed to 0.0. So, for example in
-    ///  ```rust
-    ///  use mosekcomodel::*;
-    ///  let mut m = Model::new(None);
-    ///  let x = m.variable(None, unbounded().with_shape(&[3]));
-    ///  let c1 = m.constraint(None, &x,greater_than(vec![1.0,1.0]).with_shape_and_sparsity(&[3],&[[0],[2]]));
-    ///  let c2 = m.constraint(None, &x,greater_than(vec![1.0,0.0,1.0]));
-    ///  ```
-    ///  The constraints `c1` and `c2` mean exactly the same.
-    ///
-    ///  The domain is checked or expanded according to the shape of the `expr` argument. For
-    ///  example:
-    ///  - [LinearProtoDomain], [ConicProtoDomain], [PSDProtoDomain] for example from [zeros],
-    ///   `greater_than(vec![1.0,1.0])`, the expression shape must exactly match the domain shape.
-    ///  - [ScalableLinearDomain], [ScalableConicDomain] will be expanded to match the shape of the
-    ///    expression, and it will be checked that the shape is valid for the domain type - like
-    ///    that an exponential cone has size 3. For conic domains, the cones are by default in the inner-most
-    ///    dimension, so if  the expression shape is `[2,3,4]`, the cones in the domain will have
-    ///    size 4. This can be changed with the `::cone_dim` method.
-    ///  - [ScalablePSDDomain] will be expanded to match the domain, and as above, the cones are by
-    ///    default placed in the inner-most dimensions, so if the expression shape is `[2,3,4,4]` the PSD
-    ///    cones will have dimension 4. If the two cone dimensions to not have the same size, it
-    ///    will cause an error.
-    /// # Arguments
-    /// - `name` Optional constraint name. Currently this is only used to generate names passed to
-    ///   the underlting task.
-    /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
-    /// - `dom`  The domain of the constraint. This defines the bound type and shape.
-    /// # Returns
-    /// - On success, return a N-dimensional constraint object that can be used to access
-    ///   solution values.
-    /// - On any recoverable failure, i.e. failure where the [Model] is in a consistent state:
-    ///   Return a string describing the error.
-    /// - On any non-recoverable error: Panic.
-    pub fn try_constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> Result<D::Result,String>
-        where
-            E : IntoExpr<N>, 
-            <E as IntoExpr<N>>::Result : ExprTrait<N>,
-            I : IntoShapedDomain<N,Result=D>,
-            D : ConstraintDomain<N,Self>
-    {
-        expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
-        let (eshape,_,_,_,_) = self.rs.peek_expr();
-        if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
-        let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
-
-        dom.try_into_domain(shape)?.add_constraint(self,name)
-    }
-
-    /// Add a constraint. See [Model::try_constraint].
-    ///
-    /// # Returns
-    /// - On success, return a N-dimensional constraint object that can be used to access
-    ///   solution values.
-    /// - On any failure: Panic.
-    pub fn constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> D::Result
-        where
-            E : IntoExpr<N>, 
-            <E as IntoExpr<N>>::Result : ExprTrait<N>,
-            I : IntoShapedDomain<N,Result = D>,
-            D : ConstraintDomain<N,Self>
-    {
-        self.try_constraint(name, expr, dom).unwrap()
-    }
-
-
-
+//    /// Add a Variable.
+//    ///
+//    ///
+//    /// If the domain defines a sparsity pattern, elements outside of the sparsity pattern are treated as
+//    /// fixed to 0.0. For example, for
+//    ///  ```rust
+//    ///  use mosekcomodel::*;
+//    ///  let dom = greater_than(vec![1.0,1.0,1.0]).with_shape_and_sparsity(&[6],&[[0],[2],[4]]);
+//    ///  ```
+//    ///  `dom` would define a variable of length 6 where element 0, 2 and 4 are greater than 1.0,
+//    ///  while elements 1,3,5 are fixed to 0.0.
+//    ///
+//    ///  The domain is required to define the shape in some meaningful way. For example,
+//    ///  - [LinearProtoDomain], [ConicProtoDomain], [PSDProtoDomain] for example from [zeros],
+//    ///   `greater_than(vec![1.0,1.0])` will produce a variable of the shape defined by the domain.
+//    ///  - [ScalableLinearDomain] as produced by for example [zero], [unbounded] or `greater_than(1.0)` the result is a scalar variable.
+//    ///  - [ScalableConicDomain], [ScalablePSDDomain] will fail as they define no meaningful shape.
+//    ///
+//    /// # Arguments
+//    /// - `name` Optional constraint name. This is currently only used to generate names passed to
+//    ///   the underlying task.
+//    /// - `dom` The domain of the variable. This defines the bound
+//    ///   type, shape and sparsity of the variable. For sparse
+//    ///   variables, elements outside of the sparsity pattern are
+//    ///   treated as variables fixed to 0.0.
+//    /// # Returns
+//    /// - On success, return an `N`-dimensional variable object is returned. The `Variable` object
+//    ///   may be dense or sparse, where "sparse" means that all entries outside the sparsity
+//    ///   pattern are fixed to 0.
+//    /// - On a recoverable failure (i.e. when the [Model] is in a consistent state), return a
+//    ///   string describing the error.
+//    /// - On non-recoverable errors: Panic.
+//    pub fn try_variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> Result<R,String>
+//        where 
+//            I : IntoDomain<Result = D>,
+//            D : VarDomainTrait<Self,Result = R>,
+//    {
+//        dom.try_into_domain()?.create(self,name)
+//    }
+//
+//    /// Add a Variable. See [Model::try_variable].
+//    ///
+//    /// # Returns
+//    /// An `N`-dimensional variable object is returned. The `Variable` object may be dense or
+//    /// sparse, where "sparse" means that all entries outside the sparsity pattern are fixed to 0.
+//    ///
+//    /// Panics on any error.
+//    pub fn variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> R
+//        where 
+//            I : IntoDomain<Result = D>,
+//            D : VarDomainTrait<Self,Result = R>,
+//    {
+//        dom.try_into_domain().unwrap().create(self,name).unwrap()
+//    }
+//
+//    /// Add a constraint
+//    ///
+//    /// Note that even if the domain or the expression are sparse, a constraint will always be
+//    /// full, and all elements outside of the sparsity pattern are intereted as zeros. Unlike for
+//    /// variables, an entry in the domain outside the sparsity pattern will NOT cause the
+//    /// corresponding expression element to be fixed to 0.0. So, for example in
+//    ///  ```rust
+//    ///  use mosekcomodel::*;
+//    ///  let mut m = Model::new(None);
+//    ///  let x = m.variable(None, unbounded().with_shape(&[3]));
+//    ///  let c1 = m.constraint(None, &x,greater_than(vec![1.0,1.0]).with_shape_and_sparsity(&[3],&[[0],[2]]));
+//    ///  let c2 = m.constraint(None, &x,greater_than(vec![1.0,0.0,1.0]));
+//    ///  ```
+//    ///  The constraints `c1` and `c2` mean exactly the same.
+//    ///
+//    ///  The domain is checked or expanded according to the shape of the `expr` argument. For
+//    ///  example:
+//    ///  - [LinearProtoDomain], [ConicProtoDomain], [PSDProtoDomain] for example from [zeros],
+//    ///   `greater_than(vec![1.0,1.0])`, the expression shape must exactly match the domain shape.
+//    ///  - [ScalableLinearDomain], [ScalableConicDomain] will be expanded to match the shape of the
+//    ///    expression, and it will be checked that the shape is valid for the domain type - like
+//    ///    that an exponential cone has size 3. For conic domains, the cones are by default in the inner-most
+//    ///    dimension, so if  the expression shape is `[2,3,4]`, the cones in the domain will have
+//    ///    size 4. This can be changed with the `::cone_dim` method.
+//    ///  - [ScalablePSDDomain] will be expanded to match the domain, and as above, the cones are by
+//    ///    default placed in the inner-most dimensions, so if the expression shape is `[2,3,4,4]` the PSD
+//    ///    cones will have dimension 4. If the two cone dimensions to not have the same size, it
+//    ///    will cause an error.
+//    /// # Arguments
+//    /// - `name` Optional constraint name. Currently this is only used to generate names passed to
+//    ///   the underlting task.
+//    /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
+//    /// - `dom`  The domain of the constraint. This defines the bound type and shape.
+//    /// # Returns
+//    /// - On success, return a N-dimensional constraint object that can be used to access
+//    ///   solution values.
+//    /// - On any recoverable failure, i.e. failure where the [Model] is in a consistent state:
+//    ///   Return a string describing the error.
+//    /// - On any non-recoverable error: Panic.
+//    pub fn try_constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> Result<D::Result,String>
+//        where
+//            E : IntoExpr<N>, 
+//            <E as IntoExpr<N>>::Result : ExprTrait<N>,
+//            I : IntoShapedDomain<N,Result=D>,
+//            D : ConstraintDomain<N,Self>
+//    {
+//        expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
+//        let (eshape,_,_,_,_) = self.rs.peek_expr();
+//        if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
+//        let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
+//
+//        dom.try_into_domain(shape)?.add_constraint(self,name)
+//    }
+//
+//    /// Add a constraint. See [Model::try_constraint].
+//    ///
+//    /// # Returns
+//    /// - On success, return a N-dimensional constraint object that can be used to access
+//    ///   solution values.
+//    /// - On any failure: Panic.
+//    pub fn constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> D::Result
+//        where
+//            E : IntoExpr<N>, 
+//            <E as IntoExpr<N>>::Result : ExprTrait<N>,
+//            I : IntoShapedDomain<N,Result = D>,
+//            D : ConstraintDomain<N,Self>
+//    {
+//        self.try_constraint(name, expr, dom).unwrap()
+//    }
+//
+//
+//
 
 
 
@@ -584,17 +724,6 @@ impl Model {
         }).unwrap();
     }
 
-    /// Write problem to a file. The file is written by the underlying solver task, so no
-    /// structural information will be written.
-    ///
-    /// # Arguments
-    /// - `filename` The filename extension determines the file format to use. If the
-    ///   file extension is not recognized, the MPS format is used.
-    ///
-    pub fn write_problem<P>(&self, filename : P) where P : AsRef<Path> {
-        let path = filename.as_ref();
-        self.task.write_data(path.to_str().unwrap()).unwrap();
-    }
 
 
 
@@ -1519,6 +1648,40 @@ impl Model {
     }
 } // impl Model
 
+impl ModelAPI for Model {
+    /// Update the expression of a constraint in the Model.
+    fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) -> Result<(),String> where E : expr::IntoExpr<N> {
+        e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).unwrap();
+        {
+            let (shape,_,_,_,_) = self.rs.peek_expr();
+            if shape.iter().zip(item.shape.iter()).any(|(&a,&b)| a != b) {
+                panic!("Shape of constraint ({:?}) does not match shape of expression ({:?})",item.shape,shape);
+            }
+        }
+        <Model as BaseModelTrait>::try_update(self, &item.idxs)
+    }
+
+    fn try_constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> Result<D::Result,String>
+        where
+            E : IntoExpr<N>, 
+            <E as IntoExpr<N>>::Result : ExprTrait<N>,
+            I : IntoShapedDomain<N,Result=D>,
+            D : ConstraintDomain<N,Self>,
+            Self : Sized
+    {
+        expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
+        let (eshape,_,_,_,_) = self.rs.peek_expr();
+        if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
+        let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
+
+        dom.try_into_domain(shape)?.add_constraint(self,name)
+    }
+
+    fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path> {
+        let path = filename.as_ref();
+        self.task.write_data(path.to_str().unwrap())
+    }
+}
 
 
 impl BaseModelTrait for Model {
