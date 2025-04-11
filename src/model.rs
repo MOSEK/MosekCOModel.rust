@@ -1,9 +1,7 @@
 //!
 #[doc = include_str!("../js/mathjax.tag")]
 
-use itertools::{merge_join_by, EitherOrBoth};
 use itertools::{iproduct, izip};
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::ControlFlow;
 use std::{iter::once, path::Path};
@@ -348,7 +346,7 @@ pub trait ModelAPI {
     ///
     /// # Returns
     /// If solution item is defined, return the solution, otherwise an error message.
-    fn primal_solution<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String>;
+    fn primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> where Self : Sized+BaseModelTrait;
     
     /// Get primal solution values for an a sparse variable or constraint.
     ///
@@ -361,12 +359,12 @@ pub trait ModelAPI {
     /// - `Some((vals,idxs))` is returned, where 
     ///   - `vals` are the solution values for non-zero entries
     ///   - `idxs` are the indexes.
-    fn sparse_primal_solution<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String>;
+    fn sparse_primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String> where Self : Sized+BaseModelTrait;
 
     /// Get dual solution values for an item
     ///
     /// Returns: If solution item is defined, return the solution, otherwise a n error message.
-    fn dual_solution<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String>;
+    fn dual_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> where Self : Sized+BaseModelTrait;
 
     /// Get primal solution values for an item
     ///
@@ -375,7 +373,7 @@ pub trait ModelAPI {
     /// - `item`  The item to get solution for
     /// - `res`   Copy the solution values into this slice
     /// Returns: The number of values copied if solution is available, otherwise an error string.
-    fn primal_solution_into<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String>;
+    fn primal_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> where Self : Sized+BaseModelTrait;
 
     /// Get dual solution values for an item
     ///
@@ -384,15 +382,15 @@ pub trait ModelAPI {
     /// - `item`  The item to get solution for
     /// - `res`   Copy the solution values into this slice
     /// Returns: The number of values copied if solution is available, otherwise an error string.
-    fn dual_solution_into<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String>;
+    fn dual_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> where Self : Sized+BaseModelTrait;
+
     
     /// Evaluate an expression in the (primal) solution. 
     ///
     /// # Arguments
     /// - `solid` The solution in which to evaluate the expression.
     /// - `expr` The expression to evaluate.
-    pub fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : E) -> Result<NDArray<N>,String> where E : IntoExpr<N>;
-{
+    fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : E) -> Result<NDArray<N>,String> where E : IntoExpr<N>, Self : Sized+BaseModelTrait;
 } // trait ModelAPI
 
 pub trait BaseModelTrait {
@@ -418,6 +416,12 @@ pub trait BaseModelTrait {
             Self : Sized;
 
     fn try_update(& mut self, idxs : &[usize]) -> Result<(),String>;
+
+
+    fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String>;
+    fn dual_var_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String>;
+    fn primal_con_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String>;
+    fn dual_con_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String>;
 }
 
 pub trait ConicModelTrait {
@@ -538,7 +542,7 @@ pub struct Disjunction {
     index : i64
 }
 
-impl<const N : usize> ModelItem<N> for Constraint <N> {
+impl<const N : usize> ModelItem<N,Model> for Constraint <N> {
     fn len(&self) -> usize { return self.shape.iter().product(); }
     fn shape(&self) -> [usize; N] { self.shape }
     fn primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64]) -> Result<usize,String> {
@@ -610,143 +614,6 @@ impl Model {
             xs      : WorkStack::new(0)
         }
     }
-
-//    /// Add a Variable.
-//    ///
-//    ///
-//    /// If the domain defines a sparsity pattern, elements outside of the sparsity pattern are treated as
-//    /// fixed to 0.0. For example, for
-//    ///  ```rust
-//    ///  use mosekcomodel::*;
-//    ///  let dom = greater_than(vec![1.0,1.0,1.0]).with_shape_and_sparsity(&[6],&[[0],[2],[4]]);
-//    ///  ```
-//    ///  `dom` would define a variable of length 6 where element 0, 2 and 4 are greater than 1.0,
-//    ///  while elements 1,3,5 are fixed to 0.0.
-//    ///
-//    ///  The domain is required to define the shape in some meaningful way. For example,
-//    ///  - [LinearProtoDomain], [ConicProtoDomain], [PSDProtoDomain] for example from [zeros],
-//    ///   `greater_than(vec![1.0,1.0])` will produce a variable of the shape defined by the domain.
-//    ///  - [ScalableLinearDomain] as produced by for example [zero], [unbounded] or `greater_than(1.0)` the result is a scalar variable.
-//    ///  - [ScalableConicDomain], [ScalablePSDDomain] will fail as they define no meaningful shape.
-//    ///
-//    /// # Arguments
-//    /// - `name` Optional constraint name. This is currently only used to generate names passed to
-//    ///   the underlying task.
-//    /// - `dom` The domain of the variable. This defines the bound
-//    ///   type, shape and sparsity of the variable. For sparse
-//    ///   variables, elements outside of the sparsity pattern are
-//    ///   treated as variables fixed to 0.0.
-//    /// # Returns
-//    /// - On success, return an `N`-dimensional variable object is returned. The `Variable` object
-//    ///   may be dense or sparse, where "sparse" means that all entries outside the sparsity
-//    ///   pattern are fixed to 0.
-//    /// - On a recoverable failure (i.e. when the [Model] is in a consistent state), return a
-//    ///   string describing the error.
-//    /// - On non-recoverable errors: Panic.
-//    pub fn try_variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> Result<R,String>
-//        where 
-//            I : IntoDomain<Result = D>,
-//            D : VarDomainTrait<Self,Result = R>,
-//    {
-//        dom.try_into_domain()?.create(self,name)
-//    }
-//
-//    /// Add a Variable. See [Model::try_variable].
-//    ///
-//    /// # Returns
-//    /// An `N`-dimensional variable object is returned. The `Variable` object may be dense or
-//    /// sparse, where "sparse" means that all entries outside the sparsity pattern are fixed to 0.
-//    ///
-//    /// Panics on any error.
-//    pub fn variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> R
-//        where 
-//            I : IntoDomain<Result = D>,
-//            D : VarDomainTrait<Self,Result = R>,
-//    {
-//        dom.try_into_domain().unwrap().create(self,name).unwrap()
-//    }
-//
-//    /// Add a constraint
-//    ///
-//    /// Note that even if the domain or the expression are sparse, a constraint will always be
-//    /// full, and all elements outside of the sparsity pattern are intereted as zeros. Unlike for
-//    /// variables, an entry in the domain outside the sparsity pattern will NOT cause the
-//    /// corresponding expression element to be fixed to 0.0. So, for example in
-//    ///  ```rust
-//    ///  use mosekcomodel::*;
-//    ///  let mut m = Model::new(None);
-//    ///  let x = m.variable(None, unbounded().with_shape(&[3]));
-//    ///  let c1 = m.constraint(None, &x,greater_than(vec![1.0,1.0]).with_shape_and_sparsity(&[3],&[[0],[2]]));
-//    ///  let c2 = m.constraint(None, &x,greater_than(vec![1.0,0.0,1.0]));
-//    ///  ```
-//    ///  The constraints `c1` and `c2` mean exactly the same.
-//    ///
-//    ///  The domain is checked or expanded according to the shape of the `expr` argument. For
-//    ///  example:
-//    ///  - [LinearProtoDomain], [ConicProtoDomain], [PSDProtoDomain] for example from [zeros],
-//    ///   `greater_than(vec![1.0,1.0])`, the expression shape must exactly match the domain shape.
-//    ///  - [ScalableLinearDomain], [ScalableConicDomain] will be expanded to match the shape of the
-//    ///    expression, and it will be checked that the shape is valid for the domain type - like
-//    ///    that an exponential cone has size 3. For conic domains, the cones are by default in the inner-most
-//    ///    dimension, so if  the expression shape is `[2,3,4]`, the cones in the domain will have
-//    ///    size 4. This can be changed with the `::cone_dim` method.
-//    ///  - [ScalablePSDDomain] will be expanded to match the domain, and as above, the cones are by
-//    ///    default placed in the inner-most dimensions, so if the expression shape is `[2,3,4,4]` the PSD
-//    ///    cones will have dimension 4. If the two cone dimensions to not have the same size, it
-//    ///    will cause an error.
-//    /// # Arguments
-//    /// - `name` Optional constraint name. Currently this is only used to generate names passed to
-//    ///   the underlting task.
-//    /// - `expr` Constraint expression. Note that the shape of the expression and the domain must match exactly.
-//    /// - `dom`  The domain of the constraint. This defines the bound type and shape.
-//    /// # Returns
-//    /// - On success, return a N-dimensional constraint object that can be used to access
-//    ///   solution values.
-//    /// - On any recoverable failure, i.e. failure where the [Model] is in a consistent state:
-//    ///   Return a string describing the error.
-//    /// - On any non-recoverable error: Panic.
-//    pub fn try_constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> Result<D::Result,String>
-//        where
-//            E : IntoExpr<N>, 
-//            <E as IntoExpr<N>>::Result : ExprTrait<N>,
-//            I : IntoShapedDomain<N,Result=D>,
-//            D : ConstraintDomain<N,Self>
-//    {
-//        expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
-//        let (eshape,_,_,_,_) = self.rs.peek_expr();
-//        if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
-//        let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
-//
-//        dom.try_into_domain(shape)?.add_constraint(self,name)
-//    }
-//
-//    /// Add a constraint. See [Model::try_constraint].
-//    ///
-//    /// # Returns
-//    /// - On success, return a N-dimensional constraint object that can be used to access
-//    ///   solution values.
-//    /// - On any failure: Panic.
-//    pub fn constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> D::Result
-//        where
-//            E : IntoExpr<N>, 
-//            <E as IntoExpr<N>>::Result : ExprTrait<N>,
-//            I : IntoShapedDomain<N,Result = D>,
-//            D : ConstraintDomain<N,Self>
-//    {
-//        self.try_constraint(name, expr, dom).unwrap()
-//    }
-//
-//
-//
-
-
-
-
-
-
-
-
-
 
 
 
@@ -867,90 +734,6 @@ impl Model {
 
 
 
-
-//    /// Create a ranged variable. See [Model::try_ranged_variable].
-//    ///
-//    /// It will panic on any error.
-//    pub fn ranged_variable<const N : usize,D>(&mut self, name : Option<&str>, dom : D) -> (Variable<N>,Variable<N>) 
-//        where 
-//            D : IntoLinearRange<Result = LinearRangeDomain<N>>
-//    {
-//        self.try_ranged_variable(name, dom).unwrap()
-//    }
-//
-//
-//    fn psd_variable<const N : usize>(&mut self, name : Option<&str>, dom : PSDDomain<N>) -> Variable<N> {
-//        let (shape,(conedim0,conedim1)) = dom.dissolve();
-//        if conedim0 == conedim1 || conedim0 >= N || conedim1 >= N { panic!("Invalid cone dimensions") };
-//        if shape[conedim0] != shape[conedim1] { panic!("Mismatching cone dimensions") };
-//
-//        let (cdim0,cdim1) = if conedim0 < conedim1 { (conedim0,conedim1) } else { (conedim1,conedim0) };
-//
-//        let d0 = shape[0..cdim0].iter().product();
-//        let d1 = shape[cdim0];
-//        let d2 = shape[cdim0+1..cdim1].iter().product();
-//        let d3 = shape[cdim1];
-//        let d4 = shape[cdim1+1..].iter().product();
-//
-//        let numcone = d0*d2*d4;
-//        let conesz  = d1*(d1+1)/2;
-//
-//        let barvar0 = self.task.get_num_barvar().unwrap();
-//        self.task.append_barvars(vec![d1 as i32; numcone].as_slice()).unwrap();
-//        self.vars.reserve(numcone*conesz);
-//        let varidx0 = self.vars.len();
-//        for k in 0..numcone {
-//            for j in 0..d1 {
-//                for i in j..d1 {
-//                    self.vars.push(VarAtom::BarElm(barvar0 + k as i32, i*(i+1)/2+j));
-//                }
-//            }
-//        }
-//
-//        if let Some(name) = name {
-//            //let mut xstrides = [0usize; N];
-//            let mut xshape = [0usize; N];
-//            xshape.iter_mut().zip(shape[0..cdim0].iter().chain(shape[cdim0+1..cdim1].iter()).chain(shape[cdim1+1..].iter())).for_each(|(t,&s)| *t = s);
-//            //xstrides.iter_mut().zip(xshape[0..N-2].iter()).rev().fold(1|v,(t,*s)| { *t = v; s * v});
-//            let mut idx = [1usize; N];
-//            for barj in barvar0..barvar0+numcone as i32 {
-//                let name = format!("{}{:?}",name,&idx[0..N-2]);
-//                self.task.put_barvar_name(barj, name.as_str()).unwrap();
-//                idx[0..N-2].iter_mut().zip(xshape).rev().fold(1,|carry,(i,d)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
-//            }
-//        }
-//
-//        let idxs : Vec<usize> = if conedim0 < conedim1 {
-//            //println!("Conedims {},{}",conedim0,conedim1);
-//            iproduct!(0..d0,0..d1,0..d2,0..d3,0..d4).map(|(i0,i1,i2,i3,i4)| {
-//                let (i1,i3) = if i3 > i1 { (i3,i1) } else { (i1,i3) };
-//
-//                let baridx = i0 * d2 * d4 + i2 * d4 + i4;
-//
-//                let ofs    = d1*i3+i1-i3*(i3+1)/2;
-//                //println!("d = {}, (i,j) = ({},{}) -> {}",d1,i1,i3,ofs);
-//
-//                varidx0+baridx*conesz+ofs
-//            }).collect()
-//        }
-//        else {
-//            //println!("Conedims {},{}",conedim0,conedim1);
-//            iproduct!(0..d0,0..d1,0..d2,0..d3,0..d4).map(|(i0,i3,i2,i1,i4)| {
-//                let (i1,i3) = if i3 > i1 { (i3,i1) } else { (i1,i3) };
-//
-//                let baridx = i0 * d2 * d4 + i2 * d4 + i4;
-//                let ofs    = d1*i3+i1 - i3*(i3+1)/2;
-//
-//                varidx0+baridx*conesz+ofs
-//            }).collect()
-//        };
-//
-//        //println!("PSD variable indexes = {:?}",idxs);
-//        Variable::new(idxs,
-//                      None,
-//                      &shape)
-//    }
-
     /// Add a disjunctive constraint to the model. A disjunctive constraint is a logical constraint
     /// of the form
     /// $$
@@ -1045,208 +828,6 @@ impl Model {
     pub fn disjunction<D>(& mut self, name : Option<&str>, terms : D) -> Disjunction where D : disjunction::DisjunctionTrait {
         self.try_disjunction(name, terms).unwrap()
     }
-
-//    fn update_internal(&mut self, idxs : &[usize]) {
-//        let (_,ptr,_,subj,cof) = self.rs.pop_expr();
-//        if let Some(maxidx) = idxs.iter().max() {
-//            if *maxidx >= self.cons.len() {
-//                panic!("Invalid constraint indexes: Out of bounds");
-//            }
-//
-//            // check that there are not dups.
-//            let mut perm = (0..idxs.len()).collect::<Vec<usize>>();
-//            perm.sort_by_key(|&i| unsafe{ *idxs.get_unchecked(i) });
-//            if idxs.permute_by(&perm).zip(idxs.permute_by(&perm[1..])).any(|(&a,&b)| a == b) {
-//                panic!("Invalid constraint contains duplicatesindexes: Out of bounds");
-//            }
-//
-//            let (nconic,nnzconic,nbar,nnzbar,nlin,nnzlin) = izip!(self.cons.permute_by(idxs),ptr.iter(),ptr[1..].iter())
-//                .fold((0,0,0,0,0,0),
-//                      | (nconic,nnzconic,nbar,nnzbar,nlin,nnzlin), (c,&p0,&p1) | 
-//                          match c {
-//                              ConAtom::ConicElm{..} => (nconic+1,nnzconic+p1-p0,nbar,nnzbar,nlin,nnzlin),
-//                              ConAtom::BarElm{..} => (nconic,nnzconic,nbar+1,nnzbar+p1-p0,nlin,nnzlin),
-//                              ConAtom::Linear(..) => (nconic,nnzconic,nbar,nnzbar,nlin+1,nnzlin+p1-p0),
-//                          });
-//           
-//            let mut conic_ptr  = Vec::new();
-//            let mut conic_subj = Vec::new();
-//            let mut conic_cof  = Vec::new();
-//            let mut conic_afe  = Vec::new();
-//            let mut lin_ptr    = Vec::new();
-//            let mut lin_subj   = Vec::new();
-//            let mut lin_cof    = Vec::new();
-//            let mut lin_subi   = Vec::new();
-//            let mut lin_rhs    = Vec::new();
-//            let mut lin_bk     = Vec::new();
-//
-//            if nlin == 0 || nconic == 0 {
-//                if nlin == 0 {
-//                    conic_ptr.extend_from_slice(ptr);
-//                    conic_subj.extend_from_slice(subj);
-//                    conic_cof.extend_from_slice(cof);
-//                    conic_afe.reserve(nconic+nbar);
-//                }
-//                else {
-//                    lin_ptr.extend_from_slice(ptr);
-//                    lin_subj.extend_from_slice(subj);
-//                    lin_cof.extend_from_slice(cof);
-//                    lin_subi.reserve(nlin);
-//                    lin_rhs.reserve(nlin);
-//                    lin_bk.reserve(nlin);
-//                }
-//                for c in self.cons.permute_by(idxs) {
-//                    match c {
-//                      ConAtom::ConicElm{afei,..} => conic_afe.push(*afei),
-//                      ConAtom::BarElm{afei,..} => conic_afe.push(*afei),
-//                      ConAtom::Linear(coni,rhs,bk,_) => { lin_subi.push(*coni); lin_rhs.push(*rhs); lin_bk.push(*bk); },
-//                     }
-//                }
-//            }
-//            else {
-//                conic_ptr.reserve(nconic+nbar+1); conic_ptr.push(0usize);
-//                conic_subj.reserve(nnzconic+nnzbar);
-//                conic_cof.reserve(nnzconic+nnzbar);
-//                conic_afe.reserve(nnzconic+nnzbar);
-//                lin_ptr.reserve(nlin+1);   lin_ptr.push(0usize);
-//                lin_subj.reserve(nnzlin);
-//                lin_cof.reserve(nnzlin);
-//                lin_subi.reserve(nlin);
-//                lin_rhs.reserve(nlin);
-//                lin_bk.reserve(nlin);
-//
-//                for (c,jj,cc) in izip!(self.cons.permute_by(idxs),
-//                                       subj.chunks_ptr(ptr),
-//                                       cof.chunks_ptr(ptr)) {
-//                    match c {
-//                      ConAtom::ConicElm{afei,..} => {
-//                          conic_ptr.push(jj.len());
-//                          conic_subj.extend_from_slice(jj);
-//                          conic_cof.extend_from_slice(cc);
-//                          conic_afe.push(*afei);
-//                      }
-//                      ConAtom::BarElm{afei,..}   => {
-//                          conic_ptr.push(jj.len());
-//                          conic_subj.extend_from_slice(jj);
-//                          conic_cof.extend_from_slice(cc);
-//                          conic_afe.push(*afei);
-//                      }
-//                      ConAtom::Linear(coni,rhs,bk,_)       => {
-//                          lin_ptr.push(jj.len());
-//                          lin_subj.extend_from_slice(jj);
-//                          lin_cof.extend_from_slice(cc);
-//                          lin_subi.push(*coni);
-//                          lin_rhs.push(*rhs);
-//                          lin_bk.push(*bk);
-//                      }
-//                    }
-//                }
-//                conic_ptr.iter_mut().fold(0,|c,p| { *p += c; *p });
-//                lin_ptr.iter_mut().fold(0,|c,p| { *p += c; *p });
-//            }
-//            if nlin > 0 {
-//                let (asubj,
-//                     acof,
-//                     aptr,
-//                     afix,
-//                     abarsubi,
-//                     abarsubj,
-//                     abarsubk,
-//                     abarsubl,
-//                     abarcof) = split_expr(&lin_ptr,&lin_subj,&lin_cof,self.vars.as_slice());
-//
-//                if !asubj.is_empty() {
-//                    self.task.put_a_row_list(
-//                        lin_subi.as_slice(),
-//                        &aptr[0..aptr.len()-1],
-//                        &aptr[1..],
-//                        asubj.as_slice(),
-//                        acof.as_slice()).unwrap();
-//                }
-//
-//                lin_rhs.iter_mut().zip(afix.iter()).for_each(|(r,&f)| *r -= f);
-//                self.task.put_con_bound_list(lin_subi.as_slice(),
-//                                             lin_bk.as_slice(),
-//                                             lin_rhs.as_slice(),
-//                                             lin_rhs.as_slice()).unwrap();
-//
-//                if ! abarsubi.is_empty() {
-//                    izip!(0..,
-//                          abarsubi.iter(),
-//                          abarsubj.iter())
-//                        .chain(std::iter::once((abarsubi.len(),&i64::MAX,&i32::MAX)))
-//                        .scan((0usize,i64::MAX,i32::MAX),|(p0,previ,prevj),(k,i,j)|
-//                            if *previ != *i || *prevj != *j {
-//                                let oldp0 = *p0;
-//                                *p0 = k;
-//                                Some((*previ,*prevj,oldp0,k))
-//                            }
-//                            else {
-//                                Some((*i,*j,*p0,*p0))
-//                            })
-//                        .filter(|(_,_,p0,p1)| p0 != p1)
-//                        .for_each(|(_i,j,p0,p1)| {
-//                       
-//                        let subk = &abarsubk[p0..p1];
-//                        let subl = &abarsubl[p0..p1];
-//                        let cof  = &abarcof[p0..p1];
-//                        let afei = conic_afe[abarsubi[p0] as usize];
-//
-//                        let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
-//                        let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
-//                        self.task.put_afe_barf_entry(afei, j,&[matidx],&[1.0]).unwrap();
-//                    });
-//                }
-//            }
-//
-//            // change conic elements
-//            if nconic > 0 {
-//                let (asubj,
-//                     acof,
-//                     aptr,
-//                     afix,
-//                     abarsubi,
-//                     abarsubj,
-//                     abarsubk,
-//                     abarsubl,
-//                     abarcof) = split_expr(&conic_ptr,&conic_subj,&conic_cof,self.vars.as_slice());
-//                let nelm = aptr.len()-1;
-//
-//                if ! asubj.is_empty() {
-//                    self.task.put_afe_f_row_list(conic_afe.as_slice(),
-//                                                 aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
-//                                                 &aptr[..nelm],
-//                                                 asubj.as_slice(),
-//                                                 acof.as_slice()).unwrap();
-//                }
-//                self.task.put_afe_g_list(conic_afe.as_slice(),afix.as_slice()).unwrap();
-//                if ! abarsubi.is_empty() {
-//                    self.task.empty_afe_barf_row_list(conic_afe.as_slice()).unwrap();
-//                    let mut p0 = 0usize;
-//                    for (i,j,p) in izip!(abarsubi.iter(),
-//                                         abarsubi[1..].iter(),
-//                                         abarsubj.iter(),
-//                                         abarsubj[1..].iter())
-//                        .enumerate()
-//                        .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
-//                        .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
-//                       
-//                        let subk = &abarsubk[p0..p];
-//                        let subl = &abarsubl[p0..p];
-//                        let cof  = &abarcof[p0..p];
-//
-//                        let afei = conic_afe[i as usize];
-//                        p0 = p;
-//
-//                        let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
-//                        let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
-//                        self.task.put_afe_barf_entry(afei,j,&[matidx],&[1.0]).unwrap();
-//                    }
-//                }
-//            }
-//        }
-//    }
-
     /// Update the expression of a constraint in the Model.
     pub fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) -> Result<(),String> where E : expr::IntoExpr<N> {
         e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).unwrap();
@@ -1543,93 +1124,6 @@ impl Model {
         }
     }
 
-    pub(crate) fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
-        if let Some(sol) = self.select_sol(solid) {
-            if let SolutionStatus::Undefined = sol.primal.status {
-                Err("Solution part is not defined".to_string())
-            }
-            else {
-                if let Some(&v) = idxs.iter().max() { if v >= sol.primal.var.len() { panic!("Variable indexes are outside of range") } }
-                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.var.get_unchecked(i) });
-                Ok(())
-            }
-        }
-        else {
-            Err("Solution value is undefined".to_string())
-        }
-    }
-
-    pub(crate) fn dual_var_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
-        if let Some(sol) = self.select_sol(solid) {
-            if let SolutionStatus::Undefined = sol.dual.status {
-                Err("Solution part is not defined".to_string())
-            }
-            else {
-                if let Some(&v) = idxs.iter().max() { if v >= sol.dual.var.len() { panic!("Variable indexes are outside of range") } }
-                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.dual.var.get_unchecked(i) });
-                Ok(())
-            }
-        }
-        else {
-            Err("Solution value is undefined".to_string())
-        }
-    }
-    pub(crate) fn primal_con_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
-        if let Some(sol) = self.select_sol(solid) {
-            if let SolutionStatus::Undefined = sol.primal.status {
-                Err("Solution part is not defined".to_string())
-            }
-            else {
-                if let Some(&v) = idxs.iter().max() { if v >= sol.primal.con.len() { panic!("Constraint indexes are outside of range") } }
-                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.con.get_unchecked(i) });
-                Ok(())
-            }
-        }
-        else {
-            Err("Solution value is undefined".to_string())
-        }
-    }
-    pub(crate) fn dual_con_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
-        if let Some(sol) = self.select_sol(solid) {
-            if let SolutionStatus::Undefined = sol.dual.status  {
-                Err("Solution part is not defined".to_string())
-            }
-            else {
-                if let Some(&v) = idxs.iter().max() { if v >= sol.dual.con.len() { panic!("Constraint indexes are outside of range") } }
-                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.con.get_unchecked(i) });
-                Ok(())
-            }
-        }
-        else {
-            Err("Solution value is undefined".to_string())
-        }
-    }
-
-    /// Get solution status for the given solution.
-    ///
-    /// Solution status is returned as a pair: Status of the primal solution and status of the dual
-    /// solution. In some cases, only part of the solution is available and meaningful:
-    /// - An integer problem does not have any dual information
-    /// - A problem that is primally infeasible will return a dual ray and have no meaningful
-    ///   primal solution values.
-    /// - A problem that is dual infeasible will return a primal ray and have no meaningful dual
-    ///  solution information.
-    ///
-    /// # Arguments
-    /// - `solid` Which solution to request status for.
-    ///
-    /// # Returns
-    /// - `(psolsta,dsolsta)` Primal and dual solution status.
-    pub fn solution_status(&self, solid : SolutionType) -> (SolutionStatus,SolutionStatus) {
-        if let Some(sol) = self.select_sol(solid) {
-            (sol.primal.status,sol.dual.status)
-        }
-        else {
-            (SolutionStatus::Undefined,SolutionStatus::Undefined)
-        }
-    }
-
-
     fn evaluate_primal_internal(&self, solid : SolutionType, resshape : & mut [usize]) -> Result<(Vec<f64>,Option<Vec<usize>>),String> {
         let (shape,ptr,sp,subj,cof) = {
             self.rs.peek_expr()
@@ -1692,11 +1186,16 @@ impl ModelAPI for Model {
         self.task.write_data(path.to_str().unwrap())
     }
 
+    fn dual_objective_value(&self, solid : SolutionType) -> Option<f64> {
+        if let Some(sol) = self.select_sol(solid) {
+            Some(sol.dual.obj)
+        }
+        else {
+            None
+        }
+    }
 
-
-
-
-    fn primal_objective(&self, solid : SolutionType) -> Option<f64> { 
+    fn primal_objective_value(&self, solid : SolutionType) -> Option<f64> { 
         if let Some(sol) = self.select_sol(solid) {
             Some(sol.primal.obj)
         }
@@ -1705,6 +1204,14 @@ impl ModelAPI for Model {
         }
     }
 
+    fn solution_status(&self, solid : SolutionType) -> (SolutionStatus,SolutionStatus) {
+        if let Some(sol) = self.select_sol(solid) {
+            (sol.primal.status,sol.dual.status)
+        }
+        else {
+            (SolutionStatus::Undefined,SolutionStatus::Undefined)
+        }
+    }
     fn primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> { item.primal(self,solid) }
     
     fn sparse_primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String> { item.sparse_primal(self,solid) }
@@ -2172,6 +1679,68 @@ impl BaseModelTrait for Model {
             }
         }
         Ok(())    
+    }
+    
+    fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+        if let Some(sol) = self.select_sol(solid) {
+            if let SolutionStatus::Undefined = sol.primal.status {
+                Err("Solution part is not defined".to_string())
+            }
+            else {
+                if let Some(&v) = idxs.iter().max() { if v >= sol.primal.var.len() { panic!("Variable indexes are outside of range") } }
+                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.var.get_unchecked(i) });
+                Ok(())
+            }
+        }
+        else {
+            Err("Solution value is undefined".to_string())
+        }
+    }
+
+    fn dual_var_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+        if let Some(sol) = self.select_sol(solid) {
+            if let SolutionStatus::Undefined = sol.dual.status {
+                Err("Solution part is not defined".to_string())
+            }
+            else {
+                if let Some(&v) = idxs.iter().max() { if v >= sol.dual.var.len() { panic!("Variable indexes are outside of range") } }
+                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.dual.var.get_unchecked(i) });
+                Ok(())
+            }
+        }
+        else {
+            Err("Solution value is undefined".to_string())
+        }
+    }
+    fn primal_con_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+        if let Some(sol) = self.select_sol(solid) {
+            if let SolutionStatus::Undefined = sol.primal.status {
+                Err("Solution part is not defined".to_string())
+            }
+            else {
+                if let Some(&v) = idxs.iter().max() { if v >= sol.primal.con.len() { panic!("Constraint indexes are outside of range") } }
+                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.con.get_unchecked(i) });
+                Ok(())
+            }
+        }
+        else {
+            Err("Solution value is undefined".to_string())
+        }
+    }
+    fn dual_con_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+        if let Some(sol) = self.select_sol(solid) {
+            if let SolutionStatus::Undefined = sol.dual.status  {
+                Err("Solution part is not defined".to_string())
+            }
+            else {
+                if let Some(&v) = idxs.iter().max() { if v >= sol.dual.con.len() { panic!("Constraint indexes are outside of range") } }
+                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.con.get_unchecked(i) });
+                Ok(())
+            }
+        }
+        else {
+            Err("Solution value is undefined".to_string())
+        }
     }
 }
 

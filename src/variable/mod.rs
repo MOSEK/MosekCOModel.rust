@@ -2,6 +2,7 @@
 
 pub mod index;
 pub use index::*;
+use model::BaseModelTrait;
 
 use std::{fmt::Debug, rc::Rc};
 
@@ -60,11 +61,11 @@ impl<const N : usize> Debug for Variable<N> {
 }
 
 
-impl<const N : usize> ModelItem<N> for Variable<N> {
+impl<const N : usize,M> ModelItem<N,M> for Variable<N> where M : BaseModelTrait {
     fn len(&self) -> usize { return self.shape.iter().product(); }
     fn shape(&self) -> [usize; N] { self.shape }
     
-    fn sparse_primal(&self,m : &Model,solid : SolutionType) -> Result<(Vec<f64>,Vec<[usize;N]>),String> {
+    fn sparse_primal(&self,m : &M,solid : SolutionType) -> Result<(Vec<f64>,Vec<[usize;N]>),String> {
         let mut nnz = vec![0.0; self.numnonzeros()];
         let dflt = [0usize; N];
         let mut idx : Vec<[usize;N]> = vec![dflt;self.numnonzeros()];
@@ -72,7 +73,7 @@ impl<const N : usize> ModelItem<N> for Variable<N> {
         Ok((nnz,idx))
     }
 
-    fn primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64]) -> Result<usize,String> {
+    fn primal_into(&self,m : &M,solid : SolutionType, res : & mut [f64]) -> Result<usize,String> {
         let sz = self.shape.iter().product();
         if res.len() < sz { panic!("Result array too small") }
         else {
@@ -83,7 +84,7 @@ impl<const N : usize> ModelItem<N> for Variable<N> {
             Ok(sz)
         }
     }
-    fn dual_into(&self,m : &Model,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String> {
+    fn dual_into(&self,m : &M,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String> {
         let sz = self.shape.iter().product();
         if res.len() < sz { panic!("Result array too small") }
         else {
@@ -311,6 +312,7 @@ impl<const N : usize> Variable<N> {
             shape:*shape }
     }
 
+    fn len(&self) -> usize { return self.shape.iter().product(); }
     pub fn to_expr(&self) -> ExprVariable<N> {
         ExprVariable{ item : self.clone() }
     }
@@ -660,7 +662,7 @@ impl<const N : usize> Variable<N> {
         }
     }
 
-    fn sparse_primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64], idx : & mut [[usize;N]]) -> Result<usize,String> {
+    fn sparse_primal_into<M>(&self,m : &M,solid : SolutionType, res : & mut [f64], idx : & mut [[usize;N]]) -> Result<usize,String> where M : BaseModelTrait {
         let sz = self.numnonzeros();
         if res.len() < sz || idx.len() < sz { panic!("Result array too small") }
         else {
