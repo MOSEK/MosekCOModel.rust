@@ -32,12 +32,13 @@ impl<const N : usize> Constraint<N> {
 //======================================================
 
 /// Represents something that can be used as a domain for a constraint.
-pub trait ConstraintDomain<const N : usize> {
-    fn add_constraint(self, m : & mut Model, name : Option<&str>) -> Result<Constraint<N>,String>;
+pub trait ConstraintDomain<const N : usize,M> {
+    type Result;
+    fn add_constraint(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String>;
 }
 
 /// Implement LinearDomain as constraint domain
-impl<const N : usize> ConstraintDomain<N> for LinearDomain<N> {
+impl<const N : usize,M> ConstraintDomain<N,M> for LinearDomain<N> {
     fn add_constraint(self, m : & mut Model, name : Option<&str>) -> Result<Constraint<N>,String> {
         m.linear_constraint(name,self)
     }

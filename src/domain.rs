@@ -2,7 +2,7 @@
 use iter::PermuteByMutEx;
 use itertools::Either;
 use super::matrix::NDArray;
-use crate::utils::*;
+use crate::{utils::*, model::BaseModelTrait};
 
 pub enum LinearDomainType {
     NonNegative,
@@ -33,6 +33,7 @@ pub enum LinearDomainOfsType {
     Scalar(f64),
     M(Vec<f64>)
 }
+
 
 pub trait DomainTrait<const N : usize> {
 }
@@ -108,6 +109,7 @@ impl<const N : usize> IntoShapedDomain<N> for ScalableLinearDomain {
         })        
     }
 }
+
 impl IntoDomain for ScalableLinearDomain {
     type Result = LinearDomain<0>;
     fn try_into_domain(self) -> Result<Self::Result,String> {
