@@ -302,7 +302,6 @@ pub mod model;
 pub mod disjunction;
 pub mod experimental;
 pub mod utils;
-//pub mod variable_index;
 
 use expr::workstack::WorkStack;
 
