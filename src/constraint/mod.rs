@@ -41,7 +41,7 @@ pub trait ConstraintDomain<const N : usize,M>
     fn add_constraint(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String>;
 }
 
-impl<const N : usize,M> ConstraintDomain<N,M> for LinearDomain<N> where M : BaseModelTrait 
+impl<const N : usize,M> ConstraintDomain<N,M> for LinearDomain<N> where M : BaseModelTrait
 {
     type Result = Constraint<N>;
 
@@ -58,7 +58,6 @@ impl<const N : usize,M> ConstraintDomain<N,M> for LinearRangeDomain<N> where M :
     }
 }
 
-/// Implement ConicDomain as a constraint domain
 impl<const N : usize,M> ConstraintDomain<N,M> for ConicDomain<N> where M : ConicModelTrait 
 {
     type Result = Constraint<N>;

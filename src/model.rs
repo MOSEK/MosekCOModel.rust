@@ -111,56 +111,57 @@ impl Solution {
 }
 
 
+
+
 /// Represents something that can be used as a domain for a variable.
-pub trait VarDomainTrait<M> {
+pub trait VarDomainTrait<M> 
+{
     type Result; 
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String>;
 }
 
-/// Implement ConicDomain as a variable domain
-impl<const N : usize,M> VarDomainTrait<M> for ConicDomain<N> where M : ConicModelTrait {
+impl<const N : usize,M> VarDomainTrait<M> for ConicDomain<N> where M : ConicModelTrait 
+{
     type Result = Variable<N>;
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
         m.try_conic_variable(name,self)
     }
 }
 
-/// Implement a fixed-size integer array as domain for variable, meaning unbounded with the array
-/// as shape.
-impl<const N : usize,M> VarDomainTrait<M> for &[usize;N] where M : BaseModelTrait {
+impl<const N : usize,M> VarDomainTrait<M> for &[usize;N] where M : BaseModelTrait 
+{
     type Result = Variable<N>;
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
         m.try_free_variable(name,self)
     }
 }
 
-/// Implement LinearDomain as variable domain
-impl<const N : usize,M> VarDomainTrait<M> for LinearDomain<N> where M : BaseModelTrait {
+impl<const N : usize,M> VarDomainTrait<M> for LinearDomain<N> where M : BaseModelTrait 
+{
     type Result = Variable<N>;
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
         m.try_linear_variable::<N,Self::Result>(name,self)
     }
 }
 
-/// Implement integer as domain for variable, producing a vector variable if the given size.
-impl<M> VarDomainTrait<M> for usize where M : BaseModelTrait {
+impl<M> VarDomainTrait<M> for usize where M : BaseModelTrait 
+{
     type Result = Variable<1>;
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
         m.try_free_variable(name,&[self])
     }
 }
 
-/// Implement a fixed-size integer array as domain for variable, meaning unbounded with the array
-/// as shape.
-impl<const N : usize,M> VarDomainTrait<M> for LinearRangeDomain<N> where M : BaseModelTrait {
+impl<const N : usize,M> VarDomainTrait<M> for LinearRangeDomain<N> where M : BaseModelTrait 
+{
     type Result = (Variable<N>,Variable<N>);
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
         m.try_ranged_variable::<N,Self::Result>(name,self)
     }
 }
 
-/// Implements PSD domain for variables.
-impl<const N : usize, M> VarDomainTrait<M> for PSDDomain<N> where M : PSDModelTrait {
+impl<const N : usize, M> VarDomainTrait<M> for PSDDomain<N> where M : PSDModelTrait 
+{
     type Result = Variable<N>;
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
         m.try_psd_variable(name,self)
@@ -209,9 +210,6 @@ pub trait PSDModelTrait {
 pub trait DJCModelTrait {
     fn try_disjunction<D>(& mut self, name : Option<&str>, terms : D) -> Result<Disjunction,String> where D : disjunction::DisjunctionTrait;
 }
-
-
-
 
 
 
@@ -1973,6 +1971,10 @@ impl BaseModelTrait for Model {
         Ok(())    
     }
 }
+
+
+
+
 
 impl ConicModelTrait for Model {
    fn try_conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : ConicDomain<N>) -> Result<Variable<N>,String> {
