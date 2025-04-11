@@ -68,9 +68,15 @@ trait BaseModel {
     fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) where E : expr::IntoExpr<N>;
 
     fn objective<E : expr::IntoExpr<0>>(& mut self,
+<<<<<<< HEAD
                                              name  : Option<&str>,
                                              sense : Sense,
                                              expr  : E);
+=======
+                                        name  : Option<&str>,
+                                        sense : Sense,
+                                        expr  : E);
+>>>>>>> master
     fn set_parameter<T>(& mut self, parname : &str, parval : T) 
         where T : SolverParameterValue;
 
@@ -119,6 +125,11 @@ trait Solver {
 }
 
 
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> master
 //trait TaskTrait {
 //    fn append_acc_seq(&mut self,...)
 //    fn append_accs_seq(&mut self,...)
