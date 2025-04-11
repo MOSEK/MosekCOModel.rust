@@ -310,7 +310,90 @@ pub trait ModelAPI {
     ///   file extension is not recognized, the MPS format is used.
     ///
     fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path>;
-}
+
+
+    /// Get solution status for the given solution.
+    ///
+    /// Solution status is returned as a pair: Status of the primal solution and status of the dual
+    /// solution. In some cases, only part of the solution is available and meaningful:
+    /// - An integer problem does not have any dual information
+    /// - A problem that is primally infeasible will return a dual ray and have no meaningful
+    ///   primal solution values.
+    /// - A problem that is dual infeasible will return a primal ray and have no meaningful dual
+    ///  solution information.
+    ///
+    /// # Arguments
+    /// - `solid` Which solution to request status for.
+    ///
+    /// # Returns
+    /// - `(psolsta,dsolsta)` Primal and dual solution status.
+    fn solution_status(&self, solid : SolutionType) -> (SolutionStatus,SolutionStatus);
+
+    /// Get primal objective value, if available.
+    ///
+    /// The primal objective is only available if the primal solution is defined.
+    fn primal_objective_value(&self, solid : SolutionType) -> Option<f64>;
+    
+    /// Get dual objective value, if available.
+    ///
+    /// The dual objective is only available if the dual solution is defined.
+    fn dual_objective_value(&self, solid : SolutionType) -> Option<f64>;
+
+    /// Get primal solution values for an a variable or constraint.
+    ///
+    /// # Arguments
+    /// - `solid` Choose which solution to ask for if multiple are available.
+    /// - `item` The constraint or variable for which the solution values are wanted. If the item
+    /// is a sparse variable, the result is filled out with zeros where necessary.
+    ///
+    /// # Returns
+    /// If solution item is defined, return the solution, otherwise an error message.
+    fn primal_solution<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String>;
+    
+    /// Get primal solution values for an a sparse variable or constraint.
+    ///
+    /// # Arguments
+    /// - `solid` Choose which solution to ask for if multiple are available.
+    /// - `item` The constraint or variable for which the solution values are wanted.
+    ///
+    /// # Returns
+    /// - `Err(msg)` is returned if the requested solution is not available 
+    /// - `Some((vals,idxs))` is returned, where 
+    ///   - `vals` are the solution values for non-zero entries
+    ///   - `idxs` are the indexes.
+    fn sparse_primal_solution<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String>;
+
+    /// Get dual solution values for an item
+    ///
+    /// Returns: If solution item is defined, return the solution, otherwise a n error message.
+    fn dual_solution<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String>;
+
+    /// Get primal solution values for an item
+    ///
+    /// Arguments:
+    /// - `solid` Which solution
+    /// - `item`  The item to get solution for
+    /// - `res`   Copy the solution values into this slice
+    /// Returns: The number of values copied if solution is available, otherwise an error string.
+    fn primal_solution_into<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String>;
+
+    /// Get dual solution values for an item
+    ///
+    /// Arguments:
+    /// - `solid` Which solution
+    /// - `item`  The item to get solution for
+    /// - `res`   Copy the solution values into this slice
+    /// Returns: The number of values copied if solution is available, otherwise an error string.
+    fn dual_solution_into<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String>;
+    
+    /// Evaluate an expression in the (primal) solution. 
+    ///
+    /// # Arguments
+    /// - `solid` The solution in which to evaluate the expression.
+    /// - `expr` The expression to evaluate.
+    pub fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : E) -> Result<NDArray<N>,String> where E : IntoExpr<N>;
+{
+} // trait ModelAPI
 
 pub trait BaseModelTrait {
     fn try_free_variable<const N : usize>
@@ -409,12 +492,12 @@ pub struct Model {
 
 /// The `ModelItem` represents either a variable or a constraint belonging to a [Model]. It is used
 /// by the [Model] object when accessing solution assist overloading and determine which solution part to access.
-pub trait ModelItem<const N : usize> {
+pub trait ModelItem<const N : usize,M> where M : BaseModelTrait {
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool { self.len() == 0 }
     fn shape(&self) -> [usize;N];
     //fn numnonzeros(&self) -> usize;
-    fn sparse_primal(&self,m : &Model,solid : SolutionType) -> Result<(Vec<f64>,Vec<[usize;N]>),String> {
+    fn sparse_primal(&self,m : &M,solid : SolutionType) -> Result<(Vec<f64>,Vec<[usize;N]>),String> {
         let res = self.primal(m,solid)?;
         let dflt = [0; N];
         let mut idx = vec![dflt; res.len()];
@@ -425,18 +508,18 @@ pub trait ModelItem<const N : usize> {
         }
         Ok((res,idx))
     }
-    fn primal(&self,m : &Model,solid : SolutionType) -> Result<Vec<f64>,String> {
+    fn primal(&self,m : &M,solid : SolutionType) -> Result<Vec<f64>,String> {
         let mut res = vec![0.0; self.len()];
         self.primal_into(m,solid,res.as_mut_slice())?;
         Ok(res)
     }
-    fn dual(&self,m : &Model,solid : SolutionType) -> Result<Vec<f64>,String> {
+    fn dual(&self,m : &M,solid : SolutionType) -> Result<Vec<f64>,String> {
         let mut res = vec![0.0; self.len()];
         self.dual_into(m,solid,res.as_mut_slice())?;
         Ok(res)
     }
-    fn primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64]) -> Result<usize,String>;
-    fn dual_into(&self,m : &Model,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String>;
+    fn primal_into(&self,m : &M,solid : SolutionType, res : & mut [f64]) -> Result<usize,String>;
+    fn dual_into(&self,m : &M,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String>;
 }
 
 //======================================================
@@ -1546,64 +1629,6 @@ impl Model {
         }
     }
 
-    /// Get primal objective value, if available.
-    ///
-    /// The primal objective is only available if the primal solution is defined.
-    pub fn primal_objective(&self, solid : SolutionType) -> Option<f64> { 
-        if let Some(sol) = self.select_sol(solid) {
-            Some(sol.primal.obj)
-        }
-        else {
-            None
-        }
-    }
-
-    /// Get primal solution values for an a variable or constraint.
-    ///
-    /// # Arguments
-    /// - `solid` Choose which solution to ask for if multiple are available.
-    /// - `item` The constraint or variable for which the solution values are wanted. If the item
-    /// is a sparse variable, the result is filled out with zeros where necessary.
-    ///
-    /// # Returns
-    /// If solution item is defined, return the solution, otherwise an error message.
-    pub fn primal_solution<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> { item.primal(self,solid) }
-    
-    /// Get primal solution values for an a sparse variable or constraint.
-    ///
-    /// # Arguments
-    /// - `solid` Choose which solution to ask for if multiple are available.
-    /// - `item` The constraint or variable for which the solution values are wanted.
-    ///
-    /// # Returns
-    /// - `Err(msg)` is returned if the requested solution is not available 
-    /// - `Some((vals,idxs))` is returned, where 
-    ///   - `vals` are the solution values for non-zero entries
-    ///   - `idxs` are the indexes.
-    pub fn sparse_primal_solution<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String> { item.sparse_primal(self,solid) }
-
-    /// Get dual solution values for an item
-    ///
-    /// Returns: If solution item is defined, return the solution, otherwise a n error message.
-    pub fn dual_solution<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> { item.dual(self,solid) }
-
-    /// Get primal solution values for an item
-    ///
-    /// Arguments:
-    /// - `solid` Which solution
-    /// - `item`  The item to get solution for
-    /// - `res`   Copy the solution values into this slice
-    /// Returns: The number of values copied if solution is available, otherwise an error string.
-    pub fn primal_solution_into<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> { item.primal_into(self,solid,res) }
-
-    /// Get dual solution values for an item
-    ///
-    /// Arguments:
-    /// - `solid` Which solution
-    /// - `item`  The item to get solution for
-    /// - `res`   Copy the solution values into this slice
-    /// Returns: The number of values copied if solution is available, otherwise an error string.
-    pub fn dual_solution_into<const N : usize, I:ModelItem<N>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> { item.primal_into(self,solid,res) }
 
     fn evaluate_primal_internal(&self, solid : SolutionType, resshape : & mut [usize]) -> Result<(Vec<f64>,Option<Vec<usize>>),String> {
         let (shape,ptr,sp,subj,cof) = {
@@ -1631,21 +1656,6 @@ impl Model {
         Ok(( res,sp.map(|v| v.to_vec()) ))
     }
 
-    /// Evaluate an expression in the (primal) solution. 
-    ///
-    /// # Arguments
-    /// - `solid` The solution in which to evaluate the expression.
-    /// - `expr` The expression to evaluate.
-    pub fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : E) -> Result<NDArray<N>,String>
-        where 
-            E : IntoExpr<N>     
-{
-        expr.into_expr().eval(& mut self.rs,&mut self.ws,&mut self.xs).map_err(|e| format!("{:?}",e))?;
-        let mut shape = [0usize; N];
-        let (val,sp) = self.evaluate_primal_internal(solid, &mut shape)?;
-        self.rs.clear();
-        NDArray::new(shape,sp,val)
-    }
 } // impl Model
 
 impl ModelAPI for Model {
@@ -1681,8 +1691,38 @@ impl ModelAPI for Model {
         let path = filename.as_ref();
         self.task.write_data(path.to_str().unwrap())
     }
-}
 
+
+
+
+
+    fn primal_objective(&self, solid : SolutionType) -> Option<f64> { 
+        if let Some(sol) = self.select_sol(solid) {
+            Some(sol.primal.obj)
+        }
+        else {
+            None
+        }
+    }
+
+    fn primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> { item.primal(self,solid) }
+    
+    fn sparse_primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String> { item.sparse_primal(self,solid) }
+
+    fn dual_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> { item.dual(self,solid) }
+
+    fn primal_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> { item.primal_into(self,solid,res) }
+
+    fn dual_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> { item.primal_into(self,solid,res) }
+    fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : E) -> Result<NDArray<N>,String> where E : IntoExpr<N>     
+    {
+        expr.into_expr().eval(& mut self.rs,&mut self.ws,&mut self.xs).map_err(|e| format!("{:?}",e))?;
+        let mut shape = [0usize; N];
+        let (val,sp) = self.evaluate_primal_internal(solid, &mut shape)?;
+        self.rs.clear();
+        NDArray::new(shape,sp,val)
+    }
+} // impl ModelAPI for Model
 
 impl BaseModelTrait for Model {
     fn try_free_variable<const N : usize>(&mut self, name : Option<&str>,shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized {
