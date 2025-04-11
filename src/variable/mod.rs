@@ -312,7 +312,7 @@ impl<const N : usize> Variable<N> {
             shape:*shape }
     }
 
-    fn len(&self) -> usize { return self.shape.iter().product(); }
+    pub fn len(&self) -> usize { return self.shape.iter().product(); }
     pub fn to_expr(&self) -> ExprVariable<N> {
         ExprVariable{ item : self.clone() }
     }

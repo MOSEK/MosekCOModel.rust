@@ -314,6 +314,10 @@ pub use model::{Sense,
                 VarDomainTrait,
                 Model,
                 SolverParameterValue,
+                BaseModelTrait,
+                ConicModelTrait,
+                PSDModelTrait,
+                ModelAPI,
                 constraint};
 pub use matrix::{Matrix,NDArray,IntoIndexes};
 pub use expr::{ExprTrait,
