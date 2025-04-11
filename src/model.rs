@@ -3,6 +3,7 @@
 
 use itertools::{merge_join_by, EitherOrBoth};
 use itertools::{iproduct, izip};
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::ControlFlow;
 use std::{iter::once, path::Path};
@@ -192,8 +193,9 @@ pub struct Model {
     /// Vector of scalar constraint atoms
     cons : Vec<ConAtom>,
 
+    /// Remote opt server host and access token
     optserver_host : Option<(String,Option<String>)>,
-        
+
     /// Basis solution
     sol_bas : Solution,
     /// Interior solution
@@ -205,6 +207,19 @@ pub struct Model {
     rs : WorkStack,
     ws : WorkStack,
     xs : WorkStack
+}
+
+pub trait BaseModelTrait {
+    fn try_linear_variable<const N : usize>(&mut self, name : Option<&str>,dom : LinearDomain<N>) -> Result<Variable<N>,String>;
+    fn try_linear_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearDomain<N>) -> Result<Constraint<N>,String>;
+}
+pub trait ConicModelTrait {
+    fn try_conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : ConicDomain<N>) -> Result<Variable<N>,String>;
+    fn try_conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : ConicDomain<N>) -> Result<Constraint<N>,String>;
+}
+pub trait PSDModelTrait {
+    fn try_psd_variable<const N : usize>(&mut self, name : Option<&str>, dom : PSDDomain<N>) -> Variable<N>;
+    fn try_psd_constraint<const N : usize>(& mut self, name : Option<&str>, dom : PSDDomain<N>) -> Result<Constraint<N>,String>;
 }
 
 //======================================================
