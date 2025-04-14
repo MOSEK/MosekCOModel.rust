@@ -1,4 +1,5 @@
 //!
+use itertools::{merge_join_by, EitherOrBoth};
 #[doc = include_str!("../js/mathjax.tag")]
 
 use itertools::{iproduct, izip};
