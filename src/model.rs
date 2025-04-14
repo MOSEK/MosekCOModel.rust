@@ -310,6 +310,12 @@ pub trait ModelAPI {
     ///
     fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path>;
 
+    /// Solve the problem and extract the solution.
+    ///
+    /// This will fail if the optimizer fails with an error. Not producing a solution (stalling or
+    /// otherwise failing), producing a non-optimal solution or a certificate of infeasibility 
+    /// is *not* an error.
+    fn solve(& mut self) -> Result<(),String>;
 
     /// Get solution status for the given solution.
     ///
@@ -616,13 +622,6 @@ impl Model {
         }
     }
 
-
-
-
-
-
-
-
     /// Attach a log printer callback to the Model. This will receive messages from the solver
     /// while solving and during a few other calls like file reading/writing. 
     ///
@@ -678,21 +677,7 @@ impl Model {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    
 
     fn var_names<const N : usize>(& mut self, name : &str, first : i32, shape : &[usize;N], sp : Option<&[usize]>) {
         let mut buf = name.to_string();
@@ -706,7 +691,7 @@ impl Model {
                     index.append_to_string(& mut buf);
                     //println!("name is now: {}",buf);
                     self.task.put_var_name(first + j as i32,buf.as_str()).unwrap();
-                });
+    });
         }
         else {
             IndexIterator::new(shape)
@@ -829,17 +814,20 @@ impl Model {
     pub fn disjunction<D>(& mut self, name : Option<&str>, terms : D) -> Disjunction where D : disjunction::DisjunctionTrait {
         self.try_disjunction(name, terms).unwrap()
     }
-    /// Update the expression of a constraint in the Model.
-    pub fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) -> Result<(),String> where E : expr::IntoExpr<N> {
-        e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).unwrap();
-        {
-            let (shape,_,_,_,_) = self.rs.peek_expr();
-            if shape.iter().zip(item.shape.iter()).any(|(&a,&b)| a != b) {
-                panic!("Shape of constraint ({:?}) does not match shape of expression ({:?})",item.shape,shape);
-            }
-        }
-        <Model as BaseModelTrait>::try_update(self, &item.idxs)
-    }
+
+//    /// Update the expression of a constraint in the Model.
+//    pub fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) -> Result<(),String> where E : expr::IntoExpr<N> {
+//        e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).unwrap();
+//        {
+//            let (shape,_,_,_,_) = self.rs.peek_expr();
+//            if shape.iter().zip(item.shape.iter()).any(|(&a,&b)| a != b) {
+//                panic!("Shape of constraint ({:?}) does not match shape of expression ({:?})",item.shape,shape);
+//            }
+//        }
+//        <Model as BaseModelTrait>::try_update(self, &item.idxs)
+//    }
+
+
 
     //======================================================
     // Objective
@@ -962,12 +950,95 @@ impl Model {
         self.optserver_host = None;
     }
 
-    /// Solve the problem and extract the solution.
-    ///
-    /// This will fail if the optimizer fails with an error. Not producing a solution (stalling or
-    /// otherwise failing), producing a non-optimal solution or a certificate of infeasibility 
-    /// is *not* an error.
-    pub fn solve(& mut self) {
+    //======================================================
+    // Solutions
+
+    fn select_sol(&self, solid : SolutionType) -> Option<&Solution> {
+        match solid {
+            SolutionType::Basic    => Some(&self.sol_bas),
+            SolutionType::Interior => Some(&self.sol_itr),
+            SolutionType::Integer  => Some(&self.sol_itg),
+            SolutionType::Default  => {
+                match self.sol_itg.primal.status {
+                    SolutionStatus::Undefined =>
+                        match (self.sol_bas.primal.status,self.sol_bas.dual.status) {
+                            (SolutionStatus::Undefined,SolutionStatus::Undefined) =>
+                                match (self.sol_itr.primal.status,self.sol_itr.dual.status) {
+                                    (SolutionStatus::Undefined,SolutionStatus::Undefined) => None,
+                                    _ => Some(&self.sol_itr)
+                                }
+                            _ => Some(&self.sol_bas)
+                        },
+                    _ => Some(& self.sol_itg)
+                }
+            }
+        }
+    }
+
+    fn evaluate_primal_internal(&self, solid : SolutionType, resshape : & mut [usize]) -> Result<(Vec<f64>,Option<Vec<usize>>),String> {
+        let (shape,ptr,sp,subj,cof) = {
+            self.rs.peek_expr()
+        };
+        let sol = 
+            if let Some(sol) = self.select_sol(solid) {
+                if let SolutionStatus::Undefined = sol.primal.status {
+                    return Err("Solution part is not defined".to_string())
+                }
+                else {
+                    sol.primal.var.as_slice()
+                }
+            }
+            else {
+                return Err("Solution value is undefined".to_string());
+            };
+
+        if let Some(v) = subj.iter().max() { if *v >= sol.len() { return Err("Invalid expression: Index out of bounds for this solution".to_string()) } }
+        let mut res = vec![0.0; ptr.len()-1];
+        izip!(res.iter_mut(),subj.chunks_ptr2(ptr,&ptr[1..]),cof.chunks_ptr2(ptr,&ptr[1..]))
+            .for_each(|(r,subj,cof)| *r = subj.iter().zip(cof.iter()).map(|(&j,&c)| c * unsafe{ *sol.get_unchecked(j) } ).sum() );
+        resshape.copy_from_slice(shape);
+
+        Ok(( res,sp.map(|v| v.to_vec()) ))
+    }
+
+} // impl Model
+
+impl ModelAPI for Model {
+    /// Update the expression of a constraint in the Model.
+    fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) -> Result<(),String> where E : expr::IntoExpr<N> {
+        e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).unwrap();
+        {
+            let (shape,_,_,_,_) = self.rs.peek_expr();
+            if shape.iter().zip(item.shape.iter()).any(|(&a,&b)| a != b) {
+                panic!("Shape of constraint ({:?}) does not match shape of expression ({:?})",item.shape,shape);
+            }
+        }
+        <Model as BaseModelTrait>::try_update(self, &item.idxs)
+    }
+
+    fn try_constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> Result<D::Result,String>
+        where
+            E : IntoExpr<N>, 
+            <E as IntoExpr<N>>::Result : ExprTrait<N>,
+            I : IntoShapedDomain<N,Result=D>,
+            D : ConstraintDomain<N,Self>,
+            Self : Sized
+    {
+        expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
+        let (eshape,_,_,_,_) = self.rs.peek_expr();
+        if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
+        let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
+
+        dom.try_into_domain(shape)?.add_constraint(self,name)
+    }
+
+    fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path> {
+        let path = filename.as_ref();
+        self.task.write_data(path.to_str().unwrap())
+    }
+
+
+    fn solve(& mut self) -> Result<(),String> {
         self.task.put_int_param(mosek::Iparam::REMOVE_UNUSED_SOLUTIONS, 1).unwrap();
         if let Some((hostname,accesstoken)) = self.optserver_host.as_ref() {
             self.task.optimize_rmt(hostname.as_str(), accesstoken.as_ref().map(|v| v.as_str()).unwrap_or("")).unwrap();
@@ -1099,93 +1170,9 @@ impl Model {
                 }
             }
         }
-    }
-    //======================================================
-    // Solutions
-
-    fn select_sol(&self, solid : SolutionType) -> Option<&Solution> {
-        match solid {
-            SolutionType::Basic    => Some(&self.sol_bas),
-            SolutionType::Interior => Some(&self.sol_itr),
-            SolutionType::Integer  => Some(&self.sol_itg),
-            SolutionType::Default  => {
-                match self.sol_itg.primal.status {
-                    SolutionStatus::Undefined =>
-                        match (self.sol_bas.primal.status,self.sol_bas.dual.status) {
-                            (SolutionStatus::Undefined,SolutionStatus::Undefined) =>
-                                match (self.sol_itr.primal.status,self.sol_itr.dual.status) {
-                                    (SolutionStatus::Undefined,SolutionStatus::Undefined) => None,
-                                    _ => Some(&self.sol_itr)
-                                }
-                            _ => Some(&self.sol_bas)
-                        },
-                    _ => Some(& self.sol_itg)
-                }
-            }
-        }
+        Ok(())
     }
 
-    fn evaluate_primal_internal(&self, solid : SolutionType, resshape : & mut [usize]) -> Result<(Vec<f64>,Option<Vec<usize>>),String> {
-        let (shape,ptr,sp,subj,cof) = {
-            self.rs.peek_expr()
-        };
-        let sol = 
-            if let Some(sol) = self.select_sol(solid) {
-                if let SolutionStatus::Undefined = sol.primal.status {
-                    return Err("Solution part is not defined".to_string())
-                }
-                else {
-                    sol.primal.var.as_slice()
-                }
-            }
-            else {
-                return Err("Solution value is undefined".to_string());
-            };
-
-        if let Some(v) = subj.iter().max() { if *v >= sol.len() { return Err("Invalid expression: Index out of bounds for this solution".to_string()) } }
-        let mut res = vec![0.0; ptr.len()-1];
-        izip!(res.iter_mut(),subj.chunks_ptr2(ptr,&ptr[1..]),cof.chunks_ptr2(ptr,&ptr[1..]))
-            .for_each(|(r,subj,cof)| *r = subj.iter().zip(cof.iter()).map(|(&j,&c)| c * unsafe{ *sol.get_unchecked(j) } ).sum() );
-        resshape.copy_from_slice(shape);
-
-        Ok(( res,sp.map(|v| v.to_vec()) ))
-    }
-
-} // impl Model
-
-impl ModelAPI for Model {
-    /// Update the expression of a constraint in the Model.
-    fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) -> Result<(),String> where E : expr::IntoExpr<N> {
-        e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).unwrap();
-        {
-            let (shape,_,_,_,_) = self.rs.peek_expr();
-            if shape.iter().zip(item.shape.iter()).any(|(&a,&b)| a != b) {
-                panic!("Shape of constraint ({:?}) does not match shape of expression ({:?})",item.shape,shape);
-            }
-        }
-        <Model as BaseModelTrait>::try_update(self, &item.idxs)
-    }
-
-    fn try_constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> Result<D::Result,String>
-        where
-            E : IntoExpr<N>, 
-            <E as IntoExpr<N>>::Result : ExprTrait<N>,
-            I : IntoShapedDomain<N,Result=D>,
-            D : ConstraintDomain<N,Self>,
-            Self : Sized
-    {
-        expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
-        let (eshape,_,_,_,_) = self.rs.peek_expr();
-        if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
-        let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
-
-        dom.try_into_domain(shape)?.add_constraint(self,name)
-    }
-
-    fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path> {
-        let path = filename.as_ref();
-        self.task.write_data(path.to_str().unwrap())
-    }
 
     fn dual_objective_value(&self, solid : SolutionType) -> Option<f64> {
         if let Some(sol) = self.select_sol(solid) {
@@ -1681,6 +1668,9 @@ impl BaseModelTrait for Model {
         }
         Ok(())    
     }
+
+
+
     
     fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
         if let Some(sol) = self.select_sol(solid) {
