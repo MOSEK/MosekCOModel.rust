@@ -36,6 +36,11 @@ pub struct WorkStack {
     /// Index of the current top of the float stack, i.e. the index of the first unused element.
     ftop : usize
 }
+impl Default for WorkStack {
+    fn default() -> Self {
+        WorkStack { susize: Vec::with_capacity(1024), sf64: Vec::with_capacity(1023), utop: 0, ftop: 0 }
+    }
+}
 
 impl WorkStack {
     /// Create a new stack with a given initial capacity.

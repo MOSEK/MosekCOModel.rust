@@ -298,8 +298,7 @@ pub trait ModelAPI {
     /// Update the expression of a constraint in the Model.
     fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) -> Result<(),String>
         where 
-            E    : expr::IntoExpr<N>,
-            Self : BaseModelTrait;
+            E    : expr::IntoExpr<N>;
     
     /// Write problem to a file. The file is written by the underlying solver task, so no
     /// structural information will be written.

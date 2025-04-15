@@ -15,6 +15,14 @@ pub struct Constraint<const N : usize> {
 }
 
 impl<const N : usize> Constraint<N> {
+    pub fn new(idxs : Vec<usize>, shape : &[usize;N]) -> Constraint<N> {
+        if idxs.len() != shape.iter().product() { panic!("Mismatching index length and shape size"); }
+        Constraint{
+            idxs,
+            shape : *shape,
+        }
+    }
+
     pub fn index<I>(&self, idx : I) -> I::Output where I : ModelItemIndex<Self> {
         idx.index(self)
     }

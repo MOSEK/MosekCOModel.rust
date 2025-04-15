@@ -12,7 +12,9 @@ members = [ "ellipsoid-approximation",
             "ellipsoids",
             "truss",
             "trigpoly",
-            "total-variation", "tsp",
+            "total-variation", 
+            "tsp", 
+            "optserver",
             ]
 
 [dependencies]
