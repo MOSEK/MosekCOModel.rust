@@ -217,7 +217,7 @@ pub trait BaseModelTrait {
 
     fn objective(&mut self, name : Option<&str>, sense : Sense, subj : &[usize],cof : &[f64]) -> Result<(),String>;
 
-    fn set_param<V>(&mut self, parname : &str, parval : V) -> Result<(),String> where V : SolverParameterValue<Self>,Self: Sized;
+    fn set_param<V>(&mut self, parname : V::Key, parval : V) -> Result<(),String> where V : SolverParameterValue<Self>,Self: Sized;
 }
 
 /// An inner model object must implement this to support conic vector constraints and variables
@@ -901,11 +901,15 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         Ok(( res,sp.map(|v| v.to_vec()) ))
     }
 
-
-    pub fn try_set_param<V : SolverParameterValue<T>>(&mut self, parname : &str, parval : V) -> Result<(),String> {
+    /// Set a parameter in the underlying solver.
+    ///
+    /// For each solver type, the [SolverParameterValue] must be implemented for all parameter
+    /// types (e.g. integer or double parameters). It can in principle be used to pass any 
+    /// information
+    pub fn try_set_param<V : SolverParameterValue<T>>(&mut self, parname : V::Key, parval : V) -> Result<(),String> {
         self.inner.set_param(parname, parval)
     }
-    pub fn set_param<V : SolverParameterValue<T>>(&mut self, parname : &str, parval : V) {
+    pub fn set_param<V : SolverParameterValue<T>>(&mut self, parname : V::Key, parval : V) {
         self.try_set_param(parname, parval).unwrap();
     }
 }
@@ -1040,63 +1044,9 @@ impl<const N : usize,M> ModelItem<N,M> for Variable<N> where M : BaseModelTrait 
 }
 
 pub trait SolverParameterValue<M : BaseModelTrait> {
-    fn set(self,parname : &str, model : & mut M) -> Result<(),String>;
+    type Key : Sized;
+    fn set(self,parname : Self::Key, model : & mut M) -> Result<(),String>;
 }
-
-//======================================================
-// Model
-//======================================================
-
-
-
-
-//impl ModelAPI for MosekModel {
-//
-//
-//    fn dual_objective_value(&self, solid : SolutionType) -> Option<f64> {
-//        if let Some(sol) = self.select_sol(solid) {
-//            Some(sol.dual.obj)
-//        }
-//        else {
-//            None
-//        }
-//    }
-//
-//    fn primal_objective_value(&self, solid : SolutionType) -> Option<f64> { 
-//        if let Some(sol) = self.select_sol(solid) {
-//            Some(sol.primal.obj)
-//        }
-//        else {
-//            None
-//        }
-//    }
-//
-//    fn solution_status(&self, solid : SolutionType) -> (SolutionStatus,SolutionStatus) {
-//        if let Some(sol) = self.select_sol(solid) {
-//            (sol.primal.status,sol.dual.status)
-//        }
-//        else {
-//            (SolutionStatus::Undefined,SolutionStatus::Undefined)
-//        }
-//    }
-//    fn primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> { item.primal(self,solid) }
-//    
-//    fn sparse_primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String> { item.sparse_primal(self,solid) }
-//
-//    fn dual_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> { item.dual(self,solid) }
-//
-//    fn primal_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> { item.primal_into(self,solid,res) }
-//
-//    fn dual_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> { item.primal_into(self,solid,res) }
-//    fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : E) -> Result<NDArray<N>,String> where E : IntoExpr<N>     
-//    {
-//        expr.into_expr().eval(& mut self.rs,&mut self.ws,&mut self.xs).map_err(|e| format!("{:?}",e))?;
-//        let mut shape = [0usize; N];
-//        let (val,sp) = self.evaluate_primal_internal(solid, &mut shape)?;
-//        self.rs.clear();
-//        NDArray::new(shape,sp,val)
-//    }
-//} // impl ModelAPI for Model
 
 
 

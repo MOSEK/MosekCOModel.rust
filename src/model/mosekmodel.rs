@@ -1,3 +1,12 @@
+//! This module implements the MOSEK specific backend for [ModelAPI]. It supports
+//! - Linear and ranged variables and constraints
+//! - Conic constraints and variables
+//! - PSD constraints and variables
+//! - Log callbacks
+//! - Integer solution callbacks, although without constraint solution and objective value (until
+//!   `mosek.rs` supports it)
+//! - Control callbacks
+
 use std::ops::ControlFlow;
 use std::path::Path;
 use itertools::*;
@@ -831,7 +840,7 @@ impl BaseModelTrait for MosekModel {
         Ok(())
     }
 
-    fn set_param<V>(&mut self, parname : &str, parval : V) -> Result<(),String> where V : SolverParameterValue<Self> {
+    fn set_param<V>(&mut self, parname : V::Key, parval : V) -> Result<(),String> where V : SolverParameterValue<Self> {
         parval.set(parname, self)
     }
 }
@@ -1446,25 +1455,19 @@ impl DJCModelTrait for MosekModel {
 }
 
 impl SolverParameterValue<MosekModel> for f64 {
+    type Key = &'static str;
     fn set(self, parname : &str,model : & mut MosekModel) -> Result<(),String> { model.set_double_parameter(parname,self) }
 }
 
 impl SolverParameterValue<MosekModel> for i32 {
-    fn set(self, parname : &str,model : & mut MosekModel) -> Result<(),String> { model.set_int_parameter(parname,self) }
+    type Key = &'static str;
+    fn set(self, parname : Self::Key,model : & mut MosekModel) -> Result<(),String> { model.set_int_parameter(parname,self) }
 }
 
 impl SolverParameterValue<MosekModel> for &str {
-    fn set(self, parname : &str,model : & mut MosekModel) -> Result<(),String> { model.set_str_parameter(parname,self) }
+    type Key = &'static str;
+    fn set(self, parname : Self::Key,model : & mut MosekModel) -> Result<(),String> { model.set_str_parameter(parname,self) }
 }
-
-
-
-
-
-
-
-
-
 
 
 fn split_sol_sta(whichsol : i32, solsta : i32) -> (SolutionStatus,SolutionStatus) {
