@@ -1,7 +1,7 @@
-//!
-use itertools::{merge_join_by, EitherOrBoth};
 #[doc = include_str!("../js/mathjax.tag")]
 
+
+use itertools::{merge_join_by, EitherOrBoth};
 use itertools::{iproduct, izip};
 use std::fmt::Debug;
 use std::ops::ControlFlow;
