@@ -1,7 +1,5 @@
 #[doc = include_str!("../js/mathjax.tag")]
 
-
-use itertools::{merge_join_by, EitherOrBoth};
 use itertools::{iproduct, izip};
 use std::fmt::Debug;
 use std::ops::ControlFlow;
@@ -9,7 +7,6 @@ use std::{iter::once, path::Path};
 use crate::disjunction::ConjunctionTrait;
 use crate::{disjunction, expr, IntoExpr, ExprTrait, NDArray, DisjunctionTrait};
 use crate::utils::iter::*;
-use crate::utils::*;
 use crate::domain::*;
 use crate::variable::*;
 use crate::WorkStack;
@@ -184,14 +181,13 @@ impl<const N : usize, M> VarDomainTrait<M> for PSDDomain<N> where M : PSDModelTr
 }
 
 
-
-
-
 //======================================================
 // Model
 //======================================================
 
 pub trait BaseModelTrait {
+    fn new(name : Option<&str>) -> Self;
+
     fn free_variable<const N : usize>
         (&mut self,
          name : Option<&str>,
@@ -213,11 +209,14 @@ pub trait BaseModelTrait {
         where 
             Self : Sized;
 
-    fn update(& mut self, idxs : &[usize]) -> Result<(),String>;
+    fn update(& mut self, idxs : &[usize], shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<(),String>;
 
     fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path>;
 
     fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, solitg : &mut Solution) -> Result<(),String>;
+
+
+    fn set_param<V>(&mut self, parname : &str, parval : V) -> Result<(),String> where V : SolverParameterValue<T>;
 }
 
 /// An inner model object must implement this to support conic vector constraints and variables
@@ -243,8 +242,8 @@ pub trait ModelWithLogCallback {
 }
 
 /// An inner model object must implement this to support integer solution callbacks
-pub trait ModelWithSolutionCallback {
-    fn set_solution_callback<F>(&mut self, func : F) where F : 'static+FnMut(&ModelAPI<Self>);
+pub trait ModelWithIntSolutionCallback {
+    fn set_solution_callback<F>(&mut self, func : F) where F : 'static+FnMut(f64, &[f64],&[f64]);
 }
 
 /// An inner model object must implement this to support control callbacks (callbacks that allow us
@@ -253,8 +252,7 @@ pub trait ModelWithControlCallback {
     fn set_callback<F>(&mut self, func : F) where F : 'static+FnMut() -> ControlFlow<(),()>;
 }
 
-
-pub struct ModelAPI<T> where T : BaseModelTrait {
+pub struct ModelAPI<T : BaseModelTrait> {
     inner : T,
 
     /// Basis solution
@@ -270,10 +268,25 @@ pub struct ModelAPI<T> where T : BaseModelTrait {
     xs : WorkStack
 }
 
-impl<T> ModelAPI<T> where T : BaseModelTrait {
-    pub fn new() -> ModelAPI<T> where T : Default {
+impl<T : BaseModelTrait+Default> Default for ModelAPI<T> {
+    fn default() -> Self {
         ModelAPI{
             inner : Default::default(),
+            rs : WorkStack::new(1024),
+            ws : WorkStack::new(1024),
+            xs : WorkStack::new(1024),
+
+            sol_bas : Default::default(),
+            sol_itr : Default::default(),
+            sol_itg : Default::default(),
+        }
+    }
+}
+
+impl<T> ModelAPI<T> where T : BaseModelTrait {
+    pub fn new(name : Option<&str>) -> ModelAPI<T> where T : Default {
+        ModelAPI{
+            inner : T::new(name),
             rs : WorkStack::new(1024),
             ws : WorkStack::new(1024),
             xs : WorkStack::new(1024),
@@ -309,52 +322,43 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         self.inner.set_log_handler(func);
     }
 
-    /// Attach a solution callback function. This is called for each new integer solution 
-    pub fn set_int_solution_callback<F>(&mut self, mut func : F) where F : 'static+FnMut(&mut Self), T : ModelWithSolutionCallback {
+    /// Attach a solution callback function. This is called for each new integer solution. The new
+    /// solution can be accessed though the [ModelAPI]
+    pub fn set_int_solution_callback<F>(&mut self, mut func : F) where F : 'static+FnMut(&mut Self), T : 'static+ModelWithIntSolutionCallback {
         // NOTE: We cheat here. 
         // 1. We pass self as a pointer to bypass the whole lifetime issue. This
         // is acceptable because we KNOW self will outlive the underlying Task.
         // 2. The constuction is acceptable because we know that the callback is called from inside
         //    the `.solve()` call, which holds a mutable reference to model.
-        let modelp :  *const Self = self;
-        
-        self.inner.set_int_solution_callback(move |&mut Solution| {
-            let model : & mut MosekModel = unsafe { & mut (* (modelp as * mut MosekModel)) };
+        let modelp :  *const ModelAPI<T> = self;
+
+        self.inner.set_solution_callback(move |pobj,xx,xc| {
+            let model : & mut Self = unsafe { & mut (* (modelp as * mut Self)) };
 
             model.sol_itg.primal.status = SolutionStatus::Feasible;
             model.sol_itg.dual.status = SolutionStatus::Undefined;
-            if model.sol_itg.primal.var.len() != model.vars.len() {
-                model.sol_itg.primal.var = vec![0.0; model.vars.len()];
+            if model.sol_itg.primal.var.len() != xx.len() {
+                model.sol_itg.primal.var = xx.to_vec();
             }
-            if model.sol_itg.primal.con.len() != model.cons.len() {
-                model.sol_itg.primal.con = vec![0.0; model.cons.len()];
+            else {
+                model.sol_itg.primal.var.copy_from_slice(xx);
+            }
+            if model.sol_itg.primal.con.len() != xc.len() {
+                model.sol_itg.primal.con = xc.to_vec();
+            }
+            else {
+                model.sol_itg.primal.con.copy_from_slice(xc);
             }
 
-            for (s,v) in model.sol_itr.primal.var.iter_mut().zip(model.vars.iter()) {
-                match v {
-                    VarAtom::Linear(i,_) => if (*i as usize) < xx.len() { unsafe{ *s = *xx.get_unchecked(*i as usize) } },
-                    _ => {}
-                }
-            }
+            model.sol_itg.primal.obj = pobj;
 
             func(model);
-        }).unwrap();
+        });
     }
 
-    pub fn set_callback<F>(&mut self, mut func : F) where F : 'static+FnMut() -> ControlFlow<(),()> {
-        self.task.put_codecallback(move |_code| {
-            match func() {
-                ControlFlow::Break(_) => false,
-                ControlFlow::Continue(_) => true,
-            }
-        }).unwrap();
+    pub fn set_control_callback<F>(&mut self, func : F) where F : 'static+FnMut() -> ControlFlow<(),()>, T : ModelWithControlCallback {
+        self.inner.set_callback(func);
     }
-
-
-
-
-
-
 
     /// Add a Variable.
     ///
@@ -391,10 +395,10 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     pub fn try_variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> Result<R,String>
         where 
             I : IntoDomain<Result = D>,
-            D : VarDomainTrait<Self,Result = R>,
-            Self : Sized
+            D : VarDomainTrait<T,Result = R>,
+            T : Sized
     {
-        dom.try_into_domain()?.create(self.inner,name)
+        dom.try_into_domain()?.create(& mut self.inner,name)
     }
 
     /// Add a Variable. See [Model::try_variable].
@@ -407,8 +411,8 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     pub fn variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> R
         where 
             I : IntoDomain<Result = D>,
-            D : VarDomainTrait<Self,Result = R>,
-            Self : Sized
+            D : VarDomainTrait<T,Result = R>,
+            T : Sized
     {
         self.try_variable(name,dom).unwrap()
     }
@@ -457,15 +461,15 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
             E : IntoExpr<N>, 
             <E as IntoExpr<N>>::Result : ExprTrait<N>,
             I : IntoShapedDomain<N,Result=D>,
-            D : ConstraintDomain<N,Self>,
-            Self : Sized
+            D : ConstraintDomain<N,T>,
+            T : Sized
     {
         expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
         let (eshape,ptr,_sp,subj,cof) = self.rs.pop_expr();
         if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
         let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
 
-        dom.try_into_domain(shape)?.add_constraint(self.inner,name,eshape,ptr,subj,cof)
+        dom.try_into_domain(shape)?.add_constraint(& mut self.inner,name,eshape,ptr,subj,cof)
     }
 
     /// Add a constraint. See [Model::try_constraint].
@@ -479,8 +483,8 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
             E : IntoExpr<N>, 
             <E as IntoExpr<N>>::Result : ExprTrait<N>,
             I : IntoShapedDomain<N,Result = D>,
-            D : ConstraintDomain<N,Self>,
-            Self : Sized
+            D : ConstraintDomain<N,T>,
+            T : Sized
     {
         self.try_constraint(name, expr, dom).unwrap()
     }
@@ -495,7 +499,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
         let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
 
-        self.inner.update(item.idxs.as_slice(),shape,ptr,subj,cof)
+        self.inner.update(item.idxs.as_slice(),eshape,ptr,subj,cof)
     }
     
     pub fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E)
@@ -581,6 +585,79 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         }
     }
 
+
+    fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+        if let Some(sol) = self.select_sol(solid) {
+            if let SolutionStatus::Undefined = sol.primal.status {
+                Err("Solution part is not defined".to_string())
+            }
+            else {
+                if let Some(&v) = idxs.iter().max() { if v >= sol.primal.var.len() { panic!("Variable indexes are outside of range") } }
+                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.var.get_unchecked(i) });
+                Ok(())
+            }
+        }
+        else {
+            Err("Solution value is undefined".to_string())
+        }
+    }
+
+    fn dual_var_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+        if let Some(sol) = self.select_sol(solid) {
+            if let SolutionStatus::Undefined = sol.dual.status {
+                Err("Solution part is not defined".to_string())
+            }
+            else {
+                if let Some(&v) = idxs.iter().max() { if v >= sol.dual.var.len() { panic!("Variable indexes are outside of range") } }
+                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.dual.var.get_unchecked(i) });
+                Ok(())
+            }
+        }
+        else {
+            Err("Solution value is undefined".to_string())
+        }
+    }
+    fn primal_con_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+        if let Some(sol) = self.select_sol(solid) {
+            if let SolutionStatus::Undefined = sol.primal.status {
+                Err("Solution part is not defined".to_string())
+            }
+            else {
+                if let Some(&v) = idxs.iter().max() { if v >= sol.primal.con.len() { panic!("Constraint indexes are outside of range") } }
+                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.con.get_unchecked(i) });
+                Ok(())
+            }
+        }
+        else {
+            Err("Solution value is undefined".to_string())
+        }
+    }
+    fn dual_con_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+        if let Some(sol) = self.select_sol(solid) {
+            if let SolutionStatus::Undefined = sol.dual.status  {
+                Err("Solution part is not defined".to_string())
+            }
+            else {
+                if let Some(&v) = idxs.iter().max() { if v >= sol.dual.con.len() { panic!("Constraint indexes are outside of range") } }
+                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.con.get_unchecked(i) });
+                Ok(())
+            }
+        }
+        else {
+            Err("Solution value is undefined".to_string())
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
     /// Get primal solution values for an a variable or constraint.
     ///
     /// # Arguments
@@ -590,7 +667,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     ///
     /// # Returns
     /// If solution item is defined, return the solution, otherwise an error message.
-    pub fn primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> where Self : Sized+BaseModelTrait {
+    pub fn primal_solution<const N : usize, I:ModelItem<N,T>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> {
         item.primal(self,solid)
     }
     
@@ -605,14 +682,14 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// - `Some((vals,idxs))` is returned, where 
     ///   - `vals` are the solution values for non-zero entries
     ///   - `idxs` are the indexes.
-    pub fn sparse_primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String> where Self : Sized+BaseModelTrait {
+    pub fn sparse_primal_solution<const N : usize, I:ModelItem<N,T>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String> {
         item.sparse_primal(self,solid)
     }
 
     /// Get dual solution values for an item
     ///
     /// Returns: If solution item is defined, return the solution, otherwise a n error message.
-    pub fn dual_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> where Self : Sized+BaseModelTrait {
+    pub fn dual_solution<const N : usize, I:ModelItem<N,T>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> {
         item.dual(self,solid)
     }
 
@@ -623,7 +700,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// - `item`  The item to get solution for
     /// - `res`   Copy the solution values into this slice
     /// Returns: The number of values copied if solution is available, otherwise an error string.
-    pub fn primal_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> where Self : Sized+BaseModelTrait {
+    pub fn primal_solution_into<const N : usize, I:ModelItem<N,T>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> {
         item.primal_into(self,solid,res)
     }
 
@@ -634,7 +711,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// - `item`  The item to get solution for
     /// - `res`   Copy the solution values into this slice
     /// Returns: The number of values copied if solution is available, otherwise an error string.
-    pub fn dual_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> where Self : Sized+BaseModelTrait {
+    pub fn dual_solution_into<const N : usize, I:ModelItem<N,T>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> {
         item.primal_into(self,solid,res)
     }
 
@@ -644,7 +721,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// # Arguments
     /// - `solid` The solution in which to evaluate the expression.
     /// - `expr` The expression to evaluate.
-    pub fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : E) -> Result<NDArray<N>,String> where E : IntoExpr<N>, Self : Sized+BaseModelTrait {
+    pub fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : E) -> Result<NDArray<N>,String> where E : IntoExpr<N> {
         expr.into_expr().eval(& mut self.rs,&mut self.ws,&mut self.xs).map_err(|e| format!("{:?}",e))?;
         let mut shape = [0usize; N];
         let (val,sp) = self.evaluate_primal_internal(solid, &mut shape)?;
@@ -716,6 +793,13 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         Ok(( res,sp.map(|v| v.to_vec()) ))
     }
 
+
+    pub fn try_set_param<V : SolverParameterValue<T>>(&mut self, parname : &str, parval : V) -> Result<(),String> {
+        self.inner.set_param(parname, parval)
+    }
+    pub fn set_param<V : SolverParameterValue<T>>(&mut self, parname : &str, parval : V) {
+        self.try_set_param(parname, parval).unwrap();
+    }
 }
 
 
@@ -740,7 +824,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
 
 /// The `ModelItem` represents either a variable or a constraint belonging to a [Model]. It is used
 /// by the [Model] object when accessing solution assist overloading and determine which solution part to access.
-pub trait ModelItem<const N : usize,M>  {
+pub trait ModelItem<const N : usize,M> where M : BaseModelTrait {
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool { self.len() == 0 }
     fn shape(&self) -> [usize;N];
@@ -808,19 +892,7 @@ impl<const N : usize,M> ModelItem<N,M> for Constraint <N> where M : BaseModelTra
 }
 
 pub trait SolverParameterValue<M : BaseModelTrait> {
-    fn set(self,parname : &str, model : & mut ModelAPI<M>);
-}
-
-impl<M : BaseModelTrait> SolverParameterValue<M> for f64 {
-    fn set(self, parname : &str,model : & mut ModelAPI<M>) { model.set_double_parameter(parname,self) }
-}
-
-impl<M : BaseModelTrait> SolverParameterValue<M> for i32 {
-    fn set(self, parname : &str,model : & mut ModelAPI<M>) { model.set_int_parameter(parname,self) }
-}
-
-impl<M : BaseModelTrait> SolverParameterValue<M> for &str {
-    fn set(self, parname : &str,model : & mut ModelAPI<M>) { model.set_str_parameter(parname,self) }
+    fn set(self,parname : &str, model : & mut M);
 }
 
 //======================================================

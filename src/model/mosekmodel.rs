@@ -1,3 +1,13 @@
+use std::ops::ControlFlow;
+use itertools::{iproduct, izip, merge_join_by, EitherOrBoth};
+
+
+use crate::utils::NameAppender;
+use crate::utils::iter::{IndexIterator, IndexIteratorExt, PermuteByEx, SparseIndexIterator};
+use crate::*;
+
+use super::{row_major_offset_to_col_major, BaseModelTrait, ConAtom, ConicModelTrait, Disjunction, ModelWithControlCallback, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, Sense, VarAtom, WhichLinearBound};
+
 
 /// The `Model` object encapsulates an optimization problem and a
 /// mapping from the structured API to the internal Task items.
@@ -23,7 +33,7 @@
 /// // Create a scalar constraint
 /// _ = model.constraint(Some("C1"), x.add(y.index([0,0])), equal_to(5.0));
 /// ```
-#[doc = include_str!("../js/mathjax.tag")]
+#[doc = include_str!("../../js/mathjax.tag")]
 pub struct MosekModel {
     /// The MOSEK task
     task : mosek::TaskCB,
@@ -36,90 +46,7 @@ pub struct MosekModel {
     optserver_host : Option<(String,Option<String>)>,
 }
 
-
-
 impl MosekModel {
-    /// Create new Model object.
-    ///
-    /// # Arguments
-    /// - `name` An optional name
-    /// # Returns
-    /// An empty model.
-    /// # Example
-    /// ```rust
-    /// use mosekcomodel::*;
-    /// let mut model = Model::new(Some("SuperModel"));
-    /// ```
-    pub fn new(name : Option<&str>) -> MosekModel {
-        let mut task = mosek::Task::new().unwrap().with_callbacks();
-        if let Some(name) = name { task.put_task_name(name).unwrap() };
-        task.put_int_param(mosek::Iparam::PTF_WRITE_SOLUTIONS, 1).unwrap();
-        MosekModel{
-            task,
-            vars    : vec![VarAtom::Linear(-1,WhichLinearBound::Both)],
-            cons    : Vec::new(),
-
-            optserver_host : None,
-        }
-    }
-
-    /// Attach a log printer callback to the Model. This will receive messages from the solver
-    /// while solving and during a few other calls like file reading/writing. 
-    ///
-    /// # Arguments
-    /// - `func` A function that will be called with strings from the log. Individual lines may be
-    ///   written in multiple chunks to there is no guarantee that the strings will end with a
-    ///   newline.
-    pub fn set_log_handler<F>(& mut self, func : F) where F : 'static+Fn(&str) {
-        self.task.put_stream_callback(mosek::Streamtype::LOG,func).unwrap();
-    }
-
-    /// Attach a solution callback function. This is called for each new integer solution 
-    pub fn set_int_solution_callback<F>(&mut self, mut func : F) where F : 'static+FnMut(&mut Solution) {
-        // NOTE: We cheat here. We pass self as a pointer to bypass the whole lifetime issue. This
-        // is acceptable because we KNOW self will outlive the underlying Task.
-        let sol_bas_p : *const Solution = sol_bas;
-        let sol_itr_p : *const Solution = sol_itr;
-        let sol_itg_p : *const Solution = sol_itg;
-
-        self.task.put_intsolcallback(move |xx| {
-            let sol_bas = unsafe{ &mut ( * (sol_bas_p as * mut Solution)) };
-            let sol_itr = unsafe{ &mut ( * (sol_itr_p as * mut Solution)) };
-            let sol_itg = unsafe{ &mut ( * (sol_itg_p as * mut Solution)) };
-            sol_bas.primal.status = SolutionStatus::Undefined;
-            sol_bas.dual.status = SolutionStatus::Undefined;
-            sol_itr.primal.status = SolutionStatus::Undefined;
-            sol_itr.dual.status = SolutionStatus::Undefined;
-            sol_itg.primal.status = SolutionStatus::Feasible;
-            sol_itg.dual.status = SolutionStatus::Undefined;
-            if sol_itg.primal.var.len() != model.vars.len() {
-                sol_itg.primal.var = vec![0.0; model.vars.len()];
-            }
-            if model.sol_itg.primal.con.len() != model.cons.len() {
-                model.sol_itg.primal.con = vec![0.0; model.cons.len()];
-            }
-
-            for (s,v) in model.sol_itr.primal.var.iter_mut().zip(model.vars.iter()) {
-                match v {
-                    VarAtom::Linear(i,_) => if (*i as usize) < xx.len() { unsafe{ *s = *xx.get_unchecked(*i as usize) } },
-                    _ => {}
-                }
-            }
-
-            func(model);
-        }).unwrap();
-    }
-
-    pub fn set_callback<F>(&mut self, mut func : F) where F : 'static+FnMut() -> ControlFlow<(),()> {
-        self.task.put_codecallback(move |_code| {
-            match func() {
-                ControlFlow::Break(_) => false,
-                ControlFlow::Continue(_) => true,
-            }
-        }).unwrap();
-    }
-
-
     fn var_names<const N : usize>(& mut self, name : &str, first : i32, shape : &[usize;N], sp : Option<&[usize]>) {
         let mut buf = name.to_string();
         let baselen = buf.len();
@@ -335,7 +262,7 @@ impl MosekModel {
     ///   value or a string representing an integer or float value, or a string representing a
     ///   symbolic constant value (again, the full value as listed in the MOSEK C manual).
     pub fn set_parameter<T>(& mut self, parname : &str, parval : T) 
-        where T : SolverParameterValue {
+        where T : SolverParameterValue<Self> {
         parval.set(parname,self);
     }
 
@@ -394,6 +321,30 @@ impl MosekModel {
 
 
 impl BaseModelTrait for MosekModel {
+    /// Create new Model object.
+    ///
+    /// # Arguments
+    /// - `name` An optional name
+    /// # Returns
+    /// An empty model.
+    /// # Example
+    /// ```rust
+    /// use mosekcomodel::*;
+    /// let mut model = Model::new(Some("SuperModel"));
+    /// ```
+    fn new(name : Option<&str>) -> MosekModel {
+        let mut task = mosek::Task::new().unwrap().with_callbacks();
+        if let Some(name) = name { task.put_task_name(name).unwrap() };
+        task.put_int_param(mosek::Iparam::PTF_WRITE_SOLUTIONS, 1).unwrap();
+        MosekModel{
+            task,
+            vars    : vec![VarAtom::Linear(-1,super::WhichLinearBound::Both)],
+            cons    : Vec::new(),
+
+            optserver_host : None,
+        }
+    }
+
     fn free_variable<const N : usize>(&mut self, name : Option<&str>,shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized {
         let vari = self.task.get_num_var()?;
         let n : usize = shape.iter().product();
@@ -1051,6 +1002,52 @@ impl BaseModelTrait for MosekModel {
     }
 }
 
+impl ModelWithLogCallback for MosekModel {
+    /// Attach a log printer callback to the Model. This will receive messages from the solver
+    /// while solving and during a few other calls like file reading/writing. 
+    ///
+    /// # Arguments
+    /// - `func` A function that will be called with strings from the log. Individual lines may be
+    ///   written in multiple chunks to there is no guarantee that the strings will end with a
+    ///   newline.
+    fn set_log_handler<F>(& mut self, func : F) where F : 'static+Fn(&str) {
+        self.task.put_stream_callback(mosek::Streamtype::LOG,func).unwrap();
+    }
+}
+
+impl ModelWithIntSolutionCallback for MosekModel {
+    /// Attach a solution callback function. This is called for each new integer solution 
+    fn set_solution_callback<F>(&mut self, func : F) where F : 'static+FnMut(f64,&[f64],&[f64]) {
+        // NOTE: We cheat here. We pass self as a pointer to bypass the whole lifetime issue. This
+        // is acceptable because we KNOW self will outlive the underlying Task.
+        let modelp : * const Self = self;
+            
+        let mut xxvec = vec![0.0; self.vars.len()];
+        let mut xcvec = vec![0.0; self.cons.len()];
+
+        self.task.put_intsolcallback(move |xx| {
+            let model = unsafe{ & mut (* (modelp as * mut Self)) };
+            for (s,v) in xxvec.iter_mut().zip(model.vars.iter()) {
+                match v {
+                    VarAtom::Linear(i,_) => if (*i as usize) < xx.len() { unsafe{ *s = *xx.get_unchecked(*i as usize) } },
+                    _ => {}
+                }
+            }
+            func(0.0,xxvec.as_slice(),xcvec.as_slice());
+        }).unwrap();
+    }
+}
+
+impl ModelWithControlCallback for MosekModel {
+    fn set_callback<F>(&mut self, mut func : F) where F : 'static+FnMut() -> ControlFlow<(),()> {
+        self.task.put_codecallback(move |_code| {
+            match func() {
+                ControlFlow::Break(_) => false,
+                ControlFlow::Continue(_) => true,
+            }
+        }).unwrap();
+    }
+}
 
 
 impl ConicModelTrait for MosekModel {
@@ -1206,7 +1203,7 @@ impl ConicModelTrait for MosekModel {
                                  abarsubj[1..].iter())
                 .enumerate()
                 .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
-                .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+                .chain(std::iter::once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
                
                 let subk = &abarsubk[p0..p];
                 let subl = &abarsubl[p0..p];
@@ -1400,8 +1397,6 @@ impl PSDModelTrait for MosekModel {
         let rsubj = &rsubj[..*rptr.last().unwrap()];
         let rcof  = &rcof[..*rptr.last().unwrap()];
        
-        //println!("psd_constraint. 1/2 E+E':\n\tptr : {:?}\n\tsubj : {:?}\n\t - {:?}",rptr,rsubj,rptr.iter().zip(rptr[1..].iter()).map(|(&b,&e)| &rsubj[b..e]).collect::<Vec<&[usize]>>());
-
         // now rptr, subj, cof contains the full 1/2(E'+E)
         let (asubj,
              acof,
@@ -1447,7 +1442,7 @@ impl PSDModelTrait for MosekModel {
                                  abarsubj[1..].iter())
                 .enumerate()
                 .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
-                .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+                .chain(std::iter::once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
                
                 let subk = &abarsubk[p0..p];
                 let subl = &abarsubl[p0..p];
@@ -1534,4 +1529,16 @@ impl PSDModelTrait for MosekModel {
             shape,
         })
     }
+}
+
+impl SolverParameterValue<MosekModel> for f64 {
+    fn set(self, parname : &str,model : & mut MosekModel) { model.set_double_parameter(parname,self) }
+}
+
+impl SolverParameterValue<MosekModel> for i32 {
+    fn set(self, parname : &str,model : & mut MosekModel) { model.set_int_parameter(parname,self) }
+}
+
+impl SolverParameterValue<MosekModel> for &str {
+    fn set(self, parname : &str,model : & mut MosekModel) { model.set_str_parameter(parname,self) }
 }
