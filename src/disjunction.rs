@@ -129,11 +129,6 @@ pub fn constraint<const N : usize,I,E,D>(expr : I, domain : D) -> AffineConstrai
 
 
 
-
-
-
-
-
 impl ConjunctionTrait for Box<dyn ConjunctionTrait> {
     fn dynamic(self) -> Box<dyn ConjunctionTrait> {
         self

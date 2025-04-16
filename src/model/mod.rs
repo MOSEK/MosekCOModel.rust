@@ -92,7 +92,7 @@ pub enum SolutionStatus {
 impl Default for SolutionStatus { fn default() -> Self { SolutionStatus::Undefined } }
 
 #[derive(Default)]
-struct SolutionPart {
+pub struct SolutionPart {
     status : SolutionStatus,
     var    : Vec<f64>,
     con    : Vec<f64>,
@@ -101,7 +101,7 @@ struct SolutionPart {
 }
 
 impl SolutionPart {
-    fn new(numvar : usize, numcon : usize) -> SolutionPart { SolutionPart{status : SolutionStatus::Unknown, var : vec![0.0; numvar], con : vec![0.0; numcon], obj : 0.0} }
+    pub fn new(numvar : usize, numcon : usize) -> SolutionPart { SolutionPart{status : SolutionStatus::Unknown, var : vec![0.0; numvar], con : vec![0.0; numcon], obj : 0.0} }
     fn resize(& mut self,numvar : usize, numcon : usize) {
         self.var.resize(numvar, 0.0);
         self.con.resize(numcon, 0.0);
@@ -109,7 +109,7 @@ impl SolutionPart {
 }
 
 #[derive(Default)]
-struct Solution {
+pub struct Solution {
     primal : SolutionPart,
     dual   : SolutionPart
 }
@@ -370,7 +370,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// - `sense` Objective sense
     /// - `expr` Objective expression, this must contain exactly one
     ///   element. The shape is otherwise ignored.
-    fn try_objective<I>(& mut self, name : Option<&str>, sense : Sense, e : I) -> Result<(),String> where I : IntoExpr<0> 
+    pub fn try_objective<I>(& mut self, name : Option<&str>, sense : Sense, e : I) -> Result<(),String> where I : IntoExpr<0> 
     {
         e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs);
         let (shape,ptr,sp,subj,cof) = self.rs.pop_expr();
@@ -380,7 +380,9 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         self.inner.objective(name,sense,subj,cof)
     }
 
-    fn objective<I>(& mut self, name : Option<&str>, sense : Sense, e : I) where I : IntoExpr<0> 
+
+    /// Same as [ModekAPI::try_objective], but `panic`s on error.
+    pub fn objective<I>(& mut self, name : Option<&str>, sense : Sense, e : I) where I : IntoExpr<0> 
     {
         self.try_objective(name, sense, e).unwrap();
     }
@@ -515,9 +517,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     }
     
     /// Update the expression of a constraint in the Model.
-    pub fn try_update<const N : usize, E>(&mut self, item : &Constraint<N>, expr : E) -> Result<(),String>
-        where 
-            E    : expr::IntoExpr<N>
+    pub fn try_update<const N : usize, E : IntoExpr<N>>(&mut self, item : &Constraint<N>, expr : E) -> Result<(),String>
     {
         expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
         let (eshape,ptr,_sp,subj,cof) = self.rs.pop_expr();
@@ -526,9 +526,13 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
 
         self.inner.update(item.idxs.as_slice(),eshape,ptr,subj,cof)
     }
-   
 
-
+    /// Same as [ModelAPI::try_update], but `panic`s on error.
+    pub fn update<const N : usize, E : IntoExpr<N>>(&mut self, item : &Constraint<N>, e : E)
+    {
+        self.try_update(item,e).unwrap()
+    }
+    
 
     /// Add a disjunctive constraint to the model. A disjunctive constraint is a logical constraint
     /// of the form
@@ -614,20 +618,13 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
 
         self.inner.disjunction(name,exprs.as_slice(), domains.as_slice(), term_size.as_slice())
     }
-    
+   
+
+    /// Same as [ModelAPI::try_disjunction], but `panic`s on errors.
     pub fn disjunction<D>(& mut self, name : Option<&str>, terms : D) -> Disjunction where D : disjunction::DisjunctionTrait, T : DJCModelTrait {
         self.try_disjunction(name, terms).unwrap()
     }
 
-
-
-    pub fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E)
-        where             
-            E    : expr::IntoExpr<N>
-    {
-        self.try_update(item,e).unwrap()
-    }
-    
     /// Write problem to a file. The file is written by the underlying solver task, so no
     /// structural information will be written.
     ///
@@ -635,9 +632,13 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// - `filename` The filename extension determines the file format to use. If the
     ///   file extension is not recognized, the MPS format is used.
     ///
-    pub fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path>
+    pub fn try_write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path>
     {
         self.inner.write_problem(filename)
+    }
+
+    pub fn write_problem<P:AsRef<Path>>(&self, filename : P) {
+        self.try_write_problem(filename).unwrap();
     }
 
     /// Solve the problem and extract the solution.
@@ -645,7 +646,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// This will fail if the optimizer fails with an error. Not producing a solution (stalling or
     /// otherwise failing), producing a non-optimal solution or a certificate of infeasibility 
     /// is *not* an error.
-    pub fn solve(& mut self) -> Result<(),String> {
+    pub fn try_solve(& mut self) -> Result<(),String> {
         self.sol_bas.primal.status = SolutionStatus::Undefined;
         self.sol_bas.dual.status = SolutionStatus::Undefined;
         self.sol_itr.primal.status = SolutionStatus::Undefined;
@@ -655,6 +656,9 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
 
         self.inner.solve(&mut self.sol_itr, &mut self.sol_bas, & mut self.sol_itg)
     }
+
+    /// Same as [ModelAPI::try_solve], but panics on any error.
+    pub fn solve(&mut self) { self.try_solve().unwrap(); }
 
     /// Get solution status for the given solution.
     ///
@@ -672,37 +676,29 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// # Returns
     /// - `(psolsta,dsolsta)` Primal and dual solution status.
     pub fn solution_status(&self, solid : SolutionType) -> (SolutionStatus,SolutionStatus) {
-        if let Some(sol) = self.select_sol(solid) {
-            (sol.primal.status,sol.dual.status)
-        }
-        else {
-            (SolutionStatus::Undefined,SolutionStatus::Undefined)
-        }
+        self.select_sol(solid)
+            .map(|sol| (sol.primal.status,sol.dual.status))
+            .unwrap_or((SolutionStatus::Undefined,SolutionStatus::Undefined))
     }
 
     /// Get primal objective value, if available.
     ///
     /// The primal objective is only available if the primal solution is defined.
     pub fn primal_objective_value(&self, solid : SolutionType) -> Option<f64> {
-        if let Some(sol) = self.select_sol(solid) {
-            Some(sol.primal.obj)
-        }
-        else {
-            None
-        }
+        self.select_sol(solid)    
+            .map(|sol| sol.primal.obj)
     }
     
     /// Get dual objective value, if available.
     ///
     /// The dual objective is only available if the dual solution is defined.
     pub fn dual_objective_value(&self, solid : SolutionType) -> Option<f64> {
-        if let Some(sol) = self.select_sol(solid) {
-            Some(sol.dual.obj)
-        }
-        else {
-            None
-        }
+        self.select_sol(solid)
+            .map(|sol| sol.dual.obj)
     }
+
+
+
 
 
     pub(crate) fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {

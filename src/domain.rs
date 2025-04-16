@@ -29,12 +29,6 @@ pub enum ConicDomainType {
     Free
 }
 
-//#[derive(Debug)]
-//pub enum LinearDomainOfsType {
-//    Scalar(f64),
-//    M(Vec<f64>)
-//}
-
 
 pub trait DomainTrait<const N : usize> {
 }
