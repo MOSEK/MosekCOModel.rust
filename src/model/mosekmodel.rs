@@ -955,7 +955,7 @@ impl ConicModelTrait for MosekModel {
         Ok(Variable::new((firstvar..firstvar+n).collect(), None, &shape))
             
    } 
-   fn conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : ConicDomain<N>, expr_shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String> {
+   fn conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : ConicDomain<N>, _expr_shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String> {
         let (dt,offset,shape,conedim,_) = dom.dissolve();
         let nelm = ptr.len()-1;
 
@@ -1361,13 +1361,12 @@ impl DJCModelTrait for MosekModel {
         let mut dom_idxs = Vec::with_capacity(exprs.len());
         let mut b = Vec::with_capacity(nafes);
         let firstafe = self.task.get_num_afe()?;
-        let lastafe = firstafe + nafes as i64;
         self.task.append_afes(nafes as i64)?;
         let mut afeidxs = vec![0i64; nafes];
 
         let mut afei = 0;
         for (dom,(shape,ptr,subj,cof)) in domains.iter().zip(exprs.iter()) {
-            let (dt,ofs,dshape,conedim,_) = dom.extract();
+            let (dt,ofs,_dshape,conedim,_) = dom.extract();
             let conesize = shape[conedim];
             //block_size.push(shape.iter().product());
 

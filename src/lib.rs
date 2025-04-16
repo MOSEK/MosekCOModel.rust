@@ -318,7 +318,7 @@ pub use model::{Sense,
                 ConicModelTrait,
                 PSDModelTrait,
                 ModelAPI};
-type Model = ModelAPI<model::mosekmodel::MosekModel>;
+pub type Model = ModelAPI<model::mosekmodel::MosekModel>;
 pub use matrix::{Matrix,NDArray,IntoIndexes};
 pub use expr::{ExprTrait,
                ExprRightMultipliable,

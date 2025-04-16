@@ -4,7 +4,7 @@ use itertools::izip;
 use std::fmt::Debug;
 use std::ops::ControlFlow;
 use std::path::Path;
-use crate::{disjunction, expr, IntoExpr, ExprTrait, NDArray};
+use crate::{disjunction, IntoExpr, ExprTrait, NDArray};
 use crate::utils::iter::*;
 use crate::domain::*;
 use crate::variable::*;
@@ -115,7 +115,7 @@ pub struct Solution {
 }
 
 impl Solution {
-    fn new() -> Solution { Solution{primal : SolutionPart::new(0,0) , dual : SolutionPart::new(0,0)  } }
+    pub fn new() -> Solution { Solution{primal : SolutionPart::new(0,0) , dual : SolutionPart::new(0,0)  } }
 }
 
 
@@ -372,8 +372,11 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     ///   element. The shape is otherwise ignored.
     pub fn try_objective<I>(& mut self, name : Option<&str>, sense : Sense, e : I) -> Result<(),String> where I : IntoExpr<0> 
     {
-        e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs);
-        let (shape,ptr,sp,subj,cof) = self.rs.pop_expr();
+        e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).map_err(|er| er.to_string())?;
+        let (shape,_ptr,sp,subj,cof) = self.rs.pop_expr();
+        if sp.is_some() {
+            panic!("Internal: eval_finalize must produce a dense expression");
+        }
         if shape.len() != 0 {
             return Err(format!("Invalid expression shape for objective: {:?}",shape));
         }
