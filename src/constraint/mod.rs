@@ -46,23 +46,23 @@ impl<const N : usize> Constraint<N> {
 pub trait ConstraintDomain<const N : usize,M> 
 {
     type Result;
-    fn add_constraint(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String>;
+    fn add_constraint(self, m : & mut M, name : Option<&str>, shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Self::Result,String>;
 }
 
 impl<const N : usize,M> ConstraintDomain<N,M> for LinearDomain<N> where M : BaseModelTrait
 {
     type Result = Constraint<N>;
 
-    fn add_constraint(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
-        m.try_linear_constraint(name,self)
+    fn add_constraint(self, m : & mut M, name : Option<&str>, shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Self::Result,String> {
+        m.linear_constraint(name,self,shape,ptr,subj,cof)
     }
 }
 
 impl<const N : usize,M> ConstraintDomain<N,M> for LinearRangeDomain<N> where M : BaseModelTrait 
 {
     type Result = (Constraint<N>,Constraint<N>);
-    fn add_constraint(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
-        m.try_ranged_constraint(name,self)
+    fn add_constraint(self, m : & mut M, name : Option<&str>, shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Self::Result,String> {
+        m.ranged_constraint(name,self,shape,ptr,subj,cof)
     }
 }
 
@@ -70,16 +70,16 @@ impl<const N : usize,M> ConstraintDomain<N,M> for ConicDomain<N> where M : Conic
 {
     type Result = Constraint<N>;
     /// Add a constraint with expression expected to be on the top of the rs stack.
-    fn add_constraint(self, m : & mut M, name : Option<&str>) -> Result<Constraint<N>,String> {
-        m.try_conic_constraint(name,self)
+    fn add_constraint(self, m : & mut M, name : Option<&str>, shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Self::Result,String> {
+        m.conic_constraint(name,self,shape,ptr,subj,cof)
     }
 }
 
 impl<const N : usize,M> ConstraintDomain<N,M> for PSDDomain<N> where M : PSDModelTrait
 {
     type Result = Constraint<N>;
-    fn add_constraint(self, m : & mut M, name : Option<&str>) -> Result<Constraint<N>,String> {
-        m.try_psd_constraint(name,self)
+    fn add_constraint(self, m : & mut M, name : Option<&str>, shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Self::Result,String> {
+        m.psd_constraint(name,self,shape,ptr,subj,cof)
     }
 }
 

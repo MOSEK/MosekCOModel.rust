@@ -48,6 +48,15 @@ enum ConAtom {
     Linear(i32,f64,i32,WhichLinearBound) // (coni, rhs,bk, which bound)
 }
 
+
+
+/*************************************************************************************************
+ *
+ * Solution structs and enums
+ *
+ *************************************************************************************************/
+
+
 /// Solution type selector
 #[derive(Clone,Copy)]
 pub enum SolutionType {
@@ -84,6 +93,7 @@ pub enum SolutionStatus {
     Undefined
 }
 
+#[derive(Default)]
 struct SolutionPart {
     status : SolutionStatus,
     var    : Vec<f64>,
@@ -100,6 +110,7 @@ impl SolutionPart {
     }
 }
 
+#[derive(Default)]
 struct Solution {
     primal : SolutionPart,
     dual   : SolutionPart
@@ -110,7 +121,11 @@ impl Solution {
 }
 
 
-
+/*************************************************************************************************
+ *
+ * VarDomainTrait
+ *
+ *************************************************************************************************/
 
 /// Represents something that can be used as a domain for a variable.
 pub trait VarDomainTrait<M> 
@@ -167,13 +182,142 @@ impl<const N : usize, M> VarDomainTrait<M> for PSDDomain<N> where M : PSDModelTr
     }
 }
 
+
+
+
+
 //======================================================
 // Model
 //======================================================
 
+pub trait BaseModelTrait {
+    fn free_variable<const N : usize>
+        (&mut self,
+         name : Option<&str>,
+         shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized;
 
-/// This defines the public interface for a Model object. 
-pub trait ModelAPI {
+    fn linear_variable<const N : usize,R>
+        (&mut self, 
+         name : Option<&str>,
+         dom : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String> 
+        where 
+            Self : Sized;
+    fn linear_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearDomain<N>) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
+        where 
+            Self : Sized;
+    fn ranged_variable<const N : usize,R>(&mut self, name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> 
+        where 
+            Self : Sized;
+    fn ranged_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearRangeDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
+        where 
+            Self : Sized;
+
+    fn update(& mut self, idxs : &[usize]) -> Result<(),String>;
+
+    fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path>;
+
+    fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, solitg : &mut Solution) -> Result<(),String> {
+}
+
+pub trait ConicModelTrait {
+    fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : ConicDomain<N>) -> Result<Variable<N>,String>;
+    fn conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : ConicDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String>;
+}
+
+pub trait PSDModelTrait {
+    fn psd_variable<const N : usize>(&mut self, name : Option<&str>, dom : PSDDomain<N>) -> Result<Variable<N>,String>;
+    fn psd_constraint<const N : usize>(& mut self, name : Option<&str>, dom : PSDDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String>;
+}
+
+pub trait DJCModelTrait {
+    fn disjunction<D>(& mut self, name : Option<&str>, terms : D) -> Result<Disjunction,String> where D : disjunction::DisjunctionTrait;
+}
+
+
+
+
+/// The `Model` object encapsulates an optimization problem and a
+/// mapping from the structured API to the internal Task items.
+///
+/// Variables and constraints are created through the `Model` object and belong to exactly that
+/// model.
+///
+/// # Example
+///
+/// A Basic example setting up a model and adding variables and constraints:
+/// ```rust
+/// use mosekcomodel::*;
+///
+/// // Create a model with a name
+/// let mut model = Model::new(Some("MyModel"));
+/// // Create a scalar unbounded variable
+/// let x = model.variable(Some("x"), unbounded());
+/// // Create a conic variable consisting of 4 quadratic cones of size 3
+/// let y = model.variable(Some("y"), in_quadratic_cone().with_shape(&[4,3]));
+/// // Create a binary variable
+/// let z = model.ranged_variable(Some("z"),in_range(0.0, 1.0).integer()).0;
+/// 
+/// // Create a scalar constraint
+/// _ = model.constraint(Some("C1"), x.add(y.index([0,0])), equal_to(5.0));
+/// ```
+#[doc = include_str!("../js/mathjax.tag")]
+pub struct MosekModel {
+    /// The MOSEK task
+    task : mosek::TaskCB,
+    /// Vector of scalar variable atoms
+    vars : Vec<VarAtom>,
+    /// Vector of scalar constraint atoms
+    cons : Vec<ConAtom>,
+
+    /// Remote opt server host and access token
+    optserver_host : Option<(String,Option<String>)>,
+}
+
+
+pub struct ModelAPI<T> where T : BaseModelTrait {
+    inner : T,
+
+    /// Basis solution
+    sol_bas : Solution,
+    /// Interior solution
+    sol_itr : Solution,
+    /// Integer solution
+    sol_itg : Solution,
+
+
+    rs : WorkStack,
+    ws : WorkStack,
+    xs : WorkStack
+}
+
+impl<T> ModelAPI<T> where T : BaseModelTrait {
+    pub fn new() -> ModelAPI<T> where T : Default {
+        ModelAPI{
+            inner : Default::default(),
+            rs : WorkStack::new(1024),
+            ws : WorkStack::new(1024),
+            xs : WorkStack::new(1024),
+
+            sol_bas : Default::default(),
+            sol_itr : Default::default(),
+            sol_itg : Default::default(),
+        }
+    }
+
+    pub fn from(inner : T) -> ModelAPI<T> { 
+        ModelAPI {
+            inner,
+            rs : WorkStack::new(1024),
+            ws : WorkStack::new(1024),
+            xs : WorkStack::new(1024),
+            
+            sol_bas : Default::default(),
+            sol_itr : Default::default(),
+            sol_itg : Default::default(),
+        }
+    }
+
+
     /// Add a Variable.
     ///
     ///
@@ -206,13 +350,13 @@ pub trait ModelAPI {
     /// - On a recoverable failure (i.e. when the [Model] is in a consistent state), return a
     ///   string describing the error.
     /// - On non-recoverable errors: Panic.
-    fn try_variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> Result<R,String>
+    pub fn try_variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> Result<R,String>
         where 
             I : IntoDomain<Result = D>,
             D : VarDomainTrait<Self,Result = R>,
             Self : Sized
     {
-        dom.try_into_domain()?.create(self,name)
+        dom.try_into_domain()?.create(self.inner,name)
     }
 
     /// Add a Variable. See [Model::try_variable].
@@ -222,13 +366,13 @@ pub trait ModelAPI {
     /// sparse, where "sparse" means that all entries outside the sparsity pattern are fixed to 0.
     ///
     /// Panics on any error.
-    fn variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> R
+    pub fn variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> R
         where 
             I : IntoDomain<Result = D>,
             D : VarDomainTrait<Self,Result = R>,
             Self : Sized
     {
-        dom.try_into_domain().unwrap().create(self,name).unwrap()
+        self.try_variable(name,dom).unwrap()
     }
 
     /// Add a constraint
@@ -270,13 +414,21 @@ pub trait ModelAPI {
     /// - On any recoverable failure, i.e. failure where the [Model] is in a consistent state:
     ///   Return a string describing the error.
     /// - On any non-recoverable error: Panic.
-    fn try_constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> Result<D::Result,String>
+    pub fn try_constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> Result<D::Result,String>
         where
             E : IntoExpr<N>, 
             <E as IntoExpr<N>>::Result : ExprTrait<N>,
             I : IntoShapedDomain<N,Result=D>,
             D : ConstraintDomain<N,Self>,
-            Self : Sized;
+            Self : Sized
+    {
+        expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
+        let (eshape,ptr,_sp,subj,cof) = self.rs.pop_expr();
+        if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
+        let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
+
+        dom.try_into_domain(shape)?.add_constraint(self.inner,name,eshape,ptr,subj,cof)
+    }
 
     /// Add a constraint. See [Model::try_constraint].
     ///
@@ -284,7 +436,7 @@ pub trait ModelAPI {
     /// - On success, return a N-dimensional constraint object that can be used to access
     ///   solution values.
     /// - On any failure: Panic.
-    fn constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> D::Result
+    pub fn constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> D::Result
         where
             E : IntoExpr<N>, 
             <E as IntoExpr<N>>::Result : ExprTrait<N>,
@@ -296,9 +448,24 @@ pub trait ModelAPI {
     }
     
     /// Update the expression of a constraint in the Model.
-    fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) -> Result<(),String>
+    pub fn try_update<const N : usize, E>(&mut self, item : &Constraint<N>, expr : E) -> Result<(),String>
         where 
-            E    : expr::IntoExpr<N>;
+            E    : expr::IntoExpr<N>
+    {
+        expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
+        let (eshape,ptr,_sp,subj,cof) = self.rs.pop_expr();
+        if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
+        let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
+
+        self.inner.update(item.idxs.as_slice(),shape,ptr,subj,cof)
+    }
+    
+    pub fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E)
+        where             
+            E    : expr::IntoExpr<N>
+    {
+        self.try_update(item,e).unwrap()
+    }
     
     /// Write problem to a file. The file is written by the underlying solver task, so no
     /// structural information will be written.
@@ -307,14 +474,19 @@ pub trait ModelAPI {
     /// - `filename` The filename extension determines the file format to use. If the
     ///   file extension is not recognized, the MPS format is used.
     ///
-    fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path>;
+    pub fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path>
+    {
+        self.inner.write_problem(filename)
+    }
 
     /// Solve the problem and extract the solution.
     ///
     /// This will fail if the optimizer fails with an error. Not producing a solution (stalling or
     /// otherwise failing), producing a non-optimal solution or a certificate of infeasibility 
     /// is *not* an error.
-    fn solve(& mut self) -> Result<(),String>;
+    pub fn solve(& mut self) -> Result<(),String> {
+        self.inner.solve(&mut self.sol_itr, &mut self.sol_bas, & mut self.sol_itg)
+    }
 
     /// Get solution status for the given solution.
     ///
@@ -331,17 +503,38 @@ pub trait ModelAPI {
     ///
     /// # Returns
     /// - `(psolsta,dsolsta)` Primal and dual solution status.
-    fn solution_status(&self, solid : SolutionType) -> (SolutionStatus,SolutionStatus);
+    pub fn solution_status(&self, solid : SolutionType) -> (SolutionStatus,SolutionStatus) {
+        if let Some(sol) = self.select_sol(solid) {
+            (sol.primal.status,sol.dual.status)
+        }
+        else {
+            (SolutionStatus::Undefined,SolutionStatus::Undefined)
+        }
+    }
 
     /// Get primal objective value, if available.
     ///
     /// The primal objective is only available if the primal solution is defined.
-    fn primal_objective_value(&self, solid : SolutionType) -> Option<f64>;
+    pub fn primal_objective_value(&self, solid : SolutionType) -> Option<f64> {
+        if let Some(sol) = self.select_sol(solid) {
+            Some(sol.primal.obj)
+        }
+        else {
+            None
+        }
+    }
     
     /// Get dual objective value, if available.
     ///
     /// The dual objective is only available if the dual solution is defined.
-    fn dual_objective_value(&self, solid : SolutionType) -> Option<f64>;
+    pub fn dual_objective_value(&self, solid : SolutionType) -> Option<f64> {
+        if let Some(sol) = self.select_sol(solid) {
+            Some(sol.dual.obj)
+        }
+        else {
+            None
+        }
+    }
 
     /// Get primal solution values for an a variable or constraint.
     ///
@@ -352,7 +545,9 @@ pub trait ModelAPI {
     ///
     /// # Returns
     /// If solution item is defined, return the solution, otherwise an error message.
-    fn primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> where Self : Sized+BaseModelTrait;
+    pub fn primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> where Self : Sized+BaseModelTrait {
+        item.primal(self,solid)
+    }
     
     /// Get primal solution values for an a sparse variable or constraint.
     ///
@@ -365,12 +560,16 @@ pub trait ModelAPI {
     /// - `Some((vals,idxs))` is returned, where 
     ///   - `vals` are the solution values for non-zero entries
     ///   - `idxs` are the indexes.
-    fn sparse_primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String> where Self : Sized+BaseModelTrait;
+    pub fn sparse_primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String> where Self : Sized+BaseModelTrait {
+        item.sparse_primal(self,solid)
+    }
 
     /// Get dual solution values for an item
     ///
     /// Returns: If solution item is defined, return the solution, otherwise a n error message.
-    fn dual_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> where Self : Sized+BaseModelTrait;
+    pub fn dual_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> where Self : Sized+BaseModelTrait {
+        item.dual(self,solid)
+    }
 
     /// Get primal solution values for an item
     ///
@@ -379,7 +578,9 @@ pub trait ModelAPI {
     /// - `item`  The item to get solution for
     /// - `res`   Copy the solution values into this slice
     /// Returns: The number of values copied if solution is available, otherwise an error string.
-    fn primal_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> where Self : Sized+BaseModelTrait;
+    pub fn primal_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> where Self : Sized+BaseModelTrait {
+        item.primal_into(self,solid,res)
+    }
 
     /// Get dual solution values for an item
     ///
@@ -388,7 +589,9 @@ pub trait ModelAPI {
     /// - `item`  The item to get solution for
     /// - `res`   Copy the solution values into this slice
     /// Returns: The number of values copied if solution is available, otherwise an error string.
-    fn dual_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> where Self : Sized+BaseModelTrait;
+    pub fn dual_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> where Self : Sized+BaseModelTrait {
+        item.primal_into(self,solid,res)
+    }
 
     
     /// Evaluate an expression in the (primal) solution. 
@@ -396,105 +599,95 @@ pub trait ModelAPI {
     /// # Arguments
     /// - `solid` The solution in which to evaluate the expression.
     /// - `expr` The expression to evaluate.
-    fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : E) -> Result<NDArray<N>,String> where E : IntoExpr<N>, Self : Sized+BaseModelTrait;
-} // trait ModelAPI
-
-pub trait BaseModelTrait {
-    fn try_free_variable<const N : usize>
-        (&mut self,
-         name : Option<&str>,
-         shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized;
-
-    fn try_linear_variable<const N : usize,R>
-        (&mut self, 
-         name : Option<&str>,
-         dom : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String> 
-        where 
-            Self : Sized;
-    fn try_linear_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearDomain<N>) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
-        where 
-            Self : Sized;
-    fn try_ranged_variable<const N : usize,R>(&mut self, name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> 
-        where 
-            Self : Sized;
-    fn try_ranged_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
-        where 
-            Self : Sized;
-
-    fn try_update(& mut self, idxs : &[usize]) -> Result<(),String>;
+    pub fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : E) -> Result<NDArray<N>,String> where E : IntoExpr<N>, Self : Sized+BaseModelTrait {
+        expr.into_expr().eval(& mut self.rs,&mut self.ws,&mut self.xs).map_err(|e| format!("{:?}",e))?;
+        let mut shape = [0usize; N];
+        let (val,sp) = self.evaluate_primal_internal(solid, &mut shape)?;
+        self.rs.clear();
+        NDArray::new(shape,sp,val)
+    }
 
 
-    fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String>;
-    fn dual_var_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String>;
-    fn primal_con_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String>;
-    fn dual_con_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String>;
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+    fn select_sol(&self, solid : SolutionType) -> Option<&Solution> {
+        match solid {
+            SolutionType::Basic    => Some(&self.sol_bas),
+            SolutionType::Interior => Some(&self.sol_itr),
+            SolutionType::Integer  => Some(&self.sol_itg),
+            SolutionType::Default  => {
+                match self.sol_itg.primal.status {
+                    SolutionStatus::Undefined =>
+                        match (self.sol_bas.primal.status,self.sol_bas.dual.status) {
+                            (SolutionStatus::Undefined,SolutionStatus::Undefined) =>
+                                match (self.sol_itr.primal.status,self.sol_itr.dual.status) {
+                                    (SolutionStatus::Undefined,SolutionStatus::Undefined) => None,
+                                    _ => Some(&self.sol_itr)
+                                }
+                            _ => Some(&self.sol_bas)
+                        },
+                    _ => Some(& self.sol_itg)
+                }
+            }
+        }
+    }
+
+    fn evaluate_primal_internal(&self, solid : SolutionType, resshape : & mut [usize]) -> Result<(Vec<f64>,Option<Vec<usize>>),String> {
+        let (shape,ptr,sp,subj,cof) = {
+            self.rs.peek_expr()
+        };
+        let sol = 
+            if let Some(sol) = self.select_sol(solid) {
+                if let SolutionStatus::Undefined = sol.primal.status {
+                    return Err("Solution part is not defined".to_string())
+                }
+                else {
+                    sol.primal.var.as_slice()
+                }
+            }
+            else {
+                return Err("Solution value is undefined".to_string());
+            };
+
+        if let Some(v) = subj.iter().max() { if *v >= sol.len() { return Err("Invalid expression: Index out of bounds for this solution".to_string()) } }
+        let mut res = vec![0.0; ptr.len()-1];
+        izip!(res.iter_mut(),subj.chunks_ptr2(ptr,&ptr[1..]),cof.chunks_ptr2(ptr,&ptr[1..]))
+    .for_each(|(r,subj,cof)| *r = subj.iter().zip(cof.iter()).map(|(&j,&c)| c * unsafe{ *sol.get_unchecked(j) } ).sum() );
+        resshape.copy_from_slice(shape);
+
+        Ok(( res,sp.map(|v| v.to_vec()) ))
+    }
+
 }
 
-pub trait ConicModelTrait {
-    fn try_conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : ConicDomain<N>) -> Result<Variable<N>,String>;
-    fn try_conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : ConicDomain<N>) -> Result<Constraint<N>,String>;
-}
-
-pub trait PSDModelTrait {
-    fn try_psd_variable<const N : usize>(&mut self, name : Option<&str>, dom : PSDDomain<N>) -> Result<Variable<N>,String>;
-    fn try_psd_constraint<const N : usize>(& mut self, name : Option<&str>, dom : PSDDomain<N>) -> Result<Constraint<N>,String>;
-}
-
-pub trait DJCModelTrait {
-    fn try_disjunction<D>(& mut self, name : Option<&str>, terms : D) -> Result<Disjunction,String> where D : disjunction::DisjunctionTrait;
-}
 
 
 
 
-/// The `Model` object encapsulates an optimization problem and a
-/// mapping from the structured API to the internal Task items.
-///
-/// Variables and constraints are created through the `Model` object and belong to exactly that
-/// model.
-///
-/// # Example
-///
-/// A Basic example setting up a model and adding variables and constraints:
-/// ```rust
-/// use mosekcomodel::*;
-///
-/// // Create a model with a name
-/// let mut model = Model::new(Some("MyModel"));
-/// // Create a scalar unbounded variable
-/// let x = model.variable(Some("x"), unbounded());
-/// // Create a conic variable consisting of 4 quadratic cones of size 3
-/// let y = model.variable(Some("y"), in_quadratic_cone().with_shape(&[4,3]));
-/// // Create a binary variable
-/// let z = model.ranged_variable(Some("z"),in_range(0.0, 1.0).integer()).0;
-/// 
-/// // Create a scalar constraint
-/// _ = model.constraint(Some("C1"), x.add(y.index([0,0])), equal_to(5.0));
-/// ```
-#[doc = include_str!("../js/mathjax.tag")]
-pub struct Model {
-    /// The MOSEK task
-    task : mosek::TaskCB,
-    /// Vector of scalar variable atoms
-    vars : Vec<VarAtom>,
-    /// Vector of scalar constraint atoms
-    cons : Vec<ConAtom>,
 
-    /// Remote opt server host and access token
-    optserver_host : Option<(String,Option<String>)>,
 
-    /// Basis solution
-    sol_bas : Solution,
-    /// Interior solution
-    sol_itr : Solution,
-    /// Integer solution
-    sol_itg : Solution,
 
-    /// Workstacks for evaluating expressions
-    rs : WorkStack,
-    ws : WorkStack,
-    xs : WorkStack
-}
+
+
+
+
+
+
+
+
 
 //======================================================
 // ModelItem
@@ -502,12 +695,12 @@ pub struct Model {
 
 /// The `ModelItem` represents either a variable or a constraint belonging to a [Model]. It is used
 /// by the [Model] object when accessing solution assist overloading and determine which solution part to access.
-pub trait ModelItem<const N : usize,M> where M : BaseModelTrait {
+pub trait ModelItem<const N : usize,M>  {
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool { self.len() == 0 }
     fn shape(&self) -> [usize;N];
     //fn numnonzeros(&self) -> usize;
-    fn sparse_primal(&self,m : &M,solid : SolutionType) -> Result<(Vec<f64>,Vec<[usize;N]>),String> {
+    fn sparse_primal(&self,m : &ModelAPI<M>,solid : SolutionType) -> Result<(Vec<f64>,Vec<[usize;N]>),String> {
         let res = self.primal(m,solid)?;
         let dflt = [0; N];
         let mut idx = vec![dflt; res.len()];
@@ -518,18 +711,18 @@ pub trait ModelItem<const N : usize,M> where M : BaseModelTrait {
         }
         Ok((res,idx))
     }
-    fn primal(&self,m : &M,solid : SolutionType) -> Result<Vec<f64>,String> {
+    fn primal(&self,m : &ModelAPI<M>,solid : SolutionType) -> Result<Vec<f64>,String> {
         let mut res = vec![0.0; self.len()];
         self.primal_into(m,solid,res.as_mut_slice())?;
         Ok(res)
     }
-    fn dual(&self,m : &M,solid : SolutionType) -> Result<Vec<f64>,String> {
+    fn dual(&self,m : &ModelAPI<M>,solid : SolutionType) -> Result<Vec<f64>,String> {
         let mut res = vec![0.0; self.len()];
         self.dual_into(m,solid,res.as_mut_slice())?;
         Ok(res)
     }
-    fn primal_into(&self,m : &M,solid : SolutionType, res : & mut [f64]) -> Result<usize,String>;
-    fn dual_into(&self,m : &M,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String>;
+    fn primal_into(&self,m : &ModelAPI<M>,solid : SolutionType, res : & mut [f64]) -> Result<usize,String>;
+    fn dual_into(&self,m : &ModelAPI<M>,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String>;
 }
 
 //======================================================
@@ -548,10 +741,10 @@ pub struct Disjunction {
     index : i64
 }
 
-impl<const N : usize> ModelItem<N,Model> for Constraint <N> {
+impl<const N : usize> ModelItem<N,M> for Constraint <N> {
     fn len(&self) -> usize { return self.shape.iter().product(); }
     fn shape(&self) -> [usize; N] { self.shape }
-    fn primal_into(&self,m : &Model,solid : SolutionType, res : & mut [f64]) -> Result<usize,String> {
+    fn primal_into(&self,m : &MosekAPI<M>,solid : SolutionType, res : & mut [f64]) -> Result<usize,String> {
         let sz = self.shape.iter().product();
         if res.len() < sz { panic!("Result array too small") }
         else {
@@ -559,7 +752,7 @@ impl<const N : usize> ModelItem<N,Model> for Constraint <N> {
             Ok(sz)
         }
     }
-    fn dual_into(&self,m : &Model,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String> {
+    fn dual_into(&self,m : &MosekAPI<M>,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String> {
         let sz = self.shape.iter().product();
         if res.len() < sz { panic!("Result array too small") }
         else {
@@ -569,27 +762,29 @@ impl<const N : usize> ModelItem<N,Model> for Constraint <N> {
     }
 }
 
-pub trait SolverParameterValue {
-    fn set(self,parname : &str, model : & mut Model);
+pub trait SolverParameterValue<M> {
+    fn set(self,parname : &str, model : & mut MosekAPI<M>);
 }
 
 impl SolverParameterValue for f64 {
-    fn set(self, parname : &str,model : & mut Model) { model.set_double_parameter(parname,self) }
+    fn set(self, parname : &str,model : & mut MosekAPI<M>) { model.set_double_parameter(parname,self) }
 }
 
 impl SolverParameterValue for i32 {
-    fn set(self, parname : &str,model : & mut Model) { model.set_int_parameter(parname,self) }
+    fn set(self, parname : &str,model : & mut MosekAPI<M>) { model.set_int_parameter(parname,self) }
 }
 
 impl SolverParameterValue for &str {
-    fn set(self, parname : &str,model : & mut Model) { model.set_str_parameter(parname,self) }
+    fn set(self, parname : &str,model : & mut MosekAPI<M>) { model.set_str_parameter(parname,self) }
 }
 
 //======================================================
 // Model
 //======================================================
 
-impl Model {
+
+
+impl MosekModel {
     /// Create new Model object.
     ///
     /// # Arguments
@@ -601,23 +796,16 @@ impl Model {
     /// use mosekcomodel::*;
     /// let mut model = Model::new(Some("SuperModel"));
     /// ```
-    pub fn new(name : Option<&str>) -> Model {
+    pub fn new(name : Option<&str>) -> MosekModel {
         let mut task = mosek::Task::new().unwrap().with_callbacks();
         if let Some(name) = name { task.put_task_name(name).unwrap() };
         task.put_int_param(mosek::Iparam::PTF_WRITE_SOLUTIONS, 1).unwrap();
-        Model{
+        MosekModel{
             task,
             vars    : vec![VarAtom::Linear(-1,WhichLinearBound::Both)],
             cons    : Vec::new(),
 
             optserver_host : None,
-
-            sol_bas : Solution::new(),
-            sol_itr : Solution::new(),
-            sol_itg : Solution::new(),
-            rs      : WorkStack::new(0),
-            ws      : WorkStack::new(0),
-            xs      : WorkStack::new(0)
         }
     }
 
@@ -673,10 +861,6 @@ impl Model {
         }).unwrap();
     }
 
-
-
-
-    
 
     fn var_names<const N : usize>(& mut self, name : &str, first : i32, shape : &[usize;N], sp : Option<&[usize]>) {
         let mut buf = name.to_string();
@@ -948,61 +1132,9 @@ impl Model {
     pub fn clear_optserver(&mut self) {
         self.optserver_host = None;
     }
-
-    //======================================================
-    // Solutions
-
-    fn select_sol(&self, solid : SolutionType) -> Option<&Solution> {
-        match solid {
-            SolutionType::Basic    => Some(&self.sol_bas),
-            SolutionType::Interior => Some(&self.sol_itr),
-            SolutionType::Integer  => Some(&self.sol_itg),
-            SolutionType::Default  => {
-                match self.sol_itg.primal.status {
-                    SolutionStatus::Undefined =>
-                        match (self.sol_bas.primal.status,self.sol_bas.dual.status) {
-                            (SolutionStatus::Undefined,SolutionStatus::Undefined) =>
-                                match (self.sol_itr.primal.status,self.sol_itr.dual.status) {
-                                    (SolutionStatus::Undefined,SolutionStatus::Undefined) => None,
-                                    _ => Some(&self.sol_itr)
-                                }
-                            _ => Some(&self.sol_bas)
-                        },
-                    _ => Some(& self.sol_itg)
-                }
-            }
-        }
-    }
-
-    fn evaluate_primal_internal(&self, solid : SolutionType, resshape : & mut [usize]) -> Result<(Vec<f64>,Option<Vec<usize>>),String> {
-        let (shape,ptr,sp,subj,cof) = {
-            self.rs.peek_expr()
-        };
-        let sol = 
-            if let Some(sol) = self.select_sol(solid) {
-                if let SolutionStatus::Undefined = sol.primal.status {
-                    return Err("Solution part is not defined".to_string())
-                }
-                else {
-                    sol.primal.var.as_slice()
-                }
-            }
-            else {
-                return Err("Solution value is undefined".to_string());
-            };
-
-        if let Some(v) = subj.iter().max() { if *v >= sol.len() { return Err("Invalid expression: Index out of bounds for this solution".to_string()) } }
-        let mut res = vec![0.0; ptr.len()-1];
-        izip!(res.iter_mut(),subj.chunks_ptr2(ptr,&ptr[1..]),cof.chunks_ptr2(ptr,&ptr[1..]))
-            .for_each(|(r,subj,cof)| *r = subj.iter().zip(cof.iter()).map(|(&j,&c)| c * unsafe{ *sol.get_unchecked(j) } ).sum() );
-        resshape.copy_from_slice(shape);
-
-        Ok(( res,sp.map(|v| v.to_vec()) ))
-    }
-
 } // impl Model
 
-impl ModelAPI for Model {
+impl ModelAPI for MosekModel {
     /// Update the expression of a constraint in the Model.
     fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) -> Result<(),String> where E : expr::IntoExpr<N> {
         e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).unwrap();
@@ -1015,21 +1147,6 @@ impl ModelAPI for Model {
         <Model as BaseModelTrait>::try_update(self, &item.idxs)
     }
 
-    fn try_constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> Result<D::Result,String>
-        where
-            E : IntoExpr<N>, 
-            <E as IntoExpr<N>>::Result : ExprTrait<N>,
-            I : IntoShapedDomain<N,Result=D>,
-            D : ConstraintDomain<N,Self>,
-            Self : Sized
-    {
-        expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
-        let (eshape,_,_,_,_) = self.rs.peek_expr();
-        if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
-        let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
-
-        dom.try_into_domain(shape)?.add_constraint(self,name)
-    }
 
     fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path> {
         let path = filename.as_ref();
@@ -1218,8 +1335,8 @@ impl ModelAPI for Model {
     }
 } // impl ModelAPI for Model
 
-impl BaseModelTrait for Model {
-    fn try_free_variable<const N : usize>(&mut self, name : Option<&str>,shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized {
+impl BaseModelTrait for MosekModel {
+    fn free_variable<const N : usize>(&mut self, name : Option<&str>,shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized {
         let vari = self.task.get_num_var()?;
         let n : usize = shape.iter().product();
         let varend : i32 = ((vari as usize) + n).try_into().unwrap();
@@ -1234,7 +1351,7 @@ impl BaseModelTrait for Model {
         Ok(Variable::new((firstvar..firstvar+n).collect(), None, shape))
     }
 
-    fn try_linear_variable<const N : usize,R>(&mut self, name : Option<&str>,domain : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String> where Self : Sized {
+    fn linear_variable<const N : usize,R>(&mut self, name : Option<&str>,domain : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String> where Self : Sized {
         let (dt,b,shape_,sp,isint) = domain.extract();
         let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
 
@@ -1276,7 +1393,7 @@ impl BaseModelTrait for Model {
 
         Ok(Variable::new((firstvar..firstvar+n).collect(), sp, &shape))
     }
-    fn try_ranged_variable<const N : usize,R>(&mut self, name : Option<&str>,domain : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> where Self : Sized {
+    fn ranged_variable<const N : usize,R>(&mut self, name : Option<&str>,domain : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> where Self : Sized {
         let vari = self.task.get_num_var()?;
         let n : usize = domain.shape.iter().product();
         let nelm = domain.sparsity.as_ref().map(|v| v.len()).unwrap_or(n);
@@ -1300,7 +1417,7 @@ impl BaseModelTrait for Model {
             Variable::new((firstvar+nelm..firstvar+nelm*2).collect(), domain.sparsity, &domain.shape)))
         
     }
-    fn try_linear_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearDomain<N>) -> Result<Constraint<N>,String> {
+    fn linear_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearDomain<N>) -> Result<Constraint<N>,String> {
         let (dt,b,_,shape,_) =  dom.into_dense().dissolve();
         let (_,ptr,_,subj,cof) = self.rs.pop_expr();
 
@@ -1384,7 +1501,7 @@ impl BaseModelTrait for Model {
         })        
     }
 
-    fn try_ranged_constraint<const N : usize>(& mut self, name : Option<&str>, domain  : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String>
+    fn ranged_constraint<const N : usize>(& mut self, name : Option<&str>, domain  : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String>
     {
         let (eshape,ptr,_,subj,cof) = self.rs.pop_expr();
         let nelm = *ptr.last().unwrap();
@@ -1465,7 +1582,7 @@ impl BaseModelTrait for Model {
         
     }
 
-    fn try_update(& mut self, idxs : &[usize]) -> Result<(),String> 
+    fn update(& mut self, idxs : &[usize]) -> Result<(),String> 
     {
         let (_,ptr,_,subj,cof) = self.rs.pop_expr();
         if let Some(maxidx) = idxs.iter().max() {
@@ -1669,68 +1786,209 @@ impl BaseModelTrait for Model {
     }
 
 
-
+//
+//    
+//    fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+//        if let Some(sol) = self.select_sol(solid) {
+//            if let SolutionStatus::Undefined = sol.primal.status {
+//                Err("Solution part is not defined".to_string())
+//            }
+//            else {
+//                if let Some(&v) = idxs.iter().max() { if v >= sol.primal.var.len() { panic!("Variable indexes are outside of range") } }
+//                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.var.get_unchecked(i) });
+//                Ok(())
+//            }
+//        }
+//        else {
+//            Err("Solution value is undefined".to_string())
+//        }
+//    }
+//
+//    fn dual_var_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+//        if let Some(sol) = self.select_sol(solid) {
+//            if let SolutionStatus::Undefined = sol.dual.status {
+//                Err("Solution part is not defined".to_string())
+//            }
+//            else {
+//                if let Some(&v) = idxs.iter().max() { if v >= sol.dual.var.len() { panic!("Variable indexes are outside of range") } }
+//                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.dual.var.get_unchecked(i) });
+//                Ok(())
+//            }
+//        }
+//        else {
+//            Err("Solution value is undefined".to_string())
+//        }
+//    }
+//    fn primal_con_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+//        if let Some(sol) = self.select_sol(solid) {
+//            if let SolutionStatus::Undefined = sol.primal.status {
+//                Err("Solution part is not defined".to_string())
+//            }
+//            else {
+//                if let Some(&v) = idxs.iter().max() { if v >= sol.primal.con.len() { panic!("Constraint indexes are outside of range") } }
+//                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.con.get_unchecked(i) });
+//                Ok(())
+//            }
+//        }
+//        else {
+//            Err("Solution value is undefined".to_string())
+//        }
+//    }
+//    fn dual_con_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+//        if let Some(sol) = self.select_sol(solid) {
+//            if let SolutionStatus::Undefined = sol.dual.status  {
+//                Err("Solution part is not defined".to_string())
+//            }
+//            else {
+//                if let Some(&v) = idxs.iter().max() { if v >= sol.dual.con.len() { panic!("Constraint indexes are outside of range") } }
+//                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.con.get_unchecked(i) });
+//                Ok(())
+//            }
+//        }
+//        else {
+//            Err("Solution value is undefined".to_string())
+//        }
+//    }
     
-    fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
-        if let Some(sol) = self.select_sol(solid) {
-            if let SolutionStatus::Undefined = sol.primal.status {
-                Err("Solution part is not defined".to_string())
-            }
-            else {
-                if let Some(&v) = idxs.iter().max() { if v >= sol.primal.var.len() { panic!("Variable indexes are outside of range") } }
-                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.var.get_unchecked(i) });
-                Ok(())
-            }
-        }
-        else {
-            Err("Solution value is undefined".to_string())
-        }
+    fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path> {
+        let path = filename.as_ref();
+        self.task.write_data(path.to_str().unwrap())
     }
 
-    fn dual_var_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
-        if let Some(sol) = self.select_sol(solid) {
-            if let SolutionStatus::Undefined = sol.dual.status {
-                Err("Solution part is not defined".to_string())
-            }
-            else {
-                if let Some(&v) = idxs.iter().max() { if v >= sol.dual.var.len() { panic!("Variable indexes are outside of range") } }
-                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.dual.var.get_unchecked(i) });
-                Ok(())
-            }
+
+    fn solve(& mut self) -> Result<(),String> {
+        self.task.put_int_param(mosek::Iparam::REMOVE_UNUSED_SOLUTIONS, 1).unwrap();
+        if let Some((hostname,accesstoken)) = self.optserver_host.as_ref() {
+            self.task.optimize_rmt(hostname.as_str(), accesstoken.as_ref().map(|v| v.as_str()).unwrap_or("")).unwrap();
         }
         else {
-            Err("Solution value is undefined".to_string())
+            self.task.optimize().unwrap();
         }
-    }
-    fn primal_con_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
-        if let Some(sol) = self.select_sol(solid) {
-            if let SolutionStatus::Undefined = sol.primal.status {
-                Err("Solution part is not defined".to_string())
+
+        let numvar = self.task.get_num_var().unwrap() as usize;
+        let numcon = self.task.get_num_con().unwrap() as usize;
+        let numacc = self.task.get_num_acc().unwrap() as usize;
+        let numaccelm = self.task.get_acc_n_tot().unwrap() as usize;
+        let numbarvar = self.task.get_num_barvar().unwrap() as usize;
+        let numbarvarelm : usize = (0..numbarvar).map(|j| self.task.get_len_barvar_j(j as i32).unwrap() as usize).sum();
+
+        let mut xx = vec![0.0; numvar];
+        let mut slx = vec![0.0; numvar];
+        let mut sux = vec![0.0; numvar];
+        let mut xc = vec![0.0; numcon];
+        let mut y = vec![0.0; numcon];
+        let mut slc = vec![0.0; numcon];
+        let mut suc = vec![0.0; numcon];
+        let mut accx = vec![0.0; numaccelm];
+        let mut doty = vec![0.0; numaccelm];
+        let mut barx = vec![0.0; numbarvarelm];
+        let mut bars = vec![0.0; numbarvarelm];
+
+        let dimbarvar : Vec<usize> = (0..numbarvar).map(|j| self.task.get_dim_barvar_j(j as i32).unwrap() as usize).collect();
+        let accptr    : Vec<usize> = once(0usize).chain((0..numacc)
+                                                        .map(|i| self.task.get_acc_n(i as i64).unwrap() as usize)
+                                                        .scan(0,|p,n| { *p += n; Some(*p) })).collect();
+        let barvarptr : Vec<usize> = once(0usize).chain((0..numbarvar)
+                                                        .map(|j| self.task.get_len_barvar_j(j as i32).unwrap() as usize)
+                                                        .scan(0,|p,n| { *p += n; Some(*p) })).collect();
+
+        // extract solutions
+        for &whichsol in [mosek::Soltype::BAS,
+                          mosek::Soltype::ITR,
+                          mosek::Soltype::ITG].iter() {
+            let sol = match whichsol {
+                mosek::Soltype::BAS => & mut self.sol_bas,
+                mosek::Soltype::ITR => & mut self.sol_itr,
+                mosek::Soltype::ITG => & mut self.sol_itg,
+                _ => & mut self.sol_itr
+            };
+            if ! self.task.solution_def(whichsol).unwrap() {
+                sol.primal.status = SolutionStatus::Undefined;
+                sol.dual.status   = SolutionStatus::Undefined;
             }
             else {
-                if let Some(&v) = idxs.iter().max() { if v >= sol.primal.con.len() { panic!("Constraint indexes are outside of range") } }
-                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.con.get_unchecked(i) });
-                Ok(())
+                let (psta,dsta) = split_sol_sta(whichsol,self.task.get_sol_sta(whichsol).unwrap());
+                sol.primal.status = psta;
+                sol.dual.status   = dsta;
+
+                if let SolutionStatus::Undefined = psta {}
+                else {
+                    sol.primal.obj = self.task.get_primal_obj(whichsol).unwrap_or(0.0);
+                    sol.primal.resize(self.vars.len(),self.cons.len());
+                    self.task.get_xx(whichsol,xx.as_mut_slice()).unwrap();
+                    self.task.get_xc(whichsol,xc.as_mut_slice()).unwrap();
+                    if numbarvar > 0 { self.task.get_barx_slice(whichsol,0,numbarvar as i32,barx.len() as i64,barx.as_mut_slice()).unwrap(); }
+                    if numacc > 0 { self.task.evaluate_accs(whichsol,accx.as_mut_slice()).unwrap(); }
+
+                    self.vars[1..].iter().zip(sol.primal.var[1..].iter_mut()).for_each(|(&v,r)| {
+                        *r = match v {
+                            VarAtom::Linear(j,_) => xx[j as usize],
+                            VarAtom::BarElm(j,ofs) => barx[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                            VarAtom::ConicElm(j,_coni) => xx[j as usize]
+                        };
+                    });
+                    self.cons.iter().zip(sol.primal.con.iter_mut()).for_each(|(&v,r)| {
+                        *r = match v {
+                            ConAtom::ConicElm{acci,accoffset,..}=> { 
+                                accx[accptr[acci as usize]+accoffset]
+                            },
+                            ConAtom::Linear(i,..) => xc[i as usize],
+                            ConAtom::BarElm{barj:j,offset:ofs,..} => barx[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                        };
+                    });
+                }
+
+                if let SolutionStatus::Undefined = dsta {}
+                else {
+                    sol.dual.obj = self.task.get_dual_obj(whichsol).unwrap();
+                    sol.dual.resize(self.vars.len(),self.cons.len());
+                    self.task.get_slx(whichsol,slx.as_mut_slice()).unwrap();
+                    self.task.get_sux(whichsol,sux.as_mut_slice()).unwrap();
+                    self.task.get_slc(whichsol,slc.as_mut_slice()).unwrap();
+                    self.task.get_suc(whichsol,suc.as_mut_slice()).unwrap();
+                    self.task.get_y(whichsol,y.as_mut_slice()).unwrap();
+                    if numbarvar > 0 { self.task.get_bars_slice(whichsol,0,numbarvar as i32,bars.len() as i64,bars.as_mut_slice()).unwrap(); }
+                    if numacc > 0 { self.task.get_acc_dot_y_s(whichsol,doty.as_mut_slice()).unwrap(); }
+
+                    self.vars[1..].iter().zip(sol.dual.var.iter_mut()).for_each(|(&v,r)| {
+                        *r = match v {
+                            VarAtom::Linear(j,which) => 
+                                match which {
+                                    WhichLinearBound::Both  => slx[j as usize] - sux[j as usize],
+                                    WhichLinearBound::Lower => slx[j as usize],
+                                    WhichLinearBound::Upper => - sux[j as usize],
+                                },
+                            VarAtom::BarElm(j,ofs) => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                            VarAtom::ConicElm(_j,coni) => {
+                                match self.cons[coni] {
+                                    ConAtom::ConicElm{acci,accoffset:ofs,..} => doty[accptr[acci as usize]+ofs],
+                                    ConAtom::Linear(i,_,_,which) => 
+                                        match which {
+                                            WhichLinearBound::Both  => y[i as usize],
+                                            WhichLinearBound::Lower => slc[i as usize],
+                                            WhichLinearBound::Upper => - suc[i as usize],
+                                        },
+                                    ConAtom::BarElm{barj:j,offset:ofs,..} => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                                }
+                            }
+                        };
+                    });
+                    self.cons.iter().zip(sol.dual.con.iter_mut()).for_each(|(&v,r)| {
+                        *r = match v {
+                            ConAtom::ConicElm{acci,accoffset:ofs,..} => doty[accptr[acci as usize]+ofs],
+                            ConAtom::Linear(i,_,_,which) => 
+                                match which {
+                                    WhichLinearBound::Both  => y[i as usize],
+                                    WhichLinearBound::Lower => slc[i as usize],
+                                    WhichLinearBound::Upper => -suc[i as usize],
+                                },
+                            ConAtom::BarElm{barj:j,offset:ofs,..} => bars[barvarptr[j as usize]+row_major_offset_to_col_major(ofs,dimbarvar[j as usize])],
+                        };
+                    });
+                }
             }
         }
-        else {
-            Err("Solution value is undefined".to_string())
-        }
-    }
-    fn dual_con_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
-        if let Some(sol) = self.select_sol(solid) {
-            if let SolutionStatus::Undefined = sol.dual.status  {
-                Err("Solution part is not defined".to_string())
-            }
-            else {
-                if let Some(&v) = idxs.iter().max() { if v >= sol.dual.con.len() { panic!("Constraint indexes are outside of range") } }
-                res.iter_mut().zip(idxs.iter()).for_each(|(r,&i)| *r = unsafe { *sol.primal.con.get_unchecked(i) });
-                Ok(())
-            }
-        }
-        else {
-            Err("Solution value is undefined".to_string())
-        }
+        Ok(())
     }
 }
 

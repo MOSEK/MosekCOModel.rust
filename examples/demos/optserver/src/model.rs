@@ -11,8 +11,6 @@ enum ConeType {
     Fixed,
     Nonnegative,
     Nonpositive,
-    QuadraticCone,
-    RotatedQuadraticCone,
 }
 
 struct Block {
@@ -108,6 +106,7 @@ impl ModelAPI for ModelOptserver {
         where 
             E    : expr::IntoExpr<N>
     {
+
         unimplemented!("Not implemented");
     }
     
@@ -149,10 +148,19 @@ impl ModelAPI for ModelOptserver {
 
 
 
+
+
+
+
+
+
+
+
+
 impl BaseModelTrait for ModelOptserver {
     fn try_free_variable<const N : usize>
         (&mut self,
-         name  : Option<&str>,
+         _name  : Option<&str>,
          shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized 
     {
         let n = shape.iter().product::<usize>();
@@ -174,7 +182,7 @@ impl BaseModelTrait for ModelOptserver {
 
     fn try_linear_variable<const N : usize,R>
         (&mut self, 
-         name : Option<&str>,
+         _name : Option<&str>,
          dom  : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String>    
         where 
             Self : Sized
@@ -213,7 +221,7 @@ impl BaseModelTrait for ModelOptserver {
         Ok(Variable::new((firstvari..firstvari+n).collect::<Vec<usize>>(), sp, &shape))
     }
     
-    fn try_ranged_variable<const N : usize,R>(&mut self, name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> 
+    fn try_ranged_variable<const N : usize,R>(&mut self, _name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> 
         where 
             Self : Sized 
     {
@@ -240,7 +248,7 @@ impl BaseModelTrait for ModelOptserver {
             Variable::new((ptr1..ptr2).collect::<Vec<usize>>(), sp, &shape)))
     }
 
-    fn try_linear_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearDomain<N>) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String>
+    fn try_linear_constraint<const N : usize>(& mut self, _name : Option<&str>, dom  : LinearDomain<N>) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String>
         where 
             Self : Sized 
     {
