@@ -312,13 +312,13 @@ pub use model::{Sense,
                 ModelItem,
                 ModelItemIndex,
                 VarDomainTrait,
-                Model,
                 SolverParameterValue,
                 BaseModelTrait,
                 ConicModelTrait,
                 PSDModelTrait,
                 ModelAPI,
                 constraint};
+type Model = ModelAPI<model::mosekmodel::MosekModel>;
 pub use matrix::{Matrix,NDArray,IntoIndexes};
 pub use expr::{ExprTrait,
                ExprRightMultipliable,
