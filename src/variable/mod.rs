@@ -40,9 +40,9 @@ use super::utils;
 /// ```
 #[derive(Clone)]
 pub struct Variable<const N : usize> {
-    idxs     : Rc<Vec<usize>>,
-    sparsity : Option<Rc<Vec<usize>>>,
-    shape    : [usize; N]
+    pub(crate) idxs     : Rc<Vec<usize>>,
+    pub(crate) sparsity : Option<Rc<Vec<usize>>>,
+    pub(crate) shape    : [usize; N]
 }
 
 impl<const N : usize> Debug for Variable<N> {
@@ -61,41 +61,6 @@ impl<const N : usize> Debug for Variable<N> {
 }
 
 
-impl<const N : usize,M> ModelItem<N,M> for Variable<N> where M : BaseModelTrait {
-    fn len(&self) -> usize { return self.shape.iter().product(); }
-    fn shape(&self) -> [usize; N] { self.shape }
-    
-    fn sparse_primal(&self,m : &M,solid : SolutionType) -> Result<(Vec<f64>,Vec<[usize;N]>),String> {
-        let mut nnz = vec![0.0; self.numnonzeros()];
-        let dflt = [0usize; N];
-        let mut idx : Vec<[usize;N]> = vec![dflt;self.numnonzeros()];
-        self.sparse_primal_into(m,solid,nnz.as_mut_slice(),idx.as_mut_slice())?;
-        Ok((nnz,idx))
-    }
-
-    fn primal_into(&self,m : &M,solid : SolutionType, res : & mut [f64]) -> Result<usize,String> {
-        let sz = self.shape.iter().product();
-        if res.len() < sz { panic!("Result array too small") }
-        else {
-            m.primal_var_solution(solid,self.idxs.as_slice(),res)?;
-            if let Some(ref sp) = self.sparsity {
-                sp.iter().enumerate().rev().for_each(|(i,&ix)| unsafe { *res.get_unchecked_mut(ix) = *res.get_unchecked(i); *res.get_unchecked_mut(i) = 0.0; });
-            }
-            Ok(sz)
-        }
-    }
-    fn dual_into(&self,m : &M,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String> {
-        let sz = self.shape.iter().product();
-        if res.len() < sz { panic!("Result array too small") }
-        else {
-            m.dual_var_solution(solid,self.idxs.as_slice(),res)?;
-            if let Some(ref sp) = self.sparsity {
-                sp.iter().enumerate().rev().for_each(|(i,&ix)| unsafe { *res.get_unchecked_mut(ix) = *res.get_unchecked(i); *res.get_unchecked_mut(i) = 0.0; })
-            }
-            Ok(sz)
-        }
-    }
-}
 
 
 // TODO: Make it more consistent when we consume self and when we take take a reference
@@ -653,7 +618,7 @@ impl<const N : usize> Variable<N> {
 
 
 
-    fn numnonzeros(&self) -> usize {
+    pub fn numnonzeros(&self) -> usize {
         if let Some(ref sp) = self.sparsity {
             sp.len()
         }
@@ -662,7 +627,8 @@ impl<const N : usize> Variable<N> {
         }
     }
 
-    fn sparse_primal_into<M>(&self,m : &M,solid : SolutionType, res : & mut [f64], idx : & mut [[usize;N]]) -> Result<usize,String> where M : BaseModelTrait {
+    pub fn sparse_primal_into<M:BaseModelTrait>(&self,m : &ModelAPI<M>,solid : SolutionType, res : & mut [f64], idx : & mut [[usize;N]]) -> Result<usize,String> 
+    {
         let sz = self.numnonzeros();
         if res.len() < sz || idx.len() < sz { panic!("Result array too small") }
         else {
@@ -715,7 +681,6 @@ impl<const N : usize> Variable<N> {
             }
         }
     }
-
 }
 
 

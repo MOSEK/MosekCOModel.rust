@@ -20,8 +20,9 @@
 //!
 #![doc = include_str!("../js/mathjax.tag")]
 
-use crate::{model::VarAtom, expr::workstack::WorkStack};
-
+use crate::domain::{AnyConicDomain, IntoConicDomain,IntoShapedDomain};
+use crate::expr::workstack::WorkStack;
+use crate::expr::{ExprTrait, IntoExpr};
 
 /// Trait represeting one or more constraint blocks, i.e.
 ///
@@ -43,33 +44,11 @@ pub trait ConjunctionTrait
     /// # Returns
     /// On success, returns the number of expressions pushed on the stack.
     fn eval(&mut self,
-            numvarelm : usize,
+            domains : & mut Vec<Box<dyn AnyConicDomain>>,
             rs : &mut WorkStack,
             ws : &mut WorkStack,
             xs : &mut WorkStack) -> Result<usize,String>;
 
-
-    /// Add affine expressions and domains to the `task`. The already evaluated expressions are
-    /// passed in `exprs` in reverse order (last evaluated expression at index 0)
-    ///
-    /// # Arguments
-    /// - `task` Task to add clauses to
-    /// - `vars` The mapping of variable indexes to underlying variable elements.
-    /// - `exprs` The array of evaluated expressions
-    /// - `element_dom` Vector of domains added to the task. `element_dom[i]` is the index of the
-    ///    domain if constraint block `i`.
-    /// - `element_afei` Vector of AFE indexes from the underlying task
-    /// - `element_ptr` Vector of pointers to consraint blocks. `element_ptr[i]` points to the
-    ///   first item in `element_afei` of constraint block `i`.
-    fn append_clause_data(&self, 
-                          task  : & mut mosek::TaskCB,
-                          vars  : &[VarAtom],
-                          exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>,
-                          
-                          element_dom  : &mut Vec<i64>,
-                          element_ptr  : &mut Vec<usize>,
-                          element_afei : &mut Vec<i64>,
-                          element_b    : &mut Vec<f64>);
     /// Create an object that hides the underlying object types. This allows putting objects of
     /// different types into a heterogenous container like a `Vec`.
     fn dynamic(self) -> Box<dyn ConjunctionTrait> where Self:Sized+'static { Box::new(self) }
@@ -106,87 +85,235 @@ pub trait DisjunctionTrait
     /// - `rs`, `ws`, `xs` Work stacks. The results are pushed on the `rs` stack.
     /// # Returns
     /// On success, returns the number of expressions pushed on the stack.
-    fn eval(&mut self,
-            numvarelm : usize,
+    fn eval(& mut self,
+            domains : & mut Vec<Box<dyn AnyConicDomain>>,
+            term_size : & mut Vec<usize>,
             rs : &mut WorkStack,
             ws : &mut WorkStack,
-            xs : &mut WorkStack) -> Result<usize,String>;
-    /// Add affine expressions and domains to the `task`. The already evaluated expressions are
-    /// passed in `exprs` in reverse order (last evaluated expression at index 0)
-    ///
-    /// # Arguments
-    /// - `task` Task to add clauses to
-    /// - `vars` The mapping of variable indexes to underlying variable elements.
-    /// - `exprs` The array of evaluated expressions
-    /// - `element_dom` Vector of domains added to the task. `element_dom[i]` is the index of the
-    ///    domain if constraint block `i`.
-    /// - `element_afei` Vector of AFE indexes from the underlying task
-    /// - `element_ptr` Vector of pointers to consraint blocks. `element_ptr[i]` points to the
-    ///   first item in `element_afei` of constraint block `i`.
-    /// - `term_ptr` Pointers to disjunction clauses. `term_ptr[i]` is the index into `element_ptr`
-    ///   and `element_dom` of the first constraint block of disjunction term `i`.
-    fn append_disjunction_data(&self, 
-                               task  : & mut mosek::TaskCB,
-                               vars  : &[VarAtom],
-                               exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
-                              
-                               term_ptr     : &mut Vec<usize>,
-                               element_dom  : &mut Vec<i64>,
-                               element_ptr  : &mut Vec<usize>,
-                               element_afei : &mut Vec<i64>,
-                               element_b    : &mut Vec<f64>);
+            xs : &mut WorkStack) -> Result<(),String>;
     /// Create an object that hides the underlying object types. This allows putting objects of
     /// different types into a heterogenous container like a `Vec`.
     fn dynamic(self) -> Box<dyn DisjunctionTrait> where Self: Sized+'static { Box::new(self) }
 }
+
+/// A single constraint block `A x + b ∈ D`.
+pub struct AffineConstraint<const N : usize,E,D> 
+    where E : ExprTrait<N>,
+          D : IntoShapedDomain<N>,
+          D::Result : IntoConicDomain<N>,
+{
+    expr   : E,
+    domain : Option<D>,
+}
+
+/// Create a structure encapsulating an expression and a domain for constructing disjunctive
+/// constraints.
+///
+/// # Arguments
+/// - `expr` Something that can be turned into an expression via [IntoExpr]. 
+/// - `domain` Something that can be turned into a [ConicDomain]. Currently this is any linear or
+///    conic domain, but not semidefinite domain.
+pub fn constraint<const N : usize,I,E,D>(expr : I, domain : D) -> AffineConstraint<N,E,D>
+    where I : IntoExpr<N,Result=E>,
+          E : ExprTrait<N>,
+          D : IntoShapedDomain<N>,
+          D::Result : IntoConicDomain<N>,
+{
+    AffineConstraint{
+        expr   : expr.into_expr(),
+        domain : Some(domain),
+    }
+}
+
+
+
+
+
+
+
+
+
 
 impl ConjunctionTrait for Box<dyn ConjunctionTrait> {
     fn dynamic(self) -> Box<dyn ConjunctionTrait> {
         self
     }
     fn eval(&mut self,
-                numvarelm : usize,
-                rs : &mut WorkStack,
-                ws : &mut WorkStack,
-                xs : &mut WorkStack) -> Result<usize,String> {
-        self.as_mut().eval(numvarelm, rs, ws, xs)
-    }
-    fn append_clause_data(&self, 
-                              task  : & mut mosek::TaskCB,
-                              vars  : &[VarAtom],
-                              exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
-
-                              element_dom  : &mut Vec<i64>,
-                              element_ptr   : &mut Vec<usize>,
-                              element_afei : &mut Vec<i64>,
-                              element_b    : &mut Vec<f64>) {
-        self.as_ref().append_clause_data(task, vars, exprs, element_dom, element_ptr, element_afei, element_b)
+            domains : & mut Vec<Box<dyn AnyConicDomain>>,
+            rs : &mut WorkStack,
+            ws : &mut WorkStack,
+            xs : &mut WorkStack) -> Result<usize,String> {
+        self.as_mut().eval(domains, rs, ws, xs)
     }
 }
 
 
 impl DisjunctionTrait for Box<dyn DisjunctionTrait> {
     fn eval(&mut self,
-            numvarelm : usize,
+            domains : & mut Vec<Box<dyn AnyConicDomain>>,
+            term_size : & mut Vec<usize>,
             rs : &mut WorkStack,
             ws : &mut WorkStack,
-            xs : &mut WorkStack) -> Result<usize,String> {
-        self.as_mut().eval(numvarelm, rs, ws, xs)
+            xs : &mut WorkStack) -> Result<(),String> {
+        self.as_mut().eval(domains,term_size, rs, ws, xs)
     }
     fn dynamic(self) -> Box<dyn DisjunctionTrait> {
         self
     }
-    fn append_disjunction_data(&self, 
-                               task  : & mut mosek::TaskCB,
-                               vars  : &[VarAtom],
-                               exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
+}
 
-                               term_ptr     : &mut Vec<usize>,
-                               element_dom  : &mut Vec<i64>,
-                               element_ptr  : &mut Vec<usize>,
-                               element_afei : &mut Vec<i64>,
-                               element_b    : &mut Vec<f64>) {
-        (&self).as_ref().append_disjunction_data(task, vars, exprs, term_ptr, element_dom, element_ptr, element_afei, element_b)
+
+impl<const N : usize,E,D> AffineConstraint<N,E,D>
+    where E : ExprTrait<N>,
+          D : IntoShapedDomain<N>,
+          D::Result : IntoConicDomain<N>
+{
+    pub fn and<C2>(self, other : C2) -> AffineConstraintsAnd<Self,C2> where C2 : ConjunctionTrait {
+        AffineConstraintsAnd { c0: self, c1: other }
+    }
+
+    pub fn or<D2>(self, other : D2) -> DisjunctionOr<Self,D2> where D2 : DisjunctionTrait {
+        DisjunctionOr { c0: self, c1: other }
     }
 }
 
+impl<const N : usize,E,D> ConjunctionTrait for AffineConstraint<N,E,D> 
+    where E : ExprTrait<N>,
+          D : IntoShapedDomain<N>,
+          D::Result : IntoConicDomain<N>
+{
+    fn eval(& mut self,
+            domains : & mut Vec<Box<dyn AnyConicDomain>>,
+            rs : &mut WorkStack,
+            ws : &mut WorkStack,
+            xs : &mut WorkStack) -> Result<usize,String> 
+    {
+        self.expr.eval_finalize(rs,ws,xs).map_err(|e| format!("{:?}",e))?;
+        let (eshape,_,_,_,_) = rs.peek_expr();
+        if eshape.len() != N { return Err(format!("Evaluated expression dimension {} does not match domain {}",eshape.len(),N)); }
+        let mut shape = [0usize;N]; shape.copy_from_slice(eshape);
+
+        let dom = self.domain.take().unwrap().try_into_domain(shape)?.into_conic();
+
+        let (_,_,_,_,is_integer) = dom.get();
+
+        domains.push(Box::new(dom));
+
+        if is_integer {
+            Err(format!("Constraint domains cannot be integer"))
+        }
+        else {
+            Ok(1)
+        }
+    }
+}
+
+impl<C> DisjunctionTrait for C
+    where C : ConjunctionTrait,
+{
+    fn eval(& mut self,
+            domains : & mut Vec<Box<dyn AnyConicDomain>>,
+            term_size : & mut Vec<usize>,
+            rs : &mut WorkStack,
+            ws : &mut WorkStack,
+            xs : &mut WorkStack) -> Result<(),String> {
+        term_size.push(ConjunctionTrait::eval(self,domains,rs,ws,xs)?);
+        Ok(())
+    }
+}
+
+impl<C> DisjunctionTrait for Vec<C> where C : ConjunctionTrait {
+    fn eval(&mut self,
+            domains : & mut Vec<Box<dyn AnyConicDomain>>,
+            term_size : & mut Vec<usize>,
+            rs : &mut WorkStack,
+            ws : &mut WorkStack,
+            xs : &mut WorkStack) -> Result<(),String> {
+
+        for c in self.iter_mut() {
+            term_size.push(c.eval(domains, rs, ws, xs)?);
+        }
+        Ok(())
+    }
+}
+
+//-----------------------------------------------------------------------------
+// AffineConstraintsAnd
+
+/// Represents the construction `A_1x+b_1 ∈ K_1 AND A_2x+b_2 ∈ K_2`.
+pub struct AffineConstraintsAnd<C0,C1> 
+    where 
+        C0 : ConjunctionTrait,
+        C1 : ConjunctionTrait
+{
+     c0 : C0,
+     c1 : C1
+}
+
+impl<C0,C1> AffineConstraintsAnd<C0,C1> 
+    where 
+        C0 : ConjunctionTrait,
+        C1 : ConjunctionTrait
+{
+    pub fn and<C2>(self, other : C2) -> AffineConstraintsAnd<Self,C2> where C2 : ConjunctionTrait {
+        AffineConstraintsAnd { c0: self, c1: other }
+    }
+    pub fn or<D2>(self, other : D2) -> DisjunctionOr<Self,D2> where D2 : DisjunctionTrait {
+        DisjunctionOr { c0: self, c1: other }
+    }
+}
+impl<C0,C1> ConjunctionTrait for AffineConstraintsAnd<C0,C1> 
+    where 
+        C0 : ConjunctionTrait,
+        C1 : ConjunctionTrait
+{
+    fn eval(& mut self,
+            domains : & mut Vec<Box<dyn AnyConicDomain>>,
+            rs : &mut WorkStack,
+            ws : &mut WorkStack,
+            xs : &mut WorkStack) -> Result<usize,String> {
+        Ok(self.c0.eval(domains,rs,ws,xs)? + self.c1.eval(domains,rs,ws,xs)?)
+    }
+}
+
+
+//-----------------------------------------------------------------------------
+// DisjunctionOr
+
+/// Represents the construction `A OR B` where `A` is set of affine constraints and `B` is another
+/// disjunction clause
+pub struct DisjunctionOr<C0,C1> 
+    where 
+        C0 : ConjunctionTrait,
+        C1 : DisjunctionTrait
+{
+     c0 : C0,
+     c1 : C1
+}
+
+impl<C0,C1> DisjunctionOr<C0,C1> 
+    where 
+        C0 : ConjunctionTrait,
+        C1 : DisjunctionTrait
+{
+    pub fn or<C2>(self, other : C2) -> DisjunctionOr<C2,Self> where C2 : ConjunctionTrait {
+        DisjunctionOr { c0: other, c1: self }
+    }
+}
+
+impl<C0,C1> DisjunctionTrait for DisjunctionOr<C0,C1> 
+    where 
+        C0 : ConjunctionTrait,
+        C1 : DisjunctionTrait
+{
+    fn eval(& mut self,
+            domains : & mut Vec<Box<dyn AnyConicDomain>>,
+            term_size : & mut Vec<usize>,
+            rs : &mut WorkStack,
+            ws : &mut WorkStack,
+            xs : &mut WorkStack) -> Result<(),String> {
+        term_size.push(self.c0.eval(domains, rs, ws, xs)?);
+
+        self.c1.eval(domains,term_size, rs, ws, xs)
+    }
+}

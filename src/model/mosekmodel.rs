@@ -1,12 +1,14 @@
 use std::ops::ControlFlow;
-use itertools::{iproduct, izip, merge_join_by, EitherOrBoth};
+use std::path::Path;
+use itertools::*;
 
 
-use crate::utils::NameAppender;
-use crate::utils::iter::{IndexIterator, IndexIteratorExt, PermuteByEx, SparseIndexIterator};
+use crate::domain::LinearRangeDomain;
+use crate::utils::{NameAppender, ShapeToStridesEx};
+use crate::utils::iter::*;
 use crate::*;
 
-use super::{row_major_offset_to_col_major, BaseModelTrait, ConAtom, ConicModelTrait, Disjunction, ModelWithControlCallback, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, Sense, VarAtom, WhichLinearBound};
+use super::{BaseModelTrait, ConAtom, ConicModelTrait, DJCModelTrait, Disjunction, ModelWithControlCallback, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, Sense, Solution, VarAtom, WhichLinearBound};
 
 
 /// The `Model` object encapsulates an optimization problem and a
@@ -44,6 +46,8 @@ pub struct MosekModel {
 
     /// Remote opt server host and access token
     optserver_host : Option<(String,Option<String>)>,
+
+    xs : WorkStack,
 }
 
 impl MosekModel {
@@ -87,102 +91,6 @@ impl MosekModel {
     }
 
 
-
-    /// Add a disjunctive constraint to the model. A disjunctive constraint is a logical constraint
-    /// of the form
-    /// $$
-    /// \\begin{array}{c}
-    ///     A_1x+b_1 \\in K_1 \\\\
-    ///     \\mathrm{or}      \\\\
-    ///     \\vdots           \\\\
-    ///     \\mathrm{or}      \\\\
-    ///     A_nx+b_n \\in K_n 
-    /// \\end{array}
-    /// $$
-    /// where each \\(K_\\cdot\\) is a single cone or a product of cones. 
-    ///
-    ///
-    /// Another example is an indicator constraint like an indicator constraint
-    /// $$ 
-    ///     z\\in\\{0,1\\},\\ z=1 \\Rightarrow Ax+b\\in K_n 
-    /// $$
-    /// implemented as 
-    /// $$
-    ///     z\\in\\{0,1\\},\\ z = 0\\ \\vee\\ z = 1\\wedge Ax+b\\in K_n
-    /// $$
-    ///
-    /// # Arguments
-    /// - `name` Name of the disjunction
-    /// - `terms` Structure defining the terms of the disjunction.
-    ///
-    /// # Example: Simple disjunction
-    /// A Simple logical disjunctions like 
-    /// $$
-    ///     a^Tx+b = 3 \\vee\\ b^Tx+c = 1.0
-    /// $$
-    /// can be implemented as:
-    /// ```rust
-    /// use mosekcomodel::*;
-    /// let mut model = Model::new(None);
-    /// let x = model.variable(Some("x"), 5);
-    /// let y = model.variable(Some("y"), 3);
-    /// let a = vec![1.0,2.0,3.0,4.0,5.0];
-    /// let b = vec![5.0,4.0,3.0];
-    /// model.disjunction(None, 
-    ///                   constraint(x.dot(a), equal_to(3.0))
-    ///                     .or(constraint(y.dot(b), equal_to(1.0))));
-    /// ```
-    ///
-    /// # Example: Indicator constraint
-    ///
-    /// A logical constraint for a binary variable \\(z\\in\\{0,1\\}\\) of the form
-    /// $$
-    ///     z = 1 \\Rightarrow a^T x+b = 1
-    /// $$
-    //  is implemented as 
-    //  $$
-    //      z = 0\\ \\vee\\ \\left[ z=1\\ \\wedge\\ a^Tx+b=1 \\right]
-    //  $$
-    /// ```rust
-    /// use mosekcomodel::*;
-    /// let mut model = Model::new(None);
-    /// let a = vec![1.0,2.0,3.0,4.0,5.0];
-    /// let x = model.variable(Some("x"), 5);
-    /// let z = model.variable(Some("z"), nonnegative().integer());
-    /// model.constraint(None,&z,less_than(1.0));
-    /// model.disjunction(None,
-    ///                   constraint(z.clone(),equal_to(0.0))
-    ///                     .or(constraint(z, equal_to(1.0))
-    ///                           .and(constraint(x.dot(a), equal_to(1.0)))));
-    /// ```
-    pub fn try_disjunction<D>(& mut self, name : Option<&str>, mut terms : D) -> Result<Disjunction,String> where D : disjunction::DisjunctionTrait {
-        let nexprs = terms.eval(self.vars.len(), &mut self.rs, &mut self.ws, &mut self.xs)?;
-        let mut exprs = self.rs.pop_exprs(nexprs);
-        let mut term_ptr = Vec::new(); term_ptr.push(0);
-        let mut element_dom = Vec::new();
-        let mut element_ptr = Vec::new();element_ptr.push(0);
-        let mut element_afei = Vec::new();
-        let mut element_b = Vec::new();
-
-        terms.append_disjunction_data(&mut self.task, self.vars.as_slice(), &mut exprs, &mut term_ptr, &mut element_dom, &mut element_ptr, &mut element_afei, &mut element_b);
-
-        let term_size : Vec<i64> = term_ptr.iter().zip(term_ptr[1..].iter()).map(|(a,b)| (b-a) as i64).collect();
-        let djci = self.task.get_num_djc().unwrap();
-        self.task.append_djcs(1).unwrap();
-        if let Some(name) = name { self.task.put_djc_name(djci,name).unwrap(); }
-        self.task.put_djc(djci, 
-                          element_dom.as_slice(),
-                          element_afei.as_slice(),
-                          element_b.as_slice(),
-                          term_size.as_slice()).unwrap();
-        
-        Ok(Disjunction{ index : djci })
-    }
-    
-    pub fn disjunction<D>(& mut self, name : Option<&str>, terms : D) -> Disjunction where D : disjunction::DisjunctionTrait {
-        self.try_disjunction(name, terms).unwrap()
-    }
-
 //    /// Update the expression of a constraint in the Model.
 //    pub fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) -> Result<(),String> where E : expr::IntoExpr<N> {
 //        e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).unwrap();
@@ -200,85 +108,15 @@ impl MosekModel {
     //======================================================
     // Objective
 
-    fn set_objective(& mut self, name : Option<&str>, sense : Sense) {
-        let (_shape,ptr,_sp,subj,cof) = self.rs.pop_expr();
-        if ptr.len()-1 > 1 { panic!("Objective expressions may only contain one element"); }
 
-        if let Some(name) = name { self.task.put_obj_name(name).unwrap(); }
-        else { self.task.put_obj_name("").unwrap(); }
-        let (csubj,
-             ccof,
-             _cptr,
-             cfix,
-             _barsubi,
-             barsubj,
-             barsubk,
-             barsubl,
-             barcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
-
-        let numvar : usize = self.task.get_num_var().unwrap().try_into().unwrap();
-
-        if let Some(&j) = csubj.iter().min() { if j < 0 { panic!("Invalid expression") } }
-        if let Some(&j) = csubj.iter().max() { if j as usize >= numvar { panic!("Invalid expression") } }
-
-        let mut c = vec![0.0; numvar];
-        csubj.iter().zip(ccof.iter()).for_each(|(&j,&v)| unsafe{ * c.get_unchecked_mut(j as usize) = v });
-        let csubj : Vec<i32> = (0i32..numvar as i32).collect();
-        self.task.put_c_list(csubj.as_slice(),
-                             c.as_slice()).unwrap();
-        self.task.put_cfix(cfix[0]).unwrap();
-
-        self.task.put_barc_block_triplet(barsubj.as_slice(),barsubk.as_slice(),barsubl.as_slice(),barcof.as_slice()).unwrap();
-
-        match sense {
-            Sense::Minimize => self.task.put_obj_sense(mosek::Objsense::MINIMIZE).unwrap(),
-            Sense::Maximize => self.task.put_obj_sense(mosek::Objsense::MAXIMIZE).unwrap()
-        }
-    }
-
-    /// Set the objective.
-    ///
-    /// Arguments:
-    /// - `name` Optional objective name
-    /// - `sense` Objective sense
-    /// - `expr` Objective expression, this must contain exactly one
-    ///   element. The shape is otherwise ignored.
-    pub fn objective<E : expr::IntoExpr<0>>(& mut self,
-                                             name  : Option<&str>,
-                                             sense : Sense,
-                                             expr  : E) {
-        expr.into().eval_finalize(& mut self.rs,& mut self.ws, & mut self.xs).unwrap();
-        self.set_objective(name,sense);
-    }
-
-    //======================================================
-    // Optimize
-
-    /// Set a parameter in the underlying task object. 
-    ///
-    /// # Arguments
-    /// - `parname` The name is the full name as listed in the MOSEK C manual, that is `MSK_IPAR_...`.
-    /// - `parval` A parameter value. This can be an integer, a floating point value, string
-    ///   value or a string representing an integer or float value, or a string representing a
-    ///   symbolic constant value (again, the full value as listed in the MOSEK C manual).
-    pub fn set_parameter<T>(& mut self, parname : &str, parval : T) 
-        where T : SolverParameterValue<Self> {
-        parval.set(parname,self);
-    }
 
     /// Set a double parameter in the underlying task object.
     ///
     /// # Arguments
     /// - `parname` The name is the full name as listed in the MOSEK C manual, that is `MSK_DPAR_...`.
     /// - `parval` Parameter value 
-    pub fn try_set_double_parameter(&mut self, parname : &str, parval : f64) -> Result<(),String> {
+    pub fn set_double_parameter(&mut self, parname : &str, parval : f64) -> Result<(),String> {
         self.task.put_na_dou_param(parname, parval)
-    }
-
-    /// Set a double parameter in the underlying task object. See
-    /// [Model::try_set_double_parameter].
-    pub fn set_double_parameter(&mut self, parname : &str, parval : f64) {
-        self.try_set_double_parameter(parname,parval).unwrap();
     }
 
     /// Set a integer parameter in the underlying task object.
@@ -286,25 +124,17 @@ impl MosekModel {
     /// # Arguments
     /// - `parname` The name is the full name as listed in the MOSEK C manual, that is `MSK_IPAR_...`.
     /// - `parval` Parameter value 
-    pub fn try_set_int_parameter(&mut self, parname : &str, parval : i32) -> Result<(),String> {
+    pub fn set_int_parameter(&mut self, parname : &str, parval : i32) -> Result<(),String> {
         self.task.put_na_int_param(parname, parval)
     }
     
-    /// Set a integer parameter in the underlying task object. See [Model::try_set_int_parameter].
-    pub fn set_int_parameter(&mut self, parname : &str, parval : i32) {
-        self.try_set_int_parameter(parname, parval).unwrap();
-    }
-
     /// Set a double parameter in the underlying task object.
     ///
     /// # Arguments
     /// - `parname` The name is the full name as listed in the MOSEK C manual, that is `MSK_SPAR_...`.
     /// - `parval` Parameter value 
-    pub fn try_set_str_parameter(&mut self, parname : &str, parval : &str) -> Result<(),String> {
+    pub fn set_str_parameter(&mut self, parname : &str, parval : &str) -> Result<(),String> {
         self.task.put_na_str_param(parname, parval)
-    }
-    pub fn set_str_parameter(&mut self, parname : &str, parval : &str) {
-        self.try_set_str_parameter(parname, parval).unwrap();
     }
 
     /// Set address and optionally access token for an optserver instance. When this is set it will
@@ -342,7 +172,42 @@ impl BaseModelTrait for MosekModel {
             cons    : Vec::new(),
 
             optserver_host : None,
+
+            xs : Default::default(),
         }
+    }
+    
+    fn objective(& mut self, name : Option<&str>, sense : Sense, subj : &[usize], cof : &[f64]) -> Result<(),String> {
+        self.task.put_obj_name(name.unwrap_or(""))?;
+        let sexpr = split_expr(&[0,subj.len()],subj,cof,self.vars.as_slice())?;
+
+        let numvar = self.task.get_num_var()?;
+
+        let mut c = vec![0.0; numvar as usize];
+
+        if match sexpr.subj.iter().minmax() {
+            MinMaxResult::NoElements => false, 
+            MinMaxResult::OneElement(&v) => v < 0 || v >= numvar,
+            MinMaxResult::MinMax(&a,&b) => a < 0 || b >= numvar,
+        } {
+            panic!("Internal: evaluated index out of bounds");
+        }
+
+        for (&j,&v) in sexpr.subj.iter().zip(sexpr.cof.iter()) {
+            unsafe{ *c.get_unchecked_mut(j as usize) = v; }
+        }
+        let csubj : Vec<i32> = (0i32..numvar as i32).collect();
+        self.task.put_c_list(csubj.as_slice(),
+                             c.as_slice()).unwrap();
+        self.task.put_cfix(sexpr.fix[0]).unwrap();
+
+        self.task.put_barc_block_triplet(sexpr.barsubj.as_slice(),sexpr.barsubk.as_slice(),sexpr.barsubl.as_slice(),sexpr.barcof.as_slice()).unwrap();
+
+        match sense {
+            Sense::Minimize => self.task.put_obj_sense(mosek::Objsense::MINIMIZE).unwrap(),
+            Sense::Maximize => self.task.put_obj_sense(mosek::Objsense::MAXIMIZE).unwrap()
+        }
+        Ok(())
     }
 
     fn free_variable<const N : usize>(&mut self, name : Option<&str>,shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized {
@@ -360,7 +225,7 @@ impl BaseModelTrait for MosekModel {
         Ok(Variable::new((firstvar..firstvar+n).collect(), None, shape))
     }
 
-    fn linear_variable<const N : usize,R>(&mut self, name : Option<&str>,domain : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String> where Self : Sized {
+    fn linear_variable<const N : usize,R>(&mut self, name : Option<&str>,domain : LinearDomain<N>,) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String> where Self : Sized {
         let (dt,b,shape_,sp,isint) = domain.extract();
         let mut shape = [0usize; N]; shape.clone_from_slice(&shape_);
 
@@ -426,14 +291,13 @@ impl BaseModelTrait for MosekModel {
             Variable::new((firstvar+nelm..firstvar+nelm*2).collect(), domain.sparsity, &domain.shape)))
         
     }
-    fn linear_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearDomain<N>) -> Result<Constraint<N>,String> {
-        let (dt,b,_,shape,_) =  dom.into_dense().dissolve();
-        let (_,ptr,_,subj,cof) = self.rs.pop_expr();
 
-        // let nnz = subj.len();
+    fn linear_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearDomain<N>,_eshape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String> {
+        let (dt,b,_,shape,_) =  dom.into_dense().dissolve();
+
         let nelm = ptr.len()-1;
 
-        if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
+        if subj.iter().max().cloned().unwrap_or(0) >= self.vars.len() {
             return Err("Expression is invalid: Variable subscript out of bound for this Model".to_string());
         }
 
@@ -457,45 +321,37 @@ impl BaseModelTrait for MosekModel {
 
         self.cons.reserve(nelm);
 
-        let (asubj,
-             acof,
-             aptr,
-             afix,
-             abarsubi,
-             abarsubj,
-             abarsubk,
-             abarsubl,
-             abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
+        let e = split_expr(ptr,subj,cof,self.vars.as_slice())?;
 
-        if !asubj.is_empty() {
+        if !e.subj.is_empty() {
             self.task.put_a_row_slice(
                 coni,coni+nelm as i32,
-                &aptr[0..aptr.len()-1],
-                &aptr[1..],
-                asubj.as_slice(),
-                acof.as_slice()).unwrap();
+                &e.ptr[0..e.ptr.len()-1],
+                &e.ptr[1..],
+                e.subj.as_slice(),
+                e.cof.as_slice()).unwrap();
         }
 
-        let rhs : Vec<f64> = b.iter().zip(afix.iter()).map(|(&ofs,&b)| ofs-b).collect();
+        let rhs : Vec<f64> = b.iter().zip(e.fix.iter()).map(|(&ofs,&b)| ofs-b).collect();
         self.task.put_con_bound_slice(coni,
                                       coni+nelm as i32,
                                       vec![bk; nelm].as_slice(),
                                       rhs.as_slice(),
                                       rhs.as_slice()).unwrap();
 
-        if ! abarsubi.is_empty() {
+        if ! e.barsubi.is_empty() {
             let mut p0 = 0usize;
-            for (i,j,p) in izip!(abarsubi.iter(),
-                                 abarsubi[1..].iter(),
-                                 abarsubj.iter(),
-                                 abarsubj[1..].iter())
+            for (i,j,p) in izip!(e.barsubi.iter(),
+                                 e.barsubi[1..].iter(),
+                                 e.barsubj.iter(),
+                                 e.barsubj[1..].iter())
                 .enumerate()
                 .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
-                .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+                .chain(std::iter::once((*e.barsubi.last().unwrap(),*e.barsubj.last().unwrap(),e.barsubi.len()))) {
                
-                let subk = &abarsubk[p0..p];
-                let subl = &abarsubl[p0..p];
-                let cof  = &abarcof[p0..p];
+                let subk = &e.barsubk[p0..p];
+                let subl = &e.barsubl[p0..p];
+                let cof  = &e.barcof[p0..p];
                 p0 = p;
 
                 let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
@@ -510,9 +366,8 @@ impl BaseModelTrait for MosekModel {
         })        
     }
 
-    fn ranged_constraint<const N : usize>(& mut self, name : Option<&str>, domain  : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String>
+    fn ranged_constraint<const N : usize>(& mut self, name : Option<&str>, domain  : LinearRangeDomain<N>,eshape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String>
     {
-        let (eshape,ptr,_,subj,cof) = self.rs.pop_expr();
         let nelm = *ptr.last().unwrap();
         let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
       
@@ -538,46 +393,38 @@ impl BaseModelTrait for MosekModel {
 
         self.cons.reserve(nelm);
 
-        let (asubj,
-             acof,
-             aptr,
-             afix,
-             abarsubi,
-             abarsubj,
-             abarsubk,
-             abarsubl,
-             abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
+        let e = split_expr(ptr,subj,cof,self.vars.as_slice())?;
 
-        if !asubj.is_empty() {
+        if !e.subj.is_empty() {
             self.task.put_a_row_slice(
                 coni,coni+nelm as i32,
-                &aptr[0..aptr.len()-1],
-                &aptr[1..],
-                asubj.as_slice(),
-                acof.as_slice()).unwrap();
+                &e.ptr[0..e.ptr.len()-1],
+                &e.ptr[1..],
+                e.subj.as_slice(),
+                e.cof.as_slice()).unwrap();
         }
 
-        let lower : Vec<f64> = domain.lower.iter().zip(afix.iter()).map(|(&ofs,&b)| ofs-b).collect();
-        let upper : Vec<f64> = domain.upper.iter().zip(afix.iter()).map(|(&ofs,&b)| ofs-b).collect();
+        let lower : Vec<f64> = domain.lower.iter().zip(e.fix.iter()).map(|(&ofs,&b)| ofs-b).collect();
+        let upper : Vec<f64> = domain.upper.iter().zip(e.fix.iter()).map(|(&ofs,&b)| ofs-b).collect();
         self.task.put_con_bound_slice(coni,
                                       coni+nelm as i32,
                                       vec![mosek::Boundkey::RA; nelm].as_slice(),
                                       lower.as_slice(),
                                       upper.as_slice()).unwrap();
 
-        if ! abarsubi.is_empty() {
+        if ! e.barsubi.is_empty() {
             let mut p0 = 0usize;
-            for (i,j,p) in izip!(abarsubi.iter(),
-                                 abarsubi[1..].iter(),
-                                 abarsubj.iter(),
-                                 abarsubj[1..].iter())
+            for (i,j,p) in izip!(e.barsubi.iter(),
+                                 e.barsubi[1..].iter(),
+                                 e.barsubj.iter(),
+                                 e.barsubj[1..].iter())
                 .enumerate()
                 .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
-                .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+                .chain(std::iter::once((*e.barsubi.last().unwrap(),*e.barsubj.last().unwrap(),e.barsubi.len()))) {
                
-                let subk = &abarsubk[p0..p];
-                let subl = &abarsubl[p0..p];
-                let cof  = &abarcof[p0..p];
+                let subk = &e.barsubk[p0..p];
+                let subl = &e.barsubl[p0..p];
+                let cof  = &e.barcof[p0..p];
                 p0 = p;
 
                 let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
@@ -591,9 +438,8 @@ impl BaseModelTrait for MosekModel {
         
     }
 
-    fn update(& mut self, idxs : &[usize]) -> Result<(),String> 
+    fn update(& mut self, idxs : &[usize], _shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<(),String> 
     {
-        let (_,ptr,_,subj,cof) = self.rs.pop_expr();
         if let Some(maxidx) = idxs.iter().max() {
             if *maxidx >= self.cons.len() {
                 panic!("Invalid constraint indexes: Out of bounds");
@@ -691,36 +537,28 @@ impl BaseModelTrait for MosekModel {
                 lin_ptr.iter_mut().fold(0,|c,p| { *p += c; *p });
             }
             if nlin > 0 {
-                let (asubj,
-                     acof,
-                     aptr,
-                     afix,
-                     abarsubi,
-                     abarsubj,
-                     abarsubk,
-                     abarsubl,
-                     abarcof) = split_expr(&lin_ptr,&lin_subj,&lin_cof,self.vars.as_slice());
+                let e = split_expr(&lin_ptr,&lin_subj,&lin_cof,self.vars.as_slice())?;
 
-                if !asubj.is_empty() {
+                if !e.subj.is_empty() {
                     self.task.put_a_row_list(
                         lin_subi.as_slice(),
-                        &aptr[0..aptr.len()-1],
-                        &aptr[1..],
-                        asubj.as_slice(),
-                        acof.as_slice()).unwrap();
+                        &e.ptr[0..e.ptr.len()-1],
+                        &e.ptr[1..],
+                        e.subj.as_slice(),
+                        e.cof.as_slice()).unwrap();
                 }
 
-                lin_rhs.iter_mut().zip(afix.iter()).for_each(|(r,&f)| *r -= f);
+                lin_rhs.iter_mut().zip(e.fix.iter()).for_each(|(r,&f)| *r -= f);
                 self.task.put_con_bound_list(lin_subi.as_slice(),
                                              lin_bk.as_slice(),
                                              lin_rhs.as_slice(),
                                              lin_rhs.as_slice()).unwrap();
 
-                if ! abarsubi.is_empty() {
+                if ! e.barsubi.is_empty() {
                     izip!(0..,
-                          abarsubi.iter(),
-                          abarsubj.iter())
-                        .chain(std::iter::once((abarsubi.len(),&i64::MAX,&i32::MAX)))
+                          e.barsubi.iter(),
+                          e.barsubj.iter())
+                        .chain(std::iter::once((e.barsubi.len(),&i64::MAX,&i32::MAX)))
                         .scan((0usize,i64::MAX,i32::MAX),|(p0,previ,prevj),(k,i,j)|
                             if *previ != *i || *prevj != *j {
                                 let oldp0 = *p0;
@@ -733,10 +571,10 @@ impl BaseModelTrait for MosekModel {
                         .filter(|(_,_,p0,p1)| p0 != p1)
                         .for_each(|(_i,j,p0,p1)| {
                        
-                        let subk = &abarsubk[p0..p1];
-                        let subl = &abarsubl[p0..p1];
-                        let cof  = &abarcof[p0..p1];
-                        let afei = conic_afe[abarsubi[p0] as usize];
+                        let subk = &e.barsubk[p0..p1];
+                        let subl = &e.barsubl[p0..p1];
+                        let cof  = &e.barcof[p0..p1];
+                        let afei = conic_afe[e.barsubi[p0] as usize];
 
                         let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
                         let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
@@ -747,39 +585,31 @@ impl BaseModelTrait for MosekModel {
 
             // change conic elements
             if nconic > 0 {
-                let (asubj,
-                     acof,
-                     aptr,
-                     afix,
-                     abarsubi,
-                     abarsubj,
-                     abarsubk,
-                     abarsubl,
-                     abarcof) = split_expr(&conic_ptr,&conic_subj,&conic_cof,self.vars.as_slice());
-                let nelm = aptr.len()-1;
+                let e = split_expr(&conic_ptr,&conic_subj,&conic_cof,self.vars.as_slice()).unwrap();
+                let nelm = e.ptr.len()-1;
 
-                if ! asubj.is_empty() {
+                if ! e.subj.is_empty() {
                     self.task.put_afe_f_row_list(conic_afe.as_slice(),
-                                                 aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
-                                                 &aptr[..nelm],
-                                                 asubj.as_slice(),
-                                                 acof.as_slice()).unwrap();
+                                                 e.ptr[..nelm].iter().zip(e.ptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
+                                                 &e.ptr[..nelm],
+                                                 e.subj.as_slice(),
+                                                 e.cof.as_slice()).unwrap();
                 }
-                self.task.put_afe_g_list(conic_afe.as_slice(),afix.as_slice()).unwrap();
-                if ! abarsubi.is_empty() {
+                self.task.put_afe_g_list(conic_afe.as_slice(),e.fix.as_slice()).unwrap();
+                if ! e.barsubi.is_empty() {
                     self.task.empty_afe_barf_row_list(conic_afe.as_slice()).unwrap();
                     let mut p0 = 0usize;
-                    for (i,j,p) in izip!(abarsubi.iter(),
-                                         abarsubi[1..].iter(),
-                                         abarsubj.iter(),
-                                         abarsubj[1..].iter())
+                    for (i,j,p) in izip!(e.barsubi.iter(),
+                                         e.barsubi[1..].iter(),
+                                         e.barsubj.iter(),
+                                         e.barsubj[1..].iter())
                         .enumerate()
                         .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
-                        .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+                        .chain(std::iter::once((*e.barsubi.last().unwrap(),*e.barsubj.last().unwrap(),e.barsubi.len()))) {
                        
-                        let subk = &abarsubk[p0..p];
-                        let subl = &abarsubl[p0..p];
-                        let cof  = &abarcof[p0..p];
+                        let subk = &e.barsubk[p0..p];
+                        let subl = &e.barsubl[p0..p];
+                        let cof  = &e.barcof[p0..p];
 
                         let afei = conic_afe[i as usize];
                         p0 = p;
@@ -865,7 +695,7 @@ impl BaseModelTrait for MosekModel {
     }
 
 
-    fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, solitg : &mut Solution) -> Result<(),String>
+    fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String>
     {
         self.task.put_int_param(mosek::Iparam::REMOVE_UNUSED_SOLUTIONS, 1).unwrap();
         if let Some((hostname,accesstoken)) = self.optserver_host.as_ref() {
@@ -895,10 +725,10 @@ impl BaseModelTrait for MosekModel {
         let mut bars = vec![0.0; numbarvarelm];
 
         let dimbarvar : Vec<usize> = (0..numbarvar).map(|j| self.task.get_dim_barvar_j(j as i32).unwrap() as usize).collect();
-        let accptr    : Vec<usize> = once(0usize).chain((0..numacc)
+        let accptr    : Vec<usize> = std::iter::once(0usize).chain((0..numacc)
                                                         .map(|i| self.task.get_acc_n(i as i64).unwrap() as usize)
                                                         .scan(0,|p,n| { *p += n; Some(*p) })).collect();
-        let barvarptr : Vec<usize> = once(0usize).chain((0..numbarvar)
+        let barvarptr : Vec<usize> = std::iter::once(0usize).chain((0..numbarvar)
                                                         .map(|j| self.task.get_len_barvar_j(j as i32).unwrap() as usize)
                                                         .scan(0,|p,n| { *p += n; Some(*p) })).collect();
 
@@ -906,11 +736,11 @@ impl BaseModelTrait for MosekModel {
         for &whichsol in [mosek::Soltype::BAS,
                           mosek::Soltype::ITR,
                           mosek::Soltype::ITG].iter() {
-            let sol = match whichsol {
-                mosek::Soltype::BAS => self.sol_bas,
-                mosek::Soltype::ITR => self.sol_itr,
-                mosek::Soltype::ITG => self.sol_itg,
-                _ => self.sol_itr
+            let sol : & mut Solution = match whichsol {
+                mosek::Soltype::BAS => sol_bas,
+                mosek::Soltype::ITR => sol_itr,
+                mosek::Soltype::ITG => sol_itg,
+                _ => sol_itr
             };
             if ! self.task.solution_def(whichsol).unwrap() {
                 sol.primal.status = SolutionStatus::Undefined;
@@ -1000,6 +830,10 @@ impl BaseModelTrait for MosekModel {
         }
         Ok(())
     }
+
+    fn set_param<V>(&mut self, parname : &str, parval : V) -> Result<(),String> where V : SolverParameterValue<Self> {
+        parval.set(parname, self)
+    }
 }
 
 impl ModelWithLogCallback for MosekModel {
@@ -1017,13 +851,13 @@ impl ModelWithLogCallback for MosekModel {
 
 impl ModelWithIntSolutionCallback for MosekModel {
     /// Attach a solution callback function. This is called for each new integer solution 
-    fn set_solution_callback<F>(&mut self, func : F) where F : 'static+FnMut(f64,&[f64],&[f64]) {
+    fn set_solution_callback<F>(&mut self, mut func : F) where F : 'static+FnMut(f64,&[f64],&[f64]) {
         // NOTE: We cheat here. We pass self as a pointer to bypass the whole lifetime issue. This
         // is acceptable because we KNOW self will outlive the underlying Task.
         let modelp : * const Self = self;
             
         let mut xxvec = vec![0.0; self.vars.len()];
-        let mut xcvec = vec![0.0; self.cons.len()];
+        let xcvec = vec![0.0; self.cons.len()];
 
         self.task.put_intsolcallback(move |xx| {
             let model = unsafe{ & mut (* (modelp as * mut Self)) };
@@ -1132,15 +966,7 @@ impl ConicModelTrait for MosekModel {
         let acci = self.task.get_num_acc()?;
         let afei = self.task.get_num_afe()?;
 
-        let (asubj,
-             acof,
-             aptr,
-             afix,
-             abarsubi,
-             abarsubj,
-             abarsubk,
-             abarsubl,
-             abarcof) = split_expr(ptr,subj,cof,self.vars.as_slice());
+        let r = split_expr(ptr,subj,cof,self.vars.as_slice())?;
         let conesize = shape[conedim];
         let numcone  = shape.iter().product::<usize>() / conesize;
 
@@ -1187,27 +1013,27 @@ impl ConicModelTrait for MosekModel {
             } 
         }
 
-        if asubj.len() > 0 {
+        if r.subj.len() > 0 {
             self.task.put_afe_f_row_list(afeidxs.as_slice(),
-                                         aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
-                                         &aptr[..nelm],
-                                         asubj.as_slice(),
-                                         acof.as_slice()).unwrap();
+                                         r.ptr[..nelm].iter().zip(r.ptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
+                                         &r.ptr[..nelm],
+                                         r.subj.as_slice(),
+                                         r.cof.as_slice()).unwrap();
         }
-        self.task.put_afe_g_list(afeidxs.as_slice(),afix.as_slice()).unwrap();
-        if abarsubi.len() > 0 {
+        self.task.put_afe_g_list(afeidxs.as_slice(),r.fix.as_slice()).unwrap();
+        if r.barsubi.len() > 0 {
             let mut p0 = 0usize;
-            for (i,j,p) in izip!(abarsubi.iter(),
-                                 abarsubi[1..].iter(),
-                                 abarsubj.iter(),
-                                 abarsubj[1..].iter())
+            for (i,j,p) in izip!(r.barsubi.iter(),
+                                 r.barsubi[1..].iter(),
+                                 r.barsubj.iter(),
+                                 r.barsubj[1..].iter())
                 .enumerate()
                 .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
-                .chain(std::iter::once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+                .chain(std::iter::once((*r.barsubi.last().unwrap(),*r.barsubj.last().unwrap(),r.barsubi.len()))) {
                
-                let subk = &abarsubk[p0..p];
-                let subl = &abarsubl[p0..p];
-                let cof  = &abarcof[p0..p];
+                let subk = &r.barsubk[p0..p];
+                let subl = &r.barsubl[p0..p];
+                let cof  = &r.barcof[p0..p];
                 p0 = p;
 
                 let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
@@ -1398,15 +1224,7 @@ impl PSDModelTrait for MosekModel {
         let rcof  = &rcof[..*rptr.last().unwrap()];
        
         // now rptr, subj, cof contains the full 1/2(E'+E)
-        let (asubj,
-             acof,
-             aptr,
-             afix,
-             abarsubi,
-             abarsubj,
-             abarsubk,
-             abarsubl,
-             abarcof) = split_expr(rptr,rsubj,rcof,self.vars.as_slice());
+        let r = split_expr(rptr,rsubj,rcof,self.vars.as_slice())?;
 
         let conedim = shape[conedim0];
         let nelm : usize = conesize*numcone;
@@ -1422,31 +1240,31 @@ impl PSDModelTrait for MosekModel {
 
         // Input linear non-zeros and bounds
         let afeidxs : Vec<i64> = (afe0..afe0+rnelm as i64).collect();
-        let rownumnz : Vec<i32> = aptr.iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| i32::try_from(p1-p0).unwrap()).collect();
+        let rownumnz : Vec<i32> = r.ptr.iter().zip(r.ptr[1..].iter()).map(|(&p0,&p1)| i32::try_from(p1-p0).unwrap()).collect();
         
-        self.task.put_afe_f_row_list(&afeidxs, &rownumnz, &aptr, &asubj, &acof).unwrap();
+        self.task.put_afe_f_row_list(&afeidxs, &rownumnz, &r.ptr, &r.subj, &r.cof).unwrap();
 
         let dim : i32 = shape[conedim0].try_into().unwrap();
         let mxs : Vec<i64> = (0..dim).flat_map(|i| std::iter::repeat(i).zip(0..i+1))
             .map(|(i,j)| self.task.append_sparse_sym_mat(dim,&[i],&[j],&[1.0]).unwrap())
             .collect::<Vec<i64>>();
 
-        self.task.append_acc_seq(dom, afe0, &afix).unwrap();
-        //self.task.put_con_bound_slice(con0,con0+i32::try_from(rnelm).unwrap(),&vec![mosek::Boundkey::FX; nelm],&afix,&afix).unwrap();
+        self.task.append_acc_seq(dom, afe0, &r.fix).unwrap();
+        //self.task.put_con_bound_slice(con0,con0+i32::try_from(rnelm).unwrap(),&vec![mosek::Boundkey::FX; nelm],&r.fix,&r.fix).unwrap();
 
-        if ! abarsubi.is_empty() {
+        if ! r.barsubi.is_empty() {
             let mut p0 = 0usize;
-            for (i,j,p) in izip!(abarsubi.iter(),
-                                 abarsubi[1..].iter(),
-                                 abarsubj.iter(),
-                                 abarsubj[1..].iter())
+            for (i,j,p) in izip!(r.barsubi.iter(),
+                                 r.barsubi[1..].iter(),
+                                 r.barsubj.iter(),
+                                 r.barsubj[1..].iter())
                 .enumerate()
                 .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
-                .chain(std::iter::once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
+                .chain(std::iter::once((*r.barsubi.last().unwrap(),*r.barsubj.last().unwrap(),r.barsubi.len()))) {
                
-                let subk = &abarsubk[p0..p];
-                let subl = &abarsubl[p0..p];
-                let cof  = &abarcof[p0..p];
+                let subk = &r.barsubk[p0..p];
+                let subl = &r.barsubl[p0..p];
+                let cof  = &r.barcof[p0..p];
                 p0 = p;
 
                 let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
@@ -1531,14 +1349,241 @@ impl PSDModelTrait for MosekModel {
     }
 }
 
+
+impl DJCModelTrait for MosekModel {
+    fn disjunction(& mut self, name : Option<&str>, 
+                   exprs     : &[(&[usize],&[usize],&[usize],&[f64])], 
+                   domains   : &[Box<dyn domain::AnyConicDomain>],
+                   term_size : &[usize]) -> Result<Disjunction,String> 
+    {
+        let nafes : usize = exprs.iter().map(|(shape,_,_,_)| shape.iter().product::<usize>()).sum();
+        //let mut block_size = Vec::with_capacity(exprs.len());
+        let mut dom_idxs = Vec::with_capacity(exprs.len());
+        let mut b = Vec::with_capacity(nafes);
+        let firstafe = self.task.get_num_afe()?;
+        let lastafe = firstafe + nafes as i64;
+        self.task.append_afes(nafes as i64)?;
+        let mut afeidxs = vec![0i64; nafes];
+
+        let mut afei = 0;
+        for (dom,(shape,ptr,subj,cof)) in domains.iter().zip(exprs.iter()) {
+            let (dt,ofs,dshape,conedim,_) = dom.extract();
+            let conesize = shape[conedim];
+            //block_size.push(shape.iter().product());
+
+            dom_idxs.push(match dt {
+                ConicDomainType::NonNegative           => self.task.append_rplus_domain(conesize.try_into().unwrap())?,
+                ConicDomainType::NonPositive           => self.task.append_rminus_domain(conesize.try_into().unwrap())?,
+                ConicDomainType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap())?,
+                ConicDomainType::Zero                  => self.task.append_rzero_domain(conesize.try_into().unwrap())?,
+                ConicDomainType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap())?,
+                ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap())?,
+                ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap())?,
+                ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap())?,
+                ConicDomainType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap())?,
+                ConicDomainType::ExponentialCone       => self.task.append_primal_exp_cone_domain()?,
+                ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain()?,
+                ConicDomainType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice())?,
+                ConicDomainType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice())?,
+            });
+
+            let d0 : usize = shape[0..conedim].iter().product();
+            let d1 : usize = shape[conedim];
+            let d2 : usize = shape[conedim+1..].iter().product();
+
+            let nelm = shape.iter().product();
+
+            let afeidxs = &mut afeidxs[afei..afei+nelm];
+            b[afei..afei+nelm].copy_from_slice(ofs);
+            afeidxs.iter_mut().zip(iproduct!(0..d0,0..d2,0..d1))
+                .for_each(|(tafe,(i0,i2,i1))| { *tafe = firstafe+afei as i64 + (i0*d1*d2 + i1*d2 + i2) as i64 } );
+            afei += nelm;
+
+            let r = split_expr(ptr,subj,cof,self.vars.as_slice())?;
+           
+            self.task.append_afes(nelm as i64)?;
+
+            if r.subj.len() > 0 {
+                self.task.put_afe_f_row_list(afeidxs,
+                                             r.ptr[..nelm].iter().zip(r.ptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
+                                             &r.ptr[..nelm],
+                                             r.subj.as_slice(),
+                                             r.cof.as_slice()).unwrap();
+            }
+            self.task.put_afe_g_list(afeidxs,r.fix.as_slice()).unwrap();
+            if r.barsubi.len() > 0 {
+                let mut p0 = 0usize;
+                for (i,j,p) in izip!(r.barsubi.iter(),
+                                     r.barsubi[1..].iter(),
+                                     r.barsubj.iter(),
+                                     r.barsubj[1..].iter())
+                    .enumerate()
+                    .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
+                    .chain(std::iter::once((*r.barsubi.last().unwrap(),*r.barsubj.last().unwrap(),r.barsubi.len()))) {
+                   
+                    let subk = &r.barsubk[p0..p];
+                    let subl = &r.barsubl[p0..p];
+                    let cof  = &r.barcof[p0..p];
+                    p0 = p;
+
+                    let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
+                    let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
+                    self.task.put_afe_barf_entry(afeidxs[i as usize],j,&[matidx],&[1.0]).unwrap();
+                }
+            }
+        }
+
+        let djci = self.task.get_num_djc().unwrap();
+        self.task.append_djcs(1).unwrap();
+        if let Some(name) = name { self.task.put_djc_name(djci,name).unwrap(); }
+        self.task.put_djc(djci, 
+                          &dom_idxs.as_slice(),
+                          afeidxs.as_slice(),
+                          b.as_slice(),
+                          term_size.iter().map(|&v| v as i64).collect::<Vec<i64>>().as_slice()).unwrap();
+        
+        Ok(Disjunction::new(djci))
+    }
+}
+
 impl SolverParameterValue<MosekModel> for f64 {
-    fn set(self, parname : &str,model : & mut MosekModel) { model.set_double_parameter(parname,self) }
+    fn set(self, parname : &str,model : & mut MosekModel) -> Result<(),String> { model.set_double_parameter(parname,self) }
 }
 
 impl SolverParameterValue<MosekModel> for i32 {
-    fn set(self, parname : &str,model : & mut MosekModel) { model.set_int_parameter(parname,self) }
+    fn set(self, parname : &str,model : & mut MosekModel) -> Result<(),String> { model.set_int_parameter(parname,self) }
 }
 
 impl SolverParameterValue<MosekModel> for &str {
-    fn set(self, parname : &str,model : & mut MosekModel) { model.set_str_parameter(parname,self) }
+    fn set(self, parname : &str,model : & mut MosekModel) -> Result<(),String> { model.set_str_parameter(parname,self) }
+}
+
+
+
+
+
+
+
+
+
+
+
+fn split_sol_sta(whichsol : i32, solsta : i32) -> (SolutionStatus,SolutionStatus) {
+    let (psta,dsta) = 
+        match solsta {
+            mosek::Solsta::UNKNOWN => (SolutionStatus::Unknown,SolutionStatus::Unknown),
+            mosek::Solsta::OPTIMAL => (SolutionStatus::Optimal,SolutionStatus::Optimal),
+            mosek::Solsta::PRIM_FEAS => (SolutionStatus::Feasible,SolutionStatus::Unknown),
+            mosek::Solsta::DUAL_FEAS => (SolutionStatus::Feasible,SolutionStatus::Unknown),
+            mosek::Solsta::PRIM_AND_DUAL_FEAS => (SolutionStatus::Unknown,SolutionStatus::Feasible),
+            mosek::Solsta::PRIM_INFEAS_CER => (SolutionStatus::Undefined,SolutionStatus::CertInfeas),
+            mosek::Solsta::DUAL_INFEAS_CER => (SolutionStatus::CertInfeas,SolutionStatus::Undefined),
+            mosek::Solsta::PRIM_ILLPOSED_CER => (SolutionStatus::Undefined,SolutionStatus::CertIllposed),
+            mosek::Solsta::DUAL_ILLPOSED_CER => (SolutionStatus::CertIllposed,SolutionStatus::Undefined),
+            mosek::Solsta::INTEGER_OPTIMAL => (SolutionStatus::Optimal,SolutionStatus::Undefined),
+            _ => (SolutionStatus::Unknown,SolutionStatus::Unknown)
+        };
+
+    if whichsol == mosek::Soltype::ITG {
+        (psta,SolutionStatus::Undefined)
+    }
+    else {
+        (psta,dsta)
+    }
+}
+
+/// Convert linear row-major order offset into a lower triangular
+/// matrix to an (i,j) pair.
+fn row_major_offset_to_ij(ofs : usize) -> (usize,usize) {
+    let i = (((1.0+8.0*ofs as f64).sqrt()-1.0)/2.0).floor() as usize;
+    let j = ofs - i*(i+1)/2;
+    (i,j)
+}
+/// Convert linear column-major order offset into a lower triangular
+/// matrix and a dimension to a (i,j) pair`
+fn row_major_offset_to_col_major(ofs : usize, dim : usize) -> usize {
+    let (i,j) = row_major_offset_to_ij(ofs);
+    ((2*dim-1)*j - j*j)/2 + i
+}
+
+
+
+struct SplitExprResult {
+    subj    : Vec<i32>, 
+    cof     : Vec<f64>, 
+    ptr     : Vec<i64>, 
+    fix     : Vec<f64>, 
+    barsubi : Vec<i64>, 
+    barsubj : Vec<i32>, 
+    barsubk : Vec<i32>, 
+    barsubl : Vec<i32>, 
+    barcof  : Vec<f64>,
+}
+
+fn split_expr(eptr    : &[usize],
+              esubj   : &[usize],
+              ecof    : &[f64],
+              vars    : &[VarAtom]) -> Result<SplitExprResult,String>
+{
+    let nnz    = esubj.len();
+    let nelm   = eptr.len()-1;
+    let nlinnz = esubj.iter().filter(|&&j| if let VarAtom::BarElm(_,_) = unsafe { *vars.get_unchecked(j) } { false } else { true } ).count();
+    let npsdnz = nnz - nlinnz;
+
+    let mut subj    : Vec<i32> = Vec::with_capacity(nlinnz);
+    let mut cof     : Vec<f64> = Vec::with_capacity(nlinnz);
+    let mut ptr     : Vec<i64> = Vec::with_capacity(nelm+1);
+    let mut fix     : Vec<f64> = Vec::with_capacity(nelm);
+    let mut barsubi : Vec<i64> = Vec::with_capacity(npsdnz);
+    let mut barsubj : Vec<i32> = Vec::with_capacity(npsdnz);
+    let mut barsubk : Vec<i32> = Vec::with_capacity(npsdnz);
+    let mut barsubl : Vec<i32> = Vec::with_capacity(npsdnz);
+    let mut barcof  : Vec<f64> = Vec::with_capacity(npsdnz);
+
+    ptr.push(0);
+    eptr[..nelm].iter().zip(eptr[1..].iter()).enumerate().for_each(|(i,(&p0,&p1))| {
+        let mut cfix = 0.0;
+        esubj[p0..p1].iter().zip(ecof[p0..p1].iter()).for_each(|(&idx,&c)| {
+            if idx == 0 {
+                cfix += c;
+            }
+            else if c < 0.0 || c > 0.0 {
+                match *unsafe{ vars.get_unchecked(idx) } {
+                    VarAtom::Linear(j,_) => {
+                        subj.push(j);
+                        cof.push(c);
+                    },
+                    VarAtom::ConicElm(j,_coni) => {
+                        subj.push(j);
+                        cof.push(c);
+                    },
+                    VarAtom::BarElm(j,ofs) => {
+                        let (k,l) = row_major_offset_to_ij(ofs);
+                        barsubi.push(i as i64);
+                        barsubj.push(j);
+                        barsubk.push(k as i32);
+                        barsubl.push(l as i32);
+                        if k == l {
+                            barcof.push(c);
+                        }
+                        else {
+                            barcof.push(0.5 * c);
+                        }
+                    }
+                }
+            }
+        });
+        ptr.push(subj.len() as i64);
+        fix.push(cfix);
+    });
+    Ok(SplitExprResult{
+        subj,
+        cof,
+        ptr,
+        fix,
+        barsubi,
+        barsubj,
+        barsubk,
+        barsubl,
+        barcof})
 }

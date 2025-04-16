@@ -2,7 +2,7 @@
 use iter::PermuteByMutEx;
 use itertools::Either;
 use super::matrix::NDArray;
-use crate::{utils::*};
+use crate::utils::*;
 
 pub enum LinearDomainType {
     NonNegative,
@@ -11,6 +11,7 @@ pub enum LinearDomainType {
     Free
 }
 
+#[derive(Clone)]
 pub enum ConicDomainType {
     QuadraticCone,
     RotatedQuadraticCone,
@@ -28,11 +29,11 @@ pub enum ConicDomainType {
     Free
 }
 
-#[derive(Debug)]
-pub enum LinearDomainOfsType {
-    Scalar(f64),
-    M(Vec<f64>)
-}
+//#[derive(Debug)]
+//pub enum LinearDomainOfsType {
+//    Scalar(f64),
+//    M(Vec<f64>)
+//}
 
 
 pub trait DomainTrait<const N : usize> {
@@ -57,6 +58,17 @@ pub trait IntoShapedDomain<const N : usize> {
 
 pub trait IntoConicDomain<const N : usize> {
     fn into_conic(self) -> ConicDomain<N>;
+}
+
+pub trait AnyConicDomain {
+    fn extract(&self) -> (&ConicDomainType,&[f64],&[usize],usize,bool);
+}
+
+impl<const N : usize> AnyConicDomain for ConicDomain<N> {
+    fn extract(&self) -> (&ConicDomainType,&[f64],&[usize],usize,bool) { 
+        (&self.domain_type,self.offset.as_slice(),&self.shape,self.conedim,self.is_integer) 
+    }
+    
 }
 
 ///////////////////////////////////////////////////////////////////////////////

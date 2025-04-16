@@ -306,6 +306,7 @@ pub mod utils;
 
 use expr::workstack::WorkStack;
 
+pub use constraint::{Constraint,ConstraintDomain};
 pub use model::{Sense,
                 SolutionType,
                 SolutionStatus,
@@ -316,8 +317,7 @@ pub use model::{Sense,
                 BaseModelTrait,
                 ConicModelTrait,
                 PSDModelTrait,
-                ModelAPI,
-                constraint};
+                ModelAPI};
 type Model = ModelAPI<model::mosekmodel::MosekModel>;
 pub use matrix::{Matrix,NDArray,IntoIndexes};
 pub use expr::{ExprTrait,
@@ -328,7 +328,6 @@ pub use expr::{ExprTrait,
                Expr,
                RightDottable,
                stack,hstack,vstack,stackvec,sumvec};
-pub use constraint::{Constraint,ConstraintDomain};
 pub use variable::Variable;
 pub use domain::{IntoDomain,
                  IntoShapedDomain,

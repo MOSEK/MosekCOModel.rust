@@ -1,11 +1,10 @@
-#[doc = include_str!("../js/mathjax.tag")]
+#![doc = include_str!("../../js/mathjax.tag")]
 
-use itertools::{iproduct, izip};
+use itertools::izip;
 use std::fmt::Debug;
 use std::ops::ControlFlow;
-use std::{iter::once, path::Path};
-use crate::disjunction::ConjunctionTrait;
-use crate::{disjunction, expr, IntoExpr, ExprTrait, NDArray, DisjunctionTrait};
+use std::path::Path;
+use crate::{disjunction, expr, IntoExpr, ExprTrait, NDArray};
 use crate::utils::iter::*;
 use crate::domain::*;
 use crate::variable::*;
@@ -90,6 +89,7 @@ pub enum SolutionStatus {
     /// Indicates that the solution is not available.
     Undefined
 }
+impl Default for SolutionStatus { fn default() -> Self { SolutionStatus::Undefined } }
 
 #[derive(Default)]
 struct SolutionPart {
@@ -199,7 +199,7 @@ pub trait BaseModelTrait {
          dom : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String> 
         where 
             Self : Sized;
-    fn linear_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearDomain<N>) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
+    fn linear_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
         where 
             Self : Sized;
     fn ranged_variable<const N : usize,R>(&mut self, name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> 
@@ -215,8 +215,9 @@ pub trait BaseModelTrait {
 
     fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, solitg : &mut Solution) -> Result<(),String>;
 
+    fn objective(&mut self, name : Option<&str>, sense : Sense, subj : &[usize],cof : &[f64]) -> Result<(),String>;
 
-    fn set_param<V>(&mut self, parname : &str, parval : V) -> Result<(),String> where V : SolverParameterValue<T>;
+    fn set_param<V>(&mut self, parname : &str, parval : V) -> Result<(),String> where V : SolverParameterValue<Self>,Self: Sized;
 }
 
 /// An inner model object must implement this to support conic vector constraints and variables
@@ -233,7 +234,10 @@ pub trait PSDModelTrait {
 
 /// An inner model object must implement this to support disjunctive constraints
 pub trait DJCModelTrait {
-    fn disjunction<D>(& mut self, name : Option<&str>, terms : D) -> Result<Disjunction,String> where D : disjunction::DisjunctionTrait;
+    fn disjunction(& mut self, name : Option<&str>, 
+                   exprs     : &[(&[usize],&[usize],&[usize],&[f64])], 
+                   domains   : &[Box<dyn AnyConicDomain>],
+                   term_size : &[usize]) -> Result<Disjunction,String>;
 }
 
 /// An inner model object must implement this to support log callbacks.
@@ -262,7 +266,6 @@ pub struct ModelAPI<T : BaseModelTrait> {
     /// Integer solution
     sol_itg : Solution,
 
-
     rs : WorkStack,
     ws : WorkStack,
     xs : WorkStack
@@ -284,7 +287,7 @@ impl<T : BaseModelTrait+Default> Default for ModelAPI<T> {
 }
 
 impl<T> ModelAPI<T> where T : BaseModelTrait {
-    pub fn new(name : Option<&str>) -> ModelAPI<T> where T : Default {
+    pub fn new(name : Option<&str>) -> ModelAPI<T> {
         ModelAPI{
             inner : T::new(name),
             rs : WorkStack::new(1024),
@@ -358,6 +361,28 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
 
     pub fn set_control_callback<F>(&mut self, func : F) where F : 'static+FnMut() -> ControlFlow<(),()>, T : ModelWithControlCallback {
         self.inner.set_callback(func);
+    }
+
+    /// Set the objective.
+    ///
+    /// Arguments:
+    /// - `name` Optional objective name
+    /// - `sense` Objective sense
+    /// - `expr` Objective expression, this must contain exactly one
+    ///   element. The shape is otherwise ignored.
+    fn try_objective<I>(& mut self, name : Option<&str>, sense : Sense, e : I) -> Result<(),String> where I : IntoExpr<0> 
+    {
+        e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs);
+        let (shape,ptr,sp,subj,cof) = self.rs.pop_expr();
+        if shape.len() != 0 {
+            return Err(format!("Invalid expression shape for objective: {:?}",shape));
+        }
+        self.inner.objective(name,sense,subj,cof)
+    }
+
+    fn objective<I>(& mut self, name : Option<&str>, sense : Sense, e : I) where I : IntoExpr<0> 
+    {
+        self.try_objective(name, sense, e).unwrap();
     }
 
     /// Add a Variable.
@@ -501,7 +526,101 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
 
         self.inner.update(item.idxs.as_slice(),eshape,ptr,subj,cof)
     }
+   
+
+
+
+    /// Add a disjunctive constraint to the model. A disjunctive constraint is a logical constraint
+    /// of the form
+    /// $$
+    /// \\begin{array}{c}
+    ///     A_1x+b_1 \\in K_1 \\\\
+    ///     \\mathrm{or}      \\\\
+    ///     \\vdots           \\\\
+    ///     \\mathrm{or}      \\\\
+    ///     A_nx+b_n \\in K_n 
+    /// \\end{array}
+    /// $$
+    /// where each \\(K_\\cdot\\) is a single cone or a product of cones. 
+    ///
+    ///
+    /// Another example is an indicator constraint like an indicator constraint
+    /// $$ 
+    ///     z\\in\\{0,1\\},\\ z=1 \\Rightarrow Ax+b\\in K_n 
+    /// $$
+    /// implemented as 
+    /// $$
+    ///     z\\in\\{0,1\\},\\ z = 0\\ \\vee\\ z = 1\\wedge Ax+b\\in K_n
+    /// $$
+    ///
+    /// # Arguments
+    /// - `name` Name of the disjunction
+    /// - `terms` Structure defining the terms of the disjunction.
+    ///
+    /// # Example: Simple disjunction
+    /// A Simple logical disjunctions like 
+    /// $$
+    ///     a^Tx+b = 3 \\vee\\ b^Tx+c = 1.0
+    /// $$
+    /// can be implemented as:
+    /// ```rust
+    /// use mosekcomodel::*;
+    /// let mut model = Model::new(None);
+    /// let x = model.variable(Some("x"), 5);
+    /// let y = model.variable(Some("y"), 3);
+    /// let a = vec![1.0,2.0,3.0,4.0,5.0];
+    /// let b = vec![5.0,4.0,3.0];
+    /// model.disjunction(None, 
+    ///                   constraint(x.dot(a), equal_to(3.0))
+    ///                     .or(constraint(y.dot(b), equal_to(1.0))));
+    /// ```
+    ///
+    /// # Example: Indicator constraint
+    ///
+    /// A logical constraint for a binary variable \\(z\\in\\{0,1\\}\\) of the form
+    /// $$
+    ///     z = 1 \\Rightarrow a^T x+b = 1
+    /// $$
+    //  is implemented as 
+    //  $$
+    //      z = 0\\ \\vee\\ \\left[ z=1\\ \\wedge\\ a^Tx+b=1 \\right]
+    //  $$
+    /// ```rust
+    /// use mosekcomodel::*;
+    /// let mut model = Model::new(None);
+    /// let a = vec![1.0,2.0,3.0,4.0,5.0];
+    /// let x = model.variable(Some("x"), 5);
+    /// let z = model.variable(Some("z"), nonnegative().integer());
+    /// model.constraint(None,&z,less_than(1.0));
+    /// model.disjunction(None,
+    ///                   constraint(z.clone(),equal_to(0.0))
+    ///                     .or(constraint(z, equal_to(1.0))
+    ///                           .and(constraint(x.dot(a), equal_to(1.0)))));
+    /// ```
+    pub fn try_disjunction<D>(& mut self, name : Option<&str>, mut terms : D) -> Result<Disjunction,String> 
+        where 
+            D : disjunction::DisjunctionTrait, 
+            T : DJCModelTrait 
+    {
+        let mut domains = Vec::new();
+        let mut term_size = Vec::new();
+        terms.eval(&mut domains, & mut term_size, &mut self.rs, &mut self.ws, &mut self.xs)?;
+
+        let nexprs = term_size.iter().sum();
+        let exprs : Vec<(&[usize],&[usize],&[usize],&[f64])> = 
+            self.rs.pop_exprs(nexprs).iter().rev()
+                .map(|(shape,ptr,sp,subj,cof)| { if sp.is_some() { panic!("Internal invalid: Sparse evaluated expression") } (*shape,*ptr,*subj,*cof) })
+                .collect();
+
+        self.inner.disjunction(name,exprs.as_slice(), domains.as_slice(), term_size.as_slice())
+    }
     
+    pub fn disjunction<D>(& mut self, name : Option<&str>, terms : D) -> Disjunction where D : disjunction::DisjunctionTrait, T : DJCModelTrait {
+        self.try_disjunction(name, terms).unwrap()
+    }
+
+
+
     pub fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E)
         where             
             E    : expr::IntoExpr<N>
@@ -586,7 +705,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     }
 
 
-    fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+    pub(crate) fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
         if let Some(sol) = self.select_sol(solid) {
             if let SolutionStatus::Undefined = sol.primal.status {
                 Err("Solution part is not defined".to_string())
@@ -602,7 +721,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         }
     }
 
-    fn dual_var_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
+    pub(crate) fn dual_var_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
         if let Some(sol) = self.select_sol(solid) {
             if let SolutionStatus::Undefined = sol.dual.status {
                 Err("Solution part is not defined".to_string())
@@ -647,16 +766,6 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
             Err("Solution value is undefined".to_string())
         }
     }
-
-
-
-
-
-
-
-
-
-
 
     /// Get primal solution values for an a variable or constraint.
     ///
@@ -851,7 +960,7 @@ pub trait ModelItem<const N : usize,M> where M : BaseModelTrait {
         Ok(res)
     }
     fn primal_into(&self,m : &ModelAPI<M>,solid : SolutionType, res : & mut [f64]) -> Result<usize,String>;
-    fn dual_into(&self,m : &ModelAPI<M>,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String>;
+    fn dual_into(&self,  m : &ModelAPI<M>,  solid : SolutionType,   res : & mut [f64]) -> Result<usize,String>;
 }
 
 //======================================================
@@ -868,6 +977,10 @@ pub trait ModelItemIndex<T> {
 #[allow(dead_code)]
 pub struct Disjunction {
     index : i64
+}
+
+impl Disjunction {
+    pub fn new(index : i64) -> Disjunction { Disjunction{index }}
 }
 
 impl<const N : usize,M> ModelItem<N,M> for Constraint <N> where M : BaseModelTrait {
@@ -891,8 +1004,44 @@ impl<const N : usize,M> ModelItem<N,M> for Constraint <N> where M : BaseModelTra
     }
 }
 
+impl<const N : usize,M> ModelItem<N,M> for Variable<N> where M : BaseModelTrait {
+    fn len(&self) -> usize { return self.shape.iter().product(); }
+    fn shape(&self) -> [usize; N] { self.shape }
+    
+    fn sparse_primal(&self,m : &ModelAPI<M>,solid : SolutionType) -> Result<(Vec<f64>,Vec<[usize;N]>),String> {
+        let mut nnz = vec![0.0; self.numnonzeros()];
+        let dflt = [0usize; N];
+        let mut idx : Vec<[usize;N]> = vec![dflt;self.numnonzeros()];
+        self.sparse_primal_into(m,solid,nnz.as_mut_slice(),idx.as_mut_slice())?;
+        Ok((nnz,idx))
+    }
+
+    fn primal_into(&self,m : &ModelAPI<M>,solid : SolutionType, res : & mut [f64]) -> Result<usize,String> {
+        let sz = self.shape.iter().product();
+        if res.len() < sz { panic!("Result array too small") }
+        else {
+            m.primal_var_solution(solid,self.idxs.as_slice(),res)?;
+            if let Some(ref sp) = self.sparsity {
+                sp.iter().enumerate().rev().for_each(|(i,&ix)| unsafe { *res.get_unchecked_mut(ix) = *res.get_unchecked(i); *res.get_unchecked_mut(i) = 0.0; });
+            }
+            Ok(sz)
+        }
+    }
+    fn dual_into(&self,m : &ModelAPI<M>,solid : SolutionType,   res : & mut [f64]) -> Result<usize,String> {
+        let sz = self.shape.iter().product();
+        if res.len() < sz { panic!("Result array too small") }
+        else {
+            m.dual_var_solution(solid,self.idxs.as_slice(),res)?;
+            if let Some(ref sp) = self.sparsity {
+                sp.iter().enumerate().rev().for_each(|(i,&ix)| unsafe { *res.get_unchecked_mut(ix) = *res.get_unchecked(i); *res.get_unchecked_mut(i) = 0.0; })
+            }
+            Ok(sz)
+        }
+    }
+}
+
 pub trait SolverParameterValue<M : BaseModelTrait> {
-    fn set(self,parname : &str, model : & mut M);
+    fn set(self,parname : &str, model : & mut M) -> Result<(),String>;
 }
 
 //======================================================
@@ -954,471 +1103,7 @@ pub trait SolverParameterValue<M : BaseModelTrait> {
 
 
 
-
-
-
-//-----------------------------------------------------------------------------
-// Single affine constraint
-
-/// A single constraint block `A x + b ∈ D`.
-pub struct AffineConstraint<const N : usize,E,D> 
-    where E : ExprTrait<N>,
-          D : IntoShapedDomain<N>,
-          D::Result : IntoConicDomain<N>,
-{
-    expr    : E,
-    pdomain : Option<D>,
-    domain  : Option<ConicDomain<N>>
-}
-
-
-/// Create a structure encapsulating an expression and a domain for constructing disjunctive
-/// constraints.
-///
-/// # Arguments
-/// - `expr` Something that can be turned into an expression via [IntoExpr]. 
-/// - `domain` Something that can be turned into a [ConicDomain]. Currently this is any linear or
-///    conic domain, but not semidefinite domain.
-pub fn constraint<const N : usize,I,E,D>(expr : I, domain : D) -> AffineConstraint<N,E,D>
-    where I : IntoExpr<N,Result=E>,
-          E : ExprTrait<N>,
-          D : IntoShapedDomain<N>,
-          D::Result : IntoConicDomain<N>,
-{
-    AffineConstraint{
-        expr    : expr.into_expr(),
-        pdomain : Some(domain),
-        domain  : None,
-    }
-}
-
-impl<const N : usize,E,D> AffineConstraint<N,E,D> 
-    where E : ExprTrait<N>,
-          D : IntoShapedDomain<N>,
-          D::Result : IntoConicDomain<N>
-{
-    pub fn and<C2>(self, other : C2) -> AffineConstraintsAnd<Self,C2> where C2 : ConjunctionTrait {
-        AffineConstraintsAnd { c0: self, c1: other }
-    }
-
-    pub fn or<D2>(self, other : D2) -> DisjunctionOr<Self,D2> where D2 : DisjunctionTrait {
-        DisjunctionOr { c0: self, c1: other }
-    }
-}
-
-impl<const N : usize,E,D> disjunction::ConjunctionTrait for AffineConstraint<N,E,D> 
-    where E : ExprTrait<N>,
-          D : IntoShapedDomain<N>,
-          D::Result : IntoConicDomain<N>
-{
-    fn eval(&mut self,
-            numvarelm : usize,
-            rs : &mut WorkStack,
-            ws : &mut WorkStack,
-            xs : &mut WorkStack) -> Result<usize,String> 
-    {
-        self.expr.eval_finalize(rs,ws,xs).map_err(|e| format!("{:?}",e))?;
-        let (eshape,_,_,subj,_) = rs.peek_expr();        
-        let mut shape = [0usize;N]; shape.copy_from_slice(eshape);
-       
-        if let Some(dom) = self.pdomain.take() {
-            self.domain = Some(dom.try_into_domain(shape)?.into_conic());
-        }
-
-
-        let (_,_,&dshape,_,is_integer) = self.domain.as_ref().unwrap().get();
-
-        
-        if let Some(&i) = subj.iter().max() {
-            if i >= numvarelm {
-                return Err(format!("Expression has variable element index that is out of bounds for the Model"))
-            }
-        }
-
-        if is_integer {
-            Err(format!("Constraint domains cannot be integer"))
-        }
-        else if eshape != dshape {
-            Err(format!("Mismatching expression and domain shapes"))
-        }
-        else {
-            Ok(1)
-        }
-    }
-
-    fn append_clause_data(&self, 
-                          task  : & mut mosek::TaskCB,
-                          vars  : &[VarAtom],
-                          exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
-
-                          element_dom  : &mut Vec<i64>,
-                          element_ptr  : &mut Vec<usize>,
-                          element_afei : &mut Vec<i64>,
-                          element_b    : &mut Vec<f64>)
-    {
-        let (dt,offset,shape,conedim,_) = self.domain.as_ref().unwrap().get();
-        let (_,ptr,_,subj,cof) = exprs.pop().unwrap();
-        let conesize = if N == 0 { 1 } else { shape[conedim] };
-        let numcone  = shape.iter().product::<usize>() / conesize;
-
-        let nelm = ptr.len()-1;
-
-        let afei = task.get_num_afe().unwrap();
-
-        let (asubj,
-             acof,
-             aptr,
-             afix,
-             abarsubi,
-             abarsubj,
-             abarsubk,
-             abarsubl,
-             abarcof) = split_expr(ptr,subj,cof,vars);
-
-
-        let domidx = match dt {
-            ConicDomainType::NonNegative                => task.append_rplus_domain(conesize.try_into().unwrap()).unwrap(),
-            ConicDomainType::NonPositive                => task.append_rminus_domain(conesize.try_into().unwrap()).unwrap(),
-            ConicDomainType::Free                       => task.append_r_domain(conesize.try_into().unwrap()).unwrap(),
-            ConicDomainType::Zero                       => task.append_rzero_domain(conesize.try_into().unwrap()).unwrap(),
-            ConicDomainType::SVecPSDCone                => task.append_svec_psd_cone_domain(conesize.try_into().unwrap()).unwrap(),
-            ConicDomainType::QuadraticCone              => task.append_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
-            ConicDomainType::RotatedQuadraticCone       => task.append_r_quadratic_cone_domain(conesize.try_into().unwrap()).unwrap(),
-            ConicDomainType::GeometricMeanCone          => task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
-            ConicDomainType::DualGeometricMeanCone      => task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap()).unwrap(),
-            ConicDomainType::ExponentialCone            => task.append_primal_exp_cone_domain().unwrap(),
-            ConicDomainType::DualExponentialCone        => task.append_dual_exp_cone_domain().unwrap(),
-            ConicDomainType::PrimalPowerCone(ref alpha) => task.append_primal_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice()).unwrap(),
-            ConicDomainType::DualPowerCone(ref alpha)   => task.append_dual_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice()).unwrap(),
-        };
-        
-        let d0 : usize = if N == 0 { 1 } else { shape[0..conedim].iter().product() };
-        let d1 : usize = if N == 0 { 1 } else { shape[conedim] };
-        let d2 : usize = if N == 0 { 1 } else { shape[conedim+1..].iter().product() };
-
-        let element_afefi_p0 = element_afei.len();
-        element_afei.resize(element_afefi_p0+nelm,0);
-        let afeidxs = &mut element_afei[element_afefi_p0..];
-        afeidxs.copy_from_iter(
-            iproduct!(0..d0,0..d2,0..d1)
-                .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64));
-
-        element_dom.resize(element_dom.len()+numcone,domidx);
-        element_ptr.reserve(numcone);
-        {
-            let n0 = element_b.len();
-            for i in (n0..n0+numcone*conesize).step_by(conesize) { element_ptr.push(i+conesize) }
-        }
-        element_b.extend_from_slice(offset);
-
-        task.append_afes(nelm as i64).unwrap();
-        if asubj.len() > 0 {
-            task.put_afe_f_row_list(afeidxs,
-                                    aptr[..nelm].iter().zip(aptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
-                                    &aptr[..nelm],
-                                    asubj.as_slice(),
-                                    acof.as_slice()).unwrap();
-        }        
-       
-        task.put_afe_g_list(afeidxs,afix.as_slice()).unwrap();
-        if abarsubi.len() > 0 {
-            let mut p0 = 0usize;
-            for (i,j,p) in izip!(abarsubi.iter(),
-                                 abarsubi[1..].iter(),
-                                 abarsubj.iter(),
-                                 abarsubj[1..].iter())
-                .enumerate()
-                .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
-                .chain(once((*abarsubi.last().unwrap(),*abarsubj.last().unwrap(),abarsubi.len()))) {
-               
-                let subk = &abarsubk[p0..p];
-                let subl = &abarsubl[p0..p];
-                let cof  = &abarcof[p0..p];
-                p0 = p;
-
-                let dimbarj = task.get_dim_barvar_j(j).unwrap();
-                let matidx = task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
-                task.put_afe_barf_entry(afei+i,j,&[matidx],&[1.0]).unwrap();
-            }
-        }
-    }
-}
-
-impl<C> disjunction::DisjunctionTrait for C
-    where C : ConjunctionTrait,
-{
-    fn eval(&mut self,
-            numvarelm : usize,
-            rs : &mut WorkStack,
-            ws : &mut WorkStack,
-            xs : &mut WorkStack) -> Result<usize,String> {
-        disjunction::ConjunctionTrait::eval(self,numvarelm,rs,ws,xs)
-    }
-    fn append_disjunction_data(&self, 
-                               task  : & mut mosek::TaskCB,
-                               vars  : &[VarAtom],
-                               exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
-
-                               term_ptr     : &mut Vec<usize>,
-                               element_dom  : &mut Vec<i64>,
-                               element_ptr  : &mut Vec<usize>,
-                               element_afei : &mut Vec<i64>,
-                               element_b    : &mut Vec<f64>) {
-        disjunction::ConjunctionTrait::append_clause_data(self,task, vars, exprs, element_dom, element_ptr, element_afei,element_b);
-        term_ptr.push(element_dom.len());
-    }
-}
-
-impl<C> disjunction::DisjunctionTrait for Vec<C> where C : ConjunctionTrait {
-    fn eval(&mut self,
-            numvarelm : usize,
-            rs : &mut WorkStack,
-            ws : &mut WorkStack,
-            xs : &mut WorkStack) -> Result<usize,String> {
-        let mut n = 0;
-        for c in self.iter_mut() {
-            n += c.eval(numvarelm, rs, ws, xs)?;
-        }
-        Ok(n)
-    }
-    fn append_disjunction_data(&self, 
-                               task  : & mut mosek::TaskCB,
-                               vars  : &[VarAtom],
-                               exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
-
-                               term_ptr     : &mut Vec<usize>,
-                               element_dom  : &mut Vec<i64>,
-                               element_ptr  : &mut Vec<usize>,
-                               element_afei : &mut Vec<i64>,
-                               element_b    : &mut Vec<f64>) {
-        for c in self.iter() {
-            disjunction::ConjunctionTrait::append_clause_data(c,task, vars, exprs, element_dom, element_ptr, element_afei,element_b);
-            term_ptr.push(element_dom.len());
-        }
-    }
-
-}
-
-//-----------------------------------------------------------------------------
-// AffineConstraintsAnd
-
-/// Represents the construction `A_1x+b_1 ∈ K_1 AND A_2x+b_2 ∈ K_2`.
-pub struct AffineConstraintsAnd<C0,C1> 
-    where 
-        C0 : disjunction::ConjunctionTrait,
-        C1 : disjunction::ConjunctionTrait
-{
-     c0 : C0,
-     c1 : C1
-}
-
-impl<C0,C1> AffineConstraintsAnd<C0,C1> 
-    where 
-        C0 : disjunction::ConjunctionTrait,
-        C1 : disjunction::ConjunctionTrait
-{
-    pub fn and<C2>(self, other : C2) -> AffineConstraintsAnd<Self,C2> where C2 : ConjunctionTrait {
-        AffineConstraintsAnd { c0: self, c1: other }
-    }
-    pub fn or<D2>(self, other : D2) -> DisjunctionOr<Self,D2> where D2 : DisjunctionTrait {
-        DisjunctionOr { c0: self, c1: other }
-    }
-}
-impl<C0,C1> disjunction::ConjunctionTrait for AffineConstraintsAnd<C0,C1> 
-    where 
-        C0 : disjunction::ConjunctionTrait,
-        C1 : disjunction::ConjunctionTrait
-{
-    fn eval(&mut self,
-                numvarelm : usize,
-                rs : &mut WorkStack,
-                ws : &mut WorkStack,
-                xs : &mut WorkStack) -> Result<usize,String> {
-        Ok(self.c0.eval(numvarelm,rs,ws,xs)? + self.c1.eval(numvarelm,rs,ws,xs)?)
-    }
-
-    fn append_clause_data(&self, 
-                              task  : & mut mosek::TaskCB,
-                              vars  : &[VarAtom],
-                              exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
-
-                              element_dom  : &mut Vec<i64>,
-                              element_ptr  : &mut Vec<usize>,
-                              element_afei : &mut Vec<i64>,
-                              element_b    : &mut Vec<f64>) {
-        self.c0.append_clause_data(task, vars, exprs, element_dom, element_ptr, element_afei, element_b);
-        self.c1.append_clause_data(task, vars, exprs, element_dom, element_ptr, element_afei, element_b);
-    }
-}
-
-
-//-----------------------------------------------------------------------------
-// DisjunctionOr
-
-/// Represents the construction `A OR B` where `A` is set of affine constraints and `B` is another
-/// disjunction clause
-pub struct DisjunctionOr<C0,C1> 
-    where 
-        C0 : disjunction::ConjunctionTrait,
-        C1 : disjunction::DisjunctionTrait
-{
-     c0 : C0,
-     c1 : C1
-}
-
-impl<C0,C1> DisjunctionOr<C0,C1> 
-    where 
-        C0 : disjunction::ConjunctionTrait,
-        C1 : disjunction::DisjunctionTrait
-{
-    pub fn or<C2>(self, other : C2) -> DisjunctionOr<C2,Self> where C2 : ConjunctionTrait {
-        DisjunctionOr { c0: other, c1: self }
-    }
-}
-
-impl<C0,C1> disjunction::DisjunctionTrait for DisjunctionOr<C0,C1> 
-    where 
-        C0 : disjunction::ConjunctionTrait,
-        C1 : disjunction::DisjunctionTrait
-{
-    fn eval(&mut self,
-            numvarelm : usize,
-            rs : &mut WorkStack,
-            ws : &mut WorkStack,
-            xs : &mut WorkStack) -> Result<usize,String> {
-        Ok(self.c0.eval(numvarelm, rs, ws, xs).map_err(|e| e.to_string())? +
-            self.c1.eval(numvarelm, rs, ws, xs)?)
-    }
-    fn append_disjunction_data(&self, 
-                               task  : & mut mosek::TaskCB,
-                               vars  : &[VarAtom],
-                               exprs : & mut Vec<(&[usize],&[usize],Option<&[usize]>,&[usize],&[f64])>, 
-
-                               term_ptr     : &mut Vec<usize>,
-                               element_dom  : &mut Vec<i64>,
-                               element_ptr  : &mut Vec<usize>,
-                               element_afei : &mut Vec<i64>,
-                               element_b    : &mut Vec<f64>) {
-        self.c0.append_clause_data(task, vars, exprs, element_dom, element_ptr, element_afei,element_b);
-        term_ptr.push(element_dom.len());
-        self.c1.append_disjunction_data(task, vars, exprs, term_ptr, element_dom, element_ptr, element_afei,element_b);
-    }
-}
-
-
 /// Split an evaluated expression into linear and semidefinite parts
-fn split_expr(eptr    : &[usize],
-              esubj   : &[usize],
-              ecof    : &[f64],
-              vars    : &[VarAtom]) -> (Vec<i32>, //subj
-                                        Vec<f64>, //cof
-                                        Vec<i64>, //ptr
-                                        Vec<f64>, //fix
-                                        Vec<i64>, //barsubi
-                                        Vec<i32>, //barsubj
-                                        Vec<i32>, //barsubk
-                                        Vec<i32>, //barsubl
-                                        Vec<f64>) { //barcof
-    let nnz = *eptr.last().unwrap();
-    let nelm = eptr.len()-1;
-    let nlinnz = esubj.iter().filter(|&&j| if let VarAtom::BarElm(_,_) = unsafe { *vars.get_unchecked(j) } { false } else { true } ).count();
-    let npsdnz = nnz - nlinnz;
-
-    let mut subj : Vec<i32> = Vec::with_capacity(nlinnz);
-    let mut cof  : Vec<f64> = Vec::with_capacity(nlinnz);
-    let mut ptr  : Vec<i64> = Vec::with_capacity(nelm+1);
-    let mut fix  : Vec<f64> = Vec::with_capacity(nelm);
-    let mut barsubi : Vec<i64> = Vec::with_capacity(npsdnz);
-    let mut barsubj : Vec<i32> = Vec::with_capacity(npsdnz);
-    let mut barsubk : Vec<i32> = Vec::with_capacity(npsdnz);
-    let mut barsubl : Vec<i32> = Vec::with_capacity(npsdnz);
-    let mut barcof  : Vec<f64> = Vec::with_capacity(npsdnz);
-
-    ptr.push(0);
-    eptr[..nelm].iter().zip(eptr[1..].iter()).enumerate().for_each(|(i,(&p0,&p1))| {
-        let mut cfix = 0.0;
-        esubj[p0..p1].iter().zip(ecof[p0..p1].iter()).for_each(|(&idx,&c)| {
-            if idx == 0 {
-                cfix += c;
-            }
-            else if c < 0.0 || c > 0.0 {
-                match *unsafe{ vars.get_unchecked(idx) } {
-                    VarAtom::Linear(j,_) => {
-                        subj.push(j);
-                        cof.push(c);
-                    },
-                    VarAtom::ConicElm(j,_coni) => {
-                        subj.push(j);
-                        cof.push(c);
-                    },
-                    VarAtom::BarElm(j,ofs) => {
-                        let (k,l) = row_major_offset_to_ij(ofs);
-                        barsubi.push(i as i64);
-                        barsubj.push(j);
-                        barsubk.push(k as i32);
-                        barsubl.push(l as i32);
-                        if k == l {
-                            barcof.push(c);
-                        }
-                        else {
-                            barcof.push(0.5 * c);
-                        }
-                    }
-                }
-            }
-        });
-        ptr.push(subj.len() as i64);
-        fix.push(cfix);
-    });
-
-    (subj,
-     cof,
-     ptr,
-     fix,
-     barsubi,
-     barsubj,
-     barsubk,
-     barsubl,
-     barcof)
-}
-
-fn split_sol_sta(whichsol : i32, solsta : i32) -> (SolutionStatus,SolutionStatus) {
-    let (psta,dsta) = 
-        match solsta {
-            mosek::Solsta::UNKNOWN => (SolutionStatus::Unknown,SolutionStatus::Unknown),
-            mosek::Solsta::OPTIMAL => (SolutionStatus::Optimal,SolutionStatus::Optimal),
-            mosek::Solsta::PRIM_FEAS => (SolutionStatus::Feasible,SolutionStatus::Unknown),
-            mosek::Solsta::DUAL_FEAS => (SolutionStatus::Feasible,SolutionStatus::Unknown),
-            mosek::Solsta::PRIM_AND_DUAL_FEAS => (SolutionStatus::Unknown,SolutionStatus::Feasible),
-            mosek::Solsta::PRIM_INFEAS_CER => (SolutionStatus::Undefined,SolutionStatus::CertInfeas),
-            mosek::Solsta::DUAL_INFEAS_CER => (SolutionStatus::CertInfeas,SolutionStatus::Undefined),
-            mosek::Solsta::PRIM_ILLPOSED_CER => (SolutionStatus::Undefined,SolutionStatus::CertIllposed),
-            mosek::Solsta::DUAL_ILLPOSED_CER => (SolutionStatus::CertIllposed,SolutionStatus::Undefined),
-            mosek::Solsta::INTEGER_OPTIMAL => (SolutionStatus::Optimal,SolutionStatus::Undefined),
-            _ => (SolutionStatus::Unknown,SolutionStatus::Unknown)
-        };
-
-    if whichsol == mosek::Soltype::ITG {
-        (psta,SolutionStatus::Undefined)
-    }
-    else {
-        (psta,dsta)
-    }
-}
-
-/// Convert linear row-major order offset into a lower triangular
-/// matrix to an (i,j) pair.
-fn row_major_offset_to_ij(ofs : usize) -> (usize,usize) {
-    let i = (((1.0+8.0*ofs as f64).sqrt()-1.0)/2.0).floor() as usize;
-    let j = ofs - i*(i+1)/2;
-    (i,j)
-}
-/// Convert linear column-major order offset into a lower triangular
-/// matrix and a dimension to a (i,j) pair`
-fn row_major_offset_to_col_major(ofs : usize, dim : usize) -> usize {
-    let (i,j) = row_major_offset_to_ij(ofs);
-    ((2*dim-1)*j - j*j)/2 + i
-}
 
 //======================================================
 // TEST
