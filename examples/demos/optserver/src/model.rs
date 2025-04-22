@@ -11,6 +11,8 @@ use itertools::izip;
 use mosekcomodel::utils::iter::ChunksByIterExt;
 use mosekcomodel::model::Solution;
 
+use serde::{Serialize,Deserialize};
+
 enum ConeType {
     Unbounded,
     Fixed,
@@ -40,11 +42,276 @@ struct ConItem {
     block_entry: usize
 }
 
+
+struct JSONTask {
+    //$schema: JSON schema.
+    //
+    //Task/name: The name of the task (string).
+    //
+    //Task/INFO: Information about problem data dimensions and similar. These are treated as hints when reading the file.
+    //
+    //    numvar: number of variables (int32).
+    //
+    //    numcon: number of constraints (int32).
+    //
+    //    numcone: number of cones (int32, deprecated).
+    //
+    //    numbarvar: number of symmetric matrix variables (int32).
+    //
+    //    numanz: number of nonzeros in A (int64).
+    //
+    //    numsymmat: number of matrices in the symmetric matrix storage E (int64).
+    //
+    //    numafe: number of affine expressions in AFE storage (int64).
+    //
+    //    numfnz: number of nonzeros in F (int64).
+    //
+    //    numacc: number of affine conic constraints (ACCs) (int64).
+    //
+    //    numdjc: number of disjunctive constraints (DJCs) (int64).
+    //
+    //    numdom: number of domains (int64).
+    //
+    //    mosekver: MOSEK version (list(int32)).
+    //
+    //Task/data: Numerical and structural data of the problem.
+    //
+    //    var: Information about variables. All fields present must have the same length as bk. All or none of bk, bl, and bu must appear.
+    //
+    //        name: Variable names (list(string)).
+    //
+    //        bk: Bound keys (list(string)).
+    //
+    //        bl: Lower bounds (list(double)).
+    //
+    //        bu: Upper bounds (list(double)).
+    //
+    //        type: Variable types (list(string)).
+    //
+    //    con: Information about linear constraints. All fields present must have the same length as bk. All or none of bk, bl, and bu must appear.
+    //
+    //        name: Constraint names (list(string)).
+    //
+    //        bk: Bound keys (list(string)).
+    //
+    //        bl: Lower bounds (list(double)).
+    //
+    //        bu: Upper bounds (list(double)).
+    //
+    //    barvar: Information about symmetric matrix variables. All fields present must have the same length as dim.
+    //
+    //        name: Barvar names (list(string)).
+    //
+    //        dim: Dimensions (list(int32)).
+    //
+    //    objective: Information about the objective.
+    //
+    //        name: Objective name (string).
+    //
+    //        sense: Objective sense (string).
+    //
+    //        c: The linear part 
+    //
+    //of the objective as a sparse vector. Both arrays must have the same length.
+    //
+    //    subj: indices of nonzeros (list(int32)).
+    //
+    //    val: values of nonzeros (list(double)).
+    //
+    //cfix: Constant term in the objective (double).
+    //
+    //Q: The quadratic part
+    //
+    //of the objective as a sparse matrix, only lower-triangular part included. All arrays must have the same length.
+    //
+    //    subi: row indices of nonzeros (list(int32)).
+    //
+    //    subj: column indices of nonzeros (list(int32)).
+    //
+    //    val: values of nonzeros (list(double)).
+    //
+    //barc: The semidefinite part
+    //of the objective (list). Each element of the list is a list describing one entry
+    //
+    //using three fields:
+    //
+    //    index 
+    //
+    //(int32).
+    //
+    //weights of the matrices from the storage
+    //forming
+    //
+    //(list(double)).
+    //
+    //indices of the matrices from the storage
+    //forming
+    //
+    //        (list(int64)).
+    //
+    //A: The linear constraint matrix
+    //
+    //as a sparse matrix. All arrays must have the same length.
+    //
+    //    subi: row indices of nonzeros (list(int32)).
+    //
+    //    subj: column indices of nonzeros (list(int32)).
+    //
+    //    val: values of nonzeros (list(double)).
+    //
+    //bara: The semidefinite part
+    //of the constraints (list). Each element of the list is a list describing one entry
+    //
+    //using four fields:
+    //
+    //    index 
+    //
+    //(int32).
+    //
+    //index
+    //
+    //(int32).
+    //
+    //weights of the matrices from the storage
+    //forming
+    //
+    //(list(double)).
+    //
+    //indices of the matrices from the storage
+    //forming
+    //
+    //    (list(int64)).
+    //
+    //AFE: The affine expression storage.
+    //
+    //    numafe: number of rows in the storage (int64).
+    //
+    //    F: The matrix 
+    //
+    //as a sparse matrix. All arrays must have the same length.
+    //
+    //    subi: row indices of nonzeros (list(int64)).
+    //
+    //    subj: column indices of nonzeros (list(int32)).
+    //
+    //    val: values of nonzeros (list(double)).
+    //
+    //g: The vector
+    //
+    //of constant terms as a sparse vector. Both arrays must have the same length.
+    //
+    //    subi: indices of nonzeros (list(int64)).
+    //
+    //    val: values of nonzeros (list(double)).
+    //
+    //barf: The semidefinite part
+    //of the expressions in AFE storage (list). Each element of the list is a list describing one entry
+    //
+    //using four fields:
+    //
+    //    index 
+    //
+    //(int64).
+    //
+    //index
+    //
+    //(int32).
+    //
+    //weights of the matrices from the storage
+    //forming
+    //
+    //(list(double)).
+    //
+    //indices of the matrices from the storage
+    //forming
+    //
+    //        (list(int64)).
+    //
+    //domains: Information about domains. All fields present must have the same length as type.
+    //
+    //    name: Domain names (list(string)).
+    //
+    //    type: Description of the type of each domain (list). Each element of the list is a list describing one domain using at least one field:
+    //
+    //        domain type (string).
+    //
+    //        (except pexp, dexp) dimension (int64).
+    //
+    //        (only ppow, dpow) weights (list(double)).
+    //
+    //ACC: Information about affine conic constraints (ACC). All fields present must have the same length as domain.
+    //
+    //    name: ACC names (list(string)).
+    //
+    //    domain: Domains (list(int64)).
+    //
+    //    afeidx: AFE indices, grouped by ACC (list(list(int64))).
+    //
+    //    b: constant vectors 
+    //
+    //    , grouped by ACC (list(list(double))).
+    //
+    //DJC: Information about disjunctive constraints (DJC). All fields present must have the same length as termsize.
+    //
+    //    name: DJC names (list(string)).
+    //
+    //    termsize: Term sizes, grouped by DJC (list(list(int64))).
+    //
+    //    domain: Domains, grouped by DJC (list(list(int64))).
+    //
+    //    afeidx: AFE indices, grouped by DJC (list(list(int64))).
+    //
+    //    b: constant vectors 
+    //
+    //    , grouped by DJC (list(list(double))).
+    //
+    //MatrixStore: The symmetric matrix storage
+    //(list). Each element of the list is a list describing one entry
+    //
+    //using four fields in sparse matrix format, lower-triangular part only:
+    //
+    //    dimension (int32).
+    //
+    //    row indices of nonzeros (list(int32)).
+    //
+    //    column indices of nonzeros (list(int32)).
+    //
+    //    values of nonzeros (list(double)).
+    //
+    //Q: The quadratic part
+    //of the constraints (list). Each element of the list is a list describing one entry
+    //
+    //using four fields in sparse matrix format, lower-triangular part only:
+    //
+    //    the row index 
+    //
+    //    (int32).
+    //
+    //    row indices of nonzeros (list(int32)).
+    //
+    //    column indices of nonzeros (list(int32)).
+    //
+    //    values of nonzeros (list(double)).
+    //
+    //qcone (deprecated). The description of cones. All fields present must have the same length as type.
+    //
+    //    name: Cone names (list(string)).
+    //
+    //    type: Cone types (list(string)).
+    //
+    //    par: Additional cone parameters (list(double)).
+    //
+    //    members: Members, grouped by cone (list(list(int32))).
+    //
+    //
+}
+
+
 #[derive(Default)]
 pub struct ModelOptserver {
     name : Option<String>,
     hostname : String,
-    access_token       : Option<String>,
+    access_token  : Option<String>,
 
     var_range_lb  : Vec<f64>,
     var_range_ub  : Vec<f64>,

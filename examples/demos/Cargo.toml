@@ -18,3 +18,5 @@ members = [ "ellipsoid-approximation",
             ]
 
 [dependencies]
+serde = "1.0.219"
+ureq = "3.0.11"
