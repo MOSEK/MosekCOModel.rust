@@ -3,6 +3,8 @@
 //! this case, the backend is an OptServer instance communicating over HTTP.
 //!
 
+use std::fmt::Display;
+use std::io::Write;
 use std::path::Path;
 use mosekcomodel::*;
 use mosekcomodel::domain::LinearRangeDomain;
@@ -10,8 +12,6 @@ use itertools::izip;
 
 use mosekcomodel::utils::iter::ChunksByIterExt;
 use mosekcomodel::model::Solution;
-
-use serde::{Serialize,Deserialize};
 
 enum ConeType {
     Unbounded,
@@ -43,7 +43,7 @@ struct ConItem {
 }
 
 
-struct JSONTask {
+//struct JSONTask {
     //$schema: JSON schema.
     //
     //Task/name: The name of the task (string).
@@ -304,8 +304,19 @@ struct JSONTask {
     //    members: Members, grouped by cone (list(list(int32))).
     //
     //
-}
+//}
 
+fn fmt_json_list<I : IntoIterator>(dst : & mut String, v : I) where I::Item : Display {
+    let mut it = v.into_iter();
+    dst.push('[');
+    if let Some(item) = it.next() {
+    dst.push_str(format!("{}",item).as_str());
+    for item in it {
+            dst.push_str(format!(",{}",item).as_str());
+        }
+    }
+    dst.push(']');
+}
 
 #[derive(Default)]
 pub struct ModelOptserver {
@@ -352,8 +363,51 @@ impl ModelOptserver {
         }
     }
 
-    fn write_jtask(&self,f : &mut std::fs::File) -> std::io::Result<usize> {
-        unimplemented!();
+    fn bnd2bk(bl : f64,bu : f64) -> &'static str {
+        match (bl > f64::NEG_INFINITY, bu < f64::INFINITY) {
+            (false,false) => "fr",
+            (true,false) => "lo",
+            (false,true) => "up",
+            (true,true) => if bl < bu { "ra" } else { "fx" }
+        }
+    }
+    fn format_to(&self, dst : &mut String) -> Result<(),String> {
+        let annz : usize = self.con_a_row.iter().map(|&i| self.a_ptr[i][1] ).sum();
+
+
+        dst.push_str("{\"$schema\":\"http://mosek.com/json/schema#\"");
+        dst.push_str(format!(",\"Task/INFO\":{{numvar:{},numcon:{},numanz:{}}}",self.vars.len(),self.con_rhs.len(),annz).as_str());
+        dst.push_str(",\"Task/data\":{");
+        dst.push_str("\"var\":{");
+        dst.push_str("\"bk\":["); 
+
+        {
+            let mut it = self.var_range_lb.iter().zip(self.var_range_ub.iter());
+            if let Some((&bl,&bu)) = it.next() {
+                dst.push('"'); dst.push_str(Self::bnd2bk(bl, bu)); dst.push('"'); 
+                for (&bl,&bu) in it {
+                    dst.push_str(",\"");
+                    dst.push_str(Self::bnd2bk(bl, bu)); dst.push('"'); 
+                }
+            }
+        }
+        dst.push_str("]"); // bk
+        dst.push_str(",\"bl\":"); fmt_json_list(dst, self.var_range_lb.as_slice());
+        dst.push_str(",\"bu\":"); fmt_json_list(dst, self.var_range_ub.as_slice());
+
+
+
+
+        dst.push_str("}"); // var
+        dst.push_str("}"); // Task/data
+        dst.push_str("}"); // $schema
+        Ok(())  
+    }
+
+    fn write_jtask(&self,f : &mut std::fs::File) -> Result<usize,String> {
+        let mut data = String::new();
+        self.format_to(&mut data)?;
+        f.write(data.as_ref()).map_err(|err| err.to_string())
     }
 }
 
