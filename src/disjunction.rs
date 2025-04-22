@@ -4,7 +4,7 @@
 //! $$
 //!   A_1x+b_1\\in K_1\\ \\mathrm{or}\\ldots\\ \\mathrm{or}\\ A_nx+b_n\\in K_n
 //! $$
-//! Each \\(A_ix+b_i\\) is called a _term_ (see [crate::model::constraint]). A term can be composed if multiple _clauses_:
+//! Each \\(A_ix+b_i\\) is called a _term_ (see [crate::model::constr]). A term can be composed if multiple _clauses_:
 //! $$
 //!   \\left[
 //!     \\begin{array}{c}
@@ -113,7 +113,7 @@ pub struct AffineConstraint<const N : usize,E,D>
 /// - `expr` Something that can be turned into an expression via [IntoExpr]. 
 /// - `domain` Something that can be turned into a [ConicDomain]. Currently this is any linear or
 ///    conic domain, but not semidefinite domain.
-pub fn constraint<const N : usize,I,E,D>(expr : I, domain : D) -> AffineConstraint<N,E,D>
+pub fn constr<const N : usize,I,E,D>(expr : I, domain : D) -> AffineConstraint<N,E,D>
     where I : IntoExpr<N,Result=E>,
           E : ExprTrait<N>,
           D : IntoShapedDomain<N>,

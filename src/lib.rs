@@ -367,4 +367,4 @@ pub use domain::{IntoDomain,
                  in_psd_cones,
                  in_range,
                  };
-pub use disjunction::{ConjunctionTrait,DisjunctionTrait};
+pub use disjunction::{ConjunctionTrait,DisjunctionTrait,constr};
