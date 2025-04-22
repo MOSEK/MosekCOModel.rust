@@ -1469,6 +1469,16 @@ impl SolverParameterValue<MosekModel> for &str {
     fn set(self, parname : Self::Key,model : & mut MosekModel) -> Result<(),String> { model.set_str_parameter(parname,self) }
 }
 
+#[derive(Clone)]
+pub struct OptserverHost(String,Option<String>);
+impl SolverParameterValue<MosekModel> for OptserverHost {
+    type Key = &'static str;
+    fn set(self,_parname : Self::Key, model : & mut MosekModel) -> Result<(),String> {
+        model.put_optserver(self.0.as_str(), self.1.as_ref().map(|v| v.as_str()));
+        Ok(())
+    }
+}
+
 
 fn split_sol_sta(whichsol : i32, solsta : i32) -> (SolutionStatus,SolutionStatus) {
     let (psta,dsta) = 
