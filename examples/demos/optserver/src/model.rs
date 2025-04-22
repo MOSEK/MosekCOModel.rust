@@ -1,10 +1,15 @@
+//! 
+//! This project demonstrates how to implement an alternative solver backend for [MosekAPI]. In
+//! this case, the backend is an OptServer instance communicating over HTTP.
+//!
+
 use std::path::Path;
 use mosekcomodel::*;
 use mosekcomodel::domain::LinearRangeDomain;
 use itertools::izip;
 
-use mosekcomodel::expr::workstack::WorkStack;
 use mosekcomodel::utils::iter::ChunksByIterExt;
+use mosekcomodel::model::Solution;
 
 enum ConeType {
     Unbounded,
@@ -24,14 +29,6 @@ struct ConElement {
     block_entry : usize, // offset into the indexed block
 }
 
-//
-//enum LinearBoundType {
-//    Unbounded,
-//    Fixed,
-//    Nonnegative,
-//    Nonpositive
-//}
-
 enum VarItem {
     Linear{index:usize},
     RangedUpper{index:usize},
@@ -49,13 +46,11 @@ pub struct ModelOptserver {
     hostname : String,
     access_token       : Option<String>,
 
-
     var_range_lb  : Vec<f64>,
     var_range_ub  : Vec<f64>,
     var_range_int : Vec<bool>,
 
     vars          : Vec<VarItem>,
-
 
     con_blocks    : Vec<Block>,
 
@@ -68,9 +63,15 @@ pub struct ModelOptserver {
     con_block_i      : Vec<usize>,
     con_block_offset : Vec<usize>,
 
-    rs : WorkStack,
-    ws : WorkStack,
-    xs : WorkStack,
+    c_subj : Vec<usize>,
+    c_cof  : Vec<f64>,
+
+    double_param : Vec<(String,f64)>,
+    int_param    : Vec<(String,i32)>,
+
+    //rs : WorkStack,
+    //ws : WorkStack,
+    //xs : WorkStack,
 }
 
 impl ModelOptserver {
@@ -83,82 +84,21 @@ impl ModelOptserver {
             ..Default::default()
         }
     }
-}
 
-impl ModelAPI for ModelOptserver {
-    fn try_constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> Result<D::Result,String>
-        where
-            E : IntoExpr<N>, 
-            <E as IntoExpr<N>>::Result : ExprTrait<N>,
-            I : IntoShapedDomain<N,Result=D>,
-            D : ConstraintDomain<N,Self>,
-            Self : Sized
-    {
-        expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
-        let (eshape,_,_,_,_) = self.rs.peek_expr();
-        if eshape.len() != N { panic!("Inconsistent shape for evaluated expression") }
-        let mut shape = [0usize; N]; shape.copy_from_slice(eshape);
-
-        dom.try_into_domain(shape)?.add_constraint(self,name)
-    }
-    
-    fn update<const N : usize, E>(&mut self, item : &Constraint<N>, e : E) -> Result<(),String>
-        where 
-            E    : expr::IntoExpr<N>
-    {
-
-        unimplemented!("Not implemented");
-    }
-    
-    fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path> {
-        unimplemented!("Not implemented");
-    }
-    fn solve(& mut self) -> Result<(),String> {
-        unimplemented!("Not implemented");
-    }
-    fn solution_status(&self, solid : SolutionType) -> (SolutionStatus,SolutionStatus) {
-        unimplemented!("Not implemented");
-    }
-
-    fn primal_objective_value(&self, solid : SolutionType) -> Option<f64> {
-        unimplemented!("Not implemented");
-    }
-    fn dual_objective_value(&self, solid : SolutionType) -> Option<f64> {
-        unimplemented!("Not implemented");
-    }
-    fn primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> where Self : Sized+BaseModelTrait {
-        unimplemented!("Not implemented");
-    }
-    fn sparse_primal_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String> where Self : Sized+BaseModelTrait {
-        unimplemented!("Not implemented");
-    }
-    fn dual_solution<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> where Self : Sized+BaseModelTrait {
-        unimplemented!("Not implemented");
-    }
-    fn primal_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> where Self : Sized+BaseModelTrait {
-        unimplemented!("Not implemented");
-    }
-    fn dual_solution_into<const N : usize, I:ModelItem<N,Self>>(&self, solid : SolutionType, item : &I, res : &mut[f64]) -> Result<usize,String> where Self : Sized+BaseModelTrait {
-        unimplemented!("Not implemented");
-    }
-    fn evaluate_primal<const N : usize, E>(& mut self, solid : SolutionType, expr : E) -> Result<NDArray<N>,String> where E : IntoExpr<N>, Self : Sized+BaseModelTrait {
-        unimplemented!("Not implemented");
+    fn write_jtask(&self,f : &mut std::fs::File) -> std::io::Result<usize> {
+        unimplemented!();
     }
 }
-
-
-
-
-
-
-
-
 
 
 
 
 impl BaseModelTrait for ModelOptserver {
-    fn try_free_variable<const N : usize>
+    fn new(name : Option<&str>) -> Self {
+        ModelOptserver::new(name,"",None)
+    }
+
+    fn free_variable<const N : usize>
         (&mut self,
          _name  : Option<&str>,
          shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized 
@@ -180,7 +120,7 @@ impl BaseModelTrait for ModelOptserver {
         Ok(Variable::new((firstvari..firstvari+n).collect::<Vec<usize>>(), None, shape))
     }
 
-    fn try_linear_variable<const N : usize,R>
+    fn linear_variable<const N : usize,R>
         (&mut self, 
          _name : Option<&str>,
          dom  : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String>    
@@ -221,7 +161,7 @@ impl BaseModelTrait for ModelOptserver {
         Ok(Variable::new((firstvari..firstvari+n).collect::<Vec<usize>>(), sp, &shape))
     }
     
-    fn try_ranged_variable<const N : usize,R>(&mut self, _name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> 
+    fn ranged_variable<const N : usize,R>(&mut self, _name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> 
         where 
             Self : Sized 
     {
@@ -248,11 +188,15 @@ impl BaseModelTrait for ModelOptserver {
             Variable::new((ptr1..ptr2).collect::<Vec<usize>>(), sp, &shape)))
     }
 
-    fn try_linear_constraint<const N : usize>(& mut self, _name : Option<&str>, dom  : LinearDomain<N>) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String>
-        where 
-            Self : Sized 
+    fn linear_constraint<const N : usize>
+        (& mut self, 
+         name  : Option<&str>,
+         dom   : LinearDomain<N>,
+         _eshape : &[usize], 
+         ptr   : &[usize], 
+         subj  : &[usize], 
+         cof   : &[f64]) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
     {
-        let (_eshape,ptr,_,subj,cof) = self.rs.pop_expr();
         let (dt,b,sp,shape,_is_integer) = dom.dissolve();
 
         let a_row0 = self.a_ptr.len()-1;
@@ -300,11 +244,15 @@ impl BaseModelTrait for ModelOptserver {
         Ok(Constraint::new((con_row0..con_row0+n).collect::<Vec<usize>>(), &shape))
     }
 
-    fn try_ranged_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
-        where 
-            Self : Sized 
+    fn ranged_constraint<const N : usize>
+        (& mut self, 
+         name : Option<&str>, 
+         dom  : LinearRangeDomain<N>,
+         _eshape : &[usize], 
+         ptr : &[usize], 
+         subj : &[usize], 
+         cof : &[f64]) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
     {
-        let (_eshape,ptr,_,subj,cof) = self.rs.pop_expr();
         let (shape,bl,bu,_,_) = dom.dissolve();
 
         let a_row0 = self.a_ptr.len()-1;
@@ -344,9 +292,8 @@ impl BaseModelTrait for ModelOptserver {
             Constraint::new((con_row0+n..con_row0+2*n).collect::<Vec<usize>>(), &shape)))
     }
 
-    fn try_update(& mut self, idxs : &[usize]) -> Result<(),String>
+    fn update(& mut self, idxs : &[usize], shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<(),String>
     {
-        let (shape,ptr,sp,subj,cof) = self.rs.pop_expr();
         if shape.iter().product::<usize>() != idxs.len() { return Err("Mismatching constraint and experssion sizes".to_string()); }
 
         if let Some(&i) = idxs.iter().max() {
@@ -355,31 +302,32 @@ impl BaseModelTrait for ModelOptserver {
             }
         }
 
-        if let Some(sp) = sp {
-            let mut it = izip!(sp.iter(),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)).peekable();
-            for &i in idxs.iter() {
-                if let Some((_,subj,cof)) = it.peek().and_then(|v| if *(v.0) == i { Some(v) } else { None }) {
-                    let n = subj.len();
-                    let entry = self.a_ptr[i];
-                    if entry[1] >= n {
-                        self.a_subj[entry[0]..entry[0]+n].copy_from_slice(subj);
-                        self.a_cof[entry[0]..entry[0]+n].copy_from_slice(cof);
-                        self.a_ptr[i] = [entry[0],n];
-                    }
-                    else {
-                        let p0 = self.a_subj.len();
-                        self.a_subj.extend_from_slice(subj);
-                        self.a_cof.extend_from_slice(cof);
-                        self.a_ptr[i] = [p0,n];
-                    }
-                }
-                else {
-                    self.a_ptr[i] = [0,0];
-                }
-            }
-
-        }
-        else {
+//        if let Some(sp) = sp {
+//            let mut it = izip!(sp.iter(),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)).peekable();
+//            for &i in idxs.iter() {
+//                if let Some((_,subj,cof)) = it.peek().and_then(|v| if *(v.0) == i { Some(v) } else { None }) {
+//                    let n = subj.len();
+//                    let entry = self.a_ptr[i];
+//                    if entry[1] >= n {
+//                        self.a_subj[entry[0]..entry[0]+n].copy_from_slice(subj);
+//                        self.a_cof[entry[0]..entry[0]+n].copy_from_slice(cof);
+//                        self.a_ptr[i] = [entry[0],n];
+//                    }
+//                    else {
+//                        let p0 = self.a_subj.len();
+//                        self.a_subj.extend_from_slice(subj);
+//                        self.a_cof.extend_from_slice(cof);
+//                        self.a_ptr[i] = [p0,n];
+//                    }
+//                }
+//                else {
+//                    self.a_ptr[i] = [0,0];
+//                }
+//            }
+//
+//        }
+//        else
+        {
             for (subj,cof,&i) in izip!(subj.chunks_ptr(ptr),cof.chunks_ptr(ptr),idxs.iter()) {
                 let n = subj.len();
                 let entry = self.a_ptr[i];
@@ -399,18 +347,56 @@ impl BaseModelTrait for ModelOptserver {
         Ok(())
     }
 
-    fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
-        unimplemented!("Not implemented");
-    }
-    fn dual_var_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
-        unimplemented!("Not implemented");
-    }
-    fn primal_con_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
-        unimplemented!("Not implemented");
-    }
-    fn dual_con_solution(&self,   solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
-        unimplemented!("Not implemented");
+    fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path>
+    {
+        let path : &Path = filename.as_ref();
+        if let Some(ext) = path.extension() {
+            if ext.eq(".jtask") {
+                let mut f = std::fs::File::create(filename).map_err(|err| err.to_string())?;
+                _ = self.write_jtask(&mut f).map_err(|err| err.to_string())?;
+                Ok(())
+            }
+            else {
+                Err(format!("File type not supported: {:?}",ext))
+            }
+        }
+        else {
+            Err(format!("File type not supported for {:?}",path))
+        }
     }
 
+    fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, solitg : &mut Solution) -> Result<(),String>
+    {
+        unimplemented!();
+    }
+
+    fn objective(&mut self, name : Option<&str>, sense : Sense, subj : &[usize],cof : &[f64]) -> Result<(),String>
+    {
+        self.c_subj.resize(subj.len(),0); self.c_subj.copy_from_slice(subj);
+        self.c_cof.resize(cof.len(),0.0); self.c_cof.copy_from_slice(cof);
+        Ok(())
+    }
+
+    fn set_parameter<V>(&mut self, parname : V::Key, parval : V) -> Result<(),String> where V : SolverParameterValue<Self>,Self: Sized
+    {
+        parval.set(parname,self)
+    }
 }
+
+impl SolverParameterValue<ModelOptserver> for f64 {
+    type Key = &'static str;
+    fn set(self,parname : Self::Key, model : & mut ModelOptserver) -> Result<(),String> {
+        model.double_param.push((parname.to_string(), self));
+        Ok(())
+    }
+}
+
+impl SolverParameterValue<ModelOptserver> for i32 {
+    type Key = &'static str;
+    fn set(self,parname : Self::Key, model : & mut ModelOptserver) -> Result<(),String> {
+        model.int_param.push((parname.to_string(),self));
+        Ok(())
+    }
+}
+
 

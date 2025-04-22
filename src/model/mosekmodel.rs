@@ -1366,7 +1366,6 @@ impl DJCModelTrait for MosekModel {
                    term_size : &[usize]) -> Result<Disjunction,String> 
     {
         let nafes : usize = exprs.iter().map(|(shape,_,_,_)| shape.iter().product::<usize>()).sum();
-        //let mut block_size = Vec::with_capacity(exprs.len());
         let mut dom_idxs = Vec::with_capacity(exprs.len());
         let mut b = vec![0.0;nafes];
         let firstafe = self.task.get_num_afe()?;
