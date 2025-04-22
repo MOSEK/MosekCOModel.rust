@@ -577,8 +577,8 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// let a = vec![1.0,2.0,3.0,4.0,5.0];
     /// let b = vec![5.0,4.0,3.0];
     /// model.disjunction(None, 
-    ///                   constraint(x.dot(a), equal_to(3.0))
-    ///                     .or(constraint(y.dot(b), equal_to(1.0))));
+    ///                   constr(x.dot(a), equal_to(3.0))
+    ///                     .or(constr(y.dot(b), equal_to(1.0))));
     /// ```
     ///
     /// # Example: Indicator constraint
@@ -599,9 +599,9 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// let z = model.variable(Some("z"), nonnegative().integer());
     /// model.constraint(None,&z,less_than(1.0));
     /// model.disjunction(None,
-    ///                   constraint(z.clone(),equal_to(0.0))
-    ///                     .or(constraint(z, equal_to(1.0))
-    ///                           .and(constraint(x.dot(a), equal_to(1.0)))));
+    ///                   constr(z.clone(),equal_to(0.0))
+    ///                     .or(constr(z, equal_to(1.0))
+    ///                           .and(constr(x.dot(a), equal_to(1.0)))));
     /// ```
     pub fn try_disjunction<D>(& mut self, name : Option<&str>, mut terms : D) -> Result<Disjunction,String> 
         where 
@@ -617,7 +617,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
             self.rs.pop_exprs(nexprs).iter().rev()
                 .map(|(shape,ptr,sp,subj,cof)| { if sp.is_some() { panic!("Internal invalid: Sparse evaluated expression") } (*shape,*ptr,*subj,*cof) })
                 .collect();
-
+        
         self.inner.disjunction(name,exprs.as_slice(), domains.as_slice(), term_size.as_slice())
     }
    
@@ -1071,8 +1071,6 @@ pub trait SolverParameterValue<M : BaseModelTrait> {
     type Key : Sized;
     fn set(self,parname : Self::Key, model : & mut M) -> Result<(),String>;
 }
-
-
 
 
 

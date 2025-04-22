@@ -39,7 +39,7 @@ use super::{BaseModelTrait, ConAtom, ConicModelTrait, DJCModelTrait, Disjunction
 /// // Create a conic variable consisting of 4 quadratic cones of size 3
 /// let y = model.variable(Some("y"), in_quadratic_cone().with_shape(&[4,3]));
 /// // Create a binary variable
-/// let z = model.ranged_variable(Some("z"),in_range(0.0, 1.0).integer()).0;
+/// let z = model.variable(Some("z"),in_range(0.0, 1.0).integer()).0;
 /// 
 /// // Create a scalar constraint
 /// _ = model.constraint(Some("C1"), x.add(y.index([0,0])), equal_to(5.0));
@@ -1368,16 +1368,17 @@ impl DJCModelTrait for MosekModel {
         let nafes : usize = exprs.iter().map(|(shape,_,_,_)| shape.iter().product::<usize>()).sum();
         //let mut block_size = Vec::with_capacity(exprs.len());
         let mut dom_idxs = Vec::with_capacity(exprs.len());
-        let mut b = Vec::with_capacity(nafes);
+        let mut b = vec![0.0;nafes];
         let firstafe = self.task.get_num_afe()?;
+
         self.task.append_afes(nafes as i64)?;
         let mut afeidxs = vec![0i64; nafes];
 
         let mut afei = 0;
         for (dom,(shape,ptr,subj,cof)) in domains.iter().zip(exprs.iter()) {
-            let (dt,ofs,_dshape,conedim,_) = dom.extract();
-            let conesize = shape[conedim];
-            //block_size.push(shape.iter().product());
+            let (dt,ofs,dshape,conedim,_) = dom.extract();
+
+            let conesize = if dshape.is_empty() { 1 } else { dshape[conedim] };
 
             dom_idxs.push(match dt {
                 ConicDomainType::NonNegative           => self.task.append_rplus_domain(conesize.try_into().unwrap())?,
@@ -1395,11 +1396,17 @@ impl DJCModelTrait for MosekModel {
                 ConicDomainType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice())?,
             });
 
-            let d0 : usize = shape[0..conedim].iter().product();
-            let d1 : usize = shape[conedim];
-            let d2 : usize = shape[conedim+1..].iter().product();
+            let (d0,d1,d2) = if shape.is_empty() {
+                    (1,1,1)
+                }
+                else {
+                    (shape[0..conedim].iter().product(),
+                     shape[conedim],
+                     shape[conedim+1..].iter().product())
+                };
 
             let nelm = shape.iter().product();
+
 
             let afeidxs = &mut afeidxs[afei..afei+nelm];
             b[afei..afei+nelm].copy_from_slice(ofs);

@@ -190,7 +190,12 @@ impl<const N : usize,E,D> ConjunctionTrait for AffineConstraint<N,E,D>
 
         let dom = self.domain.take().unwrap().try_into_domain(shape)?.into_conic();
 
-        let (_,_,_,_,is_integer) = dom.get();
+        let (_,_,dshape,_,is_integer) = dom.get();
+
+        if dshape != eshape {
+            return Err("Mismatching expression and domain shapes in constraint".to_string());
+        }
+
 
         domains.push(Box::new(dom));
 
