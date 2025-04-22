@@ -1470,7 +1470,7 @@ impl SolverParameterValue<MosekModel> for &str {
 }
 
 #[derive(Clone)]
-pub struct OptserverHost(String,Option<String>);
+pub struct OptserverHost(pub String,pub Option<String>);
 impl SolverParameterValue<MosekModel> for OptserverHost {
     type Key = &'static str;
     fn set(self,_parname : Self::Key, model : & mut MosekModel) -> Result<(),String> {

@@ -40,7 +40,7 @@ fn lo1(hostname : String, accesstoken : Option<String>) -> (SolutionStatus,Solut
     m.objective(Some("obj"), Sense::Maximize, x.dot(c));
 
     // Solve the problem
-    m.set_parameter("optserver",mosekmodel::OptserverHost(hostname, accesstoken));
+    m.set_parameter("optserver",mosekmodel::OptserverHost(hostname.clone(), accesstoken));
     println!("Solving on {}",hostname);
     m.solve();
 
