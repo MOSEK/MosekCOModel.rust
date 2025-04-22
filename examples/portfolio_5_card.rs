@@ -47,7 +47,7 @@ fn markowitz_with_cardinality(mu : &[f64],
     // Additional "helper" variables 
     let z = model.variable(Some("z"), unbounded().with_shape(&[n]));
     // Binary variables  - do we change position in assets
-    let (y,_) = model.ranged_variable(Some("y"), in_range(0.0,1.0).with_shape(&[n]).integer());
+    let (y,_) = model.variable(Some("y"), in_range(0.0,1.0).with_shape(&[n]).integer());
     //let y = model.variable(Some("y"), greater_than(vec![0.0; n]).integer());
     _ = model.constraint(None, &y, less_than(vec![1.0; n]));
 

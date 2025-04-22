@@ -36,6 +36,7 @@ pub trait DomainTrait<const N : usize> {
 impl<const N : usize> DomainTrait<N> for LinearDomain<N> {}
 impl<const N : usize> DomainTrait<N> for ConicDomain<N> {}
 impl<const N : usize> DomainTrait<N> for PSDDomain<N> {}
+impl<const N : usize> DomainTrait<N> for LinearRangeDomain<N> {}
 
 /// Trait for structs that can be turned into a domain without imposing a shape.
 pub trait IntoDomain {
@@ -757,18 +758,18 @@ impl IntoProtoRangeBound for &[f64] {
 }
 
 
-pub trait IntoLinearRange {
-    type Result;
-    fn into_range(self) -> Result<Self::Result,String>;
-}
+//pub trait IntoLinearRange {
+//    type Result;
+//    fn into_range(self) -> Result<Self::Result,String>;
+//}
+//
+//pub trait IntoShapedLinearRange<const N : usize> {
+//    fn into_range(self, shape : [usize;N]) -> Result<LinearRangeDomain<N>,String>;
+//}
 
-pub trait IntoShapedLinearRange<const N : usize> {
-    fn into_range(self, shape : [usize;N]) -> Result<LinearRangeDomain<N>,String>;
-}
-
-impl IntoLinearRange for ScalableLinearRange {
+impl IntoDomain for ScalableLinearRange {
     type Result = LinearRangeDomain<0>;
-    fn into_range(self) -> Result<Self::Result,String> {
+    fn try_into_domain(self) -> Result<Self::Result,String> {
         Ok(LinearRangeDomain{
             shape : [],
             lower : vec![self.lower],
@@ -779,8 +780,9 @@ impl IntoLinearRange for ScalableLinearRange {
     }
 }
 
-impl<const N : usize> IntoShapedLinearRange<N> for ScalableLinearRange {
-    fn into_range(self,shape: [usize;N]) -> Result<LinearRangeDomain<N>,String> {
+impl<const N : usize> IntoShapedDomain<N> for ScalableLinearRange {
+    type Result = LinearRangeDomain<N>;
+    fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
         let n = shape.iter().product();
         Ok(LinearRangeDomain{
             shape,
@@ -792,19 +794,20 @@ impl<const N : usize> IntoShapedLinearRange<N> for ScalableLinearRange {
     }
 }
 
-impl<const N : usize> IntoShapedLinearRange<N> for ProtoLinearRange<N> {
-    fn into_range(self, shape : [usize;N]) -> Result<LinearRangeDomain<N>,String> {
+impl<const N : usize> IntoShapedDomain<N> for ProtoLinearRange<N> {
+    type Result = LinearRangeDomain<N>;
+    fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
         if shape != self.shape {
             return Err("Domain shape does not match the expected shape.".to_string());
         }
 
-        IntoLinearRange::into_range(self)
+        IntoDomain::try_into_domain(self)
     }
 }
 
-impl<const N : usize> IntoLinearRange for ProtoLinearRange<N> {
+impl<const N : usize> IntoDomain for ProtoLinearRange<N> {
     type Result = LinearRangeDomain<N>;
-    fn into_range(self) -> Result<Self::Result,String> {
+    fn try_into_domain(self) -> Result<Self::Result,String> {
         let nelm = 
             if let Some(sp) = self.sparsity.as_ref() {
                 if sp.iter().zip(sp[1..].iter()).any(|(a,b)| a >= b) {
@@ -890,6 +893,8 @@ impl<const N : usize> LinearRangeDomain<N> {
         }
     }
 }
+
+
 //-----------------------------------------------------------------------------
 // LinearDomain
 //-----------------------------------------------------------------------------

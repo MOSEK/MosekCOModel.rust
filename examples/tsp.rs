@@ -34,7 +34,7 @@ fn tsp(n : usize, A : & NDArray<2>, C : &NDArray<2>, remove_selfloops: bool, rem
 
     {
         let x = x.clone();
-        M.set_solution_callback(move |M| 
+        M.set_int_solution_callback(move |M| 
             if let Ok(xx) = M.primal_solution(SolutionType::Integer, &x) {
                 println!("New Solution: {:?}",xx)
             });
