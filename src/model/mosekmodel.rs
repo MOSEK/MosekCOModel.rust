@@ -840,7 +840,7 @@ impl BaseModelTrait for MosekModel {
         Ok(())
     }
 
-    fn set_param<V>(&mut self, parname : V::Key, parval : V) -> Result<(),String> where V : SolverParameterValue<Self> {
+    fn set_parameter<V>(&mut self, parname : V::Key, parval : V) -> Result<(),String> where V : SolverParameterValue<Self> {
         parval.set(parname, self)
     }
 }

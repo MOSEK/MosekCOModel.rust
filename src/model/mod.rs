@@ -1,4 +1,3 @@
-#![doc = include_str!("../../js/mathjax.tag")]
 
 use itertools::izip;
 use std::fmt::Debug;
@@ -217,7 +216,7 @@ pub trait BaseModelTrait {
 
     fn objective(&mut self, name : Option<&str>, sense : Sense, subj : &[usize],cof : &[f64]) -> Result<(),String>;
 
-    fn set_param<V>(&mut self, parname : V::Key, parval : V) -> Result<(),String> where V : SolverParameterValue<Self>,Self: Sized;
+    fn set_parameter<V>(&mut self, parname : V::Key, parval : V) -> Result<(),String> where V : SolverParameterValue<Self>,Self: Sized;
 }
 
 /// An inner model object must implement this to support conic vector constraints and variables
@@ -687,7 +686,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// Get primal objective value, if available.
     ///
     /// The primal objective is only available if the primal solution is defined.
-    pub fn primal_objective_value(&self, solid : SolutionType) -> Option<f64> {
+    pub fn primal_objective(&self, solid : SolutionType) -> Option<f64> {
         self.select_sol(solid)    
             .map(|sol| sol.primal.obj)
     }
@@ -695,7 +694,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// Get dual objective value, if available.
     ///
     /// The dual objective is only available if the dual solution is defined.
-    pub fn dual_objective_value(&self, solid : SolutionType) -> Option<f64> {
+    pub fn dual_objective(&self, solid : SolutionType) -> Option<f64> {
         self.select_sol(solid)
             .map(|sol| sol.dual.obj)
     }
@@ -839,9 +838,34 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
 
 
 
-
-
-
+//
+//    pub fn primal_objective_value(&self, solid : SolutionType) -> Result<f64,String> {
+//        if let Some(sol) = self.select_sol(solid) {
+//            if let SolutionStatus::Undefined = sol.primal.status {
+//                Err("Solution part is not defined".to_string())
+//            }
+//            else {
+//                Ok(sol.primal.obj)
+//            }
+//        }
+//        else {
+//            Err("Solution value is undefined".to_string())
+//        }
+//    }
+//
+//    pub fn dual_objective_value(&self, solid : SolutionType) -> Result<f64,String> {
+//        if let Some(sol) = self.select_sol(solid) {
+//            if let SolutionStatus::Undefined = sol.dual.status  {
+//                Err("Solution part is not defined".to_string())
+//            }
+//            else {
+//                Ok(sol.dual.obj)
+//            }
+//        }
+//        else {
+//            Err("Solution value is undefined".to_string())
+//        }
+//    }
 
 
 
@@ -907,9 +931,9 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// types (e.g. integer or double parameters). It can in principle be used to pass any 
     /// information
     pub fn try_set_param<V : SolverParameterValue<T>>(&mut self, parname : V::Key, parval : V) -> Result<(),String> {
-        self.inner.set_param(parname, parval)
+        self.inner.set_parameter(parname, parval)
     }
-    pub fn set_param<V : SolverParameterValue<T>>(&mut self, parname : V::Key, parval : V) {
+    pub fn set_parameter<V : SolverParameterValue<T>>(&mut self, parname : V::Key, parval : V) {
         self.try_set_param(parname, parval).unwrap();
     }
 }

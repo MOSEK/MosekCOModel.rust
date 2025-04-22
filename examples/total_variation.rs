@@ -69,7 +69,7 @@ fn main() {
     for sigma in [0.0004, 0.0005, 0.0006] {
         let sigma_val = sigma * (m*n) as f64;
 
-        M.update(&sigma_con, sigma_val).unwrap();
+        M.update(&sigma_con, sigma_val);
         // Example: Linear signal with Gaussian noise    
        
 
