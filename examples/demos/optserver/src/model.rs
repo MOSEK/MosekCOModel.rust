@@ -407,6 +407,7 @@ impl BaseModelTrait for ModelOptserver {
 
     fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, solitg : &mut Solution) -> Result<(),String>
     {
+        ureq:post();
         unimplemented!();
     }
 
