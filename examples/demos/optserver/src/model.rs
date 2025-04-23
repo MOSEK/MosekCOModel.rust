@@ -110,7 +110,7 @@ impl ModelOptserver {
             (true,true) => if bl < bu { "ra" } else { "fx" }
         }
     }
-    fn format_to(&self, dst : &mut String) -> Result<(),String> {
+    fn format_to(&self, dst : &mut String) {
         let annz : usize = self.con_a_row.iter().map(|&i| self.a_ptr[i][1] ).sum();
 
 
@@ -153,13 +153,18 @@ impl ModelOptserver {
         dst.push_str("}"); // A
         dst.push_str("}"); // Task/data
         dst.push_str("}"); // $schema
-        Ok(())  
     }
 
     fn write_jtask(&self,f : &mut std::fs::File) -> Result<usize,String> {
         let mut data = String::new();
-        self.format_to(&mut data)?;
+        self.format_to(&mut data);
         f.write(data.as_ref()).map_err(|err| err.to_string())
+    }
+
+    fn format(&self) -> String {
+        let mut data = String::new();
+        self.format_to(&mut data);
+        data
     }
 }
 
@@ -407,8 +412,17 @@ impl BaseModelTrait for ModelOptserver {
 
     fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, solitg : &mut Solution) -> Result<(),String>
     {
-        ureq:post();
-        unimplemented!();
+        let data = self.format();
+        let recv_body = ureq::post(format!("{}/api/v1/submit+solve",self.hostname).as_str())
+            .header("Content-Type","application/x-mosek-jtask")
+            .header("Accept","application/x-mosek-jtask")
+            .send(data).map_err(|err| err.to_string())?
+            .body_mut()
+            .read_to_string().map_err(|err| err.to_string())?;
+
+
+
+        Ok(())
     }
 
     fn objective(&mut self, name : Option<&str>, sense : Sense, subj : &[usize],cof : &[f64]) -> Result<(),String>
