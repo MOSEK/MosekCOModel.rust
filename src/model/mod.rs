@@ -72,30 +72,30 @@ pub enum SolutionType {
 #[derive(Clone,Copy,Debug)]
 pub enum SolutionStatus {
     /// Indicates that the solution is optimal within tolerances.
-    Optimal,
+    pub Optimal,
     /// Indicates that the solution is feasible within tolerances.
-    Feasible,
+    pub Feasible,
     /// Indicates that the solution is a certificate of either primal or dual infeasibility. A
     /// primal certificate prooves dual infesibility, and a dual certificate indicates primal
     /// infeasibility.
-    CertInfeas,
+    pub CertInfeas,
     /// Indicates that the solution is a certificate of either primal or dual illposedness. A
     /// primal certificate prooves dual illposedness, and a dual certificate indicates primal
     /// illposedness.
-    CertIllposed,
+    pub CertIllposed,
     /// Indicates that the solution status is not known, basically it can be arbitrary values. 
-    Unknown,
+    pub Unknown,
     /// Indicates that the solution is not available.
-    Undefined
+    pub Undefined
 }
 impl Default for SolutionStatus { fn default() -> Self { SolutionStatus::Undefined } }
 
 #[derive(Default)]
 pub struct SolutionPart {
-    status : SolutionStatus,
-    var    : Vec<f64>,
-    con    : Vec<f64>,
-    obj    : f64,
+    pub status : SolutionStatus,
+    pub var    : Vec<f64>,
+    pub con    : Vec<f64>,
+    pub obj    : f64,
 
 }
 
@@ -109,8 +109,8 @@ impl SolutionPart {
 
 #[derive(Default)]
 pub struct Solution {
-    primal : SolutionPart,
-    dual   : SolutionPart
+    pub primal : SolutionPart,
+    pub dual   : SolutionPart
 }
 
 impl Solution {
