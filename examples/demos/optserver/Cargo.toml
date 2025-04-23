@@ -6,5 +6,6 @@ edition = "2021"
 [dependencies]
 itertools = "0.14.0"
 mosekcomodel = { version = "0.1.1", path = "../../.." }
+ureq = "3.0.11"
 
 [lib]

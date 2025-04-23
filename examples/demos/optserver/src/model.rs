@@ -31,280 +31,20 @@ struct ConElement {
     block_entry : usize, // offset into the indexed block
 }
 
-enum VarItem {
+enum Item {
     Linear{index:usize},
     RangedUpper{index:usize},
     RangedLower{index:usize},
-    Conic{index:usize,con_block_index: usize, con_block_offset: usize},
 }
-struct ConItem {
-    block_i: usize, 
-    block_entry: usize
+impl Item {
+    fn index(&self) -> usize { 
+        match self {
+            Item::Linear { index } => *index,
+            Item::RangedUpper { index } => *index,
+            Item::RangedLower { index } => *index
+        }
+    } 
 }
-
-
-//struct JSONTask {
-    //$schema: JSON schema.
-    //
-    //Task/name: The name of the task (string).
-    //
-    //Task/INFO: Information about problem data dimensions and similar. These are treated as hints when reading the file.
-    //
-    //    numvar: number of variables (int32).
-    //
-    //    numcon: number of constraints (int32).
-    //
-    //    numcone: number of cones (int32, deprecated).
-    //
-    //    numbarvar: number of symmetric matrix variables (int32).
-    //
-    //    numanz: number of nonzeros in A (int64).
-    //
-    //    numsymmat: number of matrices in the symmetric matrix storage E (int64).
-    //
-    //    numafe: number of affine expressions in AFE storage (int64).
-    //
-    //    numfnz: number of nonzeros in F (int64).
-    //
-    //    numacc: number of affine conic constraints (ACCs) (int64).
-    //
-    //    numdjc: number of disjunctive constraints (DJCs) (int64).
-    //
-    //    numdom: number of domains (int64).
-    //
-    //    mosekver: MOSEK version (list(int32)).
-    //
-    //Task/data: Numerical and structural data of the problem.
-    //
-    //    var: Information about variables. All fields present must have the same length as bk. All or none of bk, bl, and bu must appear.
-    //
-    //        name: Variable names (list(string)).
-    //
-    //        bk: Bound keys (list(string)).
-    //
-    //        bl: Lower bounds (list(double)).
-    //
-    //        bu: Upper bounds (list(double)).
-    //
-    //        type: Variable types (list(string)).
-    //
-    //    con: Information about linear constraints. All fields present must have the same length as bk. All or none of bk, bl, and bu must appear.
-    //
-    //        name: Constraint names (list(string)).
-    //
-    //        bk: Bound keys (list(string)).
-    //
-    //        bl: Lower bounds (list(double)).
-    //
-    //        bu: Upper bounds (list(double)).
-    //
-    //    barvar: Information about symmetric matrix variables. All fields present must have the same length as dim.
-    //
-    //        name: Barvar names (list(string)).
-    //
-    //        dim: Dimensions (list(int32)).
-    //
-    //    objective: Information about the objective.
-    //
-    //        name: Objective name (string).
-    //
-    //        sense: Objective sense (string).
-    //
-    //        c: The linear part 
-    //
-    //of the objective as a sparse vector. Both arrays must have the same length.
-    //
-    //    subj: indices of nonzeros (list(int32)).
-    //
-    //    val: values of nonzeros (list(double)).
-    //
-    //cfix: Constant term in the objective (double).
-    //
-    //Q: The quadratic part
-    //
-    //of the objective as a sparse matrix, only lower-triangular part included. All arrays must have the same length.
-    //
-    //    subi: row indices of nonzeros (list(int32)).
-    //
-    //    subj: column indices of nonzeros (list(int32)).
-    //
-    //    val: values of nonzeros (list(double)).
-    //
-    //barc: The semidefinite part
-    //of the objective (list). Each element of the list is a list describing one entry
-    //
-    //using three fields:
-    //
-    //    index 
-    //
-    //(int32).
-    //
-    //weights of the matrices from the storage
-    //forming
-    //
-    //(list(double)).
-    //
-    //indices of the matrices from the storage
-    //forming
-    //
-    //        (list(int64)).
-    //
-    //A: The linear constraint matrix
-    //
-    //as a sparse matrix. All arrays must have the same length.
-    //
-    //    subi: row indices of nonzeros (list(int32)).
-    //
-    //    subj: column indices of nonzeros (list(int32)).
-    //
-    //    val: values of nonzeros (list(double)).
-    //
-    //bara: The semidefinite part
-    //of the constraints (list). Each element of the list is a list describing one entry
-    //
-    //using four fields:
-    //
-    //    index 
-    //
-    //(int32).
-    //
-    //index
-    //
-    //(int32).
-    //
-    //weights of the matrices from the storage
-    //forming
-    //
-    //(list(double)).
-    //
-    //indices of the matrices from the storage
-    //forming
-    //
-    //    (list(int64)).
-    //
-    //AFE: The affine expression storage.
-    //
-    //    numafe: number of rows in the storage (int64).
-    //
-    //    F: The matrix 
-    //
-    //as a sparse matrix. All arrays must have the same length.
-    //
-    //    subi: row indices of nonzeros (list(int64)).
-    //
-    //    subj: column indices of nonzeros (list(int32)).
-    //
-    //    val: values of nonzeros (list(double)).
-    //
-    //g: The vector
-    //
-    //of constant terms as a sparse vector. Both arrays must have the same length.
-    //
-    //    subi: indices of nonzeros (list(int64)).
-    //
-    //    val: values of nonzeros (list(double)).
-    //
-    //barf: The semidefinite part
-    //of the expressions in AFE storage (list). Each element of the list is a list describing one entry
-    //
-    //using four fields:
-    //
-    //    index 
-    //
-    //(int64).
-    //
-    //index
-    //
-    //(int32).
-    //
-    //weights of the matrices from the storage
-    //forming
-    //
-    //(list(double)).
-    //
-    //indices of the matrices from the storage
-    //forming
-    //
-    //        (list(int64)).
-    //
-    //domains: Information about domains. All fields present must have the same length as type.
-    //
-    //    name: Domain names (list(string)).
-    //
-    //    type: Description of the type of each domain (list). Each element of the list is a list describing one domain using at least one field:
-    //
-    //        domain type (string).
-    //
-    //        (except pexp, dexp) dimension (int64).
-    //
-    //        (only ppow, dpow) weights (list(double)).
-    //
-    //ACC: Information about affine conic constraints (ACC). All fields present must have the same length as domain.
-    //
-    //    name: ACC names (list(string)).
-    //
-    //    domain: Domains (list(int64)).
-    //
-    //    afeidx: AFE indices, grouped by ACC (list(list(int64))).
-    //
-    //    b: constant vectors 
-    //
-    //    , grouped by ACC (list(list(double))).
-    //
-    //DJC: Information about disjunctive constraints (DJC). All fields present must have the same length as termsize.
-    //
-    //    name: DJC names (list(string)).
-    //
-    //    termsize: Term sizes, grouped by DJC (list(list(int64))).
-    //
-    //    domain: Domains, grouped by DJC (list(list(int64))).
-    //
-    //    afeidx: AFE indices, grouped by DJC (list(list(int64))).
-    //
-    //    b: constant vectors 
-    //
-    //    , grouped by DJC (list(list(double))).
-    //
-    //MatrixStore: The symmetric matrix storage
-    //(list). Each element of the list is a list describing one entry
-    //
-    //using four fields in sparse matrix format, lower-triangular part only:
-    //
-    //    dimension (int32).
-    //
-    //    row indices of nonzeros (list(int32)).
-    //
-    //    column indices of nonzeros (list(int32)).
-    //
-    //    values of nonzeros (list(double)).
-    //
-    //Q: The quadratic part
-    //of the constraints (list). Each element of the list is a list describing one entry
-    //
-    //using four fields in sparse matrix format, lower-triangular part only:
-    //
-    //    the row index 
-    //
-    //    (int32).
-    //
-    //    row indices of nonzeros (list(int32)).
-    //
-    //    column indices of nonzeros (list(int32)).
-    //
-    //    values of nonzeros (list(double)).
-    //
-    //qcone (deprecated). The description of cones. All fields present must have the same length as type.
-    //
-    //    name: Cone names (list(string)).
-    //
-    //    type: Cone types (list(string)).
-    //
-    //    par: Additional cone parameters (list(double)).
-    //
-    //    members: Members, grouped by cone (list(list(int32))).
-    //
-    //
-//}
 
 fn fmt_json_list<I : IntoIterator>(dst : & mut String, v : I) where I::Item : Display {
     let mut it = v.into_iter();
@@ -328,19 +68,18 @@ pub struct ModelOptserver {
     var_range_ub  : Vec<f64>,
     var_range_int : Vec<bool>,
 
-    vars          : Vec<VarItem>,
-
-    con_blocks    : Vec<Block>,
+    vars          : Vec<Item>,
 
     a_ptr      : Vec<[usize;2]>,
     a_subj     : Vec<usize>,
     a_cof      : Vec<f64>,
+    con_lb           : Vec<f64>,
+    con_ub           : Vec<f64>,
 
-    con_rhs          : Vec<f64>,
-    con_a_row        : Vec<usize>, // index into a_ptr
-    con_block_i      : Vec<usize>,
-    con_block_offset : Vec<usize>,
+    con_a_row     : Vec<usize>, // index into a_ptr
+    cons          : Vec<Item>,
 
+    sense_max : bool,
     c_subj : Vec<usize>,
     c_cof  : Vec<f64>,
 
@@ -376,29 +115,42 @@ impl ModelOptserver {
 
 
         dst.push_str("{\"$schema\":\"http://mosek.com/json/schema#\"");
-        dst.push_str(format!(",\"Task/INFO\":{{numvar:{},numcon:{},numanz:{}}}",self.vars.len(),self.con_rhs.len(),annz).as_str());
+        dst.push_str(format!(",\"Task/INFO\":{{numvar:{},numcon:{},numanz:{}}}",self.vars.len(),self.con_a_row.len(),annz).as_str());
         dst.push_str(",\"Task/data\":{");
         dst.push_str("\"var\":{");
-        dst.push_str("\"bk\":["); 
-
-        {
-            let mut it = self.var_range_lb.iter().zip(self.var_range_ub.iter());
-            if let Some((&bl,&bu)) = it.next() {
-                dst.push('"'); dst.push_str(Self::bnd2bk(bl, bu)); dst.push('"'); 
-                for (&bl,&bu) in it {
-                    dst.push_str(",\"");
-                    dst.push_str(Self::bnd2bk(bl, bu)); dst.push('"'); 
-                }
-            }
-        }
-        dst.push_str("]"); // bk
+        dst.push_str("\"bk\":"); 
+        fmt_json_list(dst, 
+                      self.var_range_lb.iter().zip(self.var_range_ub.iter())
+                        .map(|(&bl,&bu)| Self::bnd2bk(bl,bu) ));
         dst.push_str(",\"bl\":"); fmt_json_list(dst, self.var_range_lb.as_slice());
         dst.push_str(",\"bu\":"); fmt_json_list(dst, self.var_range_ub.as_slice());
-
-
-
-
+        if self.var_range_int.iter().any(|&v| v) {  
+            dst.push_str(",\"type\":"); fmt_json_list(dst, self.var_range_int.iter().map(|&v| if v { "true" } else { "false" }));
+        }
         dst.push_str("}"); // var
+        
+
+        dst.push_str(",\"con\":{");
+        dst.push_str("\"bk\":"); 
+        fmt_json_list(dst, 
+                      self.con_lb.iter().zip(self.con_ub.iter())
+                        .map(|(&bl,&bu)| Self::bnd2bk(bl,bu) ));
+        dst.push_str(",\"bl\":"); fmt_json_list(dst, self.con_lb.as_slice());
+        dst.push_str(",\"bu\":"); fmt_json_list(dst, self.con_ub.as_slice());
+        dst.push_str("}"); // con
+
+        dst.push_str(",\"obj\":{");
+        dst.push_str(if self.sense_max { ",\"sense\":\"max\"" } else { ",\"sense\":\"min\""});
+        dst.push_str(",\"c\":{");
+        dst.push_str("\"subj\":"); fmt_json_list(dst,self.c_subj.iter().map(|&i| self.vars[i].index()));
+        dst.push_str(",\"cof\":"); fmt_json_list(dst,self.c_cof.iter());
+        dst.push_str("}"); // c
+
+        dst.push_str(",\"A\":{");
+        dst.push_str("\"subi\":");  fmt_json_list(dst,self.con_a_row.iter().enumerate().flat_map(|(i,&k)| std::iter::repeat(i).take(self.a_ptr[k][1])));
+        dst.push_str(",\"subj\":"); fmt_json_list(dst,self.con_a_row.iter().flat_map(|&k| { let entry = self.a_ptr[k]; self.a_subj[entry[0]..entry[0]+entry[1]].iter() }));
+        dst.push_str(",\"cof\":");  fmt_json_list(dst,self.con_a_row.iter().flat_map(|&k| { let entry = self.a_ptr[k]; self.a_cof[entry[0]..entry[0]+entry[1]].iter() }));
+        dst.push_str("}"); // A
         dst.push_str("}"); // Task/data
         dst.push_str("}"); // $schema
         Ok(())  
@@ -435,7 +187,7 @@ impl BaseModelTrait for ModelOptserver {
         let firstvari = self.vars.len();
         self.vars.reserve(n);
         for i in first..last {
-            self.vars.push(VarItem::Linear{index:i});
+            self.vars.push(Item::Linear{index:i});
         }
 
         Ok(Variable::new((firstvari..firstvari+n).collect::<Vec<usize>>(), None, shape))
@@ -456,7 +208,7 @@ impl BaseModelTrait for ModelOptserver {
 
         let firstvari = self.vars.len();
         self.vars.reserve(n);
-        for i in first..last { self.vars.push(VarItem::Linear{index:i}) }
+        for i in first..last { self.vars.push(Item::Linear{index:i}) }
         match dt {
             LinearDomainType::Zero => {
                 self.var_range_lb.resize(last,0.0);
@@ -496,8 +248,8 @@ impl BaseModelTrait for ModelOptserver {
         let ptr1 = self.vars.len()+n;
         let ptr2 = self.vars.len()+2*n;
         self.vars.reserve(n*2);
-        for i in first..last { self.vars.push(VarItem::RangedLower{index:i}) }
-        for i in first..last { self.vars.push(VarItem::RangedUpper{index:i}) }
+        for i in first..last { self.vars.push(Item::RangedLower{index:i}) }
+        for i in first..last { self.vars.push(Item::RangedUpper{index:i}) }
         self.var_range_lb.resize(last,0.0);
         self.var_range_ub.resize(last,0.0);
         self.var_range_int.resize(last,is_integer);
@@ -520,10 +272,11 @@ impl BaseModelTrait for ModelOptserver {
     {
         let (dt,b,sp,shape,_is_integer) = dom.dissolve();
 
-        let a_row0 = self.a_ptr.len()-1;
-        let con_row0 = self.con_rhs.len();
-        let block_i = self.con_blocks.len();
+        assert_eq!(b.len(),ptr.len()-1); 
+        let nrow = b.len();
 
+        let a_row0 = self.a_ptr.len()-1;
+        let con_row0 = self.con_a_row.len();
         let n = shape.iter().product::<usize>();
         
         self.a_ptr.reserve(n);
@@ -533,36 +286,32 @@ impl BaseModelTrait for ModelOptserver {
             }
         }
 
-        {
-            let n0 = self.a_subj.len();
-            self.a_subj.resize(n0+subj.len(),0);
-            self.a_cof.resize(n0+cof.len(),0.0);
-            self.a_subj[n0..].copy_from_slice(subj);
-            self.a_cof[n0..].copy_from_slice(cof);
-        }
-
-        self.con_rhs.resize(con_row0+n,0.0);
-        self.con_rhs[con_row0..].copy_from_slice(b.as_slice());
+        let con0 = self.cons.len();
+        self.a_subj.extend_from_slice(subj);
+        self.a_cof.extend_from_slice(cof);
         self.con_a_row.reserve(n); for i in a_row0..a_row0+n { self.con_a_row.push(i); }
-        self.con_block_i.resize(con_row0+n, block_i);
-        self.con_block_offset.reserve(n); for i in 0..n { self.con_block_offset.push(i); } 
+        self.cons.reserve(n); for i in con_row0..con_row0+n { self.cons.push(Item::Linear { index: i }) }
         
         match dt {
             LinearDomainType::Zero => {
-                self.con_blocks.push(Block{ ct : ConeType::Fixed,       first : con_row0, block_size : n });
+                self.con_lb.extend_from_slice(b.as_slice());
+                self.con_ub.extend_from_slice(b.as_slice());
             },
             LinearDomainType::Free => { 
-                self.con_blocks.push(Block{ ct : ConeType::Unbounded,   first : con_row0, block_size : n });
+                self.con_lb.resize(con_row0+nrow,f64::NEG_INFINITY);
+                self.con_ub.resize(con_row0+nrow,f64::INFINITY);
             },
             LinearDomainType::NonNegative => {
-                self.con_blocks.push(Block{ ct : ConeType::Nonnegative, first : con_row0, block_size : n });
+                self.con_lb.extend_from_slice(b.as_slice());
+                self.con_ub.resize(con_row0+nrow,f64::INFINITY);
             },
             LinearDomainType::NonPositive => {
-                self.con_blocks.push(Block{ ct : ConeType::Nonpositive, first : con_row0, block_size : n });
+                self.con_lb.resize(con_row0+nrow,f64::NEG_INFINITY);
+                self.con_ub.extend_from_slice(b.as_slice());
             },
         }
 
-        Ok(Constraint::new((con_row0..con_row0+n).collect::<Vec<usize>>(), &shape))
+        Ok(Constraint::new((con0..con0+n).collect::<Vec<usize>>(), &shape))
     }
 
     fn ranged_constraint<const N : usize>
@@ -577,8 +326,7 @@ impl BaseModelTrait for ModelOptserver {
         let (shape,bl,bu,_,_) = dom.dissolve();
 
         let a_row0 = self.a_ptr.len()-1;
-        let con_row0 = self.con_rhs.len();
-        let block_i = self.con_blocks.len();
+        let con_row0 = self.con_a_row.len();
 
         let n = shape.iter().product::<usize>();
         
@@ -587,30 +335,20 @@ impl BaseModelTrait for ModelOptserver {
             self.a_ptr.push([b,n]);
         }
 
-        {
-            let n0 = self.a_subj.len();
-            self.a_subj.resize(n0+subj.len(),0);
-            self.a_cof.resize(n0+cof.len(),0.0);
-            self.a_subj[n0..].copy_from_slice(subj);
-            self.a_cof[n0..].copy_from_slice(cof);
-        }
+        self.a_subj.extend_from_slice(subj);
+        self.a_cof.extend_from_slice(cof);
+        self.con_lb.extend_from_slice(bl.as_slice());
+        self.con_ub.extend_from_slice(bu.as_slice());
 
-        self.con_rhs.resize(con_row0+2*n,0.0);
-        self.con_rhs[con_row0..con_row0+n].copy_from_slice(bl.as_slice());
-        self.con_rhs[con_row0+n..con_row0+2*n].copy_from_slice(bu.as_slice());
         self.con_a_row.reserve(n); for i in a_row0..a_row0+n { self.con_a_row.push(i); }
-        self.con_a_row.reserve(n); for i in a_row0..a_row0+n { self.con_a_row.push(i); }
-        self.con_block_i.resize(con_row0+n, block_i);
-        self.con_block_i.resize(con_row0+n, block_i+1);
-        self.con_block_offset.reserve(2*n); 
-        for i in 0..n { self.con_block_offset.push(i); }
-        for i in 0..n { self.con_block_offset.push(i); }
 
-        self.con_blocks.push(Block{ ct : ConeType::Nonnegative, first : con_row0, block_size : n });
-        self.con_blocks.push(Block{ ct : ConeType::Nonpositive, first : con_row0+n, block_size : n });
+        let con0 = self.cons.len();
+        self.cons.reserve(n*2);
+        for i in con_row0..con_row0+n { self.cons.push(Item::RangedLower { index: i }); }
+        for i in con_row0..con_row0+n { self.cons.push(Item::RangedUpper { index: i }); }
 
-        Ok((Constraint::new((con_row0..con_row0+n).collect::<Vec<usize>>(), &shape),
-            Constraint::new((con_row0+n..con_row0+2*n).collect::<Vec<usize>>(), &shape)))
+        Ok((Constraint::new((con0..con0+n).collect::<Vec<usize>>(), &shape),
+            Constraint::new((con0+n..con0+2*n).collect::<Vec<usize>>(), &shape)))
     }
 
     fn update(& mut self, idxs : &[usize], shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<(),String>
@@ -618,51 +356,32 @@ impl BaseModelTrait for ModelOptserver {
         if shape.iter().product::<usize>() != idxs.len() { return Err("Mismatching constraint and experssion sizes".to_string()); }
 
         if let Some(&i) = idxs.iter().max() {
-            if i >= self.con_rhs.len() {
+            if i >= self.cons.len() {
                 return Err("Constraint index out of bounds".to_string());
             }
         }
 
-//        if let Some(sp) = sp {
-//            let mut it = izip!(sp.iter(),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)).peekable();
-//            for &i in idxs.iter() {
-//                if let Some((_,subj,cof)) = it.peek().and_then(|v| if *(v.0) == i { Some(v) } else { None }) {
-//                    let n = subj.len();
-//                    let entry = self.a_ptr[i];
-//                    if entry[1] >= n {
-//                        self.a_subj[entry[0]..entry[0]+n].copy_from_slice(subj);
-//                        self.a_cof[entry[0]..entry[0]+n].copy_from_slice(cof);
-//                        self.a_ptr[i] = [entry[0],n];
-//                    }
-//                    else {
-//                        let p0 = self.a_subj.len();
-//                        self.a_subj.extend_from_slice(subj);
-//                        self.a_cof.extend_from_slice(cof);
-//                        self.a_ptr[i] = [p0,n];
-//                    }
-//                }
-//                else {
-//                    self.a_ptr[i] = [0,0];
-//                }
-//            }
-//
-//        }
-//        else
-        {
-            for (subj,cof,&i) in izip!(subj.chunks_ptr(ptr),cof.chunks_ptr(ptr),idxs.iter()) {
-                let n = subj.len();
-                let entry = self.a_ptr[i];
-                if entry[1] >= n {
-                    self.a_subj[entry[0]..entry[0]+n].copy_from_slice(subj);
-                    self.a_cof[entry[0]..entry[0]+n].copy_from_slice(cof);
-                    self.a_ptr[i] = [entry[0],n];
-                }
-                else {
-                    let p0 = self.a_subj.len();
-                    self.a_subj.extend_from_slice(subj);
-                    self.a_cof.extend_from_slice(cof);
-                    self.a_ptr[i] = [p0,n];
-                }
+        for (subj,cof,i) in izip!(subj.chunks_ptr(ptr),cof.chunks_ptr(ptr),idxs.iter().map(|&i| self.cons[i].index())) {
+            let n = subj.len();
+
+            let ai = self.con_a_row[i];
+
+            let entry = self.a_ptr[ai];
+            if entry[1] >= n {
+                self.a_subj[entry[0]..entry[0]+n].copy_from_slice(subj);
+                self.a_cof[entry[0]..entry[0]+n].copy_from_slice(cof);
+                self.a_ptr[i][1] = n;
+            }
+            else {
+                self.a_ptr[ai][1] = 0;
+                let lb = self.con_lb[ai];
+                let ub = self.con_ub[ai];
+                self.con_a_row[i] = self.a_ptr.len();
+                self.con_lb.push(lb);
+                self.con_ub.push(ub);
+                self.a_ptr.push([self.a_subj.len(),n]);
+                self.a_subj.extend_from_slice(subj);
+                self.a_cof.extend_from_slice(cof);
             }
         }
         Ok(())
