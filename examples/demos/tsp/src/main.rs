@@ -219,7 +219,7 @@ fn optimize(conf   : &Config,
     let mut model  = Model::new(None);
     //model.set_log_handler(|msg| print!("{}",msg));
 
-    let x = model.ranged_variable(None, in_range(0.0,1.0).with_shape(&[n,n]).integer()).0;
+    let x = model.variable(None, in_range(0.0,1.0).with_shape(&[n,n]).integer()).0;
 
     _ = model.constraint(None,  x.sum_on(&[1]), equal_to(1.0));
     _ = model.constraint(None,  x.sum_on(&[0]), equal_to(1.0));
@@ -239,11 +239,11 @@ fn optimize(conf   : &Config,
         let x = x.clone();
         let tx = tx.clone();
         let stop = stop.clone();
-        model.set_solution_callback(move |model| 
+        model.set_int_solution_callback(move |model| 
             if let Ok(xx) = model.primal_solution(SolutionType::Integer, &x) {
                 _ = tx.send(Response::Solution(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
             });
-        model.set_callback(move || {
+        model.set_control_callback(move || {
             loop {                
                 match rx.try_recv() {
                     Ok(Command::Terminate) => { 

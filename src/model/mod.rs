@@ -358,6 +358,8 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         });
     }
 
+    /// Set the control callback function. The control callback is called regularly while the
+    /// optimizer runs and allows requesting the optimizer to stop nicely.
     pub fn set_control_callback<F>(&mut self, func : F) where F : 'static+FnMut() -> ControlFlow<(),()>, T : ModelWithControlCallback {
         self.inner.set_callback(func);
     }

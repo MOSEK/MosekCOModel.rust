@@ -266,7 +266,7 @@ fn total_var(sigma : f64, f : &NDArray<2>) -> (Model,Variable<2>) {
     let n = f.height();
     let m = f.width();
 
-    let u = M.ranged_variable(Some("u"), in_range(0.0, 1.0).with_shape(&[n+1,m+1])).0;
+    let u = M.variable(Some("u"), in_range(0.0, 1.0).with_shape(&[n+1,m+1])).0;
     let t = M.variable(Some("t"), unbounded().with_shape(&[n,m]));
 
     // In this example we define sigma and the input image f as parameters
