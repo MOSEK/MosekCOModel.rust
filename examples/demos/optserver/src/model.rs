@@ -447,10 +447,6 @@ mod json {
     }
 
     pub fn parse(data : &[u8]) -> Result<Item,String> {
-        use std::io::Write;
-        let mut f = std::fs::File::create("incoming.json").map_err(|err| err.to_string())?;
-        f.write_all(data).unwrap();
-
         parse_item(&mut data.iter().cloned().enumerate().peekable())
     }
 
