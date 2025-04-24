@@ -9,7 +9,7 @@ glam = "0.28.0"
 itertools = "0.13.0"
 mosek = "*"
 rand = "0.8.5"
-mosekcomodel = { version = "0.1.1", path = "../../.." }
+mosekcomodel = { version = "0.2.0", path = "../../.." }
 
 [profile.dev.package."*"]
 opt-level = 3

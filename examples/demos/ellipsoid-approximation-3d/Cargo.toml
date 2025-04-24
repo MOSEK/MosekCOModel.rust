@@ -8,7 +8,7 @@ edition = "2021"
 ellipsoids = { version = "0.1.0", path = "../ellipsoids" }
 itertools = "0.13.0"
 mosek = "*"
-mosekcomodel = { version = "0.1.1", path = "../../.." }
+mosekcomodel = { version = "0.2.0", path = "../../.." }
 rand = "0.8.5"
 
 [profile.dev.package."*"]
