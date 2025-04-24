@@ -128,7 +128,19 @@ mod json {
                     Ok(())
                 },
                 Item::Int(v) => v.fmt(f),
-                Item::Float(v) => v.fmt(f),
+                Item::Float(v) => {
+                    if *v < f64::INFINITY {
+                        if *v > f64::NEG_INFINITY {
+                            v.fmt(f)
+                        }
+                        else {
+                            f.write_str("-1e300")
+                        }
+                    } 
+                    else {
+                        f.write_str("1e300")
+                    }
+                }
                 Item::Null => f.write_str("null"),
                 Item::NaN => f.write_str("nan"),
                 Item::List(l) => { 
@@ -146,10 +158,10 @@ mod json {
                 Item::Dict(d) => {
                     f.write_char('{')?;
                     if let Some((k,v))= d.first() {
-                        k.fmt(f)?; f.write_char(':')?; v.fmt(f)?;
+                        Item::String(k.clone()).fmt(f)?; f.write_char(':')?; v.fmt(f)?;
                         for (k,v) in d[1..].iter() {
                             f.write_char(',')?;
-                            k.fmt(f)?; f.write_char(':')?; v.fmt(f)?;
+                            Item::String(k.clone()).fmt(f)?; f.write_char(':')?; v.fmt(f)?;
                         }
                     }
                     f.write_char('}')?; 
@@ -162,64 +174,64 @@ mod json {
 
 
     pub fn skip_ws<I>(it : &mut std::iter::Peekable<I>) 
-        where I : Iterator<Item = char> 
+        where I : Iterator<Item = (usize,u8)>
     {
-        while let Some(' ') = it.peek() { it.next(); } 
+        while let Some((_,b' ')) = it.peek() { it.next(); } 
     }
 
-    pub fn expect<I>(it : &mut std::iter::Peekable<I>, c : char) -> Result<(),String> 
-        where I : Iterator<Item = char> 
+    pub fn expect<I>(it : &mut std::iter::Peekable<I>, c : u8) -> Result<(),String> 
+        where I : Iterator<Item = (usize,u8)>
     {
-        it.next().ok_or_else(|| format!("Expected '{}'",c))
-            .and_then(|v| if v == c { Ok(()) } else { Err(format!("Expected '{}'",c)) } )
+        it.next().ok_or_else(|| format!("At EOF: Expected '{}'",c))
+            .and_then(|v| if v.1 == c { Ok(()) } else { Err(format!("At {}: Expected '{}', got '{}'",v.0,c as char,v.1 as char)) } )
     }
 
     pub fn parse_string_into<I>(it : &mut std::iter::Peekable<I>,res : & mut String) -> Result<(),String>
-        where I : Iterator<Item = char> 
+        where I : Iterator<Item = (usize,u8)>
     {
         skip_ws(it);
-        expect(it,'"')?;
+        expect(it,b'"')?;
 
-        while let Some(c) = it.next() {
-            if c == '"' {
-                return Ok(())
-            }
-            else if c == '\\' {
-                if let Some(c) = it.next() {
-                    match c {
-                        'n' => res.push('\n'),
-                        't' => res.push('\t'),
-                        'r' => res.push('\r'),
-                        '0' => res.push('\0'),
-                        'x' => {
-                            if let (Some(hi),Some(lo)) = (it.next(),it.next()) {
-                                let hi = match hi {
-                                    '0'..='9' => hi as u8 - '0' as u8,
-                                    'a'..='f' => hi as u8 - 'a' as u8 + 10,
-                                    'A'..='F' => hi as u8 - 'A' as u8 + 10,
-                                    _ => return Err("String entry syntax error".to_string())
-                                };
-                                let lo = match lo {
-                                    '0'..='9' => hi as u8 - '0' as u8,
-                                    'a'..='f' => hi as u8 - 'a' as u8 + 10,
-                                    'A'..='F' => hi as u8 - 'A' as u8 + 10,
-                                    _ => return Err("String entry syntax error".to_string())
-                                };
-                                res.push(((hi << 4) + lo) as char);
-                            }
-                        },
-                        _ => return Err("Premature end of file".to_string())
+        while let Some((_,c)) = it.next() {
+            match c {
+                b'"' => return Ok(()),
+                b'\\' => 
+                    if let Some((ofs,c)) = it.next() {
+                        match c {
+                            b'n' => res.push('\n'),
+                            b't' => res.push('\t'),
+                            b'r' => res.push('\r'),
+                            b'0' => res.push('\0'),
+                            b'x' => {
+                                if let (Some((ofs0,hi)),Some((ofs1,lo))) = (it.next(),it.next()) {
+                                    let hi = match hi {
+                                        b'0'..=b'9' => hi - b'0',
+                                        b'a'..=b'f' => hi - b'a' + 10,
+                                        b'A'..=b'F' => hi - b'A' + 10,
+                                        _ => return Err(format!("At {}: Expected hex char, got '{}'",ofs0,hi as char))
+                                    };
+                                    let lo = match lo {
+                                        b'0'..=b'9' => hi - b'0',
+                                        b'a'..=b'f' => hi - b'a' + 10,
+                                        b'A'..=b'F' => hi - b'A' + 10,
+                                        _ => return Err(format!("At {}: Expected hex char, got '{}'",ofs1,lo as char))
+                                    };
+                                    res.push(((hi << 4) + lo) as char);
+                                }
+                                else {
+                                    return Err(format!("At EOF: Invalid string format"))
+                                }
+                            },
+                            _ => return Err(format!("At {}: Invalid char '{}'",ofs,c as char))
+                        }
                     }
-                }
-            }
-            else {
-                res.push(c);
+                _ => res.push(c as char),
             }
         }
         Err("Premature end of file".to_string())
     }
     pub fn parse_string<I>(it : &mut std::iter::Peekable<I>) -> Result<String,String>
-        where I : Iterator<Item = char> 
+        where I : Iterator<Item = (usize,u8)>
     {
         let mut res = String::new();
         parse_string_into(it,& mut res)?;
@@ -228,33 +240,38 @@ mod json {
     }
 
     pub fn parse_key_value<I>(it : & mut std::iter::Peekable<I>) -> Result<(String,Item),String>
-        where I : Iterator<Item = char> 
+        where I : Iterator<Item = (usize,u8)>
     {
         skip_ws(it);
         let key = parse_string(it)?;
         skip_ws(it);
-        if let Some(':') = it.peek() {
-            skip_ws(it);
-            it.next();
-            let value = parse_item(it)?;
-            Ok((key,value))
+        if let Some(&(ofs,c)) = it.peek() {
+            if c == b':' {
+                it.next();
+                skip_ws(it);
+                let value = parse_item(it)?;
+                Ok((key,value))
+            }
+            else {
+                Err(format!("At {}: Expected a ':', got '{}'",ofs,c as char))
+            }
         }
         else {
-            Err("Expected a number".to_string())
+            Err("At EOF: Expected a ':'".to_string())
         }
 
     }
 
 
     pub fn parse_number_with<I>(it : & mut std::iter::Peekable<I>, res : &mut String) -> Result<Item,String>
-        where I : Iterator<Item = char> 
+        where I : Iterator<Item = (usize,u8)>
     {
-        if let Some(c) = it.next() {
+        if let Some((ofs,c)) = it.next() {
             // [0-9]+ ( '.' [0-9]+ )? ( [eE] [+-]? [0-9]+)?
             match c {
-                '0'..='9' => res.push(c),
-                'i' => 
-                    if let (Some('n'),Some('f')) = (it.next(),it.next()) {
+                b'0'..=b'9' => res.push(c as char),
+                b'i' => 
+                    if let (Some((_,b'n')),Some((_,b'f'))) = (it.next(),it.next()) {
                         if res.chars().nth(0).map(|c| c == '-').unwrap_or(false) {
                             return Ok(Item::Float(f64::NEG_INFINITY));
                         }
@@ -262,48 +279,49 @@ mod json {
                             return Ok(Item::Float(f64::INFINITY));
                         }
                     },
-                _ => return Err("Expected a number".to_string())
+                _ => return Err(format!("At {}: Expected a number, got '{}'",ofs,c as char))
             }
 
-            while let Some(&c) = it.peek() {
+            while let Some(&(_,c)) = it.peek() {
                 match c {
-                    '0'..='9' => res.push(c),
+                    b'0'..=b'9' => { it.next(); res.push(c as char) },
                     _ => break
                 }
             }
+
             let mut is_float = false;
-            if let Some('.') = it.peek() {
+            if let Some((_,b'.')) = it.peek() {
                 is_float = true;
-                res.push('.'); it.next();
-                while let Some(&c) = it.peek() {
+                res.push('.'); 
+                it.next();
+                while let Some(&(_,c)) = it.peek() {
                     match c {
-                        '0'..='9' => res.push(c),
+                        b'0'..=b'9' => { it.next();  res.push(c as char) },
                         _ => break
                     }
                 }
             }
 
-            if let Some(c) = it.peek() {
-                if *c == 'e' || *c == 'E' {
+            if let Some((_,c)) = it.peek() {
+                if *c == b'e' || *c == b'E' {
                     is_float = true;
-                    res.push(*c);
+                    res.push(*c as char);
                     it.next();
 
-                    if let Some(c) = it.peek() {
-                        if *c == '+' || *c == '-' {
-                            res.push(*c);
+                    if let Some((_,c)) = it.peek() {
+                        if *c == b'+' || *c == b'-' {
+                            res.push(*c as char);
                             it.next();
                         }
-                        if let Some(c) = it.peek() {
-                            match *c {
-                                '0'..='9' => res.push(*c),
+                        if let Some(&(_,c)) = it.peek() {
+                            match c {
+                                b'0'..=b'9' => res.push(c as char),
                                 _ => return Err("Expected a number".to_string())
                             }
-                            it.next();
-
-                            while let Some(c) = it.peek() {
-                                match *c {
-                                    '0'..='9' => res.push(*c),
+                            it.next(); 
+                            while let Some(&(_,c)) = it.peek() {
+                                match c {
+                                    b'0'..=b'9' => res.push(c as char),
                                     _ => break
                                 }
                                 it.next();
@@ -326,97 +344,114 @@ mod json {
     }
 
     pub fn parse_item<I>(it : & mut std::iter::Peekable<I>) -> Result<Item,String>
-        where I : Iterator<Item = char>
+        where I : Iterator<Item = (usize,u8)>
     {
         skip_ws(it);
         
-        if let Some(&c) = it.peek() {
+        if let Some(&(ofs,c)) = it.peek() {
             match c {
-                '"' => {
-                    it.next();
+                b'"' => {
                     let mut res = String::new();
                     parse_string_into(it, &mut res)?;
                     Ok(Item::String(res))
                 }
-                '-'|'+' => {
+                b'-'|b'+' => {
                     it.next();
                     let mut res = String::new();
                     skip_ws(it);
-                    res.push(c);
+                    res.push(c as char);
                     parse_number_with(it,&mut res)
                 },
-                '0'..='9'|'i' => {
+                b'0'..=b'9'|b'i' => {
                     let mut res = String::new();
                     parse_number_with(it,&mut res)
                 },
-                'n' => {
+                b'n' => {
                     it.next();
-                    if let (Some('u'),Some('l'),Some('l')) = (it.next(),it.next(),it.next()) {
+                    if let (Some((_,b'u')),Some((_,b'l')),Some((_,b'l'))) = (it.next(),it.next(),it.next()) {
                         Ok(Item::Null)
                     }
                     else {
-                        Err("Syntax error in file".to_string())
+                        Err(format!("At {}: Syntax error",ofs))
                     }
                 },
-                '[' => {
+                b'[' => {
                     it.next();
                     let mut res = Vec::new();
                     skip_ws(it);
-                    if let Some(']') = it.peek() {
+                    if let Some((_,b']')) = it.peek() {
+                        it.next();
                         Ok(Item::List(res))
                     }
                     else {
                         res.push(parse_item(it)?);
                         skip_ws(it);
-                        while let Some(',') = it.peek() {
+                        while let Some((_,b',')) = it.peek() {
                             it.next();
+                            skip_ws(it);
                             res.push(parse_item(it)?);
                             skip_ws(it);
                         }
-                        if let Some(']') = it.peek() {
-                            Ok(Item::List(res))
+                        if let Some(&(ofs,c)) = it.peek() {
+                            if c == b']' {
+                                it.next();
+                                Ok(Item::List(res))
+                            }
+                            else {
+                                Err(format!("At {}: Expected ']', got '{}'",ofs,c as char))
+                            }
                         }
                         else {
-                            Err("Syntax error in file".to_string())
+                            Err("At EOF: Expected ']'".to_string())
                         }
                     }
                 },
-                '{' => {
+                b'{' => {
+                    it.next();
                     let mut res = Vec::new();
                     skip_ws(it);
-                    if let Some('}') = it.peek() {
+                    if let Some((_,b'}')) = it.peek() {
+                        it.next();
                         Ok(Item::Dict(res))
                     } 
                     else {
                         res.push(parse_key_value(it)?);
                         skip_ws(it);
-                        while let Some(',') = it.peek() {
+                        while let Some((_,b',')) = it.peek() {
                             it.next();
+                            skip_ws(it);
                             res.push(parse_key_value(it)?);
                             skip_ws(it);
                         }
-                        if let Some(']') = it.peek() {
-                            Ok(Item::Dict(res))
+                        if let Some(&(ofs,c)) = it.peek() {
+                            if c == b'}' {
+                                it.next();
+                                Ok(Item::Dict(res))
+                            }
+                            else {
+                                Err(format!("At {}: Expected '}}', got '{}'",ofs,c as char))
+                            }
                         }
                         else {
-                            Err("Syntax error in file".to_string())
+                            Err("At EOF: Expected '}}'".to_string())
                         }
-
-                        
                     }
                     
                 },
-                _ => Err("Syntax error in file".to_string())
+                _ => Err(format!("At {}: Syntax error in file",ofs))
             }
         }
         else {
-            Err("Syntax error in file".to_string())
+            Err("At EOF: Syntax error".to_string())
         }
     }
 
-    pub fn parse(data : &str) -> Result<Item,String> {
-        let mut it = data.chars().peekable();
-        parse_item(&mut it)
+    pub fn parse(data : &[u8]) -> Result<Item,String> {
+        use std::io::Write;
+        let mut f = std::fs::File::create("incoming.json").map_err(|err| err.to_string())?;
+        f.write_all(data).unwrap();
+
+        parse_item(&mut data.iter().cloned().enumerate().peekable())
     }
 
     pub trait ToJSON {
@@ -517,7 +552,7 @@ impl ModelOptserver {
                   json::Item::Dict(vec![
                       ("subi".to_string(), json::Item::List(self.con_a_row.iter().enumerate().flat_map(|(i,&k)| std::iter::repeat_n(i,self.a_ptr[k][1])).map(|v| v.to_json()).collect())),
                       ("subj".to_string(), json::Item::List(self.con_a_row.iter().flat_map(|&k| { let entry = self.a_ptr[k]; self.a_subj[entry[0]..entry[0]+entry[1]].iter() }).map(|v| v.to_json()).collect())),
-                      ("cof".to_string(),  json::Item::List(self.con_a_row.iter().flat_map(|&k| { let entry = self.a_ptr[k]; self.a_cof[entry[0]..entry[0]+entry[1]].iter() }).map(|v| v.to_json()).collect())),
+                      ("val".to_string(),  json::Item::List(self.con_a_row.iter().flat_map(|&k| { let entry = self.a_ptr[k]; self.a_cof[entry[0]..entry[0]+entry[1]].iter() }).map(|v| v.to_json()).collect())),
                   ])),
                  ])),
             ]);
@@ -912,7 +947,7 @@ impl BaseModelTrait for ModelOptserver {
             .body_mut()
             .read_to_string().map_err(|err| err.to_string())?;
 
-        let data = json::parse(recv_body.as_str())?;
+        let data = json::parse(recv_body.as_bytes())?;
 
         let tld = data.get_dict().ok_or_else(|| "Format error".to_string())?;
         for (k,v) in tld.iter() {
@@ -988,7 +1023,7 @@ impl SolverParameterValue<ModelOptserver> for i32 {
     }
 }
 
-struct OptserverHost(String);
+pub struct OptserverHost(pub String);
 impl SolverParameterValue<ModelOptserver> for OptserverHost {
     type Key = &'static str;
     fn set(self,_parname : Self::Key, model : & mut ModelOptserver) -> Result<(),String> {
