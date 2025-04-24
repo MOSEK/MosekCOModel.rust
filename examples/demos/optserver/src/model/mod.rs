@@ -30,6 +30,7 @@ impl Item {
     } 
 }
 
+/// Simple model object.
 #[derive(Default)]
 pub struct ModelOptserver {
     name : Option<String>,
@@ -57,13 +58,16 @@ pub struct ModelOptserver {
 
     double_param : Vec<(String,f64)>,
     int_param    : Vec<(String,i32)>,
-
-    //rs : WorkStack,
-    //ws : WorkStack,
-    //xs : WorkStack,
 }
 
 impl ModelOptserver {
+    /// Create a new object.
+    ///
+    /// # Arguments
+    /// - `name` Optional model name
+    /// - `hostname` Address of the optserver to use, including protocol (currently only `http` is
+    ///    supported), and 
+    /// - `access_token` Access token to supply to the server. Currently not used.
     pub fn new(name : Option<&str>,  hostname : &str, access_token : Option<&str>) -> ModelOptserver {
         ModelOptserver {
             name         : name.map(|v| v.to_string()),
@@ -82,6 +86,8 @@ impl ModelOptserver {
             (true,true) => if bl < bu { "ra" } else { "fx" }
         }
     }
+
+    /// Format model object to JSON.
     fn format(&self) -> String {
         use json::ToJSON;
         let annz : usize = self.con_a_row.iter().map(|&i| self.a_ptr[i][1] ).sum();
@@ -122,50 +128,6 @@ impl ModelOptserver {
             ]);
 
         format!("{}",data)
-
-//
-//
-//
-//        dst.push_str("{\"$schema\":\"http://mosek.com/json/schema#\"");
-//        dst.push_str(format!(",\"Task/INFO\":{{\"numvar\":{},\"numcon\":{},\"numanz\":{}}}",self.vars.len(),self.con_a_row.len(),annz).as_str());
-//        dst.push_str(",\"Task/data\":{");
-//        dst.push_str("\"var\":{");
-//        dst.push_str("\"bk\":"); 
-//
-//        fmt_json_list(dst, 
-//                      self.var_range_lb.iter().zip(self.var_range_ub.iter())
-//                        .map(|(&bl,&bu)| Self::bnd2bk(bl,bu) ));
-//        dst.push_str(",\"bl\":"); fmt_json_list(dst, self.var_range_lb.as_slice());
-//        dst.push_str(",\"bu\":"); fmt_json_list(dst, self.var_range_ub.as_slice());
-//        if self.var_range_int.iter().any(|&v| v) {  
-//            dst.push_str(",\"type\":"); fmt_json_list(dst, self.var_range_int.iter().map(|&v| if v { "true" } else { "false" }));
-//        }
-//        dst.push_str("}"); // var
-//        
-//
-//        dst.push_str(",\"con\":{");
-//        dst.push_str("\"bk\":"); 
-//        fmt_json_list(dst, 
-//                      self.con_lb.iter().zip(self.con_ub.iter())
-//                        .map(|(&bl,&bu)| Self::bnd2bk(bl,bu) ));
-//        dst.push_str(",\"bl\":"); fmt_json_list(dst, self.con_lb.as_slice());
-//        dst.push_str(",\"bu\":"); fmt_json_list(dst, self.con_ub.as_slice());
-//        dst.push_str("}"); // con
-//
-//        dst.push_str(",\"obj\":{");
-//        dst.push_str(if self.sense_max { ",\"sense\":\"max\"" } else { ",\"sense\":\"min\""});
-//        dst.push_str(",\"c\":{");
-//        dst.push_str("\"subj\":"); fmt_json_list(dst,self.c_subj.iter().map(|&i| self.vars[i].index()));
-//        dst.push_str(",\"cof\":"); fmt_json_list(dst,self.c_cof.iter());
-//        dst.push_str("}"); // c
-//
-//        dst.push_str(",\"A\":{");
-//        dst.push_str("\"subi\":");  fmt_json_list(dst,self.con_a_row.iter().enumerate().flat_map(|(i,&k)| std::iter::repeat(i).take(self.a_ptr[k][1])));
-//        dst.push_str(",\"subj\":"); fmt_json_list(dst,self.con_a_row.iter().flat_map(|&k| { let entry = self.a_ptr[k]; self.a_subj[entry[0]..entry[0]+entry[1]].iter() }));
-//        dst.push_str(",\"cof\":");  fmt_json_list(dst,self.con_a_row.iter().flat_map(|&k| { let entry = self.a_ptr[k]; self.a_cof[entry[0]..entry[0]+entry[1]].iter() }));
-//        dst.push_str("}"); // A
-//        dst.push_str("}"); // Task/data
-//        dst.push_str("}"); // $schema
     }
 
     fn write_jtask(&self,f : &mut std::fs::File) -> Result<usize,String> {

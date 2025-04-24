@@ -1,3 +1,8 @@
+//! 
+//! Basic and simple JSON formatting and parsing. 
+//!
+//! Please note that this is for demonstration purposes only and if likely quite slow and
+//! inifficient.
 use std::fmt::{Display, Write};
 
 pub enum Item {
@@ -198,7 +203,6 @@ pub fn parse_key_value<I>(it : & mut std::iter::Peekable<I>) -> Result<(String,I
     else {
         Err("At EOF: Expected a ':'".to_string())
     }
-
 }
 
 
