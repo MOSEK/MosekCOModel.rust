@@ -477,9 +477,94 @@ impl ModelOptserver {
         let mut data = String::new();
         self.format_to(&mut data);
         data
-    }
+    }    
 }
 
+
+fn extract_solution(item : &json::Item, vars : &[Item], cons : &[Item], sol  : & mut Solution) -> Result<(),String> {
+    let mut xx = None;
+    let mut slx = None;
+    let mut sux = None;
+    let mut xc = None;
+    let mut slc = None;
+    let mut suc = None;
+    for (k,v) in item.get_dict().ok_or_else(|| "Format error".to_string())? {
+        match k.as_str() {
+            "solsta" => { 
+                ((*sol).primal.status,(*sol).dual.status) = match v.get_string().ok_or_else(|| "Format error".to_string())?.as_str() {
+                    "unknown" => (SolutionStatus::Unknown,SolutionStatus::Unknown),
+                    "optimal" => (SolutionStatus::Optimal,SolutionStatus::Optimal),
+                    "integer_optimal" => (SolutionStatus::Optimal,SolutionStatus::Undefined),
+                    "prim_feas" => (SolutionStatus::Feasible,SolutionStatus::Unknown),
+                    "dual_feas" => (SolutionStatus::Unknown,SolutionStatus::Feasible),
+                    "prim_and_dual_feas" => (SolutionStatus::Feasible,SolutionStatus::Feasible),
+                    "prim_infeas_cer" => (SolutionStatus::Undefined,SolutionStatus::CertInfeas),
+                    "dual_infeas_cer" => (SolutionStatus::CertInfeas,SolutionStatus::Undefined),
+                    "prim_illposed_cer" => (SolutionStatus::Undefined,SolutionStatus::CertIllposed),
+                    "dual_illposed_cer" => (SolutionStatus::CertIllposed,SolutionStatus::Undefined),
+                    _ => (SolutionStatus::Unknown,SolutionStatus::Unknown)
+                };
+            },
+            "xx"|"slx"|"sux"|"xc"|"slc"|"suc" => {
+                let lst = v.get_list().ok_or_else(|| "Format error".to_string())?;
+                let mut res = Vec::with_capacity(lst.len());
+                for v in lst.iter() {
+                    match v {
+                        json::Item::Float(f) => res.push(*f),
+                        json::Item::Int(i)   => res.push(*i as f64),
+                        _ => return Err("Invalid format".to_string())
+                    }
+                }
+                match k.as_str() {
+                    "xx"  => xx  = Some(res),
+                    "slx" => slx = Some(res),
+                    "sux" => sux = Some(res),
+                    "xc"  => xc  = Some(res),
+                    "slc" => slc = Some(res),
+                    "suc" => suc = Some(res),
+                    _ => {}
+                }
+            },
+            _ => {}
+        }
+    }
+
+    if let Some(xx) = xx {
+        sol.primal.var.resize(vars.len(),0.0);
+        for (v,dst) in vars.iter().zip(sol.primal.var.iter_mut()) {
+            *dst = xx[v.index()];
+        }
+    }
+    if let (Some(slx),Some(sux)) = (slx,sux) {
+        sol.dual.var.resize(vars.len(),0.0);
+        for (v,dst) in vars.iter().zip(sol.dual.var.iter_mut()) {
+            match *v {
+                Item::Linear{index} => *dst = slx[index]-sux[index],
+                Item::RangedLower{index} => *dst = slx[index],
+                Item::RangedUpper{index} => *dst = -sux[index]
+            }
+        }
+    }
+    if let Some(xc) = xc {
+        sol.primal.con.resize(cons.len(), 0.0);
+        for (v,dst) in cons.iter().zip(sol.primal.con.iter_mut()) {
+            *dst = xc[v.index()];
+        }
+    }
+
+    if let (Some(slc),Some(suc)) = (slc,suc) {
+        sol.dual.con.resize(cons.len(),0.0);
+        for (v,dst) in cons.iter().zip(sol.dual.con.iter_mut()) {
+            match *v {
+                Item::Linear{index} => *dst = slc[index]-suc[index],
+                Item::RangedLower{index} => *dst = slc[index],
+                Item::RangedUpper{index} => *dst = -suc[index]
+            }
+        }
+    }
+
+    Ok(())
+}
 
 
 
@@ -742,94 +827,12 @@ impl BaseModelTrait for ModelOptserver {
                     let secs = v.get_dict().ok_or_else(|| "Format error".to_string())?;
                 
                     for (whichsol,v) in secs.iter() {
-                        let sol = match whichsol.as_str() {
-                            "interior" => Some(sol_bas),
-                            "integer"  => Some(sol_itg),
-                            "basic"    => Some(sol_bas), 
-                            _ => None
+                        match whichsol.as_str() {
+                            "interior" => extract_solution(v, self.vars.as_slice(), self.cons.as_slice(), sol_itr)?,
+                            "integer"  => extract_solution(v, self.vars.as_slice(), self.cons.as_slice(), sol_itg)?,
+                            "basic"    => extract_solution(v, self.vars.as_slice(), self.cons.as_slice(), sol_bas)?,
+                            _ => {},
                         };
-                        if let Some(sol) = sol {
-                            let mut xx = None;
-                            let mut slx = None;
-                            let mut sux = None;
-                            let mut xc = None;
-                            let mut y = None;
-                            let mut slc = None;
-                            let mut suc = None;
-                            for (k,v) in v.get_dict().ok_or_else(|| "Format error".to_string())? {
-                                match k.as_str() {
-                                    "solsta" => { 
-                                        (sol.primal.status,sol.dual.status) = match v.get_string().ok_or_else(|| "Format error".to_string())?.as_str() {
-                                            "unknown" => (SolutionStatus::Unknown,SolutionStatus::Unknown),
-                                            "optimal" => (SolutionStatus::Optimal,SolutionStatus::Optimal),
-                                            "integer_optimal" => (SolutionStatus::Optimal,SolutionStatus::Undefined),
-                                            "prim_feas" => (SolutionStatus::Feasible,SolutionStatus::Unknown),
-                                            "dual_feas" => (SolutionStatus::Unknown,SolutionStatus::Feasible),
-                                            "prim_and_dual_feas" => (SolutionStatus::Feasible,SolutionStatus::Feasible),
-                                            "prim_infeas_cer" => (SolutionStatus::Undefined,SolutionStatus::CertInfeas),
-                                            "dual_infeas_cer" => (SolutionStatus::CertInfeas,SolutionStatus::Undefined),
-                                            "prim_illposed_cer" => (SolutionStatus::Undefined,SolutionStatus::CertIllposed),
-                                            "dual_illposed_cer" => (SolutionStatus::CertIllposed,SolutionStatus::Undefined),
-                                            _ => (SolutionStatus::Unknown,SolutionStatus::Unknown)
-                                        };
-                                    },
-                                    "xx"|"slx"|"sux"|"xc"|"slc"|"suc" => {
-                                        let lst = v.get_list().ok_or_else(|| "Format error".to_string())?;
-                                        let mut res = Vec::with_capacity(lst.len());
-                                        for v in lst.iter() {
-                                            match v {
-                                                json::Item::Float(f) => res.push(*f),
-                                                json::Item::Int(i)   => res.push(*i as f64),
-                                                _ => return Err("Invalid format".to_string())
-                                            }
-                                        }
-                                        match k.as_str() {
-                                            "xx"  => xx  = Some(res),
-                                            "slx" => slx = Some(res),
-                                            "sux" => sux = Some(res),
-                                            "slc" => slc = Some(res),
-                                            "suc" => suc = Some(res),
-                                            _ => {}
-                                        }
-                                    },
-                                    _ => {}
-                                }
-                            }
-
-                            if let Some(xx) = xx {
-                                sol.primal.var.resize(self.vars.len(),0.0);
-                                for (v,dst) in self.vars.iter().zip(sol.primal.var.iter_mut()) {
-                                    *dst = xx[v.index()];
-                                }
-                            }
-                            if let (Some(slx),Some(sux)) = (slx,sux) {
-                                sol.dual.var.resize(self.vars.len(),0.0);
-                                for (v,dst) in self.vars.iter().zip(sol.dual.var.iter_mut()) {
-                                    match *v {
-                                        Item::Linear{index} => *dst = slx[index]-sux[index],
-                                        Item::RangedLower{index} => *dst = slx[index],
-                                        Item::RangedUpper{index} => *dst = -sux[index]
-                                    }
-                                }
-                            }
-                            if let Some(xc) = xc {
-                                sol.primal.con.resize(self.cons.len(), 0.0);
-                                for (v,dst) in self.cons.iter().zip(sol.primal.con.iter_mut()) {
-                                    *dst = xc[v.index()];
-                                }
-                            }
-
-                            if let (Some(slc),Some(suc)) = (slc,suc) {
-                                sol.dual.con.resize(self.cons.len(),0.0);
-                                for (v,dst) in self.cons.iter().zip(sol.dual.con.iter_mut()) {
-                                    match *v {
-                                        Item::Linear{index} => *dst = slc[index]-suc[index],
-                                        Item::RangedLower{index} => *dst = slc[index],
-                                        Item::RangedUpper{index} => *dst = -suc[index]
-                                    }
-                                }
-                            }
-                        }
                     }
 
                 },
@@ -841,8 +844,11 @@ impl BaseModelTrait for ModelOptserver {
                                     for (k,v) in d.iter() {
                                         match k.as_str() {
                                             "sol_itr_primal_obj" => sol_itr.primal.obj = v.to_float().unwrap_or(0.0),
-                                            "sol_itr_dual_obj"   => sol_itr.dual.obj = v.to_float().unwrap_or(0.0),
-                                            ...
+                                            "sol_itr_dual_obj"   => sol_itr.dual.obj   = v.to_float().unwrap_or(0.0),
+                                            "sol_bas_primal_obj" => sol_bas.primal.obj = v.to_float().unwrap_or(0.0),
+                                            "sol_bas_dual_obj"   => sol_bas.dual.obj   = v.to_float().unwrap_or(0.0),
+                                            "sol_itg_primal_obj" => sol_itg.primal.obj = v.to_float().unwrap_or(0.0),
+                                            _ => {},
                                         }
                                     }
                                 }
@@ -857,8 +863,9 @@ impl BaseModelTrait for ModelOptserver {
         Ok(())
     }
 
-    fn objective(&mut self, name : Option<&str>, sense : Sense, subj : &[usize],cof : &[f64]) -> Result<(),String>
+    fn objective(&mut self, _name : Option<&str>, sense : Sense, subj : &[usize],cof : &[f64]) -> Result<(),String>
     {
+        self.sense_max = match sense { Sense::Maximize => true, Sense::Minimize => false };
         self.c_subj.resize(subj.len(),0); self.c_subj.copy_from_slice(subj);
         self.c_cof.resize(cof.len(),0.0); self.c_cof.copy_from_slice(cof);
         Ok(())
@@ -883,6 +890,64 @@ impl SolverParameterValue<ModelOptserver> for i32 {
     fn set(self,parname : Self::Key, model : & mut ModelOptserver) -> Result<(),String> {
         model.int_param.push((parname.to_string(),self));
         Ok(())
+    }
+}
+
+struct OptserverHost(String);
+impl SolverParameterValue<ModelOptserver> for OptserverHost {
+    type Key = &'static str;
+    fn set(self,_parname : Self::Key, model : & mut ModelOptserver) -> Result<(),String> {
+        model.hostname = self.0;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use mosekcomodel::*;
+    use super::*;
+
+    type Model = ModelAPI<ModelOptserver>;
+    fn lo1() -> (Model,Variable<1>) {
+        let a0 : &[f64] = &[ 3.0, 1.0, 2.0, 0.0 ];
+        let a1 : &[f64] = &[ 2.0, 1.0, 3.0, 1.0 ];
+        let a2 : &[f64] = &[ 0.0, 2.0, 0.0, 3.0 ];
+        let c  : &[f64] = &[ 3.0, 1.0, 5.0, 1.0 ];
+
+        // Create a model with the name 'lo1'
+        let mut m = Model::new(Some("lo1"));
+        // Create variable 'x' of length 4
+        let x = m.variable(Some("x0"), nonnegative().with_shape(&[4]));
+
+        // Create constraints
+        let _ = m.constraint(None, x.index(1), less_than(10.0));
+        let _ = m.constraint(Some("c1"), x.dot(a0), equal_to(30.0));
+        let _ = m.constraint(Some("c2"), x.dot(a1), greater_than(15.0));
+        let _ = m.constraint(Some("c3"), x.dot(a2), less_than(25.0));
+
+        // Set the objective function to (c^t * x)
+        m.objective(Some("obj"), Sense::Maximize, x.dot(c));
+
+        (m,x)
+    }
+    #[test]
+    fn test_write() {
+        let (m,_) = lo1();
+        m.write_problem("lo1-nosol.jtask");
+    }
+    #[test]
+    fn test_solve() {
+        if let Ok(host) = std::env::var("OPTSERVER_HOST") {
+            let (mut m,x) = lo1();
+            m.set_parameter("optserver", OptserverHost(host));
+            m.solve();
+
+            // Get the solution values
+            let (psta,dsta) = m.solution_status(SolutionType::Default);
+            println!("Status = {:?}/{:?}",psta,dsta);
+            let xx = m.primal_solution(SolutionType::Default,&x);
+            println!("x = {:?}", xx);
+        }
     }
 }
 
