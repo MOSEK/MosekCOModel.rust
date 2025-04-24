@@ -59,6 +59,8 @@ fn fmt_json_list<I : IntoIterator>(dst : & mut String, v : I) where I::Item : Di
     dst.push(']');
 }
 mod json {
+    use std::fmt::{Display, Write};
+
     pub enum Item {
         String(String),
         Int(i64),
@@ -68,7 +70,7 @@ mod json {
         List(Vec<Item>),
         Dict(Vec<(String,Item)>)
     }
-    
+
     impl Item {
         pub fn get_string(&self) -> Option<&String> { if let Item::String(s) = self { Some(s) } else { None } }
         pub fn get_int(&self) -> Option<i64> { if let Item::Int(i) = self { Some(*i) } else { None }}
@@ -103,6 +105,56 @@ mod json {
             }
             else {
                 None
+            }
+        }
+    }
+
+    impl Display for Item {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Item::String(v) => { 
+                    f.write_char('"')?; 
+                    for c in v.chars() {
+                        match c {
+                            '\n' => { f.write_char('\\')?; f.write_char('n')?; },
+                            '\t' => { f.write_char('\\')?; f.write_char('t')?; },
+                            '\r' => { f.write_char('\\')?; f.write_char('r')?; },
+                            '\0' => { f.write_char('\\')?; f.write_char('0')?; },
+                            _ => f.write_char(c)?,
+                            
+                        }
+                    }
+                    f.write_char('"')?; 
+                    Ok(())
+                },
+                Item::Int(v) => v.fmt(f),
+                Item::Float(v) => v.fmt(f),
+                Item::Null => f.write_str("null"),
+                Item::NaN => f.write_str("nan"),
+                Item::List(l) => { 
+                    f.write_char('[')?;
+                    if let Some(v) = l.first() {
+                        v.fmt(f)?;
+                        for v in l[1..].iter() {
+                            f.write_char(',')?;
+                            v.fmt(f)?;
+                        }
+                    }
+                    f.write_char(']')?; 
+                    Ok(())
+                },
+                Item::Dict(d) => {
+                    f.write_char('{')?;
+                    if let Some((k,v))= d.first() {
+                        k.fmt(f)?; f.write_char(':')?; v.fmt(f)?;
+                        for (k,v) in d[1..].iter() {
+                            f.write_char(',')?;
+                            k.fmt(f)?; f.write_char(':')?; v.fmt(f)?;
+                        }
+                    }
+                    f.write_char('}')?; 
+                    Ok(())
+                }
             }
         }
     }
@@ -362,11 +414,21 @@ mod json {
         }
     }
 
-
     pub fn parse(data : &str) -> Result<Item,String> {
         let mut it = data.chars().peekable();
         parse_item(&mut it)
     }
+
+    pub trait ToJSON {
+        fn to_json(&self) -> Item;
+    }
+    impl ToJSON for usize   { fn to_json(&self) -> Item { Item::Int((*self).try_into().unwrap()) } }
+    impl ToJSON for f64     { fn to_json(&self) -> Item { Item::Float(*self) } }
+    impl ToJSON for str     { fn to_json(&self) -> Item { Item::String(self.to_string()) } }
+    impl ToJSON for String  { fn to_json(&self) -> Item { Item::String(self.clone()) } }
+    impl<T> ToJSON for [T] where T : ToJSON  { fn to_json(&self) -> Item { Item::List(self.iter().map(|v| v.to_json()).collect()) } }
+    impl<T> ToJSON for [(String,T)] where T : ToJSON { fn to_json(&self) -> Item { Item::Dict(self.iter().map(|(k,v)| (k.clone(),v.to_json())).collect()) } }
+    impl<T> ToJSON for [(&str,T)] where T : ToJSON { fn to_json(&self) -> Item { Item::Dict(self.iter().map(|(k,v)| (k.to_string(),v.to_json())).collect()) } }
 }
 
 #[derive(Default)]
@@ -421,63 +483,96 @@ impl ModelOptserver {
             (true,true) => if bl < bu { "ra" } else { "fx" }
         }
     }
-    fn format_to(&self, dst : &mut String) {
+    fn format(&self) -> String {
+        use json::ToJSON;
         let annz : usize = self.con_a_row.iter().map(|&i| self.a_ptr[i][1] ).sum();
+        let data = json::Item::Dict(vec![ 
+            ("$schema".to_string(),   "http://mosek.com/json/schema#".to_json()),
+            ("Task/INFO".to_string(), [("numvar",self.vars.len()), ("numcon",self.cons.len()) ,("numanz",annz)].to_json()),
+            ("Task/data".to_string(),
+             json::Item::Dict(vec![
+                 ("var".to_string(),
+                  json::Item::Dict(vec![
+                      ("bk".to_string(), json::Item::List(self.var_range_lb.iter().zip(self.var_range_ub.iter()).map(|(&bl,&bu)| Self::bnd2bk(bl,bu).to_json()).collect())),
+                      ("bl".to_string(), self.var_range_lb.to_json()),
+                      ("bu".to_string(), self.var_range_ub.to_json()),
+                  ])),
+                 ("con".to_string(),
+                  json::Item::Dict(vec![
+                      ("bk".to_string(), json::Item::List(self.con_lb.iter().zip(self.con_ub.iter()).map(|(&bl,&bu)| Self::bnd2bk(bl,bu).to_json()).collect())),
+                      ("bl".to_string(), self.con_lb.to_json()),
+                      ("bu".to_string(), self.con_ub.to_json()),
 
+                  ])),
+                 ("obj".to_string(),
+                  json::Item::Dict(vec![
+                      ("obj".to_string(), if self.sense_max { "max".to_json() } else { "min".to_json() }),
+                      ("c".to_string(),
+                        json::Item::Dict(vec![
+                            ("subj".to_string(), self.c_subj.to_json()),
+                            ("cof".to_string(), self.c_cof.to_json()),
+                        ])),
+                  ])),
+                 ("A".to_string(),
+                  json::Item::Dict(vec![
+                      ("subi".to_string(), json::Item::List(self.con_a_row.iter().enumerate().flat_map(|(i,&k)| std::iter::repeat_n(i,self.a_ptr[k][1])).map(|v| v.to_json()).collect())),
+                      ("subj".to_string(), json::Item::List(self.con_a_row.iter().flat_map(|&k| { let entry = self.a_ptr[k]; self.a_subj[entry[0]..entry[0]+entry[1]].iter() }).map(|v| v.to_json()).collect())),
+                      ("cof".to_string(),  json::Item::List(self.con_a_row.iter().flat_map(|&k| { let entry = self.a_ptr[k]; self.a_cof[entry[0]..entry[0]+entry[1]].iter() }).map(|v| v.to_json()).collect())),
+                  ])),
+                 ])),
+            ]);
 
-        dst.push_str("{\"$schema\":\"http://mosek.com/json/schema#\"");
-        dst.push_str(format!(",\"Task/INFO\":{{numvar:{},numcon:{},numanz:{}}}",self.vars.len(),self.con_a_row.len(),annz).as_str());
-        dst.push_str(",\"Task/data\":{");
-        dst.push_str("\"var\":{");
-        dst.push_str("\"bk\":"); 
+        format!("{}",data)
 
-        fmt_json_list(dst, 
-                      self.var_range_lb.iter().zip(self.var_range_ub.iter())
-                        .map(|(&bl,&bu)| Self::bnd2bk(bl,bu) ));
-        dst.push_str(",\"bl\":"); fmt_json_list(dst, self.var_range_lb.as_slice());
-        dst.push_str(",\"bu\":"); fmt_json_list(dst, self.var_range_ub.as_slice());
-        if self.var_range_int.iter().any(|&v| v) {  
-            dst.push_str(",\"type\":"); fmt_json_list(dst, self.var_range_int.iter().map(|&v| if v { "true" } else { "false" }));
-        }
-        dst.push_str("}"); // var
-        
-
-        dst.push_str(",\"con\":{");
-        dst.push_str("\"bk\":"); 
-        fmt_json_list(dst, 
-                      self.con_lb.iter().zip(self.con_ub.iter())
-                        .map(|(&bl,&bu)| Self::bnd2bk(bl,bu) ));
-        dst.push_str(",\"bl\":"); fmt_json_list(dst, self.con_lb.as_slice());
-        dst.push_str(",\"bu\":"); fmt_json_list(dst, self.con_ub.as_slice());
-        dst.push_str("}"); // con
-
-        dst.push_str(",\"obj\":{");
-        dst.push_str(if self.sense_max { ",\"sense\":\"max\"" } else { ",\"sense\":\"min\""});
-        dst.push_str(",\"c\":{");
-        dst.push_str("\"subj\":"); fmt_json_list(dst,self.c_subj.iter().map(|&i| self.vars[i].index()));
-        dst.push_str(",\"cof\":"); fmt_json_list(dst,self.c_cof.iter());
-        dst.push_str("}"); // c
-
-        dst.push_str(",\"A\":{");
-        dst.push_str("\"subi\":");  fmt_json_list(dst,self.con_a_row.iter().enumerate().flat_map(|(i,&k)| std::iter::repeat(i).take(self.a_ptr[k][1])));
-        dst.push_str(",\"subj\":"); fmt_json_list(dst,self.con_a_row.iter().flat_map(|&k| { let entry = self.a_ptr[k]; self.a_subj[entry[0]..entry[0]+entry[1]].iter() }));
-        dst.push_str(",\"cof\":");  fmt_json_list(dst,self.con_a_row.iter().flat_map(|&k| { let entry = self.a_ptr[k]; self.a_cof[entry[0]..entry[0]+entry[1]].iter() }));
-        dst.push_str("}"); // A
-        dst.push_str("}"); // Task/data
-        dst.push_str("}"); // $schema
+//
+//
+//
+//        dst.push_str("{\"$schema\":\"http://mosek.com/json/schema#\"");
+//        dst.push_str(format!(",\"Task/INFO\":{{\"numvar\":{},\"numcon\":{},\"numanz\":{}}}",self.vars.len(),self.con_a_row.len(),annz).as_str());
+//        dst.push_str(",\"Task/data\":{");
+//        dst.push_str("\"var\":{");
+//        dst.push_str("\"bk\":"); 
+//
+//        fmt_json_list(dst, 
+//                      self.var_range_lb.iter().zip(self.var_range_ub.iter())
+//                        .map(|(&bl,&bu)| Self::bnd2bk(bl,bu) ));
+//        dst.push_str(",\"bl\":"); fmt_json_list(dst, self.var_range_lb.as_slice());
+//        dst.push_str(",\"bu\":"); fmt_json_list(dst, self.var_range_ub.as_slice());
+//        if self.var_range_int.iter().any(|&v| v) {  
+//            dst.push_str(",\"type\":"); fmt_json_list(dst, self.var_range_int.iter().map(|&v| if v { "true" } else { "false" }));
+//        }
+//        dst.push_str("}"); // var
+//        
+//
+//        dst.push_str(",\"con\":{");
+//        dst.push_str("\"bk\":"); 
+//        fmt_json_list(dst, 
+//                      self.con_lb.iter().zip(self.con_ub.iter())
+//                        .map(|(&bl,&bu)| Self::bnd2bk(bl,bu) ));
+//        dst.push_str(",\"bl\":"); fmt_json_list(dst, self.con_lb.as_slice());
+//        dst.push_str(",\"bu\":"); fmt_json_list(dst, self.con_ub.as_slice());
+//        dst.push_str("}"); // con
+//
+//        dst.push_str(",\"obj\":{");
+//        dst.push_str(if self.sense_max { ",\"sense\":\"max\"" } else { ",\"sense\":\"min\""});
+//        dst.push_str(",\"c\":{");
+//        dst.push_str("\"subj\":"); fmt_json_list(dst,self.c_subj.iter().map(|&i| self.vars[i].index()));
+//        dst.push_str(",\"cof\":"); fmt_json_list(dst,self.c_cof.iter());
+//        dst.push_str("}"); // c
+//
+//        dst.push_str(",\"A\":{");
+//        dst.push_str("\"subi\":");  fmt_json_list(dst,self.con_a_row.iter().enumerate().flat_map(|(i,&k)| std::iter::repeat(i).take(self.a_ptr[k][1])));
+//        dst.push_str(",\"subj\":"); fmt_json_list(dst,self.con_a_row.iter().flat_map(|&k| { let entry = self.a_ptr[k]; self.a_subj[entry[0]..entry[0]+entry[1]].iter() }));
+//        dst.push_str(",\"cof\":");  fmt_json_list(dst,self.con_a_row.iter().flat_map(|&k| { let entry = self.a_ptr[k]; self.a_cof[entry[0]..entry[0]+entry[1]].iter() }));
+//        dst.push_str("}"); // A
+//        dst.push_str("}"); // Task/data
+//        dst.push_str("}"); // $schema
     }
 
     fn write_jtask(&self,f : &mut std::fs::File) -> Result<usize,String> {
-        let mut data = String::new();
-        self.format_to(&mut data);
+        let mut data = self.format();
         f.write(data.as_ref()).map_err(|err| err.to_string())
     }
-
-    fn format(&self) -> String {
-        let mut data = String::new();
-        self.format_to(&mut data);
-        data
-    }    
 }
 
 
@@ -677,7 +772,7 @@ impl BaseModelTrait for ModelOptserver {
         assert_eq!(b.len(),ptr.len()-1); 
         let nrow = b.len();
 
-        let a_row0 = self.a_ptr.len()-1;
+        let a_row0 = self.a_ptr.len();
         let con_row0 = self.con_a_row.len();
         let n = shape.iter().product::<usize>();
         
@@ -793,7 +888,7 @@ impl BaseModelTrait for ModelOptserver {
     {
         let path : &Path = filename.as_ref();
         if let Some(ext) = path.extension() {
-            if ext.eq(".jtask") {
+            if ext.eq("jtask") {
                 let mut f = std::fs::File::create(filename).map_err(|err| err.to_string())?;
                 _ = self.write_jtask(&mut f).map_err(|err| err.to_string())?;
                 Ok(())
