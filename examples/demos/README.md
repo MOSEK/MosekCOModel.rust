@@ -41,3 +41,10 @@ This requires an input file specifying base truss layout and forces. To run, use
 ```
 cargo run -p truss truss/data/bridge.trs
 ```
+
+# `optserver`
+
+Demonstrates how to implement an alternative backend for
+`mosekcomodel::ModelAPI`. In this case, it defines a backend supporting linear
+and ranged constraints and variables, and offloads optimization to a MOSEK Optserver
+instance.
