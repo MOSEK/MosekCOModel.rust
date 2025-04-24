@@ -72,21 +72,21 @@ pub enum SolutionType {
 #[derive(Clone,Copy,Debug)]
 pub enum SolutionStatus {
     /// Indicates that the solution is optimal within tolerances.
-    pub Optimal,
+    Optimal,
     /// Indicates that the solution is feasible within tolerances.
-    pub Feasible,
+    Feasible,
     /// Indicates that the solution is a certificate of either primal or dual infeasibility. A
     /// primal certificate prooves dual infesibility, and a dual certificate indicates primal
     /// infeasibility.
-    pub CertInfeas,
+    CertInfeas,
     /// Indicates that the solution is a certificate of either primal or dual illposedness. A
     /// primal certificate prooves dual illposedness, and a dual certificate indicates primal
     /// illposedness.
-    pub CertIllposed,
+    CertIllposed,
     /// Indicates that the solution status is not known, basically it can be arbitrary values. 
-    pub Unknown,
+    Unknown,
     /// Indicates that the solution is not available.
-    pub Undefined
+    Undefined
 }
 impl Default for SolutionStatus { fn default() -> Self { SolutionStatus::Undefined } }
 

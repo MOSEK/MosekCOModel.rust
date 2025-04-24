@@ -31,6 +31,7 @@ struct ConElement {
     block_entry : usize, // offset into the indexed block
 }
 
+#[derive(Clone,Copy)]
 enum Item {
     Linear{index:usize},
     RangedUpper{index:usize},
@@ -74,6 +75,36 @@ mod json {
         pub fn get_float(&self) -> Option<f64> { if let Item::Float(f) = self{ Some(*f) } else { None }}
         pub fn get_list(&self) -> Option<&[Item]> { if let Item::List(l) = self { Some(l.as_slice()) } else { None }}
         pub fn get_dict(&self) -> Option<&[(String,Item)]> { if let Item::Dict(d) = self { Some(d.as_slice()) } else { None }}
+
+        pub fn to_float(&self) -> Option<f64> {
+            self.get_float().or_else(|| self.get_int().map(|v|v as f64))
+        }
+        pub fn get_float_list(&self) -> Option<Vec<f64>> { 
+            if let Item::List(l) = self {
+                if l.iter().all(|item| match item { Item::Int(_)|Item::Float(_) => true, _ => false } ) {
+                    Some(l.iter().map(|v| match v { Item::Int(i) => *i as f64, Item::Float(f) => *f, _ => 0.0}).collect())
+                }
+                else {
+                    None
+                }
+            }
+            else {
+                None
+            }
+        }
+        pub fn get_int_list(&self) -> Option<Vec<i64>> { 
+            if let Item::List(l) = self {
+                if l.iter().all(|item| match item { Item::Int(_) => true, _ => false } ) {
+                    Some(l.iter().map(|v| match v { Item::Int(i) => *i, _ => 0}).collect())
+                }
+                else {
+                    None
+                }
+            }
+            else {
+                None
+            }
+        }
     }
 
 
@@ -691,7 +722,7 @@ impl BaseModelTrait for ModelOptserver {
         }
     }
 
-    fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, solitg : &mut Solution) -> Result<(),String>
+    fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String>
     {
         let data = self.format();
         let recv_body : String = ureq::post(format!("{}/api/v1/submit+solve",self.hostname).as_str())
@@ -713,11 +744,18 @@ impl BaseModelTrait for ModelOptserver {
                     for (whichsol,v) in secs.iter() {
                         let sol = match whichsol.as_str() {
                             "interior" => Some(sol_bas),
-                            "integer" => Some(sol_itg),
-                            "basic" => Sol(sol_bas), 
+                            "integer"  => Some(sol_itg),
+                            "basic"    => Some(sol_bas), 
                             _ => None
                         };
                         if let Some(sol) = sol {
+                            let mut xx = None;
+                            let mut slx = None;
+                            let mut sux = None;
+                            let mut xc = None;
+                            let mut y = None;
+                            let mut slc = None;
+                            let mut suc = None;
                             for (k,v) in v.get_dict().ok_or_else(|| "Format error".to_string())? {
                                 match k.as_str() {
                                     "solsta" => { 
@@ -735,16 +773,59 @@ impl BaseModelTrait for ModelOptserver {
                                             _ => (SolutionStatus::Unknown,SolutionStatus::Unknown)
                                         };
                                     },
-                                    "xx" => {
+                                    "xx"|"slx"|"sux"|"xc"|"slc"|"suc" => {
                                         let lst = v.get_list().ok_or_else(|| "Format error".to_string())?;
-                                        sol.primal.var.clear();
+                                        let mut res = Vec::with_capacity(lst.len());
                                         for v in lst.iter() {
                                             match v {
-                                                Item::Float(f) => sol.primal.var.push(f),
-                                                Item::Int(i) => sol.primal.var.push(i as f64),
+                                                json::Item::Float(f) => res.push(*f),
+                                                json::Item::Int(i)   => res.push(*i as f64),
                                                 _ => return Err("Invalid format".to_string())
                                             }
                                         }
+                                        match k.as_str() {
+                                            "xx"  => xx  = Some(res),
+                                            "slx" => slx = Some(res),
+                                            "sux" => sux = Some(res),
+                                            "slc" => slc = Some(res),
+                                            "suc" => suc = Some(res),
+                                            _ => {}
+                                        }
+                                    },
+                                    _ => {}
+                                }
+                            }
+
+                            if let Some(xx) = xx {
+                                sol.primal.var.resize(self.vars.len(),0.0);
+                                for (v,dst) in self.vars.iter().zip(sol.primal.var.iter_mut()) {
+                                    *dst = xx[v.index()];
+                                }
+                            }
+                            if let (Some(slx),Some(sux)) = (slx,sux) {
+                                sol.dual.var.resize(self.vars.len(),0.0);
+                                for (v,dst) in self.vars.iter().zip(sol.dual.var.iter_mut()) {
+                                    match *v {
+                                        Item::Linear{index} => *dst = slx[index]-sux[index],
+                                        Item::RangedLower{index} => *dst = slx[index],
+                                        Item::RangedUpper{index} => *dst = -sux[index]
+                                    }
+                                }
+                            }
+                            if let Some(xc) = xc {
+                                sol.primal.con.resize(self.cons.len(), 0.0);
+                                for (v,dst) in self.cons.iter().zip(sol.primal.con.iter_mut()) {
+                                    *dst = xc[v.index()];
+                                }
+                            }
+
+                            if let (Some(slc),Some(suc)) = (slc,suc) {
+                                sol.dual.con.resize(self.cons.len(),0.0);
+                                for (v,dst) in self.cons.iter().zip(sol.dual.con.iter_mut()) {
+                                    match *v {
+                                        Item::Linear{index} => *dst = slc[index]-suc[index],
+                                        Item::RangedLower{index} => *dst = slc[index],
+                                        Item::RangedUpper{index} => *dst = -suc[index]
                                     }
                                 }
                             }
@@ -752,7 +833,23 @@ impl BaseModelTrait for ModelOptserver {
                     }
 
                 },
-                "Task/information" => {},
+                "Task/information" => {
+                    if let Some(d) = v.get_dict() {
+                        for (k,v) in d.iter() {
+                            if k == "double" {
+                                if let Some(d) = v.get_dict() {
+                                    for (k,v) in d.iter() {
+                                        match k.as_str() {
+                                            "sol_itr_primal_obj" => sol_itr.primal.obj = v.to_float().unwrap_or(0.0),
+                                            "sol_itr_dual_obj"   => sol_itr.dual.obj = v.to_float().unwrap_or(0.0),
+                                            ...
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 _ => {}
             }
         }
