@@ -1367,8 +1367,8 @@ pub fn in_psd_cones<const N : usize>(shape : &[usize; N]) -> PSDProtoDomain<N> {
     }
 }
 
-/// Define a range for use with [crate::Model::ranged_constraint] and
-/// [crate::Model::ranged_variable] to create ranged variables and constraints.
+/// Define a range for use with [crate::Model::constraint] and
+/// [crate::Model::variable] to create ranged variables and constraints.
 /// 
 /// The two bounds must have same type and can be either a scalar or a vector. Shape and sparsity
 /// can be defined subsequently.

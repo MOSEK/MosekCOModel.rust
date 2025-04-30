@@ -149,7 +149,7 @@
 //!
 //! ### Variables
 //!
-//! When a [Variable] is created in a model as [Model::variable] or [Model::ranged_variable], the
+//! When a [Variable] is created in a model as [Model::variable], the
 //! model adds the necessary
 //! internal information to map a linear variable index to something in the underlying task, but
 //! after that, a variable is essentially a list of indexes of the scalar variables t a shape and
@@ -159,11 +159,12 @@
 //! solution it represents through the [Model] object.
 //!
 //! ### Constraints
+//!
 //! A constraint is created in a [Model] from an expression (something implementing [ExprTrait])
-//! and a domain using [Model::constraint] or [Model::ranged_constraint]. The sparsity pattern of
-//! the domain is ignored, and a constraint is always dense.
-//! When a constraint has been created it can be indexed, sliced and stacked like a variable, and
-//! it can be used to access the relevant parts of the solution through the [Model] object.
+//! and a domain using [Model::constraint]. The sparsity pattern of the domain is ignored, and a
+//! constraint is always dense. When a constraint has been created it can be indexed, sliced and
+//! stacked like a variable, and it can be used to access the relevant parts of the solution
+//! through the [Model] object.
 //!
 //! ## Expression
 //!

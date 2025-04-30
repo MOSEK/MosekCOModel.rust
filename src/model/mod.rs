@@ -313,7 +313,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     }
 
 
-    /// Attach a log printer callback to the Model. This will receive messages from the solver
+    /// Attach a log printer callback to the model. This will receive messages from the solver
     /// while solving and during a few other calls like file reading/writing. 
     ///
     /// # Arguments
@@ -388,7 +388,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     }
 
 
-    /// Same as [ModekAPI::try_objective], but `panic`s on error.
+    /// Same as [ModelAPI::try_objective], but `panic`s on error.
     pub fn objective<I>(& mut self, name : Option<&str>, sense : Sense, e : I) where I : IntoExpr<0> 
     {
         self.try_objective(name, sense, e).unwrap();
@@ -423,7 +423,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// - On success, return an `N`-dimensional variable object is returned. The `Variable` object
     ///   may be dense or sparse, where "sparse" means that all entries outside the sparsity
     ///   pattern are fixed to 0.
-    /// - On a recoverable failure (i.e. when the [Model] is in a consistent state), return a
+    /// - On a recoverable failure (i.e. when the [ModelAPI] is in a consistent state), return a
     ///   string describing the error.
     /// - On non-recoverable errors: Panic.
     pub fn try_variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> Result<R,String>
@@ -435,7 +435,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         dom.try_into_domain()?.create(& mut self.inner,name)
     }
 
-    /// Add a Variable. See [Model::try_variable].
+    /// Add a Variable. See [ModelAPI::try_variable].
     ///
     /// # Returns
     /// An `N`-dimensional variable object is returned. The `Variable` object may be dense or
@@ -487,7 +487,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// # Returns
     /// - On success, return a N-dimensional constraint object that can be used to access
     ///   solution values.
-    /// - On any recoverable failure, i.e. failure where the [Model] is in a consistent state:
+    /// - On any recoverable failure, i.e. failure where the [ModelAPI] is in a consistent state:
     ///   Return a string describing the error.
     /// - On any non-recoverable error: Panic.
     pub fn try_constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> Result<D::Result,String>
@@ -506,7 +506,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         dom.try_into_domain(shape)?.add_constraint(& mut self.inner,name,eshape,ptr,subj,cof)
     }
 
-    /// Add a constraint. See [Model::try_constraint].
+    /// Add a constraint. See [ModelAPI::try_constraint].
     ///
     /// # Returns
     /// - On success, return a N-dimensional constraint object that can be used to access
@@ -523,7 +523,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         self.try_constraint(name, expr, dom).unwrap()
     }
     
-    /// Update the expression of a constraint in the Model.
+    /// Update the expression of a constraint in the model.
     pub fn try_update<const N : usize, E : IntoExpr<N>>(&mut self, item : &Constraint<N>, expr : E) -> Result<(),String>
     {
         expr.into_expr().eval_finalize(& mut self.rs,& mut self.ws,& mut self.xs).map_err(|e| format!("{:?}",e))?;
@@ -963,8 +963,8 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
 // ModelItem
 //======================================================
 
-/// The `ModelItem` represents either a variable or a constraint belonging to a [Model]. It is used
-/// by the [Model] object when accessing solution assist overloading and determine which solution part to access.
+/// The `ModelItem` represents either a variable or a constraint belonging to a [ModelAPI]. It is used
+/// by the [ModelAPI] object when accessing solution assist overloading and determine which solution part to access.
 pub trait ModelItem<const N : usize,M> where M : BaseModelTrait {
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool { self.len() == 0 }
