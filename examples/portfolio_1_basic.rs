@@ -23,7 +23,7 @@ fn basic_markowitz( n : usize,
     model.set_log_handler(|msg| print!("{}",msg));
 
     // Defines the variables (holdings). Shortselling is not allowed.
-    let x = model.variable(Some("x"), greater_than(vec![0.0;n]));
+    let x = model.variable(Some("x"), greater_than(0.0).with_shape(&[n]));
 
     //  Maximize expected return
     model.objective(Some("obj"), Sense::Maximize, x.dot(mu));
@@ -35,8 +35,6 @@ fn basic_markowitz( n : usize,
     model.constraint(Some("risk"), 
                      vstack![Expr::from(gamma).reshape(&[1]), 
                              gt.mul(&x)], in_quadratic_cone());
-
-    model.write_problem("portfolio-1.ptf");
     // Solves the model.
     model.solve();
 

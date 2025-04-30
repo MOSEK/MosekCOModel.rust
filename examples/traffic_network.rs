@@ -75,7 +75,6 @@ pub fn traffic_network_model(
                         .sub(x.sum_on(&[0])),
                      equal_to(nodes.iter().map(|n| - n.sink_source).collect::<Vec<f64>>()));
 
-    //model.write_problem("trafficnetwork.ptf");
     model.solve();
 
     let (xsol,sp) = model.sparse_primal_solution(SolutionType::Default, &x).unwrap();

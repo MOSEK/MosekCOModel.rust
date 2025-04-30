@@ -72,9 +72,7 @@ fn main() {
         M.update(&sigma_con, sigma_val);
         // Example: Linear signal with Gaussian noise    
        
-
         M.solve();
-        M.write_problem("total_variation.ptf");
 
         let _sol = M.primal_solution(SolutionType::Default, &ucore).unwrap();
         // Now use the solution
