@@ -1,9 +1,12 @@
 #![doc = include_str!("../js/mathjax.tag")]
+use std::panic::AssertUnwindSafe;
+
 use iter::PermuteByMutEx;
 use itertools::Either;
 use super::matrix::NDArray;
 use crate::utils::*;
 
+#[derive(Clone,Copy)]
 pub enum LinearDomainType {
     NonNegative,
     NonPositive,
@@ -11,8 +14,109 @@ pub enum LinearDomainType {
     Free
 }
 
+#[derive(Clone,Copy)]
+pub enum QuadraticCone {
+    Normal,
+    Rotated
+}
+
+#[derive(Clone,Copy)]
+pub enum AsymmetricConeType {
+    Primal,
+    Dual
+}
+
+#[derive(Clone,Copy)]
+struct SVecPSDCone();
+#[derive(Clone,Copy)]
+struct GeometricMeanCone(AsymmetricConeType);
+#[derive(Clone,Copy)]
+struct ExponentialCone(AsymmetricConeType);
 #[derive(Clone)]
-pub enum ConicDomainType {
+struct PowerCone(Vec<f64>,AsymmetricConeType);
+#[derive(Clone,Copy)]
+struct LinearCone(LinearDomainType);
+
+pub trait VectorDomainTrait {
+    fn check_conesize(&self, d : usize) -> Result<(),String>;
+    fn to_conic_domain_type(&self) -> ConicDomainType;
+}
+impl VectorDomainTrait for QuadraticCone {
+    fn check_conesize(&self, d : usize) -> Result<(),String> {
+        match self {
+            QuadraticCone::Normal => if d >= 1 { Ok(()) } else { Err("Invalid dimension for quadratic cone".to_string()) },
+            QuadraticCone::Rotated => if d >= 2 { Ok(()) } else { Err("Invalid dimension for rotated quadratic cone".to_string()) },
+        }
+    }
+    fn to_conic_domain_type(&self) -> ConicDomainType {
+        match self {
+            QuadraticCone::Normal => ConicDomainType::QuadraticCone,
+            QuadraticCone::Rotated => ConicDomainType::RotatedQuadraticCone,
+        }
+    }
+}
+
+impl VectorDomainTrait for SVecPSDCone {
+    fn check_conesize(&self, d : usize) -> Result<(),String> {
+        if d < 1 {
+            return Err(format!("Size of SVecPSDCone must be at least 1, got: {}", d)); 
+        }
+        let n = ((((1 + d*8) as f64).sqrt()-1.0)/2.0) as usize;
+        if n * (n+1)/2 != d {
+            return Err(format!("Size of SVecPSDCone must correspond to the lower triangular part of a square matrix, but got: {}", d)); 
+        }
+        Ok(())
+    }
+    fn to_conic_domain_type(&self) -> ConicDomainType {
+        ConicDomainType::SVecPSDCone
+    }
+}
+impl VectorDomainTrait for GeometricMeanCone {
+    fn check_conesize(&self, d : usize) -> Result<(),String> { if d >= 1 { Ok(()) } else { Err("Invalid dimension for geometric mean code".to_string()) } }
+    fn to_conic_domain_type(&self) -> ConicDomainType { 
+        match self.0 {
+            AsymmetricConeType::Primal => ConicDomainType::GeometricMeanCone,
+            AsymmetricConeType::Dual => ConicDomainType::DualGeometricMeanCone
+        }
+    }
+}
+impl VectorDomainTrait for ExponentialCone {
+    fn check_conesize(&self, d : usize) -> Result<(),String> { if d != 3 { Ok(()) } else { Err("Invalid dimension for exponential code".to_string()) } }
+    fn to_conic_domain_type(&self) -> ConicDomainType {
+        match self.0 {
+            AsymmetricConeType::Primal => ConicDomainType::ExponentialCone,
+            AsymmetricConeType::Dual => ConicDomainType::DualExponentialCone
+        }
+    }
+}
+impl VectorDomainTrait for PowerCone {
+    fn check_conesize(&self, d : usize) -> Result<(),String> { 
+        if d >= self.0.len() { Ok(()) } else { Err("Invalid dimension for power cone".to_string()) } 
+    }
+    fn to_conic_domain_type(&self) -> ConicDomainType {
+        match self.1 {
+            AsymmetricConeType::Primal => ConicDomainType::PrimalPowerCone(self.0.as_slice())
+            AsymmetricConeType::Dual => ConicDomainType::DualPowerCone(self.0.as_slice())
+        }
+    }
+
+}
+impl VectorDomainTrait for LinearCone {
+    fn check_conesize(&self, d : usize) -> Result<(),String> { Ok(()) }
+    fn to_conic_domain_type(&self) -> ConicDomainType {
+        match self.0 {
+            LinearDomainType::Zero => ConicDomainType::Zero,
+            LinearDomainType::Free => ConicDomainType::Free,
+            LinearDomainType::NonNegative => ConicDomainType::NonNegative,
+            LinearDomainType::NonPositive => ConicDomainType::NonPositive
+        }
+    }
+}
+
+
+
+#[derive(Clone)]
+pub enum ConicDomainType<'a> {
     QuadraticCone,
     RotatedQuadraticCone,
     SVecPSDCone,
@@ -20,8 +124,8 @@ pub enum ConicDomainType {
     DualGeometricMeanCone,
     ExponentialCone,
     DualExponentialCone,
-    PrimalPowerCone(Vec<f64>),
-    DualPowerCone(Vec<f64>),
+    PrimalPowerCone(&'a [f64]),
+    DualPowerCone(&'a[f64]),
     // linear types
     NonNegative,
     NonPositive,
@@ -34,7 +138,7 @@ pub trait DomainTrait<const N : usize> {
 }
 
 impl<const N : usize> DomainTrait<N> for LinearDomain<N> {}
-impl<const N : usize> DomainTrait<N> for ConicDomain<N> {}
+impl<const N : usize,D> DomainTrait<N> for ConicDomain<N,D> where D : VectorDomainTrait {}
 impl<const N : usize> DomainTrait<N> for PSDDomain<N> {}
 impl<const N : usize> DomainTrait<N> for LinearRangeDomain<N> {}
 
@@ -50,20 +154,18 @@ pub trait IntoShapedDomain<const N : usize> {
     type Result : DomainTrait<N>;
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String>;
 }
-
-pub trait IntoConicDomain<const N : usize> {
-    fn into_conic(self) -> ConicDomain<N>;
+pub trait IntoConicDomain<const N : usize,D> where D : VectorDomainTrait {
+    fn into_conic(self) -> ConicDomain<N,D>;
 }
 
 pub trait AnyConicDomain {
-    fn extract(&self) -> (&ConicDomainType,&[f64],&[usize],usize,bool);
+    fn extract(&self) -> (ConicDomainType,&[f64],&[usize],usize,bool);
 }
 
-impl<const N : usize> AnyConicDomain for ConicDomain<N> {
-    fn extract(&self) -> (&ConicDomainType,&[f64],&[usize],usize,bool) { 
-        (&self.domain_type,self.offset.as_slice(),&self.shape,self.conedim,self.is_integer) 
+impl<const N : usize,D> AnyConicDomain for ConicDomain<N,D> where D : VectorDomainTrait {
+    fn extract(&self) -> (ConicDomainType,&[f64],&[usize],usize,bool) { 
+        (self.domain_type.to_conic_domain_type(),self.offset.as_slice(),&self.shape,self.conedim,self.is_integer) 
     }
-    
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -247,14 +349,14 @@ impl<const N : usize> IntoShapedDomain<N> for LinearProtoDomain<N> {
 // ScalableConicDomain
 ///////////////////////////////////////////////////////////////////////////////
 
-pub struct ScalableConicDomain {
-    domain_type : ConicDomainType,
+pub struct ScalableConicDomain<D> {
+    domain_type : D,
     cone_dim   : Option<usize>,
     is_integer : bool
 }
 
-impl ScalableConicDomain {
-    pub fn with_shape<const N : usize>(self, shape : &[usize;N]) -> ConicProtoDomain<N> { 
+impl<D> ScalableConicDomain<D> {
+    pub fn with_shape<const N : usize>(self, shape : &[usize;N]) -> ConicProtoDomain<N,D> { 
         let cone_dim = if let Some(cd) = self.cone_dim { cd } else { N.max(1) - 1 };
         ConicProtoDomain{ 
             shape : *shape,             
@@ -269,15 +371,15 @@ impl ScalableConicDomain {
     pub fn continuous(self) -> Self { ScalableConicDomain{is_integer : false, ..self} }
 }
 
-impl IntoDomain for ScalableConicDomain {
-    type Result = ConicDomain<0>;
+impl IntoDomain for ScalableConicDomain<D> {
+    type Result = ConicDomain<0,D>;
     fn try_into_domain(self) -> Result<Self::Result,String> {
         Err(format!("Domain size or shape cannot be determined"))
     }
 }
 
-impl<const N : usize> IntoShapedDomain<N> for ScalableConicDomain {
-    type Result = ConicDomain<N>;
+impl<const N : usize,D> IntoShapedDomain<N,D> for ScalableConicDomain<D> {
+    type Result = ConicDomain<N,D>;
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
         match self.domain_type {
             ConicDomainType::QuadraticCone          => if shape[N-1] < 1 { return Err(format!("Quadratic cones must be at least 1 element, got {}", shape[N-1])); },
@@ -319,15 +421,15 @@ impl<const N : usize> IntoShapedDomain<N> for ScalableConicDomain {
 ///
 /// The struct acts as a factory where the domain properties can be updated. Internally in the
 /// [crate::Model] object it is turned into a [ConicDomain] and consistency is checked.
-pub struct ConicProtoDomain<const N : usize> {
+pub struct ConicProtoDomain<const N : usize,D> {
     shape       : [usize;N],
-    domain_type : ConicDomainType,
+    domain_type : D,
     offset      : Vec<f64>,
     cone_dim    : usize,
     is_integer  : bool,
 }
 
-impl<const N : usize> ConicProtoDomain<N> {
+impl<const N : usize,D> ConicProtoDomain<N,D> {
     pub fn with_shape<const M : usize>(self, shape : &[usize;M]) -> ConicProtoDomain<M> { 
         ConicProtoDomain{ 
             shape : *shape, 
@@ -343,8 +445,8 @@ impl<const N : usize> ConicProtoDomain<N> {
     pub fn continuous(self) -> Self { ConicProtoDomain{ is_integer : false, ..self } }
 }
 
-impl<const N : usize> IntoDomain for ConicProtoDomain<N> {
-    type Result = ConicDomain<N>;
+impl<const N : usize,D> IntoDomain for ConicProtoDomain<N,D> {
+    type Result = ConicDomain<N,D>;
     fn try_into_domain(self) -> Result<Self::Result,String> {
         if self.offset.len() != self.shape.iter().product() {
             return Err(format!("Domain offset length does not match shape"));
@@ -922,9 +1024,9 @@ pub struct LinearDomain<const N : usize> {
 ///
 /// A set of member functions makes it possible to transform the domain by changing its shape
 /// sparsity, offset etc. 
-pub struct ConicDomain<const N : usize> {
+pub struct ConicDomain<const N : usize, D> {
     /// Cone type
-    domain_type : ConicDomainType,
+    domain_type : D,
     /// Offset 
     /// nm
     offset  : Vec<f64>,

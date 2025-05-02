@@ -219,6 +219,13 @@ pub trait BaseModelTrait {
     fn set_parameter<V>(&mut self, parname : V::Key, parval : V) -> Result<(),String> where V : SolverParameterValue<Self>,Self: Sized;
 }
 
+pub trait SOCModelTrait {
+    fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : SOCDomain<N>) -> Result<Variable<N>,String>;
+    fn conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : SOCDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String>;
+}
+
+
+
 /// An inner model object must implement this to support conic vector constraints and variables
 pub trait ConicModelTrait {
     fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : ConicDomain<N>) -> Result<Variable<N>,String>;
