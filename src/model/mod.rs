@@ -131,7 +131,9 @@ pub trait VarDomainTrait<M>
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String>;
 }
 
-impl<const N : usize,M> VarDomainTrait<M> for ConicDomain<N> where M : ConicModelTrait 
+impl<const N : usize,M,D> VarDomainTrait<M> for VectorDomain<N,D> 
+    where M : VectorConeModelTrait<D>, 
+          D : VectorDomainTrait  
 {
     type Result = Variable<N>;
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
@@ -181,9 +183,17 @@ impl<const N : usize, M> VarDomainTrait<M> for PSDDomain<N> where M : PSDModelTr
 
 
 //======================================================
-// Model
+// Model aspects
+//
+// The following traits define different aspects of an underlying model object that can be
+// individually supported. The only mandatory trait is [BaseModelTrait].
 //======================================================
 
+
+/// 
+/// The trait defining basic functionality for an underlying model object. It defines functions for
+/// adding linear and ranged variables and constraints as well as for
+/// setting objective, parameters, updating constraints, and starting the optimizer.
 pub trait BaseModelTrait {
     fn new(name : Option<&str>) -> Self;
 
@@ -219,17 +229,11 @@ pub trait BaseModelTrait {
     fn set_parameter<V>(&mut self, parname : V::Key, parval : V) -> Result<(),String> where V : SolverParameterValue<Self>,Self: Sized;
 }
 
-pub trait SOCModelTrait {
-    fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : SOCDomain<N>) -> Result<Variable<N>,String>;
-    fn conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : SOCDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String>;
-}
-
-
-
-/// An inner model object must implement this to support conic vector constraints and variables
-pub trait ConicModelTrait {
-    fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : ConicDomain<N>) -> Result<Variable<N>,String>;
-    fn conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : ConicDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String>;
+/// Trait for adding vector conic constraints and variables. This is implemented per cone type `D` for
+/// a model type that supports that cone.
+pub trait VectorConeModelTrait<D> where D : VectorDomainTrait {
+    fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : VectorDomain<N,D>) -> Result<Variable<N>,String>;
+    fn conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : VectorDomain<N,D>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String>;
 }
 
 /// An inner model object must implement this to support PSD variables and constraints
@@ -238,11 +242,17 @@ pub trait PSDModelTrait {
     fn psd_constraint<const N : usize>(& mut self, name : Option<&str>, dom : PSDDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String>;
 }
 
-/// An inner model object must implement this to support disjunctive constraints
+
+/// Trait that must be implemented per domain is supported as a DJC domain for the model `M`.
+pub trait DJCDomainTrait<M> where M : DJCModelTrait {
+    //....
+}
+/// An inner model object must implement this to support disjunctive constraints, and provide
+/// imlpementations for [DJCModelTrait] for all domain types that can be used for DJCs.
 pub trait DJCModelTrait {
     fn disjunction(& mut self, name : Option<&str>, 
                    exprs     : &[(&[usize],&[usize],&[usize],&[f64])], 
-                   domains   : &[Box<dyn AnyConicDomain>],
+                   domains   : &[Box<dyn DJCDomainTrait<Self>>],
                    term_size : &[usize]) -> Result<Disjunction,String>;
 }
 
@@ -262,6 +272,15 @@ pub trait ModelWithControlCallback {
     fn set_callback<F>(&mut self, func : F) where F : 'static+FnMut() -> ControlFlow<(),()>;
 }
 
+//-------------------------------------------------------------------------------------------------
+// The user-facing Model object
+//-------------------------------------------------------------------------------------------------
+
+
+/// This defines the model object that the user interacts directly with.
+///
+/// The exact functionality available will depend on the functionality provided by the underlying
+/// model object `T`.
 pub struct ModelAPI<T : BaseModelTrait> {
     inner : T,
 

@@ -12,12 +12,29 @@ use std::path::Path;
 use itertools::*;
 
 
-use crate::domain::LinearRangeDomain;
+use crate::domain::{LinearRangeDomain, QuadraticCone, VectorDomain, VectorDomainTrait};
 use crate::utils::{NameAppender, ShapeToStridesEx};
 use crate::utils::iter::*;
 use crate::*;
 
-use super::{BaseModelTrait, ConAtom, ConicModelTrait, DJCModelTrait, Disjunction, ModelWithControlCallback, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, Sense, Solution, VarAtom, WhichLinearBound};
+use super::{BaseModelTrait, ConAtom, VectorConeModelTrait, DJCModelTrait, Disjunction, ModelWithControlCallback, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, Sense, Solution, VarAtom, WhichLinearBound};
+
+
+enum MosekConeType {
+    SVecPSDCone,
+    QuadraticCone,
+    RotatedQuadraticCone,
+    GeometricMeanCone,
+    DualGeometricMeanCone,
+    ExponentialCone,
+    DualExponentialCone,
+    PrimalPowerCone(Vec<f64>),
+    DualPowerCone(Vec<f64>),
+    Zero,
+    Free,
+    NonPositive,
+    NonNegative,
+}
 
 
 /// The `Model` object encapsulates an optimization problem and a
@@ -156,6 +173,79 @@ impl MosekModel {
     pub fn clear_optserver(&mut self) {
         self.optserver_host = None;
     }
+
+
+   fn internal_vector_conic_variable<const N : usize>(&mut self, name : Option<&str>, shape : &[usize;N], conedim : usize, offset : Vec<f64>, is_integer : bool, ct : MosekConeType) -> Result<Vec<usize>,String> {
+        //let (ct,offset,shape,conedim,is_integer) = dom.dissolve();
+        let n    = shape.iter().product();
+        let acci = self.task.get_num_acc()?;
+        let afei = self.task.get_num_afe()?;
+        let vari = self.task.get_num_var()?;
+
+        let asubi : Vec<i64> = (acci..acci+n as i64).collect();
+        let asubj : Vec<i32> = (vari..vari+n as i32).collect();
+        let acof  : Vec<f64> = vec![1.0; n];
+
+        let d0 : usize = shape[0..conedim].iter().product();
+        let d1 : usize = shape[conedim];
+        let d2 : usize = shape[conedim+1..].iter().product();
+        let conesize = d1;
+        let numcone  = d0*d2;
+
+        let domidx = match ct {
+            MosekConeType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap())?,
+            MosekConeType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap())?,
+            MosekConeType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap())?,
+            MosekConeType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap())?,
+            MosekConeType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap())?,
+            MosekConeType::ExponentialCone       => self.task.append_primal_exp_cone_domain()?,
+            MosekConeType::DualExponentialCone   => self.task.append_dual_exp_cone_domain()?,
+            MosekConeType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(),alpha.as_slice())?,
+            MosekConeType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(),alpha.as_slice())?,
+            MosekConeType::Zero                  => self.task.append_rzero_domain(conesize.try_into().unwrap())?,
+            MosekConeType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap())?,
+            MosekConeType::NonPositive           => self.task.append_rplus_domain(conesize.try_into().unwrap())?,
+            MosekConeType::NonNegative           => self.task.append_rminus_domain(conesize.try_into().unwrap())?,
+        };
+
+        self.task.append_afes(n as i64)?;
+        self.task.append_vars(n.try_into().unwrap()).unwrap();
+        self.task.put_var_bound_slice_const(vari, vari+n as i32, mosek::Boundkey::FR, 0.0, 0.0).unwrap();
+        if is_integer {
+            self.task.put_var_type_list((vari..vari+n as i32).collect::<Vec<i32>>().as_slice(), vec![mosek::Variabletype::TYPE_INT; n].as_slice()).unwrap();
+        }
+        self.task.append_accs_seq(vec![domidx; numcone].as_slice(),n as i64,afei,offset.as_slice()).unwrap();
+        self.task.put_afe_f_entry_list(asubi.as_slice(),asubj.as_slice(),acof.as_slice()).unwrap();
+
+        if let Some(name) = name {
+            self.var_names(name,vari,&shape,None);
+            let mut xshape = [0usize; N];
+            xshape[0..conedim].copy_from_slice(&shape[0..conedim]);
+            if conedim < N-1 {
+                xshape[conedim..N-1].copy_from_slice(&shape[conedim+1..N]);
+            }
+            let mut idx = [1usize; N];
+            for i in acci..acci+numcone as i64 {
+                let n = format!("{}{:?}",name,&idx[0..N-1]);
+                self.task.put_acc_name(i, n.as_str()).unwrap();
+                idx.iter_mut().zip(xshape.iter()).rev().fold(1,|carry,(t,&d)| { *t += carry; if *t > d { *t = 1; 1 } else { 0 } });
+            }
+        }
+
+        let firstvar = self.vars.len();
+        self.vars.reserve(n);
+        self.cons.reserve(n);
+
+        iproduct!(0..d0,0..d1,0..d2).enumerate()
+            .for_each(|(i,(i0,i1,i2))| {
+                self.vars.push(VarAtom::ConicElm(vari+i as i32,self.cons.len()));
+                self.cons.push(ConAtom::ConicElm{acci : acci+(i0*d2+i2) as i64, afei: afei+i as i64,accoffset : i1})
+            } );
+
+        Ok(Variable::new((firstvar..firstvar+n).collect(), None, &shape))
+   } 
+
+
 } // impl Model
 
 
@@ -892,9 +982,17 @@ impl ModelWithControlCallback for MosekModel {
     }
 }
 
-
-impl ConicModelTrait for MosekModel {
-   fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : ConicDomain<N>) -> Result<Variable<N>,String> {
+impl<QuadraticCone> VectorConeModelTrait<QuadraticCone> for MosekModel {
+   fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : VectorDomain<N,QuadraticCone>) -> Result<Variable<N>,String> {
+        let (ct,offset,shape,conedim,is_integer) = dom.dissolve();
+        let dt = match ct {
+            QuadraticCone::
+        };
+        self.internal_vector_conic_variable(name, shape, conedim, offset, is_integer, dt)
+   }
+}
+impl<D> VectorConeModelTrait<D> for MosekModel where D : VectorDomainTrait {
+   fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : VectorDomain<N,D>) -> Result<Variable<N>,String> {
         let (ct,offset,shape,conedim,is_integer) = dom.dissolve();
         let n    = shape.iter().product();
         let acci = self.task.get_num_acc()?;
