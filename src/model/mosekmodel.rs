@@ -12,12 +12,12 @@ use std::path::Path;
 use itertools::*;
 
 
-use crate::domain::{AsymmetricConeType, LinearRangeDomain, QuadraticCone, VectorDomain, VectorDomainTrait,GeometricMeanCone,PowerCone,SVecPSDCone,ExponentialCone};
+use crate::domain::{AsymmetricConeType, ExponentialCone, GeometricMeanCone, LinearRangeDomain, PowerCone, QuadraticCone, SVecPSDCone, VectorDomain, VectorDomainTrait};
 use crate::utils::{NameAppender, ShapeToStridesEx};
 use crate::utils::iter::*;
 use crate::*;
 
-use super::{BaseModelTrait, ConAtom, VectorConeModelTrait, DJCModelTrait, Disjunction, ModelWithControlCallback, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, Sense, Solution, VarAtom, WhichLinearBound};
+use super::{BaseModelTrait, ConAtom, DJCDomainTrait, DJCModelTrait, Disjunction, ModelWithControlCallback, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, Sense, Solution, VarAtom, VectorConeModelTrait, WhichLinearBound};
 
 
 enum MosekConeType {
@@ -357,7 +357,7 @@ impl MosekModel {
 
         Ok(Constraint{
             idxs : (coni..coni+nelm).collect(),
-            shape 
+            shape : *shape 
         })
    }
 
@@ -1100,7 +1100,7 @@ impl ModelWithControlCallback for MosekModel {
 
 trait VectorConeForMosek { fn into_mosek(self) -> MosekConeType; }
 impl VectorConeForMosek for QuadraticCone {
-    fn into_mosek(self) {
+    fn into_mosek(self) -> MosekConeType {
         match self {
             QuadraticCone::Normal => MosekConeType::QuadraticCone,
             QuadraticCone::Rotated => MosekConeType::RotatedQuadraticCone
@@ -1108,11 +1108,11 @@ impl VectorConeForMosek for QuadraticCone {
     }
 }
 impl VectorConeForMosek for SVecPSDCone {
-    fn into_mosek(self) { MosekConeType::SVecPSDCone }
+    fn into_mosek(self) -> MosekConeType  { MosekConeType::SVecPSDCone }
 }
 
 impl VectorConeForMosek for GeometricMeanCone {
-    fn into_mosek(self) {
+    fn into_mosek(self) -> MosekConeType {
         match self.0 {
             AsymmetricConeType::Primal => MosekConeType::GeometricMeanCone,
             AsymmetricConeType::Dual   => MosekConeType::DualGeometricMeanCone,
@@ -1120,15 +1120,15 @@ impl VectorConeForMosek for GeometricMeanCone {
     }
 }
 impl VectorConeForMosek for PowerCone {
-    fn into_mosek(self) {
-        match self.0 {
-            AsymmetricConeType::Primal => MosekConeType::PrimalPowerCone(self.1),
-            AsymmetricConeType::Dual   => MosekConeType::DualPowerCone(self.1),
+    fn into_mosek(self) -> MosekConeType {
+        match self.1 {
+            AsymmetricConeType::Primal => MosekConeType::PrimalPowerCone(self.0),
+            AsymmetricConeType::Dual   => MosekConeType::DualPowerCone(self.0),
         }
     }
 }
 impl VectorConeForMosek for ExponentialCone {
-    fn into_mosek(self) {
+    fn into_mosek(self) -> MosekConeType {
         match self.0 {
             AsymmetricConeType::Primal => MosekConeType::ExponentialCone,
             AsymmetricConeType::Dual   => MosekConeType::DualExponentialCone,
@@ -1136,8 +1136,8 @@ impl VectorConeForMosek for ExponentialCone {
     }
 }
 
-impl<D> VectorConeModelTrait<D> for MosekModel where D : VectorConeForMosek {
-   fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : VectorDomain<N,QuadraticCone>) -> Result<Variable<N>,String> {
+impl<D> VectorConeModelTrait<D> for MosekModel where D : VectorConeForMosek+VectorDomainTrait {
+   fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : VectorDomain<N,D>) -> Result<Variable<N>,String> {
         let (ct,offset,shape,conedim,is_integer) = dom.dissolve();
         let dt = ct.into_mosek();
         self.internal_vector_conic_variable(name, &shape, conedim, offset, is_integer, dt)
@@ -1146,18 +1146,14 @@ impl<D> VectorConeModelTrait<D> for MosekModel where D : VectorConeForMosek {
    fn conic_constraint<const N : usize>
        (& mut self, 
         name : Option<&str>, 
-        dom  : VectorDomain<N,QuadraticCone>,
+        dom  : VectorDomain<N,D>,
         shape : &[usize], 
         ptr : &[usize], 
         subj : &[usize], 
         cof : &[f64]) -> Result<Constraint<N>,String> 
    {
         let (ct,offset,shape,conedim,is_integer) = dom.dissolve();
-        let dt = match ct {
-            QuadraticCone::Normal => MosekConeType::QuadraticCone,
-            QuadraticCone::Rotated => MosekConeType::RotatedQuadraticCone
-        };
-       self.internal_vector_conic_constraint(name,&shape,conedim,offset,is_integer,dt,ptr,subj,cof)
+       self.internal_vector_conic_constraint(name,&shape,conedim,offset,is_integer,ct.into_mosek(),ptr,subj,cof)
    }
 }
 
@@ -1628,10 +1624,34 @@ impl PSDModelTrait for MosekModel {
 }
 
 
+impl<const N : usize> DJCDomainTrait<MosekModel> for LinearDomain<N> {
+    fn extract(&self) -> <MosekModel as DJCModelTrait>::DomainData {
+        let (dt,ofs,shape,sparsity,_) = LinearDomain::extract(self);
+        let ct = match dt {
+            LinearDomainType::Zero        => MosekConeType::Zero,
+            LinearDomainType::Free        => MosekConeType::Free,
+            LinearDomainType::NonNegative => MosekConeType::NonNegative,
+            LinearDomainType::NonPositive => MosekConeType::NonPositive,
+        };
+
+        let ofs = if let Some(sp) = sparsity {
+            let mut res = vec![0.0; shape.iter().product()];
+            res.permute_by_mut(sp.as_slice()).zip(ofs.iter()).for_each(|(t,&s)| *t = s);
+            res
+        }
+        else {
+            ofs
+        };
+
+        (ct,ofs,shape.to_vec(),if N == 0 { 0 } else { N-1 })
+    }
+}
+
 impl DJCModelTrait for MosekModel {
+    type DomainData = (MosekConeType,Vec<f64>,Vec<usize>,usize);
     fn disjunction(& mut self, name : Option<&str>, 
                    exprs     : &[(&[usize],&[usize],&[usize],&[f64])], 
-                   domains   : &[Box<dyn domain::AnyConicDomain>],
+                   domains   : &[Box<dyn DJCDomainTrait<Self>>],
                    term_size : &[usize]) -> Result<Disjunction,String> 
     {
         let nafes : usize = exprs.iter().map(|(shape,_,_,_)| shape.iter().product::<usize>()).sum();
@@ -1644,24 +1664,24 @@ impl DJCModelTrait for MosekModel {
 
         let mut afei = 0;
         for (dom,(shape,ptr,subj,cof)) in domains.iter().zip(exprs.iter()) {
-            let (dt,ofs,dshape,conedim,_) = dom.extract();
+            let (dt,ofs,dshape,conedim) = dom.extract();
 
             let conesize = if dshape.is_empty() { 1 } else { dshape[conedim] };
 
             dom_idxs.push(match dt {
-                ConicDomainType::NonNegative           => self.task.append_rplus_domain(conesize.try_into().unwrap())?,
-                ConicDomainType::NonPositive           => self.task.append_rminus_domain(conesize.try_into().unwrap())?,
-                ConicDomainType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap())?,
-                ConicDomainType::Zero                  => self.task.append_rzero_domain(conesize.try_into().unwrap())?,
-                ConicDomainType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap())?,
-                ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap())?,
-                ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap())?,
-                ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap())?,
-                ConicDomainType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap())?,
-                ConicDomainType::ExponentialCone       => self.task.append_primal_exp_cone_domain()?,
-                ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain()?,
-                ConicDomainType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice())?,
-                ConicDomainType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice())?,
+                MosekConeType::NonNegative           => self.task.append_rplus_domain(conesize.try_into().unwrap())?,
+                MosekConeType::NonPositive           => self.task.append_rminus_domain(conesize.try_into().unwrap())?,
+                MosekConeType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap())?,
+                MosekConeType::Zero                  => self.task.append_rzero_domain(conesize.try_into().unwrap())?,
+                MosekConeType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap())?,
+                MosekConeType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap())?,
+                MosekConeType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap())?,
+                MosekConeType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap())?,
+                MosekConeType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap())?,
+                MosekConeType::ExponentialCone       => self.task.append_primal_exp_cone_domain()?,
+                MosekConeType::DualExponentialCone   => self.task.append_dual_exp_cone_domain()?,
+                MosekConeType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice())?,
+                MosekConeType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice())?,
             });
 
             let (d0,d1,d2) = if shape.is_empty() {
@@ -1674,7 +1694,6 @@ impl DJCModelTrait for MosekModel {
                 };
 
             let nelm = shape.iter().product();
-
 
             let afeidxs = &mut afeidxs[afei..afei+nelm];
             b[afei..afei+nelm].copy_from_slice(ofs);

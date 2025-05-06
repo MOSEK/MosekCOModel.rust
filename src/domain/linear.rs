@@ -16,6 +16,7 @@ pub enum LinearDomainType {
 ///
 /// A set of member functions makes it possible to transform the domain by changing its shape
 /// sparsity, offset etc. 
+#[derive(Clone)]
 pub struct LinearDomain<const N : usize> {
     /// Bound type
     domain_type : LinearDomainType,
@@ -313,23 +314,23 @@ impl<const N : usize> IntoShapedDomain<N> for &[usize;N] {
 
 impl<const N : usize> LinearDomain<N> {
     pub fn dissolve(self) -> (LinearDomainType,Vec<f64>,Option<Vec<usize>>,[usize;N],bool) { (self.domain_type,self.offset,self.sparsity,self.shape,self.is_integer) }
-    /// Create a [VectorDomain] equivalent to the linear domain.
-    pub fn to_conic(self) -> VectorDomain<N> {
-        let conedim = N.max(1) - 1;
-        let domain_type = match self.domain_type {
-            LinearDomainType::Zero => VectorDomainType::Zero,
-            LinearDomainType::Free => VectorDomainType::Free,
-            LinearDomainType::NonPositive => VectorDomainType::NonPositive,
-            LinearDomainType::NonNegative => VectorDomainType::NonNegative
-        };
-        VectorDomain {
-            domain_type,
-            offset : self.offset,
-            shape : self.shape,
-            conedim,
-            is_integer : self.is_integer
-        }
-    }
+    //    /// Create a [VectorDomain] equivalent to the linear domain.
+    //    pub fn to_conic(self) -> VectorDomain<N,> {
+    //        let conedim = N.max(1) - 1;
+    //        let domain_type = match self.domain_type {
+    //            LinearDomainType::Zero => VectorDomainType::Zero,
+    //            LinearDomainType::Free => VectorDomainType::Free,
+    //            LinearDomainType::NonPositive => VectorDomainType::NonPositive,
+    //            LinearDomainType::NonNegative => VectorDomainType::NonNegative
+    //        };
+    //        VectorDomain {
+    //            domain_type,
+    //            offset : self.offset,
+    //            shape : self.shape,
+    //            conedim,
+    //            is_integer : self.is_integer
+    //        }
+    //    }
 
     /// Extract domain values.
     pub fn extract(self) -> (LinearDomainType,Vec<f64>,[usize;N],Option<Vec<usize>>,bool) {

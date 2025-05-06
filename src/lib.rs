@@ -316,7 +316,7 @@ pub use model::{Sense,
                 VarDomainTrait,
                 SolverParameterValue,
                 BaseModelTrait,
-                ConicModelTrait,
+                VectorConeModelTrait,
                 PSDModelTrait,
                 ModelAPI};
 pub type Model = ModelAPI<model::mosekmodel::MosekModel>;
@@ -333,10 +333,10 @@ pub use variable::Variable;
 pub use domain::{IntoDomain,
                  IntoShapedDomain,
                  LinearDomain,
-                 ConicDomain,
+                 VectorDomain,
                  PSDDomain,
                  LinearDomainType,
-                 ConicDomainType,
+                 VectorDomainTrait,
                  OffsetTrait,
                  unbounded,
                  less_than,
@@ -368,4 +368,4 @@ pub use domain::{IntoDomain,
                  in_psd_cones,
                  in_range,
                  };
-pub use disjunction::{ConjunctionTrait,DisjunctionTrait,constr};
+pub use disjunction::{ConjunctionTrait,DisjunctionTrait};

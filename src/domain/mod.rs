@@ -48,11 +48,11 @@ pub enum QuadraticCone { Normal, Rotated }
 #[derive(Clone,Copy)]
 pub struct SVecPSDCone();
 #[derive(Clone,Copy)]
-pub struct GeometricMeanCone(AsymmetricConeType);
+pub struct GeometricMeanCone(pub AsymmetricConeType);
 #[derive(Clone,Copy)]
-pub struct ExponentialCone(AsymmetricConeType);
+pub struct ExponentialCone(pub AsymmetricConeType);
 #[derive(Clone)]
-pub struct PowerCone(Vec<f64>,AsymmetricConeType);
+pub struct PowerCone(pub Vec<f64>,pub AsymmetricConeType);
 #[derive(Clone,Copy)]
 pub struct LinearCone(LinearDomainType);
 
@@ -71,7 +71,7 @@ pub trait DomainTrait<const N : usize> { }
 /// When creating a variable, the domain is an [IntoDomain], and the variable calls the
 /// [IntoDomain::try_into_domain] function to turn it into a concrete domain.
 pub trait IntoDomain {
-    type Result;
+    type Result; 
     fn try_into_domain(self) -> Result<Self::Result,String>;
 }
 
@@ -181,6 +181,8 @@ impl<const N : usize> DomainTrait<N>   for LinearDomain<N> {}
 impl<const N : usize,D> DomainTrait<N> for VectorDomain<N,D> where D : VectorDomainTrait {}
 impl<const N : usize> DomainTrait<N>   for PSDDomain<N> {}
 impl<const N : usize> DomainTrait<N>   for LinearRangeDomain<N> {}
+
+
 
 //impl<const N : usize,D> AnyVectorDomain for VectorDomain<N,D> where D : VectorDomainTrait {
 //    fn extract(&self) -> (&D,&[f64],&[usize],usize,bool) { 
@@ -344,13 +346,13 @@ impl<const N : usize,D> IntoShapedDomain<N> for VectorProtoDomain<N,D> where D :
 
 
 
-impl<const N : usize,D> IntoVectorDomain<N,D> for VectorDomain<N,D> where D : VectorDomainTrait {
-    fn into_conic(self) -> Self { self }
-}
-
-impl<const N : usize,D> IntoVectorDomain<N,D> for LinearDomain<N> where D : VectorDomainTrait {
-    fn into_conic(self) -> VectorDomain<N,D> { self.to_conic() }
-}
+//impl<const N : usize,D> IntoVectorDomain<N,D> for VectorDomain<N,D> where D : VectorDomainTrait {
+//    fn into_conic(self) -> Self { self }
+//}
+//
+//impl<const N : usize,D> IntoVectorDomain<N,D> for LinearDomain<N> where D : VectorDomainTrait {
+//    fn into_conic(self) -> VectorDomain<N,D> { self.to_conic() }
+//}
 
 impl<const N :usize,D> VectorDomain<N,D> where D : VectorDomainTrait {
     pub fn dissolve(self) -> (D,Vec<f64>,[usize;N],usize,bool) { (self.domain_type,self.offset,self.shape,self.conedim,self.is_integer) }

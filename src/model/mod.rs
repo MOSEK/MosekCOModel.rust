@@ -243,13 +243,26 @@ pub trait PSDModelTrait {
 }
 
 
+
+
+
+
+
+
 /// Trait that must be implemented per domain is supported as a DJC domain for the model `M`.
 pub trait DJCDomainTrait<M> where M : DJCModelTrait {
-    //....
+    fn extract(&self) -> M::DomainData;
 }
+
 /// An inner model object must implement this to support disjunctive constraints, and provide
 /// imlpementations for [DJCModelTrait] for all domain types that can be used for DJCs.
 pub trait DJCModelTrait {
+    /// When a model supports disjunctive constraints, the individual clauses in the disjunctive
+    /// constraint are heterogeneous, i.e. the domains can have different types. When building the
+    /// individual constraints, it is necessary to extract the domain data in the same format
+    /// independently of the underlying domain type. The `DomainData` defines the type that is
+    /// returned when extracting domain data from a domain.
+    type DomainData;
     fn disjunction(& mut self, name : Option<&str>, 
                    exprs     : &[(&[usize],&[usize],&[usize],&[f64])], 
                    domains   : &[Box<dyn DJCDomainTrait<Self>>],
@@ -636,7 +649,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// ```
     pub fn try_disjunction<D>(& mut self, name : Option<&str>, mut terms : D) -> Result<Disjunction,String> 
         where 
-            D : disjunction::DisjunctionTrait, 
+            D : disjunction::DisjunctionTrait<T>, 
             T : DJCModelTrait 
     {
         let mut domains = Vec::new();
@@ -651,10 +664,19 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         
         self.inner.disjunction(name,exprs.as_slice(), domains.as_slice(), term_size.as_slice())
     }
-   
+  
+    pub fn clause<const N : usize,D,E,I>(&self, expr : I, domain : D) -> disjunction::AffineConstraint<N,E,D,T>
+        where T : DJCModelTrait,
+              I : IntoExpr<N,Result=E>,
+              E : ExprTrait<N>,
+              D : IntoShapedDomain<N>,
+              D::Result : DJCDomainTrait<T>
+    {
+        disjunction::AffineConstraint::new(expr.into_expr(),domain)
+    }
 
     /// Same as [ModelAPI::try_disjunction], but `panic`s on errors.
-    pub fn disjunction<D>(& mut self, name : Option<&str>, terms : D) -> Disjunction where D : disjunction::DisjunctionTrait, T : DJCModelTrait {
+    pub fn disjunction<D>(& mut self, name : Option<&str>, terms : D) -> Disjunction where D : disjunction::DisjunctionTrait<T>, T : DJCModelTrait {
         self.try_disjunction(name, terms).unwrap()
     }
 
