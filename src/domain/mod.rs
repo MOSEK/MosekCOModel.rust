@@ -22,7 +22,7 @@
 //! the expression will specify the dimensionality, and the domain must implement the
 //! [IntoShapedDomain] trait.
 //!
-#![doc = include_str!("../js/mathjax.tag")]
+#![doc = include_str!("../../js/mathjax.tag")]
 
 use iter::PermuteByMutEx;
 use itertools::Either;
@@ -46,15 +46,15 @@ pub enum AsymmetricConeType {
 #[derive(Clone,Copy)]
 pub enum QuadraticCone { Normal, Rotated }
 #[derive(Clone,Copy)]
-struct SVecPSDCone();
+pub struct SVecPSDCone();
 #[derive(Clone,Copy)]
-struct GeometricMeanCone(AsymmetricConeType);
+pub struct GeometricMeanCone(AsymmetricConeType);
 #[derive(Clone,Copy)]
-struct ExponentialCone(AsymmetricConeType);
+pub struct ExponentialCone(AsymmetricConeType);
 #[derive(Clone)]
-struct PowerCone(Vec<f64>,AsymmetricConeType);
+pub struct PowerCone(Vec<f64>,AsymmetricConeType);
 #[derive(Clone,Copy)]
-struct LinearCone(LinearDomainType);
+pub struct LinearCone(LinearDomainType);
 
 /// Trait for all vector domains. A vector domain is a domain that is a product of identical cones. Unlike linear  
 pub trait VectorDomainTrait {
@@ -87,9 +87,6 @@ pub trait IntoVectorDomain<const N : usize,D> where D : VectorDomainTrait {
     fn into_conic(self) -> VectorDomain<N,D>;
 }
 
-
-
-
 impl VectorDomainTrait for QuadraticCone {
     fn check_conesize(&self, d : usize) -> Result<(),String> {
         match self {
@@ -104,11 +101,6 @@ impl VectorDomainTrait for QuadraticCone {
         }
     }
 }
-
-
-//pub trait AnyVectorDomain {
-//    fn extract(&self) -> (VectorDomainType,&[f64],&[usize],usize,bool);
-//}
 
 impl VectorDomainTrait for SVecPSDCone {
     fn check_conesize(&self, d : usize) -> Result<(),String> {
@@ -167,7 +159,6 @@ impl VectorDomainTrait for LinearCone {
     }
 }
 
-
 #[derive(Clone)]
 pub enum VectorDomainType {
     QuadraticCone,
@@ -186,13 +177,10 @@ pub enum VectorDomainType {
     Free
 }
 
-
-
 impl<const N : usize> DomainTrait<N>   for LinearDomain<N> {}
 impl<const N : usize,D> DomainTrait<N> for VectorDomain<N,D> where D : VectorDomainTrait {}
 impl<const N : usize> DomainTrait<N>   for PSDDomain<N> {}
 impl<const N : usize> DomainTrait<N>   for LinearRangeDomain<N> {}
-
 
 //impl<const N : usize,D> AnyVectorDomain for VectorDomain<N,D> where D : VectorDomainTrait {
 //    fn extract(&self) -> (&D,&[f64],&[usize],usize,bool) { 

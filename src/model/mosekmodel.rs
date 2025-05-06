@@ -12,7 +12,7 @@ use std::path::Path;
 use itertools::*;
 
 
-use crate::domain::{LinearRangeDomain, QuadraticCone, VectorDomain, VectorDomainTrait};
+use crate::domain::{AsymmetricConeType, LinearRangeDomain, QuadraticCone, VectorDomain, VectorDomainTrait,GeometricMeanCone,PowerCone,SVecPSDCone,ExponentialCone};
 use crate::utils::{NameAppender, ShapeToStridesEx};
 use crate::utils::iter::*;
 use crate::*;
@@ -175,8 +175,16 @@ impl MosekModel {
     }
 
 
-   fn internal_vector_conic_variable<const N : usize>(&mut self, name : Option<&str>, shape : &[usize;N], conedim : usize, offset : Vec<f64>, is_integer : bool, ct : MosekConeType) -> Result<Vec<usize>,String> {
-        //let (ct,offset,shape,conedim,is_integer) = dom.dissolve();
+   fn internal_vector_conic_variable<const N : usize>
+       (&mut self, 
+        name       : Option<&str>, 
+        shape      : &[usize;N], 
+        conedim    : usize, 
+        offset     : Vec<f64>, 
+        is_integer : bool, 
+        ct         : MosekConeType) ->
+        Result<Variable<N>,String>
+   {
         let n    = shape.iter().product();
         let acci = self.task.get_num_acc()?;
         let afei = self.task.get_num_afe()?;
@@ -245,6 +253,113 @@ impl MosekModel {
         Ok(Variable::new((firstvar..firstvar+n).collect(), None, &shape))
    } 
 
+   fn internal_vector_conic_constraint<const N : usize>
+       (&mut self, 
+        name       : Option<&str>, 
+        shape      : &[usize;N], 
+        conedim    : usize, 
+        offset     : Vec<f64>, 
+        is_integer : bool, 
+        ct         : MosekConeType,
+        ptr  : &[usize],
+        subj : &[usize],
+        cof  : &[f64]) -> Result<Constraint<N>,String>    
+   {
+        let nelm = ptr.len()-1;
+
+        if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
+            return Err("Expression is invalid: Variable subscript out of bound for this Model".to_string());
+        }
+
+        let acci = self.task.get_num_acc()?;
+        let afei = self.task.get_num_afe()?;
+
+        let r = split_expr(ptr,subj,cof,self.vars.as_slice())?;
+        let conesize = shape[conedim];
+        let numcone  = shape.iter().product::<usize>() / conesize;
+
+        let domidx = match ct {
+            MosekConeType::NonNegative           => self.task.append_rplus_domain(conesize.try_into().unwrap())?,
+            MosekConeType::NonPositive           => self.task.append_rminus_domain(conesize.try_into().unwrap())?,
+            MosekConeType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap())?,
+            MosekConeType::Zero                  => self.task.append_rzero_domain(conesize.try_into().unwrap())?,
+            MosekConeType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap())?,
+            MosekConeType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap())?,
+            MosekConeType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap())?,
+            MosekConeType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap())?,
+            MosekConeType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap())?,
+            MosekConeType::ExponentialCone       => self.task.append_primal_exp_cone_domain()?,
+            MosekConeType::DualExponentialCone   => self.task.append_dual_exp_cone_domain()?,
+            MosekConeType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice())?,
+            MosekConeType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice())?,
+        };
+
+        self.task.append_afes(nelm as i64)?;
+        self.task.append_accs_seq(vec![domidx; numcone].as_slice(),
+                                  nelm as i64,
+                                  afei,
+                                  offset.as_slice()).unwrap();
+        let d0 : usize = shape[0..conedim].iter().product();
+        let d1 : usize = shape[conedim];
+        let d2 : usize = shape[conedim+1..].iter().product();
+        let afeidxs : Vec<i64> = iproduct!(0..d0,0..d2,0..d1)
+            .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64)
+            .collect();
+
+        if let Some(name) = name {
+            let _numcone = d0*d2;
+            let mut xshape = [1usize; N]; 
+            xshape[0..conedim].copy_from_slice(&shape[0..conedim]);
+            if conedim < N-1 {
+                xshape[conedim+1..N-1].copy_from_slice(&shape[conedim+1..N]);
+            }
+            let mut idx = [1usize; N];
+            for i in acci..acci+(d0*d2) as i64 {                
+                let n = format!("{}{:?}",name,&idx[0..N-1]);
+                xshape.iter().zip(idx.iter_mut()).rev().fold(1,|carry,(&d,i)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
+                self.task.put_acc_name(i,n.as_str()).unwrap();
+            } 
+        }
+
+        if r.subj.len() > 0 {
+            self.task.put_afe_f_row_list(afeidxs.as_slice(),
+                                         r.ptr[..nelm].iter().zip(r.ptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
+                                         &r.ptr[..nelm],
+                                         r.subj.as_slice(),
+                                         r.cof.as_slice()).unwrap();
+        }
+        self.task.put_afe_g_list(afeidxs.as_slice(),r.fix.as_slice()).unwrap();
+        if r.barsubi.len() > 0 {
+            let mut p0 = 0usize;
+            for (i,j,p) in izip!(r.barsubi.iter(),
+                                 r.barsubi[1..].iter(),
+                                 r.barsubj.iter(),
+                                 r.barsubj[1..].iter())
+                .enumerate()
+                .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
+                .chain(std::iter::once((*r.barsubi.last().unwrap(),*r.barsubj.last().unwrap(),r.barsubi.len()))) {
+               
+                let subk = &r.barsubk[p0..p];
+                let subl = &r.barsubl[p0..p];
+                let cof  = &r.barcof[p0..p];
+                p0 = p;
+
+                let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
+                let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
+                self.task.put_afe_barf_entry(afei+i,j,&[matidx],&[1.0]).unwrap();
+            }
+        }
+
+        let coni = self.cons.len();
+        self.cons.reserve(nelm);
+        iproduct!(0..d0,0..d1,0..d2).enumerate() 
+            .for_each(|(k,(i0,i1,i2))| self.cons.push(ConAtom::ConicElm{acci:acci+(i0*d2+i2) as i64, afei : afei+k as i64,accoffset : i1}));
+
+        Ok(Constraint{
+            idxs : (coni..coni+nelm).collect(),
+            shape 
+        })
+   }
 
 } // impl Model
 
@@ -982,185 +1097,241 @@ impl ModelWithControlCallback for MosekModel {
     }
 }
 
-impl<QuadraticCone> VectorConeModelTrait<QuadraticCone> for MosekModel {
+
+trait VectorConeForMosek { fn into_mosek(self) -> MosekConeType; }
+impl VectorConeForMosek for QuadraticCone {
+    fn into_mosek(self) {
+        match self {
+            QuadraticCone::Normal => MosekConeType::QuadraticCone,
+            QuadraticCone::Rotated => MosekConeType::RotatedQuadraticCone
+        }
+    }
+}
+impl VectorConeForMosek for SVecPSDCone {
+    fn into_mosek(self) { MosekConeType::SVecPSDCone }
+}
+
+impl VectorConeForMosek for GeometricMeanCone {
+    fn into_mosek(self) {
+        match self.0 {
+            AsymmetricConeType::Primal => MosekConeType::GeometricMeanCone,
+            AsymmetricConeType::Dual   => MosekConeType::DualGeometricMeanCone,
+        }
+    }
+}
+impl VectorConeForMosek for PowerCone {
+    fn into_mosek(self) {
+        match self.0 {
+            AsymmetricConeType::Primal => MosekConeType::PrimalPowerCone(self.1),
+            AsymmetricConeType::Dual   => MosekConeType::DualPowerCone(self.1),
+        }
+    }
+}
+impl VectorConeForMosek for ExponentialCone {
+    fn into_mosek(self) {
+        match self.0 {
+            AsymmetricConeType::Primal => MosekConeType::ExponentialCone,
+            AsymmetricConeType::Dual   => MosekConeType::DualExponentialCone,
+        }
+    }
+}
+
+impl<D> VectorConeModelTrait<D> for MosekModel where D : VectorConeForMosek {
    fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : VectorDomain<N,QuadraticCone>) -> Result<Variable<N>,String> {
         let (ct,offset,shape,conedim,is_integer) = dom.dissolve();
-        let dt = match ct {
-            QuadraticCone::
-        };
-        self.internal_vector_conic_variable(name, shape, conedim, offset, is_integer, dt)
+        let dt = ct.into_mosek();
+        self.internal_vector_conic_variable(name, &shape, conedim, offset, is_integer, dt)
    }
-}
-impl<D> VectorConeModelTrait<D> for MosekModel where D : VectorDomainTrait {
-   fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : VectorDomain<N,D>) -> Result<Variable<N>,String> {
+
+   fn conic_constraint<const N : usize>
+       (& mut self, 
+        name : Option<&str>, 
+        dom  : VectorDomain<N,QuadraticCone>,
+        shape : &[usize], 
+        ptr : &[usize], 
+        subj : &[usize], 
+        cof : &[f64]) -> Result<Constraint<N>,String> 
+   {
         let (ct,offset,shape,conedim,is_integer) = dom.dissolve();
-        let n    = shape.iter().product();
-        let acci = self.task.get_num_acc()?;
-        let afei = self.task.get_num_afe()?;
-        let vari = self.task.get_num_var()?;
-
-        let asubi : Vec<i64> = (acci..acci+n as i64).collect();
-        let asubj : Vec<i32> = (vari..vari+n as i32).collect();
-        let acof  : Vec<f64> = vec![1.0; n];
-
-        let d0 : usize = shape[0..conedim].iter().product();
-        let d1 : usize = shape[conedim];
-        let d2 : usize = shape[conedim+1..].iter().product();
-        let conesize = d1;
-        let numcone  = d0*d2;
-
-        let domidx = match ct {
-            ConicDomainType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::ExponentialCone       => self.task.append_primal_exp_cone_domain()?,
-            ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain()?,
-            ConicDomainType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(),alpha.as_slice())?,
-            ConicDomainType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(),alpha.as_slice())?,
-            ConicDomainType::Zero                  => self.task.append_rzero_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::NonPositive           => self.task.append_rplus_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::NonNegative           => self.task.append_rminus_domain(conesize.try_into().unwrap())?,
+        let dt = match ct {
+            QuadraticCone::Normal => MosekConeType::QuadraticCone,
+            QuadraticCone::Rotated => MosekConeType::RotatedQuadraticCone
         };
-
-        self.task.append_afes(n as i64)?;
-        self.task.append_vars(n.try_into().unwrap()).unwrap();
-        self.task.put_var_bound_slice_const(vari, vari+n as i32, mosek::Boundkey::FR, 0.0, 0.0).unwrap();
-        if is_integer {
-            self.task.put_var_type_list((vari..vari+n as i32).collect::<Vec<i32>>().as_slice(), vec![mosek::Variabletype::TYPE_INT; n].as_slice()).unwrap();
-        }
-        self.task.append_accs_seq(vec![domidx; numcone].as_slice(),n as i64,afei,offset.as_slice()).unwrap();
-        self.task.put_afe_f_entry_list(asubi.as_slice(),asubj.as_slice(),acof.as_slice()).unwrap();
-
-        if let Some(name) = name {
-            self.var_names(name,vari,&shape,None);
-            let mut xshape = [0usize; N];
-            xshape[0..conedim].copy_from_slice(&shape[0..conedim]);
-            if conedim < N-1 {
-                xshape[conedim..N-1].copy_from_slice(&shape[conedim+1..N]);
-            }
-            let mut idx = [1usize; N];
-            for i in acci..acci+numcone as i64 {
-                let n = format!("{}{:?}",name,&idx[0..N-1]);
-                self.task.put_acc_name(i, n.as_str()).unwrap();
-                idx.iter_mut().zip(xshape.iter()).rev().fold(1,|carry,(t,&d)| { *t += carry; if *t > d { *t = 1; 1 } else { 0 } });
-            }
-        }
-
-        let firstvar = self.vars.len();
-        self.vars.reserve(n);
-        self.cons.reserve(n);
-
-        iproduct!(0..d0,0..d1,0..d2).enumerate()
-            .for_each(|(i,(i0,i1,i2))| {
-                self.vars.push(VarAtom::ConicElm(vari+i as i32,self.cons.len()));
-                self.cons.push(ConAtom::ConicElm{acci : acci+(i0*d2+i2) as i64, afei: afei+i as i64,accoffset : i1})
-            } );
-
-        Ok(Variable::new((firstvar..firstvar+n).collect(), None, &shape))
-            
-   } 
-   fn conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : ConicDomain<N>, _expr_shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String> {
-        let (dt,offset,shape,conedim,_) = dom.dissolve();
-        let nelm = ptr.len()-1;
-
-        if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
-            return Err("Expression is invalid: Variable subscript out of bound for this Model".to_string());
-        }
-
-        let acci = self.task.get_num_acc()?;
-        let afei = self.task.get_num_afe()?;
-
-        let r = split_expr(ptr,subj,cof,self.vars.as_slice())?;
-        let conesize = shape[conedim];
-        let numcone  = shape.iter().product::<usize>() / conesize;
-
-        let domidx = match dt {
-            ConicDomainType::NonNegative           => self.task.append_rplus_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::NonPositive           => self.task.append_rminus_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::Zero                  => self.task.append_rzero_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap())?,
-            ConicDomainType::ExponentialCone       => self.task.append_primal_exp_cone_domain()?,
-            ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain()?,
-            ConicDomainType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice())?,
-            ConicDomainType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice())?,
-        };
-
-        self.task.append_afes(nelm as i64)?;
-        self.task.append_accs_seq(vec![domidx; numcone].as_slice(),
-                                  nelm as i64,
-                                  afei,
-                                  offset.as_slice()).unwrap();
-        let d0 : usize = shape[0..conedim].iter().product();
-        let d1 : usize = shape[conedim];
-        let d2 : usize = shape[conedim+1..].iter().product();
-        let afeidxs : Vec<i64> = iproduct!(0..d0,0..d2,0..d1)
-            .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64)
-            .collect();
-
-        if let Some(name) = name {
-            let _numcone = d0*d2;
-            let mut xshape = [1usize; N]; 
-            xshape[0..conedim].copy_from_slice(&shape[0..conedim]);
-            if conedim < N-1 {
-                xshape[conedim+1..N-1].copy_from_slice(&shape[conedim+1..N]);
-            }
-            let mut idx = [1usize; N];
-            for i in acci..acci+(d0*d2) as i64 {                
-                let n = format!("{}{:?}",name,&idx[0..N-1]);
-                xshape.iter().zip(idx.iter_mut()).rev().fold(1,|carry,(&d,i)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
-                self.task.put_acc_name(i,n.as_str()).unwrap();
-            } 
-        }
-
-        if r.subj.len() > 0 {
-            self.task.put_afe_f_row_list(afeidxs.as_slice(),
-                                         r.ptr[..nelm].iter().zip(r.ptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
-                                         &r.ptr[..nelm],
-                                         r.subj.as_slice(),
-                                         r.cof.as_slice()).unwrap();
-        }
-        self.task.put_afe_g_list(afeidxs.as_slice(),r.fix.as_slice()).unwrap();
-        if r.barsubi.len() > 0 {
-            let mut p0 = 0usize;
-            for (i,j,p) in izip!(r.barsubi.iter(),
-                                 r.barsubi[1..].iter(),
-                                 r.barsubj.iter(),
-                                 r.barsubj[1..].iter())
-                .enumerate()
-                .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
-                .chain(std::iter::once((*r.barsubi.last().unwrap(),*r.barsubj.last().unwrap(),r.barsubi.len()))) {
-               
-                let subk = &r.barsubk[p0..p];
-                let subl = &r.barsubl[p0..p];
-                let cof  = &r.barcof[p0..p];
-                p0 = p;
-
-                let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
-                let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
-                self.task.put_afe_barf_entry(afei+i,j,&[matidx],&[1.0]).unwrap();
-            }
-        }
-
-        let coni = self.cons.len();
-        self.cons.reserve(nelm);
-        iproduct!(0..d0,0..d1,0..d2).enumerate() 
-            .for_each(|(k,(i0,i1,i2))| self.cons.push(ConAtom::ConicElm{acci:acci+(i0*d2+i2) as i64, afei : afei+k as i64,accoffset : i1}));
-
-        Ok(Constraint{
-            idxs : (coni..coni+nelm).collect(),
-            shape 
-        })
-       
+       self.internal_vector_conic_constraint(name,&shape,conedim,offset,is_integer,dt,ptr,subj,cof)
    }
 }
+
+
+//impl<D> VectorConeModelTrait<D> for MosekModel where D : VectorDomainTrait {
+//   fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : VectorDomain<N,D>) -> Result<Variable<N>,String> {
+//        let (ct,offset,shape,conedim,is_integer) = dom.dissolve();
+//        let n    = shape.iter().product();
+//        let acci = self.task.get_num_acc()?;
+//        let afei = self.task.get_num_afe()?;
+//        let vari = self.task.get_num_var()?;
+//
+//        let asubi : Vec<i64> = (acci..acci+n as i64).collect();
+//        let asubj : Vec<i32> = (vari..vari+n as i32).collect();
+//        let acof  : Vec<f64> = vec![1.0; n];
+//
+//        let d0 : usize = shape[0..conedim].iter().product();
+//        let d1 : usize = shape[conedim];
+//        let d2 : usize = shape[conedim+1..].iter().product();
+//        let conesize = d1;
+//        let numcone  = d0*d2;
+//
+//        let domidx = match ct {
+//            ConicDomainType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::ExponentialCone       => self.task.append_primal_exp_cone_domain()?,
+//            ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain()?,
+//            ConicDomainType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(),alpha.as_slice())?,
+//            ConicDomainType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(),alpha.as_slice())?,
+//            ConicDomainType::Zero                  => self.task.append_rzero_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::NonPositive           => self.task.append_rplus_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::NonNegative           => self.task.append_rminus_domain(conesize.try_into().unwrap())?,
+//        };
+//
+//        self.task.append_afes(n as i64)?;
+//        self.task.append_vars(n.try_into().unwrap()).unwrap();
+//        self.task.put_var_bound_slice_const(vari, vari+n as i32, mosek::Boundkey::FR, 0.0, 0.0).unwrap();
+//        if is_integer {
+//            self.task.put_var_type_list((vari..vari+n as i32).collect::<Vec<i32>>().as_slice(), vec![mosek::Variabletype::TYPE_INT; n].as_slice()).unwrap();
+//        }
+//        self.task.append_accs_seq(vec![domidx; numcone].as_slice(),n as i64,afei,offset.as_slice()).unwrap();
+//        self.task.put_afe_f_entry_list(asubi.as_slice(),asubj.as_slice(),acof.as_slice()).unwrap();
+//
+//        if let Some(name) = name {
+//            self.var_names(name,vari,&shape,None);
+//            let mut xshape = [0usize; N];
+//            xshape[0..conedim].copy_from_slice(&shape[0..conedim]);
+//            if conedim < N-1 {
+//                xshape[conedim..N-1].copy_from_slice(&shape[conedim+1..N]);
+//            }
+//            let mut idx = [1usize; N];
+//            for i in acci..acci+numcone as i64 {
+//                let n = format!("{}{:?}",name,&idx[0..N-1]);
+//                self.task.put_acc_name(i, n.as_str()).unwrap();
+//                idx.iter_mut().zip(xshape.iter()).rev().fold(1,|carry,(t,&d)| { *t += carry; if *t > d { *t = 1; 1 } else { 0 } });
+//            }
+//        }
+//
+//        let firstvar = self.vars.len();
+//        self.vars.reserve(n);
+//        self.cons.reserve(n);
+//
+//        iproduct!(0..d0,0..d1,0..d2).enumerate()
+//            .for_each(|(i,(i0,i1,i2))| {
+//                self.vars.push(VarAtom::ConicElm(vari+i as i32,self.cons.len()));
+//                self.cons.push(ConAtom::ConicElm{acci : acci+(i0*d2+i2) as i64, afei: afei+i as i64,accoffset : i1})
+//            } );
+//
+//        Ok(Variable::new((firstvar..firstvar+n).collect(), None, &shape))
+//            
+//   } 
+//   fn conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : ConicDomain<N>, _expr_shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String> {
+//        let (dt,offset,shape,conedim,_) = dom.dissolve();
+//        let nelm = ptr.len()-1;
+//
+//        if *subj.iter().max().unwrap_or(&0) >= self.vars.len() {
+//            return Err("Expression is invalid: Variable subscript out of bound for this Model".to_string());
+//        }
+//
+//        let acci = self.task.get_num_acc()?;
+//        let afei = self.task.get_num_afe()?;
+//
+//        let r = split_expr(ptr,subj,cof,self.vars.as_slice())?;
+//        let conesize = shape[conedim];
+//        let numcone  = shape.iter().product::<usize>() / conesize;
+//
+//        let domidx = match dt {
+//            ConicDomainType::NonNegative           => self.task.append_rplus_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::NonPositive           => self.task.append_rminus_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::Free                  => self.task.append_r_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::Zero                  => self.task.append_rzero_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::SVecPSDCone           => self.task.append_svec_psd_cone_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::QuadraticCone         => self.task.append_quadratic_cone_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::RotatedQuadraticCone  => self.task.append_r_quadratic_cone_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::GeometricMeanCone     => self.task.append_primal_geo_mean_cone_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::DualGeometricMeanCone => self.task.append_dual_geo_mean_cone_domain(conesize.try_into().unwrap())?,
+//            ConicDomainType::ExponentialCone       => self.task.append_primal_exp_cone_domain()?,
+//            ConicDomainType::DualExponentialCone   => self.task.append_dual_exp_cone_domain()?,
+//            ConicDomainType::PrimalPowerCone(ref alpha) => self.task.append_primal_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice())?,
+//            ConicDomainType::DualPowerCone(ref alpha) => self.task.append_dual_power_cone_domain(conesize.try_into().unwrap(), alpha.as_slice())?,
+//        };
+//
+//        self.task.append_afes(nelm as i64)?;
+//        self.task.append_accs_seq(vec![domidx; numcone].as_slice(),
+//                                  nelm as i64,
+//                                  afei,
+//                                  offset.as_slice()).unwrap();
+//        let d0 : usize = shape[0..conedim].iter().product();
+//        let d1 : usize = shape[conedim];
+//        let d2 : usize = shape[conedim+1..].iter().product();
+//        let afeidxs : Vec<i64> = iproduct!(0..d0,0..d2,0..d1)
+//            .map(|(i0,i2,i1)| afei + (i0*d1*d2 + i1*d2 + i2) as i64)
+//            .collect();
+//
+//        if let Some(name) = name {
+//            let _numcone = d0*d2;
+//            let mut xshape = [1usize; N]; 
+//            xshape[0..conedim].copy_from_slice(&shape[0..conedim]);
+//            if conedim < N-1 {
+//                xshape[conedim+1..N-1].copy_from_slice(&shape[conedim+1..N]);
+//            }
+//            let mut idx = [1usize; N];
+//            for i in acci..acci+(d0*d2) as i64 {                
+//                let n = format!("{}{:?}",name,&idx[0..N-1]);
+//                xshape.iter().zip(idx.iter_mut()).rev().fold(1,|carry,(&d,i)| { *i += carry; if *i > d { *i = 1; 1 } else { 0 } } );
+//                self.task.put_acc_name(i,n.as_str()).unwrap();
+//            } 
+//        }
+//
+//        if r.subj.len() > 0 {
+//            self.task.put_afe_f_row_list(afeidxs.as_slice(),
+//                                         r.ptr[..nelm].iter().zip(r.ptr[1..].iter()).map(|(&p0,&p1)| (p1-p0) as i32).collect::<Vec<i32>>().as_slice(),
+//                                         &r.ptr[..nelm],
+//                                         r.subj.as_slice(),
+//                                         r.cof.as_slice()).unwrap();
+//        }
+//        self.task.put_afe_g_list(afeidxs.as_slice(),r.fix.as_slice()).unwrap();
+//        if r.barsubi.len() > 0 {
+//            let mut p0 = 0usize;
+//            for (i,j,p) in izip!(r.barsubi.iter(),
+//                                 r.barsubi[1..].iter(),
+//                                 r.barsubj.iter(),
+//                                 r.barsubj[1..].iter())
+//                .enumerate()
+//                .filter_map(|(k,(&i0,&i1,&j0,&j1))| if i0 != i1 || j0 != j1 { Some((i0,j0,k+1)) } else { None } )
+//                .chain(std::iter::once((*r.barsubi.last().unwrap(),*r.barsubj.last().unwrap(),r.barsubi.len()))) {
+//               
+//                let subk = &r.barsubk[p0..p];
+//                let subl = &r.barsubl[p0..p];
+//                let cof  = &r.barcof[p0..p];
+//                p0 = p;
+//
+//                let dimbarj = self.task.get_dim_barvar_j(j).unwrap();
+//                let matidx = self.task.append_sparse_sym_mat(dimbarj,subk,subl,cof).unwrap();
+//                self.task.put_afe_barf_entry(afei+i,j,&[matidx],&[1.0]).unwrap();
+//            }
+//        }
+//
+//        let coni = self.cons.len();
+//        self.cons.reserve(nelm);
+//        iproduct!(0..d0,0..d1,0..d2).enumerate() 
+//            .for_each(|(k,(i0,i1,i2))| self.cons.push(ConAtom::ConicElm{acci:acci+(i0*d2+i2) as i64, afei : afei+k as i64,accoffset : i1}));
+//
+//        Ok(Constraint{
+//            idxs : (coni..coni+nelm).collect(),
+//            shape 
+//        })
+//       
+//   }
+//}
 
 impl PSDModelTrait for MosekModel {
     fn psd_variable<const N : usize>(&mut self, name : Option<&str>, dom : PSDDomain<N>) -> Result<Variable<N>,String> {

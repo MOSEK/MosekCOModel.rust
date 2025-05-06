@@ -1,7 +1,7 @@
 
 use crate::*;
-use crate::domain::LinearRangeDomain;
-use crate::model::{BaseModelTrait, ConicModelTrait, PSDModelTrait};
+use crate::domain::{LinearRangeDomain, VectorDomain, VectorDomainTrait};
+use crate::model::{BaseModelTrait, PSDModelTrait, VectorConeModelTrait};
 use crate::utils::{iter::IndexIteratorExt, ShapeToStridesEx};
 
 
@@ -66,7 +66,7 @@ impl<const N : usize,M> ConstraintDomain<N,M> for LinearRangeDomain<N> where M :
     }
 }
 
-impl<const N : usize,M> ConstraintDomain<N,M> for ConicDomain<N> where M : ConicModelTrait 
+impl<const N : usize,M,D> ConstraintDomain<N,M> for VectorDomain<N,D> where D : VectorDomainTrait, M : VectorConeModelTrait<D> 
 {
     type Result = Constraint<N>;
     /// Add a constraint with expression expected to be on the top of the rs stack.
