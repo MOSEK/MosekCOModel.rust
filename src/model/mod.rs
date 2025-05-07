@@ -621,8 +621,8 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// let a = vec![1.0,2.0,3.0,4.0,5.0];
     /// let b = vec![5.0,4.0,3.0];
     /// model.disjunction(None, 
-    ///                   constr(x.dot(a), equal_to(3.0))
-    ///                     .or(constr(y.dot(b), equal_to(1.0))));
+    ///                   model.clause(x.dot(a), equal_to(3.0))
+    ///                     .or(model.clause(y.dot(b), equal_to(1.0))));
     /// ```
     ///
     /// # Example: Indicator constraint
@@ -643,9 +643,9 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// let z = model.variable(Some("z"), nonnegative().integer());
     /// model.constraint(None,&z,less_than(1.0));
     /// model.disjunction(None,
-    ///                   constr(z.clone(),equal_to(0.0))
-    ///                     .or(constr(z, equal_to(1.0))
-    ///                           .and(constr(x.dot(a), equal_to(1.0)))));
+    ///                   model.clause(z.clone(),equal_to(0.0))
+    ///                     .or(model.clause(z, equal_to(1.0))
+    ///                           .and(model.clause(x.dot(a), equal_to(1.0)))));
     /// ```
     pub fn try_disjunction<D>(& mut self, name : Option<&str>, mut terms : D) -> Result<Disjunction,String> 
         where 
