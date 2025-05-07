@@ -318,7 +318,8 @@ pub use model::{Sense,
                 BaseModelTrait,
                 VectorConeModelTrait,
                 PSDModelTrait,
-                ModelAPI};
+                ModelAPI,
+                Solution};
 pub type Model = ModelAPI<model::mosekmodel::MosekModel>;
 pub use matrix::{Matrix,NDArray,IntoIndexes};
 pub use expr::{ExprTrait,
@@ -338,6 +339,7 @@ pub use domain::{IntoDomain,
                  LinearDomainType,
                  VectorDomainTrait,
                  OffsetTrait,
+                 LinearRangeDomain,
                  unbounded,
                  less_than,
                  greater_than,

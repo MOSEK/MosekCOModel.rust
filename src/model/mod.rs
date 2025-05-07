@@ -115,6 +115,12 @@ pub struct Solution {
 
 impl Solution {
     pub fn new() -> Solution { Solution{primal : SolutionPart::new(0,0) , dual : SolutionPart::new(0,0)  } }
+    
+    pub fn resize(& mut self,numvar : usize, numcon : usize) {
+        self.primal.resize(numvar,numcon);
+        self.dual.resize(numvar,numcon);
+    }
+
 }
 
 
