@@ -25,10 +25,10 @@ fn djc1() -> (SolutionStatus,Result<Vec<f64>,String>) {
 
     model.disjunction(
         Some("D1"),
-        constr(x.index(0..2).dot(vec![1.0,-2.0]), less_than(-1.0))        // x0 - 2x1 <= -1  
-            .and(constr(x.index(2..4),equal_to(0.0)))             // x2 = x3 = 0
-            .or( constr(x.index(2..4).dot(vec![1.0,-3.0]), less_than(-2.0)) // x2 - 3x3 <= -2
-                 .and(constr(x.index(0..2), equal_to(0.0)))));   // x0 = x1 = 0
+        model.clause(x.index(0..2).dot(vec![1.0,-2.0]), less_than(-1.0))        // x0 - 2x1 <= -1  
+            .and(model.clause(x.index(2..4),equal_to(0.0)))             // x2 = x3 = 0
+            .or(model.clause(x.index(2..4).dot(vec![1.0,-3.0]), less_than(-2.0)) // x2 - 3x3 <= -2
+                 .and(model.clause(x.index(0..2), equal_to(0.0)))));   // x0 = x1 = 0
 
     // Second disjunctive constraint
     // Array of terms reading x_i = 2.5 for i = 0,1,2,3

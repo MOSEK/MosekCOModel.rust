@@ -184,11 +184,11 @@ impl<const N : usize,E,D,M> AffineConstraint<N,E,D,M>
           D::Result : DJCDomainTrait<M>
 {
     pub fn and<C2>(self, other : C2) -> AffineConstraintsAnd<Self,C2,M> where C2 : ConjunctionTrait<M> {
-        AffineConstraintsAnd { c0: self, c1: other }
+        AffineConstraintsAnd { m : Default::default(), c0: self, c1: other }
     }
 
     pub fn or<D2>(self, other : D2) -> DisjunctionOr<Self,D2,M> where D2 : DisjunctionTrait<M> {
-        DisjunctionOr { c0: self, c1: other }
+        DisjunctionOr { m : Default::default(), c0: self, c1: other }
     }
 }
 
@@ -228,7 +228,7 @@ impl<const N : usize,E,D,M> ConjunctionTrait<M> for AffineConstraint<N,E,D,M>
         //}
     }
 }
-
+/*
 impl<C,M> DisjunctionTrait<M> for C
     where M : DJCModelTrait,
           C : ConjunctionTrait<M>,
@@ -243,7 +243,7 @@ impl<C,M> DisjunctionTrait<M> for C
         Ok(())
     }
 }
-
+*/
 impl<C,M> DisjunctionTrait<M> for Vec<C> where C : ConjunctionTrait<M>, M : DJCModelTrait {
     fn eval(&mut self,
             domains : & mut Vec<Box<dyn DJCDomainTrait<M>>>,
@@ -269,6 +269,7 @@ pub struct AffineConstraintsAnd<C0,C1,M>
         C0 : ConjunctionTrait<M>,
         C1 : ConjunctionTrait<M>
 {
+     m : PhantomData<M>,
      c0 : C0,
      c1 : C1
 }
@@ -280,10 +281,10 @@ impl<C0,C1,M> AffineConstraintsAnd<C0,C1,M>
         C1 : ConjunctionTrait<M>
 {
     pub fn and<C2>(self, other : C2) -> AffineConstraintsAnd<Self,C2,M> where C2 : ConjunctionTrait<M> {
-        AffineConstraintsAnd { c0: self, c1: other }
+        AffineConstraintsAnd { m : Default::default(), c0: self, c1: other }
     }
     pub fn or<D2>(self, other : D2) -> DisjunctionOr<Self,D2,M> where D2 : DisjunctionTrait<M> {
-        DisjunctionOr { c0: self, c1: other }
+        DisjunctionOr { m : Default::default(), c0: self, c1: other }
     }
 }
 impl<C0,C1,M> ConjunctionTrait<M> for AffineConstraintsAnd<C0,C1,M> 
@@ -313,6 +314,7 @@ pub struct DisjunctionOr<C0,C1,M>
         C0 : ConjunctionTrait<M>,
         C1 : DisjunctionTrait<M>
 {
+     m : PhantomData<M>,
      c0 : C0,
      c1 : C1
 }
@@ -324,7 +326,7 @@ impl<C0,C1,M> DisjunctionOr<C0,C1,M>
         C1 : DisjunctionTrait<M>
 {
     pub fn or<C2>(self, other : C2) -> DisjunctionOr<C2,Self,M> where C2 : ConjunctionTrait<M> {
-        DisjunctionOr { c0: other, c1: self }
+        DisjunctionOr { m : Default::default(), c0: other, c1: self }
     }
 }
 

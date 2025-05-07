@@ -20,7 +20,7 @@ use crate::*;
 use super::{BaseModelTrait, ConAtom, DJCDomainTrait, DJCModelTrait, Disjunction, ModelWithControlCallback, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, Sense, Solution, VarAtom, VectorConeModelTrait, WhichLinearBound};
 
 
-enum MosekConeType {
+pub enum MosekConeType {
     SVecPSDCone,
     QuadraticCone,
     RotatedQuadraticCone,
@@ -259,7 +259,6 @@ impl MosekModel {
         shape      : &[usize;N], 
         conedim    : usize, 
         offset     : Vec<f64>, 
-        is_integer : bool, 
         ct         : MosekConeType,
         ptr  : &[usize],
         subj : &[usize],
@@ -1098,7 +1097,7 @@ impl ModelWithControlCallback for MosekModel {
 }
 
 
-trait VectorConeForMosek { fn into_mosek(self) -> MosekConeType; }
+trait VectorConeForMosek : VectorDomainTrait { fn into_mosek(self) -> MosekConeType; }
 impl VectorConeForMosek for QuadraticCone {
     fn into_mosek(self) -> MosekConeType {
         match self {
@@ -1136,7 +1135,7 @@ impl VectorConeForMosek for ExponentialCone {
     }
 }
 
-impl<D> VectorConeModelTrait<D> for MosekModel where D : VectorConeForMosek+VectorDomainTrait {
+impl<D> VectorConeModelTrait<D> for MosekModel where D : VectorConeForMosek+'static {
    fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : VectorDomain<N,D>) -> Result<Variable<N>,String> {
         let (ct,offset,shape,conedim,is_integer) = dom.dissolve();
         let dt = ct.into_mosek();
@@ -1147,13 +1146,13 @@ impl<D> VectorConeModelTrait<D> for MosekModel where D : VectorConeForMosek+Vect
        (& mut self, 
         name : Option<&str>, 
         dom  : VectorDomain<N,D>,
-        shape : &[usize], 
+        _shape : &[usize], 
         ptr : &[usize], 
         subj : &[usize], 
         cof : &[f64]) -> Result<Constraint<N>,String> 
    {
-        let (ct,offset,shape,conedim,is_integer) = dom.dissolve();
-       self.internal_vector_conic_constraint(name,&shape,conedim,offset,is_integer,ct.into_mosek(),ptr,subj,cof)
+        let (ct,offset,shape,conedim,_is_integer) = dom.dissolve();
+       self.internal_vector_conic_constraint(name,&shape,conedim,offset,ct.into_mosek(),ptr,subj,cof)
    }
 }
 
@@ -1626,7 +1625,7 @@ impl PSDModelTrait for MosekModel {
 
 impl<const N : usize> DJCDomainTrait<MosekModel> for LinearDomain<N> {
     fn extract(&self) -> <MosekModel as DJCModelTrait>::DomainData {
-        let (dt,ofs,shape,sparsity,_) = LinearDomain::extract(self);
+        let (dt,ofs,shape,sparsity,_) = LinearDomain::extract(self.clone());
         let ct = match dt {
             LinearDomainType::Zero        => MosekConeType::Zero,
             LinearDomainType::Free        => MosekConeType::Free,
@@ -1696,7 +1695,7 @@ impl DJCModelTrait for MosekModel {
             let nelm = shape.iter().product();
 
             let afeidxs = &mut afeidxs[afei..afei+nelm];
-            b[afei..afei+nelm].copy_from_slice(ofs);
+            b[afei..afei+nelm].copy_from_slice(ofs.as_slice());
             afeidxs.iter_mut().zip(iproduct!(0..d0,0..d2,0..d1))
                 .for_each(|(tafe,(i0,i2,i1))| { *tafe = firstafe+afei as i64 + (i0*d1*d2 + i1*d2 + i2) as i64 } );
             afei += nelm;

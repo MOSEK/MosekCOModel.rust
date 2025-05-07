@@ -71,14 +71,14 @@ pub trait DomainTrait<const N : usize> { }
 /// When creating a variable, the domain is an [IntoDomain], and the variable calls the
 /// [IntoDomain::try_into_domain] function to turn it into a concrete domain.
 pub trait IntoDomain {
-    type Result; 
+    type Result : 'static; 
     fn try_into_domain(self) -> Result<Self::Result,String>;
 }
 
 /// Trait for structs that given a shape can be turned into a domain and either checking the shape
 /// or scaling to conform to the shape. 
 pub trait IntoShapedDomain<const N : usize> {
-    type Result : DomainTrait<N>;
+    type Result : DomainTrait<N>+'static;
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String>;
 }
 
@@ -148,7 +148,7 @@ impl VectorDomainTrait for PowerCone {
 
 }
 impl VectorDomainTrait for LinearCone {
-    fn check_conesize(&self, d : usize) -> Result<(),String> { Ok(()) }
+    fn check_conesize(&self, _d : usize) -> Result<(),String> { Ok(()) }
     fn to_conic_domain_type(&self) -> VectorDomainType {
         match self.0 {
             LinearDomainType::Zero => VectorDomainType::Zero,
@@ -248,14 +248,14 @@ impl<D> ScalableVectorDomain<D> where D : VectorDomainTrait {
     pub fn continuous(self) -> Self { ScalableVectorDomain{is_integer : false, ..self} }
 }
 
-impl<D> IntoDomain for ScalableVectorDomain<D> where D : VectorDomainTrait {
+impl<D> IntoDomain for ScalableVectorDomain<D> where D : VectorDomainTrait+'static {
     type Result = VectorDomain<0,D>;
     fn try_into_domain(self) -> Result<Self::Result,String> {
         Err(format!("Domain size or shape cannot be determined"))
     }
 }
 
-impl<const N : usize,D> IntoShapedDomain<N> for ScalableVectorDomain<D> where D : VectorDomainTrait {
+impl<const N : usize,D> IntoShapedDomain<N> for ScalableVectorDomain<D> where D : VectorDomainTrait+'static {
     type Result = VectorDomain<N,D>;
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
         let cd = 
@@ -301,7 +301,7 @@ impl<const N : usize,D> VectorProtoDomain<N,D> where D : VectorDomainTrait {
     pub fn continuous(self) -> Self { VectorProtoDomain{ is_integer : false, ..self } }
 }
 
-impl<const N : usize,D> IntoDomain for VectorProtoDomain<N,D> where D : VectorDomainTrait {
+impl<const N : usize,D> IntoDomain for VectorProtoDomain<N,D> where D : VectorDomainTrait+'static {
     type Result = VectorDomain<N,D>;
     fn try_into_domain(self) -> Result<Self::Result,String> {
         if self.offset.len() != self.shape.iter().product::<usize>() {
@@ -323,7 +323,7 @@ impl<const N : usize,D> IntoDomain for VectorProtoDomain<N,D> where D : VectorDo
         })
     }
 }
-impl<const N : usize,D> IntoShapedDomain<N> for VectorProtoDomain<N,D> where D : VectorDomainTrait {
+impl<const N : usize,D> IntoShapedDomain<N> for VectorProtoDomain<N,D> where D : VectorDomainTrait+'static {
     type Result = VectorDomain<N,D>;
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
         let dom = IntoDomain::try_into_domain(self)?;
@@ -354,7 +354,7 @@ impl<const N : usize,D> IntoShapedDomain<N> for VectorProtoDomain<N,D> where D :
 //    fn into_conic(self) -> VectorDomain<N,D> { self.to_conic() }
 //}
 
-impl<const N :usize,D> VectorDomain<N,D> where D : VectorDomainTrait {
+impl<const N :usize,D> VectorDomain<N,D> where D : VectorDomainTrait+'static {
     pub fn dissolve(self) -> (D,Vec<f64>,[usize;N],usize,bool) { (self.domain_type,self.offset,self.shape,self.conedim,self.is_integer) }
     pub fn get(&self) -> (&D,&[f64],&[usize;N],usize,bool) { (&self.domain_type,self.offset.as_slice(),&self.shape,self.conedim,self.is_integer) }
 }
