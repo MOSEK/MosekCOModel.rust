@@ -34,7 +34,7 @@ fn djc1() -> (SolutionStatus,Result<Vec<f64>,String>) {
     // Array of terms reading x_i = 2.5 for i = 0,1,2,3
     let mut terms = Vec::new();
     for i in 0..4 {
-        terms.push( constr(x.index(i), equal_to(2.5)));
+        terms.push( model.clause(x.index(i), equal_to(2.5)));
     }
     // The disjunctive constraint from the array of terms
     model.disjunction(Some("VarTerms"), terms);

@@ -1,3 +1,4 @@
+
 //! Structures and functions for formulating disjunctive constraints.
 //!
 //! A disjunctive constraint is a constraint of the form 
@@ -59,6 +60,7 @@ pub trait ConjunctionTrait<M> where M : DJCModelTrait
     /// different types into a heterogenous container like a `Vec`.
     fn dynamic(self) -> Box<dyn ConjunctionTrait<M>> where Self:Sized+'static { Box::new(self) }
 }
+
 /// Trait representing a disjunction of two or more conjunction blocks:
 ///
 /// $$
@@ -161,7 +163,6 @@ impl<M> ConjunctionTrait<M> for Box<dyn ConjunctionTrait<M>> where M : DJCModelT
     }
 }
 
-
 impl<M> DisjunctionTrait<M> for Box<dyn DisjunctionTrait<M>+'static> where M : DJCModelTrait {
     fn eval(&mut self,
             domains : & mut Vec<Box<dyn DJCDomainTrait<M>>>,
@@ -183,7 +184,7 @@ impl<const N : usize,E,D,M> AffineConstraint<N,E,D,M>
           D : IntoShapedDomain<N>,
           D::Result : DJCDomainTrait<M>
 {
-    pub fn and<C2>(self, other : C2) -> AffineConstraintsAnd<Self,C2,M> where C2 : ConjunctionTrait<M> {
+    pub fn and<C2>(self, other : C2) -> AffineConstraintsAnd<Self,C2,M> where C2 : ConjunctionTrait<M>, Self: Sized {
         AffineConstraintsAnd { m : Default::default(), c0: self, c1: other }
     }
 
@@ -228,22 +229,55 @@ impl<const N : usize,E,D,M> ConjunctionTrait<M> for AffineConstraint<N,E,D,M>
         //}
     }
 }
-/*
-impl<C,M> DisjunctionTrait<M> for C
+
+//impl<C,M> DisjunctionTrait<M> for C
+//    where M : DJCModelTrait,
+//          C : ConjunctionTrait<M>,
+//{
+//    fn eval(& mut self,
+//            domains : & mut Vec<Box<dyn DJCDomainTrait<M>>>,
+//            term_size : & mut Vec<usize>,
+//            rs : &mut WorkStack,
+//            ws : &mut WorkStack,
+//            xs : &mut WorkStack) -> Result<(),String> {
+//        term_size.push(ConjunctionTrait::eval(self,domains,rs,ws,xs)?);
+//        Ok(())
+//    }
+//}
+
+
+impl<const N : usize,E,D,M> DisjunctionTrait<M> for AffineConstraint<N,E,D,M> 
     where M : DJCModelTrait,
-          C : ConjunctionTrait<M>,
+          E : ExprTrait<N>,
+          D : IntoShapedDomain<N>,
+          D::Result : DomainTrait<N>+DJCDomainTrait<M>
 {
+    fn dynamic(self) -> Box<dyn DisjunctionTrait<M>> where Self: Sized+'static {
+        Box::new(self)
+    }
+
     fn eval(& mut self,
             domains : & mut Vec<Box<dyn DJCDomainTrait<M>>>,
             term_size : & mut Vec<usize>,
             rs : &mut WorkStack,
             ws : &mut WorkStack,
-            xs : &mut WorkStack) -> Result<(),String> {
-        term_size.push(ConjunctionTrait::eval(self,domains,rs,ws,xs)?);
+            xs : &mut WorkStack) -> Result<(),String> 
+    {
+        term_size.push(<AffineConstraint<N,E,D,M> as ConjunctionTrait<M>>::eval(self,domains,rs,ws,xs)?);
         Ok(())
     }
 }
-*/
+
+
+
+
+
+
+
+
+
+
+
 impl<C,M> DisjunctionTrait<M> for Vec<C> where C : ConjunctionTrait<M>, M : DJCModelTrait {
     fn eval(&mut self,
             domains : & mut Vec<Box<dyn DJCDomainTrait<M>>>,
@@ -300,6 +334,28 @@ impl<C0,C1,M> ConjunctionTrait<M> for AffineConstraintsAnd<C0,C1,M>
             xs : &mut WorkStack) -> Result<usize,String> 
     {
         Ok(self.c0.eval(domains,rs,ws,xs)? + self.c1.eval(domains,rs,ws,xs)?)
+    }
+}
+
+impl<C0,C1,M> DisjunctionTrait<M> for AffineConstraintsAnd<C0,C1,M> 
+    where 
+        M : DJCModelTrait,
+        C0 : ConjunctionTrait<M>,
+        C1 : ConjunctionTrait<M>
+{
+    fn dynamic(self) -> Box<dyn DisjunctionTrait<M>> where Self: Sized+'static {
+        Box::new(self)
+    }
+
+    fn eval(& mut self,
+            domains : & mut Vec<Box<dyn DJCDomainTrait<M>>>,
+            term_size : & mut Vec<usize>,
+            rs : &mut WorkStack,
+            ws : &mut WorkStack,
+            xs : &mut WorkStack) -> Result<(),String> 
+    {
+        term_size.push(<Self as ConjunctionTrait<M>>::eval(self,domains, rs, ws, xs)?);
+        Ok(())    
     }
 }
 
