@@ -29,6 +29,28 @@ That is affine expressions and conic domains of constraints and variables.
 
 The `MosekModel` package provides functionality to build the linear expressions.
 
+## The Model
+The model object encapsulates all information describing the optimization
+problem, solver parameters, solutions etc. Variables and constraints are
+created through the model object.
+
+## Variables
+A variable object is an N-dimensional object, either dense or sparse -
+basically a dense or sparse N-dimensional array of scalar variables. When a
+variable is created in a model, it is created with a domain, i.e. either
+linear bounds or a convex conic domain as well as integrality. The domain of a
+variable is immutable once created. Variables can be sliced and stacked to
+create new variables.
+
+Variable objects can be used to create linear expressions and to access
+solution values once the problem is solved.
+
+## Constraints
+Constraints are added to the model, created from a linear expression and a
+domain. Constraints cannot be integer constrained.
+
+Constraint objects can be used to access solution values.
+
 # Simple conic example
 Implementing the models
 ```
