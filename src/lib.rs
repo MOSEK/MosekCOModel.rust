@@ -290,7 +290,7 @@
 //! ```
 #![doc = include_str!("../js/mathjax.tag")]
 
-extern crate mosek;
+//extern crate mosek;
 extern crate itertools;
 
 //pub mod solver;
@@ -320,7 +320,7 @@ pub use model::{Sense,
                 PSDModelTrait,
                 ModelAPI,
                 Solution};
-pub type Model = ModelAPI<model::mosekmodel::MosekModel>;
+//pub type Model = ModelAPI<model::mosekmodel::MosekModel>;
 pub use matrix::{Matrix,NDArray,IntoIndexes};
 pub use expr::{ExprTrait,
                ExprRightMultipliable,

@@ -10,7 +10,7 @@ use crate::variable::*;
 use crate::WorkStack;
 use crate::constraint::*;
 
-pub mod mosekmodel;
+//pub mod mosekmodel;
 
 /// Objective sense
 #[derive(Clone,Copy)]
