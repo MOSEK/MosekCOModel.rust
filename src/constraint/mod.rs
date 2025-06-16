@@ -36,7 +36,7 @@ impl<const N : usize> Constraint<N> {
         }
     }
 
-    pub fn indexes<'a>(&'a self) -> &'a[f64] {
+    pub fn indexes<'a>(&'a self) -> &'a[usize] {
         self.idxs.as_slice()
     }
     // TODO implement more stacking and reshaping functions here, similar to Variable
