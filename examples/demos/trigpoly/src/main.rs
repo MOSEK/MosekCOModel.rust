@@ -35,6 +35,7 @@ extern crate mosekcomodel;
 use itertools::Itertools;
 use mosekcomodel::*;
 use mosekcomodel::experimental::*;
+use mosekcomodel_mosek::Model;
 use std::{cell::RefCell, cmp::Ordering, f64::consts::PI, rc::Rc};
 use gtk::glib::ControlFlow;
 use gtk::prelude::*;

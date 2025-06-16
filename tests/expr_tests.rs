@@ -1,4 +1,5 @@
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 use expr::workstack::WorkStack;
 
 fn dense_expr() -> Expr<2> {
@@ -259,9 +260,6 @@ fn repeat() {
     test_repeat(true, 2,3,5);
 }
 
-
-
-
 #[derive(Debug,Clone,Copy)]
 enum Sparsity {
     Sparse,
@@ -304,8 +302,6 @@ fn test_mul(vsp : Sparsity, dsp : Sparsity, rev : bool, n : usize) {
         mx.clone().mul(v.clone()).eval_finalize(& mut rs,& mut ws, & mut xs).unwrap();
     }
 }
-
-
 
 #[allow(non_snake_case)]
 #[test]

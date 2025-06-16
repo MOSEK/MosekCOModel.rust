@@ -1,6 +1,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 fn main() -> Result<(),String> {
     let mut m = Model::new(Some("SuperModel"));

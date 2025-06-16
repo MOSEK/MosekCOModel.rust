@@ -8,6 +8,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 fn milo1() -> (SolutionStatus,Result<Vec<f64>,String>) {
     let a0 : &[f64] = &[ 50.0, 31.0 ];

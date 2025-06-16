@@ -21,6 +21,7 @@ extern crate mosekcomodel;
 extern crate rand;
 use expr::nil;
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 
 fn rand_matrix(shape : [usize;2]) -> NDArray<2> {

@@ -1980,6 +1980,7 @@ mod test {
     use crate::matrix::*;
     use crate::expr::*;
     use crate::variable::*;
+    use mosekcomodel_mosek::Model;
 
     fn eq<T:std::cmp::Eq>(a : &[T], b : &[T]) -> bool {
         a.len() == b.len() && a.iter().zip(b.iter()).all(|(a,b)| *a == *b )
@@ -2001,6 +2002,63 @@ mod test {
                          vec![1.1,2.2,3.3,4.4,5.5])
     }
 
+    #[allow(non_snake_case)]
+    #[test]
+    fn slice() {
+        let mut m = Model::new(None);
+        let t = m.variable(Some("t"),unbounded().with_shape(&[2])); // 1,2
+        let X = m.variable(Some("X"), in_psd_cone().with_dim(4)); // 3,4,5,6, 7,8,9, 10,11, 12
+        //     | 3 4  5  6 |
+        // X = | 4 7  8  9 |
+        //     | 5 8 10 11 |
+        //     | 6 9 11 12 |
+        let Y = m.variable(Some("Y"), in_psd_cone().with_dim(2)); // 13,14,15
+        let mx = dense([2,2], vec![1.1,2.2,3.3,4.4]);
+
+        m.constraint(Some("X-Y"), X.index([0..2,0..2]).sub(Y.sub((&mx).mul_right(t.index(0)))), domain::zeros(&[2,2]));
+
+        let mut rs = WorkStack::new(512);
+        let mut ws = WorkStack::new(512);
+        let mut xs = WorkStack::new(512);
+        {
+            rs.clear(); ws.clear(); xs.clear();
+            (&X).into_expr().eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            assert_eq!(shape,&[4,4]);
+            assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]);
+            assert_eq!(subj,&[3,4,5,6, 4,7,8,9, 5,8,10,11, 6,9,11,12]);
+            println!("subj = {:?}",subj);
+        }
+        {
+            rs.clear(); ws.clear(); xs.clear();
+            X.index([0..2,0..2]).into_expr().eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            assert_eq!(shape,&[2,2]);
+            assert_eq!(ptr,&[0,1,2,3,4]);
+            assert_eq!(subj,&[3,4,4,7]);
+            println!("subj = {:?}",subj);
+        }
+        {
+            rs.clear(); ws.clear(); xs.clear();
+            X.index([0..2,0..2]).into_expr().sub(Y.sub((&mx).mul_right(t.index(0)))).eval(&mut rs,&mut ws,&mut xs);
+            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
+            assert_eq!(shape,&[2,2]);
+            assert_eq!(ptr,&[0,3,6,9,12]);
+            assert_eq!(subj,&[1,13,3, 1,14,4, 1,14,4, 1,15,7]);
+            println!("subj = {:?}",subj);
+        }
+    }
+
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn permute_axes() {
+        let mut m = Model::new(None);
+        let u = m.variable(None,&[2,3,4,5,6,7]);
+        let v = m.variable(None,&[2,3,4,5,6,7]);
+        let w = m.variable(None,&[2,3,4,5,6,7]);
+        m.constraint(None, u.add(v).add(w).axispermute(&[3,4,5,0,1,2]).axispermute(&[4,3,2,0,1,5]).axispermute(&[5,4,3,2,1,0]), unbounded().with_shape(&[4,6,5,7,2,3]));
+    }
 
     #[test]
     fn into_symmetric() {
@@ -2413,63 +2471,6 @@ mod test {
         }
     }
 
-    #[allow(non_snake_case)]
-    #[test]
-    fn slice() {
-        let mut m = Model::new(None);
-        let t = m.variable(Some("t"),unbounded().with_shape(&[2])); // 1,2
-        let X = m.variable(Some("X"), in_psd_cone().with_dim(4)); // 3,4,5,6, 7,8,9, 10,11, 12
-        //     | 3 4  5  6 |
-        // X = | 4 7  8  9 |
-        //     | 5 8 10 11 |
-        //     | 6 9 11 12 |
-        let Y = m.variable(Some("Y"), in_psd_cone().with_dim(2)); // 13,14,15
-        let mx = dense([2,2], vec![1.1,2.2,3.3,4.4]);
-
-        m.constraint(Some("X-Y"), X.index([0..2,0..2]).sub(Y.sub((&mx).mul_right(t.index(0)))), domain::zeros(&[2,2]));
-
-        let mut rs = WorkStack::new(512);
-        let mut ws = WorkStack::new(512);
-        let mut xs = WorkStack::new(512);
-        {
-            rs.clear(); ws.clear(); xs.clear();
-            (&X).into_expr().eval(&mut rs,&mut ws,&mut xs);
-            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
-            assert_eq!(shape,&[4,4]);
-            assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]);
-            assert_eq!(subj,&[3,4,5,6, 4,7,8,9, 5,8,10,11, 6,9,11,12]);
-            println!("subj = {:?}",subj);
-        }
-        {
-            rs.clear(); ws.clear(); xs.clear();
-            X.index([0..2,0..2]).into_expr().eval(&mut rs,&mut ws,&mut xs);
-            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
-            assert_eq!(shape,&[2,2]);
-            assert_eq!(ptr,&[0,1,2,3,4]);
-            assert_eq!(subj,&[3,4,4,7]);
-            println!("subj = {:?}",subj);
-        }
-        {
-            rs.clear(); ws.clear(); xs.clear();
-            X.index([0..2,0..2]).into_expr().sub(Y.sub((&mx).mul_right(t.index(0)))).eval(&mut rs,&mut ws,&mut xs);
-            let (shape,ptr,sp,subj,cof) = rs.pop_expr();
-            assert_eq!(shape,&[2,2]);
-            assert_eq!(ptr,&[0,3,6,9,12]);
-            assert_eq!(subj,&[1,13,3, 1,14,4, 1,14,4, 1,15,7]);
-            println!("subj = {:?}",subj);
-        }
-    }
-
-
-    #[allow(non_snake_case)]
-    #[test]
-    fn permute_axes() {
-        let mut m = Model::new(None);
-        let u = m.variable(None,&[2,3,4,5,6,7]);
-        let v = m.variable(None,&[2,3,4,5,6,7]);
-        let w = m.variable(None,&[2,3,4,5,6,7]);
-        m.constraint(None, u.add(v).add(w).axispermute(&[3,4,5,0,1,2]).axispermute(&[4,3,2,0,1,5]).axispermute(&[5,4,3,2,1,0]), unbounded().with_shape(&[4,6,5,7,2,3]));
-    }
     
     #[allow(non_snake_case)]
     #[test]

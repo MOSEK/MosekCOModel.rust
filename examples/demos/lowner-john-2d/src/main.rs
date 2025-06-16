@@ -13,6 +13,7 @@ use itertools::izip;
 use cairo::Context;
 use gtk::{glib,Application, DrawingArea, ApplicationWindow};
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 const APP_ID : &str = "com.mosek.lowner-john";
 

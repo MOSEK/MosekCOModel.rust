@@ -10,6 +10,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 /// # Description
 /// 

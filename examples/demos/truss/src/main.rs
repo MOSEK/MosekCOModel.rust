@@ -11,7 +11,8 @@ use cairo::Context;
 use gtk::{Application, DrawingArea, ApplicationWindow,Box};
 use mosekcomodel::expr::*;
 use mosekcomodel::matrix::NDArray;
-use mosekcomodel::{hstack, in_rotated_quadratic_cones, unbounded, nonnegative,equal_to,zero, Model, Sense, SolutionType};
+use mosekcomodel::{hstack, in_rotated_quadratic_cones, unbounded, nonnegative,equal_to,zero, Sense, SolutionType};
+use mosekcomodel_mosek::Model;
 
 use std::fs::File;
 use std::io::{BufRead,BufReader};

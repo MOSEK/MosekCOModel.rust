@@ -34,6 +34,7 @@
 extern crate mosekcomodel;
 use mosekcomodel::*;
 use mosekcomodel::experimental::*;
+use mosekcomodel_mosek::Model;
 use std::f64::consts::PI;
 use itertools::Either;
 

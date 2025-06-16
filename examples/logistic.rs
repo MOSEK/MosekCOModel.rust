@@ -12,6 +12,7 @@ extern crate mosekcomodel;
 use expr::const_expr;
 use itertools::iproduct;
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 
 fn softplus<E2>(model : & mut Model, n : usize, t : &Variable<1>, u : E2) where E2 : ExprTrait<1> {

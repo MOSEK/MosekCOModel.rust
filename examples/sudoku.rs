@@ -9,6 +9,7 @@
 extern crate mosekcomodel;
 use itertools::{iproduct, izip};
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 fn main() {
     //fixed cells in human readable (i.e. 1-based) format

@@ -8,6 +8,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 use mosekcomodel::matrix::{speye,dense};
 
 /// Purpose: Models the hypograph of the n-th power of the

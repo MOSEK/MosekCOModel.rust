@@ -17,6 +17,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 fn lo1() -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>) {
     let a0 : &[f64] = &[ 3.0, 1.0, 2.0, 0.0 ];

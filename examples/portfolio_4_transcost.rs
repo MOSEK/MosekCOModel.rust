@@ -11,6 +11,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 /// Extends the basic Markowitz model with a market cost term.
 ///

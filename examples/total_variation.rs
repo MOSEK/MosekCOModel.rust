@@ -12,6 +12,7 @@ extern crate rand;
 extern crate rand_distr;
 use itertools::iproduct;
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 use rand::*;
 use rand_distr::*;
 

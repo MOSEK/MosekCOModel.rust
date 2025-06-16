@@ -1,5 +1,6 @@
 extern crate mosekcomodel;
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 // Different formulations of the chained singular function
 // (CHAINSING) problem

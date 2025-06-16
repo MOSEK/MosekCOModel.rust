@@ -13,7 +13,8 @@ use itertools::izip;
 
 use cairo::Context;
 use gtk::{glib,Application, DrawingArea, ApplicationWindow};
-use mosekcomodel::{unbounded, Model};
+use mosekcomodel::unbounded;
+use mosekcomodel_mosek::Model;
 
 const APP_ID : &str = "com.mosek.lowner-john";
 const SPEED_SCALE : f64 = 0.1;

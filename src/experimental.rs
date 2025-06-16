@@ -513,6 +513,8 @@ impl<F,E,T0,T1,I0,I1> ExprGenerator2Ex<F,E,T0,T1,I0,I1> for (T0,T1)
 
 #[cfg(test)]
 mod test {
+    use crate::*;
+    use mosekcomodel_mosek::Model;
     use std::collections::HashMap;
 
     use super::*;

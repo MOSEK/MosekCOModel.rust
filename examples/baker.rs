@@ -18,6 +18,7 @@
 
 extern crate mosekcomodel;
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 fn main() {
     let _ingredientnames = [ "Flour", "Sugar", "Butter" ];

@@ -25,6 +25,7 @@ extern crate mosekcomodel;
 extern crate itertools;
 
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 use itertools::izip;
 
 fn diet(daily_allowance : &[f64],

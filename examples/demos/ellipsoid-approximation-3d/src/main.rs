@@ -10,7 +10,8 @@ use bevy::{prelude::*, math::{DMat3, DVec3,DQuat}};
 use linalg::symsqrt3;
 
 use ellipsoids::Ellipsoid;
-use mosekcomodel::{unbounded, Model};
+use mosekcomodel::{unbounded};
+use mosekcomodel_mosek::Model;
 use rand::Rng;
 
 use bevy::render::view::screenshot::ScreenshotManager;

@@ -11,6 +11,7 @@
 //! ```
 extern crate mosekcomodel;
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 fn main() {
     let mut m = Model::new(Some("ceo1"));

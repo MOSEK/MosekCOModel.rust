@@ -6,6 +6,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 #[allow(non_snake_case)]
 fn main() {

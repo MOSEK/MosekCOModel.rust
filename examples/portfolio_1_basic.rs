@@ -1,6 +1,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 /// Computes the optimal portfolio for a given risk
 ///

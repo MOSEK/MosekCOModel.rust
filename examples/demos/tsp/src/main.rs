@@ -18,6 +18,7 @@ use gtk::glib::{self, ControlFlow};
 
 use itertools::iproduct;
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 use rand::Rng;
 
 const APP_ID : &str = "com.mosek.example.tsp";

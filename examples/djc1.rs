@@ -14,6 +14,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 
 fn djc1() -> (SolutionStatus,Result<Vec<f64>,String>) {
     let mut model = Model::new(Some("djc1"));

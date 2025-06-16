@@ -12,6 +12,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 use mosekcomodel::expr::ones;
 
 /// Models log(sum(exp(Ax+b))) <= 0.

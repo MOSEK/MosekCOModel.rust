@@ -16,7 +16,8 @@ use std::time::{Duration, SystemTime};
 use ellipsoids::Ellipsoid;
 use glam::{DMat2,DVec2};
 use itertools::izip;
-use mosekcomodel::{unbounded, Model};
+use mosekcomodel::unbounded;
+use mosekcomodel_mosek::Model;
 
 use std::f32::consts::PI;
 

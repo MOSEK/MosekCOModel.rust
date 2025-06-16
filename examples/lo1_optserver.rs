@@ -16,7 +16,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
-use mosekcomodel::model::mosekmodel;
+use mosekcomodel_mosek::*;
 
 fn lo1(hostname : String, accesstoken : Option<String>) -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>) {
     let a0 : &[f64] = &[ 3.0, 1.0, 2.0, 0.0 ];
@@ -40,7 +40,7 @@ fn lo1(hostname : String, accesstoken : Option<String>) -> (SolutionStatus,Solut
     m.objective(Some("obj"), Sense::Maximize, x.dot(c));
 
     // Solve the problem
-    m.set_parameter("optserver",mosekmodel::OptserverHost(hostname.clone(), accesstoken));
+    m.set_parameter("optserver",OptserverHost(hostname.clone(), accesstoken));
     println!("Solving on {}",hostname);
     m.solve();
 

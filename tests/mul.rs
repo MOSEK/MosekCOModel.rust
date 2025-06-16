@@ -3,6 +3,7 @@ extern crate mosekcomodel;
 use matrix::NDArray;
 use mosekcomodel::*;
 use mosekcomodel::expr::workstack::WorkStack;
+use mosekcomodel_mosek::Model;
 
 const N1 : usize = 100;
 const N2 : usize = 100;

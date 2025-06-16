@@ -23,6 +23,7 @@ use gtk::{prelude::*, Image, Orientation};
 use gtk::{Application, ApplicationWindow};
 use itertools::{iproduct, izip};
 use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
 use rand::*;
 
 use image::{Rgb,ImageBuffer,ImageReader};

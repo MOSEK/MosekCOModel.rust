@@ -27,6 +27,7 @@ extern crate mosekcomodel;
 use itertools::iproduct;
 use mosekcomodel::*;
 use mosekcomodel::matrix;
+use mosekcomodel_mosek::Model;
 
 
 /// Creates a Hankel matrix of dimension n+1, where
