@@ -16,7 +16,8 @@ readme = "README.md"
 [workspace]
 resolver = "3"
 
-members = [ "mosekcomodel-mosek"]
+members = [ "mosekcomodel-mosek", 
+            "mosekcomodel-highs"]
 
 #[lib]
 #crate-type = ["dylib"]
@@ -29,6 +30,7 @@ mosek = "~11.0.0"
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = [ "html_reports" ] }
+mosekcomodel_mosek = { version = "0.1", path = "mosekcomodel-mosek" }
 rand = "0.8.5"
 
 [[bench]]

@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 highs = "1.8.0"
 itertools = "0.14.0"
-mosekcomodel = { version = "0.2.0", path = "../../.." }
+mosekcomodel = { version = "0.3.0", path = ".." }

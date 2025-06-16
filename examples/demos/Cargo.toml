@@ -15,6 +15,5 @@ members = [ "ellipsoid-approximation",
             "total-variation", 
             "tsp", 
             "optserver", 
-            "mosekcomodel_highs",
             ]
 

@@ -1,0 +1,17 @@
+[package]
+name = "mosekcomodel_mosek"
+version = "0.1.0"
+edition = "2024"
+homepage = "https://mosek.com"
+description = "MOSEK backend for mosekcomodel"
+
+authors = [ "Ulf Worsøe <ulf.worsoe@mosek.com>" ]
+keywords = ["mosek","optimization","conic_optimization","linear_programming"]
+license = "MIT"
+categories = ["mathematics","science"]
+
+[dependencies]
+mosek = "~11.0.0"
+itertools = "0.14"
+mosekcomodel = { version = "0.3.0", path = ".." }
+
