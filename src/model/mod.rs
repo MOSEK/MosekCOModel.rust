@@ -26,23 +26,6 @@ pub enum WhichLinearBound {
     Both
 }
 
-#[derive(Clone,Copy,Debug)]
-pub enum VarAtom {
-    // Task variable index
-    Linear(i32, WhichLinearBound), // (vari,which bound)
-    // Task bar element (barj,k,l)
-    BarElm(i32,usize),
-    // Conic variable (j,offset)
-    ConicElm(i32,usize)
-}
-#[allow(unused)]
-#[derive(Clone,Copy,Debug)]
-enum ConAtom {
-    // Conic constraint element (acci, offset)
-    ConicElm{acci : i64, afei : i64, accoffset : usize},
-    BarElm{acci : i64, accoffset : i64, afei : i64, barj : i32, offset : usize},
-    Linear(i32,f64,i32,WhichLinearBound) // (coni, rhs,bk, which bound)
-}
 
 
 
@@ -101,7 +84,7 @@ pub struct SolutionPart {
 
 impl SolutionPart {
     pub fn new(numvar : usize, numcon : usize) -> SolutionPart { SolutionPart{status : SolutionStatus::Unknown, var : vec![0.0; numvar], con : vec![0.0; numcon], obj : 0.0} }
-    fn resize(& mut self,numvar : usize, numcon : usize) {
+    pub fn resize(& mut self,numvar : usize, numcon : usize) {
         self.var.resize(numvar, 0.0);
         self.con.resize(numcon, 0.0);
     }
