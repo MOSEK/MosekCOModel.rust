@@ -35,6 +35,10 @@ impl<const N : usize> Constraint<N> {
             shape : *shape
         }
     }
+
+    pub fn indexes<'a>(&'a self) -> &'a[f64] {
+        self.idxs.as_slice()
+    }
     // TODO implement more stacking and reshaping functions here, similar to Variable
 }
 
