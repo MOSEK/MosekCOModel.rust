@@ -1,0 +1,15 @@
+[package]
+name = "compare"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mosekcomodel = { version = "0.1.0-alpha.2", path = "../.." }
+
+[[bin]]
+name = "mul2"
+path = "src/mul2.rs"
+
+[[bin]]
+name = "runtest"
+path = "src/runtest.rs"
