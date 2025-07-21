@@ -1,12 +1,11 @@
-extern crate mosekcomodel;
-
 use crate::*;
 use crate::model::{ModelWithLogCallback,ModelWithIntSolutionCallback,VectorConeModelTrait,PSDModelTrait};
 use crate::domain::*;
 use crate::utils::iter::{ChunksByIterExt, PermuteByEx, PermuteByMutEx};
+use std::f64;
 use std::ops::ControlFlow;
 use std::path::Path;
-use itertools::izip;
+use itertools::{iproduct, izip, Either};
 use model::ModelWithControlCallback;
 
 #[derive(Clone,Copy)]
@@ -14,33 +13,51 @@ enum Item {
     Linear{index:usize},
     RangedUpper{index:usize},
     RangedLower{index:usize},
+    Conic{index:usize},
 }
 
 impl Item {
     fn index(&self) -> usize { 
         match self {
+            Item::Conic { index } => *index,
             Item::Linear { index } => *index,
             Item::RangedUpper { index } => *index,
             Item::RangedLower { index } => *index
         }
     } 
 }
+
+#[derive(Clone)]
+enum ConeType {
+    QuadraticCone,
+    RoteatedQuadraticCone,
+    SVecPSDCone,
+    GeometricMeanCone,
+    PowerCone(Vec<f64>),
+    ExponentialCone
+}
+
+#[derive(Clone,Copy)]
+enum Element {
+    Linear{lb:f64,ub:f64},
+    Conic{coneidx:usize,offset:usize,b:f64},
+}
+
 /// Simple model object.
 #[derive(Default)]
 pub struct Backend {
     name : Option<String>,
 
-    var_range_lb  : Vec<f64>,
-    var_range_ub  : Vec<f64>,
-    var_range_int : Vec<bool>,
+    var_elt       : Vec<Element>, // Either lb,ub,int or index,coneidx,offset
+    var_int       : Vec<bool>,
+    cones         : Vec<ConeType>,
 
     vars          : Vec<Item>,
 
     a_ptr         : Vec<[usize;2]>,
     a_subj        : Vec<usize>,
     a_cof         : Vec<f64>,
-    con_lb        : Vec<f64>,
-    con_ub        : Vec<f64>,
+    con_elt       : Vec<Element>,
 
     con_a_row     : Vec<usize>, // index into a_ptr
     cons          : Vec<Item>,
@@ -63,12 +80,11 @@ impl BaseModelTrait for Backend {
          shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized 
     {
         let n = shape.iter().product::<usize>();
-        let first = self.var_range_lb.len();
+        let first = self.var_elt.len();
         let last  = first + n;
 
-        self.var_range_lb.resize(last,f64::NEG_INFINITY);
-        self.var_range_ub.resize(last,f64::INFINITY);
-        self.var_range_int.resize(last,false);
+        self.var_elt.resize(last,Element::Linear { lb: f64::NEG_INFINITY, ub: f64::INFINITY });
+        self.var_int.resize(last,false);
 
         let firstvari = self.vars.len();
         self.vars.reserve(n);
@@ -88,7 +104,7 @@ impl BaseModelTrait for Backend {
     {
         let (dt,b,sp,shape,is_integer) = dom.dissolve();
         let n = sp.as_ref().map(|v| v.len()).unwrap_or(shape.iter().product::<usize>());
-        let first = self.var_range_lb.len();
+        let first = self.var_int.len();
         let last  = first + n;
 
 
@@ -97,25 +113,25 @@ impl BaseModelTrait for Backend {
         for i in first..last { self.vars.push(Item::Linear{index:i}) }
         match dt {
             LinearDomainType::Zero => {
-                self.var_range_lb.resize(last,0.0);
-                self.var_range_ub.resize(last,0.0);
+                self.var_elt.resize(last,Element::Linear { lb: 0.0, ub: 0.0 });
             },
             LinearDomainType::Free => {
-                self.var_range_lb.resize(last,f64::NEG_INFINITY);
-                self.var_range_ub.resize(last,f64::INFINITY);
+                self.var_elt.resize(last,Element::Linear { lb: f64::NEG_INFINITY, ub: f64::INFINITY});
             },
             LinearDomainType::NonNegative => {
-                self.var_range_lb.resize(last,0.0);
-                self.var_range_lb[first..last].copy_from_slice(b.as_slice());
-                self.var_range_ub.resize(last,f64::INFINITY);
+                self.var_elt.reserve(last);
+                for lb in b {
+                    self.var_elt.push(Element::Linear { lb, ub: f64::INFINITY });
+                }
             },
             LinearDomainType::NonPositive => {
-                self.var_range_lb.resize(last,f64::NEG_INFINITY);
-                self.var_range_ub.resize(last,0.0);
-                self.var_range_ub[first..last].copy_from_slice(b.as_slice());
+                self.var_elt.reserve(last);
+                for ub in b {
+                    self.var_elt.push(Element::Linear { lb : f64::NEG_INFINITY, ub });
+                }
             },
         }
-        self.var_range_int.resize(last,is_integer);
+        self.var_int.resize(last,is_integer);
 
         Ok(Variable::new((firstvari..firstvari+n).collect::<Vec<usize>>(), sp, &shape))
     }
@@ -127,7 +143,7 @@ impl BaseModelTrait for Backend {
         let (shape,bl,bu,sp,is_integer) = dom.dissolve();
 
         let n = sp.as_ref().map(|v| v.len()).unwrap_or(shape.iter().product::<usize>());
-        let first = self.var_range_lb.len();
+        let first = self.var_int.len();
         let last  = first + n;
 
         let ptr0 = self.vars.len();
@@ -136,12 +152,12 @@ impl BaseModelTrait for Backend {
         self.vars.reserve(n*2);
         for i in first..last { self.vars.push(Item::RangedLower{index:i}) }
         for i in first..last { self.vars.push(Item::RangedUpper{index:i}) }
-        self.var_range_lb.resize(last,0.0);
-        self.var_range_ub.resize(last,0.0);
-        self.var_range_int.resize(last,is_integer);
 
-        self.var_range_lb[ptr0..ptr1].copy_from_slice(bl.as_slice());
-        self.var_range_ub[ptr1..ptr2].copy_from_slice(bu.as_slice());
+        self.var_elt.reserve(last);
+        for (&lb,&ub) in bl.iter().zip(bu.iter()) {
+            self.var_elt.push(Element::Linear { lb, ub })
+        }
+        self.var_int.resize(last,is_integer);
 
         Ok((Variable::new((ptr0..ptr1).collect::<Vec<usize>>(), sp.clone(), &shape),
             Variable::new((ptr1..ptr2).collect::<Vec<usize>>(), sp, &shape)))
@@ -180,20 +196,25 @@ impl BaseModelTrait for Backend {
         
         match dt {
             LinearDomainType::Zero => {
-                self.con_lb.extend_from_slice(b.as_slice());
-                self.con_ub.extend_from_slice(b.as_slice());
+                self.con_elt.reserve(con_row0+nrow);
+                for b in b {
+                    self.con_elt.push(Element::Linear { lb: b, ub: b });
+                }
             },
             LinearDomainType::Free => { 
-                self.con_lb.resize(con_row0+nrow,f64::NEG_INFINITY);
-                self.con_ub.resize(con_row0+nrow,f64::INFINITY);
+                self.con_elt.resize(con_row0+nrow,Element::Linear { lb: f64::NEG_INFINITY, ub: f64::INFINITY });
             },
             LinearDomainType::NonNegative => {
-                self.con_lb.extend_from_slice(b.as_slice());
-                self.con_ub.resize(con_row0+nrow,f64::INFINITY);
+                self.con_elt.reserve(con_row0+nrow);
+                for lb in b {
+                    self.con_elt.push(Element::Linear { lb, ub: f64::INFINITY });
+                }
             },
             LinearDomainType::NonPositive => {
-                self.con_lb.resize(con_row0+nrow,f64::NEG_INFINITY);
-                self.con_ub.extend_from_slice(b.as_slice());
+                self.con_elt.reserve(con_row0+nrow);
+                for ub in b {
+                    self.con_elt.push(Element::Linear { lb : f64::NEG_INFINITY, ub });
+                }
             },
         }
 
@@ -223,8 +244,10 @@ impl BaseModelTrait for Backend {
 
         self.a_subj.extend_from_slice(subj);
         self.a_cof.extend_from_slice(cof);
-        self.con_lb.extend_from_slice(bl.as_slice());
-        self.con_ub.extend_from_slice(bu.as_slice());
+        self.con_elt.reserve(con_row0+n);
+        for (&lb,&ub) in (bl.iter().zip(bu.iter())) {
+            self.con_elt.push(Element::Linear { lb, ub });
+        }
 
         self.con_a_row.reserve(n); for i in a_row0..a_row0+n { self.con_a_row.push(i); }
 
@@ -259,12 +282,9 @@ impl BaseModelTrait for Backend {
                 self.a_ptr[i][1] = n;
             }
             else {
+                self.con_elt.push(self.con_elt[ai]);
                 self.a_ptr[ai][1] = 0;
-                let lb = self.con_lb[ai];
-                let ub = self.con_ub[ai];
                 self.con_a_row[i] = self.a_ptr.len();
-                self.con_lb.push(lb);
-                self.con_ub.push(ub);
                 self.a_ptr.push([self.a_subj.len(),n]);
                 self.a_subj.extend_from_slice(subj);
                 self.a_cof.extend_from_slice(cof);
@@ -327,36 +347,100 @@ impl ModelWithControlCallback for Backend {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-trait VectorConeForDummy : VectorDomainTrait { }
-impl VectorConeForDummy for QuadraticCone { }
-impl VectorConeForDummy for SVecPSDCone { }
-impl VectorConeForDummy for GeometricMeanCone { }
-impl VectorConeForDummy for PowerCone { }
-impl VectorConeForDummy for ExponentialCone { }
+trait VectorConeForDummy : VectorDomainTrait { fn to_conetype(self) -> ConeType; }
+impl VectorConeForDummy for QuadraticCone {fn to_conetype(self) -> ConeType { match self { Self::Normal => ConeType::QuadraticCone, Self::Rotated => ConeType::RoteatedQuadraticCone }} }
+impl VectorConeForDummy for SVecPSDCone { fn to_conetype(self) -> ConeType { ConeType::SVecPSDCone }  }
+impl VectorConeForDummy for GeometricMeanCone { fn to_conetype(self) -> ConeType { ConeType::GeometricMeanCone }  }
+impl VectorConeForDummy for PowerCone { fn to_conetype(self) -> ConeType { ConeType::PowerCone(self.0)}  }
+impl VectorConeForDummy for ExponentialCone { fn to_conetype(self) -> ConeType { ConeType::ExponentialCone } }
 
 impl<D> VectorConeModelTrait<D> for Backend where D : VectorConeForDummy+'static {
-   fn conic_constraint<const N : usize>
+    fn conic_constraint<const N : usize>
        (& mut self, 
-        name : Option<&str>, 
-        dom  : VectorDomain<N,D>,
+        name   : Option<&str>, 
+        dom    : VectorDomain<N,D>,
         _shape : &[usize], 
-        ptr : &[usize], 
-        subj : &[usize], 
-        cof : &[f64]) -> Result<Constraint<N>,String> 
-   {
-       let (ct,offset,shape,conedim,_is_integer) = dom.dissolve();
-       self.internal_vector_conic_constraint(name,&shape,conedim,offset,ptr,subj,cof)
+        ptr    : &[usize], 
+        subj   : &[usize], 
+        cof    : &[f64]) -> Result<Constraint<N>,String> 
+    {
+        let (ct,offset,shape,conedim,_is_integer) = dom.dissolve();
+        let dt = ct.to_conetype();
+
+        let (d0,d,d1) = (shape[..conedim].iter().product(),shape[conedim],shape[conedim+1..].iter().product());
+        let n = d0*d*d1;
+        let ncones = d0*d1;
+
+        let a_row0 = self.a_ptr.len()-1;
+
+        let first = self.con_elt.len();
+        let last  = first+n;
+
+        let firstcon = self.cons.len();
+        let lastcon = firstcon+n;
+
+        let firstcone = self.cones.len();
+
+        self.cones.reserve(ncones);
+        for _ in 0..ncones { self.cones.push(dt.clone()) }
+
+        self.con_elt.reserve(n);        
+
+        self.a_ptr.reserve(n);
+        for (b,n) in ptr.iter().zip(ptr[1..].iter()).scan(self.a_subj.len(),|p,(&p0,&p1)| { let (b,n) = (*p,p1-p0); *p += n; Some((b,n)) }) {
+            self.a_ptr.push([b,n]);
+        }
+
+        let con0 = self.cons.len();
+        self.a_subj.extend_from_slice(subj);
+        self.a_cof.extend_from_slice(cof);
+        self.con_a_row.reserve(n); for i in a_row0..a_row0+n { self.con_a_row.push(i); }
+
+        for (i0,i,i1,&b) in iproduct!(0..d0,0..d,0..d1,offset.iter()) {
+            self.con_elt.push(Element::Conic { coneidx: firstcone+i0*d1+i1, offset: i, b });
+        }
+                 
+        self.cons.reserve(n);
+        for index in first..last {
+           self.cons.push(Item::Conic{index});
+        }
+
+        Ok(Constraint::new((firstcon..firstcon+n).collect::<Vec<usize>>(), &shape))
+    }
+
+
+    fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : VectorDomain<N,D>) -> Result<Variable<N>,String> {
+        let (ct,offset,shape,conedim,is_integer) = dom.dissolve();
+        let dt = ct.to_conetype();
+
+        let (d0,d,d1) = (shape[..conedim].iter().product(),shape[conedim],shape[conedim+1..].iter().product());
+        let n = d0*d*d1;
+        let ncones = d0*d1;
+
+        let first = self.var_elt.len();
+        let last  = first+n;
+
+        let firstvar = self.vars.len();
+        let lastvar = firstvar+n;
+        
+        let firstcone = self.cones.len();
+        
+        self.cones.reserve(ncones);
+        for _ in 0..ncones { self.cones.push(dt.clone()) }
+
+        self.var_int.resize(last,is_integer);
+        self.var_elt.reserve(n);
+
+        for (i0,i,i1,&b) in iproduct!(0..d0,0..d,0..d1,offset.iter()) {
+            self.var_elt.push(Element::Conic { coneidx: firstcone+i0*d1+i1, offset: i, b });
+        }
+                 
+        self.vars.reserve(n);
+        for index in first..last {
+           self.vars.push(Item::Conic{index});
+        }
+
+        Ok(Variable::new((firstvar..firstvar+n).collect::<Vec<usize>>(), None, &shape))
    }
 }
 
