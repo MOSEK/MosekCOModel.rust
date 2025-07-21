@@ -1,5 +1,5 @@
 use mosekcomodel::*;
-use mosekcomodel_mosek::Model;
+use crate::dummy::Model;
 use expr::workstack::WorkStack;
 
 fn dense_expr() -> Expr<2> {
@@ -46,7 +46,7 @@ fn add_test() {
         assert_eq!(sp,None);
         assert_eq!(ptr,&[0usize,2,4,6,8,10,12,14,16,18]);
         //println!("subj = {:?}",subj);
-        assert_eq!(subj,&[ 10,1, 11,2, 12,3, 13,4, 14,5, 15,6, 16,7, 17,8, 18,9]);
+        assert_eq!(subj,&[ 9,0, 10,1, 11,2, 12,3, 13,4, 14,5, 15,6, 16,7, 17,8]);
     }
     
     {
@@ -58,7 +58,7 @@ fn add_test() {
         assert_eq!(shape,&[3,3]); 
         assert_eq!(sp,None);
         assert_eq!(ptr,&[0usize,2,3,4,5,7,8,9,11,13]);
-        assert_eq!(subj,&[ 23,1,2,3,4,24,5,6,7,25,8,26,9]);
+        assert_eq!(subj,&[ 22,0,1,2,3,23,4,5,6,24,7,25,8]);
     }
 
     {
@@ -74,7 +74,7 @@ fn add_test() {
             panic!("sp is not None");
         }
         assert_eq!(ptr,&[0,2,4,5,6,8]);
-        assert_eq!(subj,&[ 23,19,24,20,21,25,26,22]);
+        assert_eq!(subj,&[ 22,18,23,19,20,24,25,21]);
     }
 
     {

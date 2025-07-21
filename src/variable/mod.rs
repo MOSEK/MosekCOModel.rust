@@ -27,6 +27,7 @@ use super::utils;
 ///
 /// ```
 /// use mosekcomodel::*;
+/// use mosekcomodel::dummy::Model;
 ///
 /// let mut model = Model::new(None);
 /// let x = model.variable(None,unbounded());
@@ -418,7 +419,8 @@ impl<const N : usize> Variable<N> {
     /// # Example
     /// ```rust
     /// use mosekcomodel::*;
-    /// 
+    /// use mosekcomodel::dummy::Model; 
+    ///
     /// let mut m = Model::new(None);
     /// let x1 = m.variable(None, 10);
     /// let x2 = m.variable(None, &[10,10]);

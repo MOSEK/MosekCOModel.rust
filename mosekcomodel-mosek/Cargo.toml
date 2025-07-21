@@ -15,3 +15,7 @@ mosek = "~11.0.0"
 itertools = "0.14"
 mosekcomodel = { version="0.3.0", path=".." }
 
+[dev-dependencies]
+criterion = { version = "0.5.1", features = [ "html_reports" ] }
+rand = "0.8.5"
+rand_distr = "0.4.3"

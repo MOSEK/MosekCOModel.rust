@@ -24,13 +24,10 @@ members = [ "mosekcomodel-mosek",
 
 [dependencies]
 itertools = "0.14"
-rand_distr = "0.4.3"
 mosek = "~11.0.0"
 #mosek = { version = "~11.0.0", path = "/home/ulfw/Project/Mosek.rs" }
 
 [dev-dependencies]
-criterion = { version = "0.5.1", features = [ "html_reports" ] }
-mosekcomodel_mosek = { version = "0.1.0", path = "mosekcomodel-mosek" }
 rand = "0.8.5"
 
 [[bench]]

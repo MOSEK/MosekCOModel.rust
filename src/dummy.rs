@@ -8,6 +8,8 @@ use std::path::Path;
 use itertools::{iproduct, izip, Either};
 use model::ModelWithControlCallback;
 
+pub type Model = ModelAPI<Backend>;
+
 #[derive(Clone,Copy)]
 enum Item {
     Linear{index:usize},
@@ -34,7 +36,8 @@ enum ConeType {
     SVecPSDCone,
     GeometricMeanCone,
     PowerCone(Vec<f64>),
-    ExponentialCone
+    ExponentialCone,
+    PSD,
 }
 
 #[derive(Clone,Copy)]
@@ -421,7 +424,7 @@ impl<D> VectorConeModelTrait<D> for Backend where D : VectorConeForDummy+'static
         let last  = first+n;
 
         let firstvar = self.vars.len();
-        let lastvar = firstvar+n;
+        let _lastvar = firstvar+n;
         
         let firstcone = self.cones.len();
         
@@ -431,7 +434,7 @@ impl<D> VectorConeModelTrait<D> for Backend where D : VectorConeForDummy+'static
         self.var_int.resize(last,is_integer);
         self.var_elt.reserve(n);
 
-        for (i0,i,i1,&b) in iproduct!(0..d0,0..d,0..d1,offset.iter()) {
+        for ((i0,i,i1),&b) in iproduct!(0..d0,0..d,0..d1).zip(offset.iter()) {
             self.var_elt.push(Element::Conic { coneidx: firstcone+i0*d1+i1, offset: i, b });
         }
                  
@@ -445,3 +448,68 @@ impl<D> VectorConeModelTrait<D> for Backend where D : VectorConeForDummy+'static
 }
 
 
+
+impl PSDModelTrait for Backend {
+    fn psd_variable<const N : usize>(&mut self, name : Option<&str>, dom : PSDDomain<N>) -> Result<Variable<N>,String> {
+        let (shape,(conedim0,conedim1)) = dom.dissolve();
+        
+        let (cd0,cd1) = if conedim0 < conedim1 { (conedim0,conedim1) } else { (conedim1,conedim0) };
+
+        let (d0,d1,d2,d3,d4) = (shape[0..cd0].iter().product(),
+                                shape[cd0],
+                                shape[cd0+1..cd1].iter().product(),
+                                shape[cd1],
+                                shape[cd1+1..].iter().product());
+        let n = d0*d2*d4*d1*(d1+1)/2;
+        let ncones = d0*d2*d4;
+        let conesize = d1*(d1+1)/2;
+
+        let first = self.var_elt.len();
+        let last  = first+n;
+
+        let firstvar = self.vars.len();
+        let lastvar = firstvar+n;
+        
+        let firstcone = self.cones.len();
+       
+        for i in 0..ncones {
+            self.cones.push(ConeType::PSD);
+        }
+
+        self.var_int.resize(last,false);
+        self.var_elt.reserve(n);
+        self.vars.reserve(n);
+
+        for index in first..last {
+           self.vars.push(Item::Conic{index});
+        }
+
+        println!("firstvar = {}, lastvar = {} / {}, dim = {}/{}, ncones = {}, conesize = {}, n = {}",firstvar,lastvar,self.vars.len(),d1,d3,ncones,conesize,n);
+
+        
+        let mut res = Vec::with_capacity(ncones*d1*d3);
+
+        if conedim0 < conedim1 {
+            for (i0,i1,i2,i3,i4) in iproduct!(0..d0,0..d1,0..d2,0..d3,0..d4) {
+                let offset = if i1 >= i3 { i1 * (i1 + 1) / 2 + i3 } else { i3 * (i3 + 1)/2+i1 };
+                let coneidx = i0*d2*d4+i2*d4+i4;
+                self.var_elt.push(Element::Conic { coneidx: firstcone+coneidx, offset, b: 0.0 });
+                res.push(firstvar+coneidx*conesize+offset);
+            }
+        }
+        else {
+            for (i0,i1,i2,i3,i4) in iproduct!(0..d0,0..d1,0..d2,0..d3,0..d4) {
+                let offset = if i1 <= i3 { i1 * (2*d1 - i1 - 1)/2 + i3 } else { i3 * (2*d1-i3-1)/2 + i1 };
+                let coneidx = i0*d2*d4+i2*d4+i4;
+                self.var_elt.push(Element::Conic { coneidx: firstcone+coneidx, offset, b: 0.0 });
+                res.push(firstvar+coneidx*conesize+offset);
+            }
+        }
+        
+        Ok(Variable::new(res, None, &shape))
+    }
+
+    fn psd_constraint<const N : usize>(& mut self, name : Option<&str>, dom : PSDDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String> {
+        unimplemented!();
+    }
+}

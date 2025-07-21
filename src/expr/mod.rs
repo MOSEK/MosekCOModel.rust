@@ -104,6 +104,7 @@ pub trait ExprTrait<const N : usize> {
     /// # Example
     /// ```
     /// use mosekcomodel::*;
+    /// use mosekcomodel::dummy::Model; 
     /// let mut M = Model::new(None);
     /// let v = M.variable(None, greater_than(0.0));
     /// 
@@ -142,6 +143,7 @@ pub trait ExprTrait<const N : usize> {
     /// # Example
     /// ```
     /// use mosekcomodel::*;
+    /// use mosekcomodel::dummy::Model; 
     /// let mut M = Model::new(None);
     /// let v = M.variable(None,&[3,4,5]);
     /// let w = M.variable(None,&[3,4,5]);
@@ -296,6 +298,7 @@ pub trait ExprTrait<const N : usize> {
     /// # Example: Stacking a compile-time known list
     /// ```
     /// use mosekcomodel::*;
+    /// use mosekcomodel::dummy::Model; 
     ///
     /// let mut M = Model::new(None);
     /// let u = M.variable(None,&[3,2]);
@@ -310,6 +313,8 @@ pub trait ExprTrait<const N : usize> {
     /// # Example: Stacking a variable length list
     /// ```
     /// use mosekcomodel::*;
+    /// use mosekcomodel::dummy::Model; 
+    ///
     /// fn dynstack(n : usize) {
     ///     assert!(n > 0);
     ///     let mut M = Model::new(None);
@@ -360,6 +365,7 @@ pub trait ExprTrait<const N : usize> {
     /// # Example
     /// ```rust
     /// use mosekcomodel::*;
+    /// use mosekcomodel::dummy::Model; 
     /// 
     /// let mut m = Model::new(None);
     /// let x1 = m.variable(None, 10);
@@ -469,6 +475,7 @@ pub trait ExprTrait<const N : usize> {
     /// Pick out the diagonal elements of a square expression into a vector:
     /// ```
     /// use mosekcomodel::*;
+    /// use mosekcomodel::dummy::Model; 
     ///
     /// let mut model = Model::new(None);
     /// let x = model.variable(None,unbounded().with_shape(&[10,10]));
@@ -1641,6 +1648,7 @@ impl<const N : usize, E> ExprTrait<N> for ExprSumVec<N,E> where E : ExprTrait<N>
 /// Sum a dynamic list of variables
 /// ```rust 
 /// use mosekcomodel::*;
+/// use mosekcomodel::dummy::Model; 
 ///
 /// let mut model = Model::new(None);
 /// let x = model.variable(None, 2);
@@ -1656,6 +1664,7 @@ impl<const N : usize, E> ExprTrait<N> for ExprSumVec<N,E> where E : ExprTrait<N>
 /// use mosekcomodel::*;
 ///
 /// let mut model = Model::new(None);
+/// use mosekcomodel::dummy::Model; 
 /// let x = model.variable(None, 2);
 /// let y = model.variable(None, 4);
 /// let z = model.variable(None, 2);
@@ -1980,7 +1989,7 @@ mod test {
     use crate::matrix::*;
     use crate::expr::*;
     use crate::variable::*;
-    use mosekcomodel_mosek::Model;
+    use crate::dummy::Model;
 
     fn eq<T:std::cmp::Eq>(a : &[T], b : &[T]) -> bool {
         a.len() == b.len() && a.iter().zip(b.iter()).all(|(a,b)| *a == *b )
@@ -2007,14 +2016,16 @@ mod test {
     fn slice() {
         let mut m = Model::new(None);
         let t = m.variable(Some("t"),unbounded().with_shape(&[2])); // 1,2
-        let X = m.variable(Some("X"), in_psd_cone().with_dim(4)); // 3,4,5,6, 7,8,9, 10,11, 12
-        //     | 3 4  5  6 |
-        // X = | 4 7  8  9 |
-        //     | 5 8 10 11 |
-        //     | 6 9 11 12 |
+        let X = m.variable(Some("X"), in_psd_cone().with_dim(4)); // 2,3,5,8, 3,4,6,9, 5,6,7,10, 8,9,10,11
+        //     | 2 3  5  8 |
+        // X = | 3 4  6  9 |
+        //     | 5 6  7 10 |
+        //     | 8 9 10 11 |
         let Y = m.variable(Some("Y"), in_psd_cone().with_dim(2)); // 13,14,15
         let mx = dense([2,2], vec![1.1,2.2,3.3,4.4]);
 
+        println!("X = {:?}, Y = {:?}",&X,&Y);
+            
         m.constraint(Some("X-Y"), X.index([0..2,0..2]).sub(Y.sub((&mx).mul_right(t.index(0)))), domain::zeros(&[2,2]));
 
         let mut rs = WorkStack::new(512);
@@ -2026,8 +2037,7 @@ mod test {
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
             assert_eq!(shape,&[4,4]);
             assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]);
-            assert_eq!(subj,&[3,4,5,6, 4,7,8,9, 5,8,10,11, 6,9,11,12]);
-            println!("subj = {:?}",subj);
+            assert_eq!(subj,&[2,3,5,8, 3,4,6,9, 5,6,7,10, 8,9,10,11]);
         }
         {
             rs.clear(); ws.clear(); xs.clear();
@@ -2035,7 +2045,7 @@ mod test {
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
             assert_eq!(shape,&[2,2]);
             assert_eq!(ptr,&[0,1,2,3,4]);
-            assert_eq!(subj,&[3,4,4,7]);
+            assert_eq!(subj,&[2,3,3,4]);
             println!("subj = {:?}",subj);
         }
         {
@@ -2044,7 +2054,7 @@ mod test {
             let (shape,ptr,sp,subj,cof) = rs.pop_expr();
             assert_eq!(shape,&[2,2]);
             assert_eq!(ptr,&[0,3,6,9,12]);
-            assert_eq!(subj,&[1,13,3, 1,14,4, 1,14,4, 1,15,7]);
+            assert_eq!(subj,&[0,12,2, 0,13,3, 0,13,3, 0,14,4]);
             println!("subj = {:?}",subj);
         }
     }
@@ -2547,7 +2557,7 @@ mod test {
             assert_eq!(shape,[3]);
             assert!(sp.is_none());
             assert_eq!(ptr,[0,6,12,18]);
-            assert_eq!(subj,[1,10,2,11,3,12,4,13,5,14,6,15,7,16,8,17,9,18]);
+            assert_eq!(subj,[0,9,1,10,2,11,3,12,4,13,5,14,6,15,7,16,8,17]);
             assert_eq!(cof,[1.1,1.1,1.2,1.2,1.3,1.3,2.1,2.1,2.2,2.2,2.3,2.3,3.1,3.1,3.2,3.2,3.3,3.3]);
         }
         {
@@ -2564,7 +2574,7 @@ mod test {
             assert!(sp.is_some());
             assert_eq!(sp.unwrap(),[0,2]);
             assert_eq!(ptr,[0,4,6]);
-            assert_eq!(subj,[1,10,3,12,8,17]);
+            assert_eq!(subj,[0,9,2,11,7,16]);
             assert_eq!(cof,[1.1,1.1,1.3,1.3,3.2,3.2]);
         }
         {
@@ -2581,7 +2591,7 @@ mod test {
             assert!(sp.is_some());
             assert_eq!(sp.unwrap(),[0,2]);
             assert_eq!(ptr,[0,5,9]);
-            assert_eq!(subj,[19,25,20,21,26,22,23,27,24]);
+            assert_eq!(subj,[18,24,19,20,25,21,22,26,23]);
             assert_eq!(cof,[1.1,1.1,1.2,1.3,1.3,3.1,3.2,3.2,3.3]);
         }
         {
@@ -2603,7 +2613,7 @@ mod test {
             assert!(sp.is_some());
             assert_eq!(sp.unwrap(),[0,2]);
             assert_eq!(ptr,[0,4,6]);
-            assert_eq!(subj,[19,25,21,26,23,27]);
+            assert_eq!(subj,[18,24,20,25,22,26]);
             assert_eq!(cof,[1.1,1.1,1.3,1.3,3.2,3.2]);
         }
     }
@@ -2635,7 +2645,7 @@ mod test {
             assert_eq!(shape,[3,3]);
             assert!(sp.is_none());
             assert_eq!(ptr,[0,2,4,6,8,10,12,14,16,18]);
-            assert_eq!(subj,[1,10,2,11,3,12,4,13,5,14,6,15,7,16,8,17,9,18]);
+            assert_eq!(subj,[0,9,1,10,2,11,3,12,4,13,5,14,6,15,7,16,8,17]);
             assert_eq!(cof,[1.1,1.1,1.2,1.2,1.3,1.3,2.1,2.1,2.2,2.2,2.3,2.3,3.1,3.1,3.2,3.2,3.3,3.3]);
         }
         {
@@ -2652,7 +2662,7 @@ mod test {
             assert!(sp.is_some());
             assert_eq!(sp.unwrap(),[0,2,7]);
             assert_eq!(ptr,[0,2,4,6]);
-            assert_eq!(subj,[1,10,3,12,8,17]);
+            assert_eq!(subj,[0,9,2,11,7,16]);
             assert_eq!(cof,[1.1,1.1,1.3,1.3,3.2,3.2]);
         }
         {
@@ -2669,7 +2679,7 @@ mod test {
             assert!(sp.is_some());
             assert_eq!(sp.unwrap(),[0,1,2,6,7,8]);
             assert_eq!(ptr,[0,2,3,5,6,8,9]);
-            assert_eq!(subj,[19,25,20,21,26,22,23,27,24]);
+            assert_eq!(subj,[18,24,19,20,25,21,22,26,23]);
             assert_eq!(cof,[1.1,1.1,1.2,1.3,1.3,3.1,3.2,3.2,3.3]);
         }
         {
@@ -2686,7 +2696,7 @@ mod test {
             assert!(sp.is_some());
             assert_eq!(sp.unwrap(),[0,2,7]);
             assert_eq!(ptr,[0,2,4,6]);
-            assert_eq!(subj,[19,25,21,26,23,27]);
+            assert_eq!(subj,[18,24,20,25,22,26]);
             assert_eq!(cof,[1.1,1.1,1.3,1.3,3.2,3.2]);
         }
     }
@@ -2713,7 +2723,7 @@ mod test {
             assert_eq!(shape,&[5,5]);
             assert_eq!(sp.unwrap(),&[5,11]);
             assert_eq!(ptr,&[0,1,2]);
-            assert_eq!(subj,&[127,129]);
+            assert_eq!(subj,&[126,128]);
         }
 
         println!("---------------------------------");
@@ -2731,7 +2741,7 @@ mod test {
             assert_eq!(shape,&[5,5]);
             assert_eq!(sp.unwrap(),&[5usize,10,11,15,16,17,20,21,22,23]);
             assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10]);
-            assert_eq!(subj,&[27,53,58,79,84,89,105,110,115,120]);
+            assert_eq!(subj,&[26,52,57,78,83,88,104,109,114,119]);
         }
         println!("---------------------------------");
         {
@@ -2753,7 +2763,7 @@ mod test {
             assert_eq!(shape,&[5,5]);
             assert_eq!(sp.unwrap(),&[0,1,2,3,5,6,7,10,11,15]);
             assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10]);
-            assert_eq!(subj,&[105,110,115,120, 79,84,89, 53,58, 27]);
+            assert_eq!(subj,&[104,109,114,119, 78,83,88, 52,57, 26]);
         }
     }
 
@@ -2787,7 +2797,7 @@ mod test {
             assert_eq!(ptr,&[0, 1,2,3, 4,5,6,  
                                 7,8,9, 10,11,12, 
                                 13,14,15, 16,17,18]);
-            assert_eq!(subj,&[15,14,13, 18,17,16, 9,8,7, 12,11,10, 3,2,1, 6,5,4 ]);
+            assert_eq!(subj,&[14,13,12, 17,16,15, 8,7,6, 11,10,9, 2,1,0, 5,4,3 ]);
         }
         {
             (&s).into_expr().flip(&[true,false,true]).eval(&mut rs,&mut ws,&mut xs).unwrap();
@@ -2795,7 +2805,7 @@ mod test {
             assert_eq!(shape,&[3,2,3]);
             assert_eq!(sp.unwrap(),&[3,7,9,10,14]);
             assert_eq!(ptr,&[0,1,2,3,4,5]);
-            assert_eq!(subj,&[23,20,22,21,19]);
+            assert_eq!(subj,&[22,19,21,20,18]);
         }
 
         {
@@ -2803,9 +2813,10 @@ mod test {
             let (shape,ptr,sp,subj,_cof) = rs.pop_expr();
             assert_eq!(shape,&[3,2,3]);
             assert_eq!(ptr,&[0,1,2,3,5,6,7, 8,10,11,13,15,16, 17,18,20,21,22,23 ]);
-            assert_eq!(subj,&[15,14,13, 18,23,17,16,
-                              9,8,20,7,12,22,11,21,10,
-                              3,2,1,19,6,5,4 ]);
+
+            assert_eq!(subj,&[14,13,12, 17,22,16,15,
+                              8,7,19,6,11,21,10,20,9,
+                              2,1,0,18,5,4,3 ]);
         }
 
     }

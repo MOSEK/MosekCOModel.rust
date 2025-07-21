@@ -514,8 +514,9 @@ impl<F,E,T0,T1,I0,I1> ExprGenerator2Ex<F,E,T0,T1,I0,I1> for (T0,T1)
 #[cfg(test)]
 mod test {
     use crate::*;
-    use mosekcomodel_mosek::Model;
     use std::collections::HashMap;
+
+    type Model = ModelAPI<crate::dummy::Backend>;
 
     use super::*;
     #[test]
@@ -537,7 +538,7 @@ mod test {
             assert_eq!(shape, &[1,5]);
             assert!(sp.is_none());
             assert_eq!(ptr,&[0,1,2,3,4,5]);
-            assert_eq!(subj,&[1,7,13,19,25]);
+            assert_eq!(subj,&[0,6,12,18,24]);
         }
 
         {
@@ -558,7 +559,7 @@ mod test {
             assert!(sp.is_some());
             assert_eq!(sp.unwrap(),&[0, 5,6, 10,11,12, 15,16,17,18, 20,21,22,23,24]);
             assert_eq!(ptr,&[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]);
-            assert_eq!(subj,&[1, 6,7, 11,12,13, 16,17,18,19, 21,22,23,24,25]);
+            assert_eq!(subj,&[0, 5,6, 10,11,12, 15,16,17,18, 20,21,22,23,24]);
         }
     }
 
@@ -582,11 +583,11 @@ mod test {
             assert_eq!(shape, &[5,5]);
             assert!(sp.is_none());
             assert_eq!(ptr,&[0,1,3,5,7,9, 11,12,14,16,18, 20,22,23,25,27, 29,31,33,34,36, 38,40,42,44,45 ]);
-            assert_eq!(subj,&[ 1,     2,6,    3,11,  4,16,  5,21, 
-                               2,6,   7,      8,12,  9,17, 10,22,
-                               3,11,  8,12,  13,    14,18, 15,23,
-                               4,16,  9,17,  14,18, 19,    20,24,
-                               5,21, 10,22,  15,23, 20,24, 25 ]);
+            assert_eq!(subj,&[ 0,     1,5,    2,10,  3,15,  4,20, 
+                               1,5,   6,      7,11,  8,16,  9,21,
+                               2,10,  7,11,  12,    13,17, 14,22,
+                               3,15,  8,16,  13,17, 18,    19,23,
+                               4,20,  9,21,  14,22, 19,23, 24 ]);
             //  1   2   3   4   5 
             //  6   7   8   9  10 
             // 11  12  13  14  15
@@ -612,7 +613,7 @@ mod test {
             assert_eq!(shape, &[5]);
             assert!(sp.is_none());
             assert_eq!(ptr,&[0,1,2,3,4,5 ]);
-            assert_eq!(subj,&[ 6,7,8,9,10 ])
+            assert_eq!(subj,&[ 5,6,7,8,9 ])
         }
     }
     
@@ -640,10 +641,10 @@ mod test {
             assert_eq!(shape, &[4,3]);
             assert!(sp.is_none());
             assert_eq!(ptr,&[0,2,4,6,8,10,12,14,16,18,20,22,24 ]);
-            assert_eq!(subj,&[ 11,2,12,2,13,2,
-                               11,3,12,3,13,3,
-                               11,4,12,4,13,4,
-                               11,5,12,5,13,5 ]);
+            assert_eq!(subj,&[ 10,1,11,1,12,1,
+                               10,2,11,2,12,2,
+                               10,3,11,3,12,3,
+                               10,4,11,4,12,4 ]);
         }
     }
 }

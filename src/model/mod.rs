@@ -487,6 +487,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// corresponding expression element to be fixed to 0.0. So, for example in
     ///  ```rust
     ///  use mosekcomodel::*;
+    ///  use mosekcomodel::dummy::Model; 
     ///  let mut m = Model::new(None);
     ///  let x = m.variable(None, unbounded().with_shape(&[3]));
     ///  let c1 = m.constraint(None, &x,greater_than(vec![1.0,1.0]).with_shape_and_sparsity(&[3],&[[0],[2]]));
@@ -604,6 +605,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// can be implemented as:
     /// ```rust
     /// use mosekcomodel::*;
+    /// use mosekcomodel::dummy::Model; 
     /// let mut model = Model::new(None);
     /// let x = model.variable(Some("x"), 5);
     /// let y = model.variable(Some("y"), 3);
@@ -626,6 +628,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     //  $$
     /// ```rust
     /// use mosekcomodel::*;
+    /// use mosekcomodel::dummy::Model; 
     /// let mut model = Model::new(None);
     /// let a = vec![1.0,2.0,3.0,4.0,5.0];
     /// let x = model.variable(Some("x"), 5);
