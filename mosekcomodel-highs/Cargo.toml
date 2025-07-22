@@ -3,6 +3,14 @@ name = "mosekcomodel_highs"
 version = "0.4.0-beta.0"
 edition = "2024"
 
+description = "HIGHS backend for mosekcomodel"
+authors = [ "Ulf Worsøe <ulf.worsoe@mosek.com>" ]
+keywords = ["highs","optimization","linear_programming"]
+categories = ["mathematics","science"]
+license = "MIT"
+repository = "https://github.com/MOSEK/MosekCOModel.rust"
+readme = "README.md"
+
 [dependencies]
 highs = "1.8.0"
 itertools = "0.14.0"
