@@ -1,12 +1,17 @@
 //!
 //! # MosekModel library
 //!
-//! MosekModel is a crate for setting up conic optimization models to be solved with
-//! [MOSEK](https://mosek.com) via [mosek.rust](https://crates.io/crates/mosek). The
-//! interface currently supports 
-//! - Linear and conic variables and constraints
-//! - Integer variables
-//! - Disjunctive constraints
+//! MosekModel is a crate for setting up conic optimization models. The crate does not directly
+//! link to a solver - these links are implemented in separate crates, currently:
+//! - `mosekcomodel_mosek` a backend for [MOSEK](https://mosek.com) via [mosek.rust](https://crates.io/crates/mosek), supporting
+//!     - Linear and conic variables and constraints
+//!     - Integer variables
+//!     - Disjunctive constraints
+//! - `mosekcomodel_highs` a backend for [HIGHS](https://highs.dev/), supporting
+//!     - Linear constraints
+//!     - Integer Variables
+//! The crate defines a dummy backend that allows inputting data, but cannot solve, write or do
+//! anything useful with it.
 //!
 //! The [Model] object encapsulates a model of the form
 //! $$
@@ -174,6 +179,100 @@
 //! # Note
 //! Please note that the package is still somewhat exprimental.
 //!
+//! # Example: `lo1`
+//!
+//! Simple linear example:
+//!
+//! ```rust
+//! // Importing everything from mosekcomodel provides all basic functionality.
+//! use mosekcomodel::*;
+//! use mosekcomodel::dummy::Model;
+//!
+//! let a0 = vec![ 3.0, 1.0, 2.0, 0.0 ];
+//! let a1 = vec![ 2.0, 1.0, 3.0, 1.0 ];
+//! let a2 = vec![ 0.0, 2.0, 0.0, 3.0 ];
+//! let c  = vec![ 3.0, 1.0, 5.0, 1.0 ];
+//!
+//! // Create a model with the name 'lo1'
+//! let mut m = Model::new(Some("lo1"));
+//! // Redirect log output from the solver to stdout for debugging.
+//! // if uncommented.
+//! m.set_log_handler(|msg| print!("{}",msg));
+//! // Create variable 'x' of length 4
+//! let x = m.variable(Some("x"), greater_than(vec![0.0,0.0,0.0,0.0]));
+//!
+//! // Create constraints
+//! _ = m.constraint(None,       x.index(1),           less_than(10.0));
+//! _ = m.constraint(Some("c1"), x.dot(a0.as_slice()), equal_to(30.0));
+//! _ = m.constraint(Some("c2"), x.dot(a1.as_slice()), greater_than(15.0));
+//! _ = m.constraint(Some("c3"), x.dot(a2.as_slice()), less_than(25.0));
+//!
+//! // Set the objective function to (c^t * x)
+//! m.objective(Some("obj"), Sense::Maximize, x.dot(c.as_slice()));
+//!
+//! ```
+//!
+//! # Example: `portfolio_1_basic`
+//! 
+//! Example using second order cones to model risk in a basic portfolio model.
+//!
+//! ```rust
+//! use mosekcomodel::*;
+//! use mosekcomodel::dummy::Model;
+//! 
+//! // Computes the optimal portfolio for a given risk
+//! //
+//! // # Arguments
+//! // * `n`  Number of assets
+//! // * `mu` An n dimmensional vector of expected returns
+//! // * `gt` A matrix with n columns so (GT')*GT  = covariance matrix
+//! // * `x0` Initial holdings
+//! // * `w`  Initial cash holding
+//! // * `gamma` Maximum risk (=std. dev) accepted
+//! fn basic_markowitz( n : usize,
+//!                     mu : &[f64],
+//!                     gt : &NDArray<2>,
+//!                     x0 : &[f64],
+//!                     w  : f64,
+//!                     gamma : f64) -> Model {
+//!     let mut model = Model::new(Some("Basic Markowitz"));
+//!     // Redirect log output from the solver to stdout for debugging.
+//!     // if uncommented.
+//!     model.set_log_handler(|msg| print!("{}",msg));
+//! 
+//!     // Defines the variables (holdings). Shortselling is not allowed.
+//!     let x = model.variable(Some("x"), greater_than(vec![0.0;n]));
+//! 
+//!     //  Maximize expected return
+//!     model.objective(Some("obj"), Sense::Maximize, x.dot(mu));
+//! 
+//!     // The amount invested  must be identical to intial wealth
+//!     model.constraint(Some("budget"), x.sum(), equal_to(w+x0.iter().sum::<f64>()));
+//! 
+//!     // Imposes a bound on the risk
+//!     model.constraint(Some("risk"), 
+//!                      vstack![Expr::from(gamma).reshape(&[1]), 
+//!                              gt.mul(&x)], in_quadratic_cone());
+//!     model
+//! }
+//! 
+//! const N : usize   = 8;
+//! const W : f64     = 59.0;
+//! let mu            = [0.07197349, 0.15518171, 0.17535435, 0.0898094 , 0.42895777, 0.39291844, 0.32170722, 0.18378628];
+//! let x0            = [8.0, 5.0, 3.0, 5.0, 2.0, 9.0, 3.0, 6.0];
+//! let gamma         = 36.0;
+//! let GT            = matrix::dense([N,N],vec![
+//!     0.30758, 0.12146, 0.11341, 0.11327, 0.17625, 0.11973, 0.10435, 0.10638,
+//!     0.     , 0.25042, 0.09946, 0.09164, 0.06692, 0.08706, 0.09173, 0.08506,
+//!     0.     , 0.     , 0.19914, 0.05867, 0.06453, 0.07367, 0.06468, 0.01914,
+//!     0.     , 0.     , 0.     , 0.20876, 0.04933, 0.03651, 0.09381, 0.07742,
+//!     0.     , 0.     , 0.     , 0.     , 0.36096, 0.12574, 0.10157, 0.0571 ,
+//!     0.     , 0.     , 0.     , 0.     , 0.     , 0.21552, 0.05663, 0.06187,
+//!     0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.22514, 0.03327,
+//!     0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.2202 ]);
+//! 
+//! _ = basic_markowitz( N, &mu, &GT, &x0, W, gamma);
+//! ```
 #![doc = include_str!("../js/mathjax.tag")]
 
 //extern crate mosek;
