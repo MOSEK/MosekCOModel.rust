@@ -199,7 +199,7 @@ enum ConAtom {
 /// // Create a scalar constraint
 /// _ = model.constraint(Some("C1"), x.add(y.index([0,0])), equal_to(5.0));
 /// ```
-#[doc = include_str!("../../js/mathjax.tag")]
+/// <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
 pub struct MosekModel {
     /// The MOSEK task
     task : mosek::TaskCB,
