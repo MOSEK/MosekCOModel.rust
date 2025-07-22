@@ -69,12 +69,13 @@ rotated quadratic cone of size 3 defined as
     K₃ = { z₁,z₂,z₃ : 2 z1 z₂ ≥ z₃²          }
 ```
 
-This is the included model `cqo1.rs`:
+This is the included model `cqo1.rs` included under `mosekcomodel-mosek/examples`:
 
 ```rust
 extern crate mosekcomodel;
 use mosekcomodel::*;
 use mosekcomodel::expr::*;
+use mosekcomodel_mosek::Model;
 
 fn main() {
     let mut m = Model::new(Some("cqo1"));
