@@ -125,7 +125,7 @@
 //!   println!("Expected return: {:.4e} Std. deviation: {:.4e}", expret, gamma);
 //! }
 //! ```
-#![doc = include_str!("../../js/mathjax.tag")]
+//! <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
 
 use std::ops::ControlFlow;
 use std::path::Path;
