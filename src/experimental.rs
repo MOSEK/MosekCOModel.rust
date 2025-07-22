@@ -29,6 +29,7 @@ use crate::*;
 /// ```
 /// use mosekcomodel::*;
 /// use mosekcomodel::experimental::*;
+/// use mosekcomodel::dummy::Model;
 /// let mut m = Model::new(None);
 /// let x = m.variable(None,unbounded());
 /// let y = m.variable(None,unbounded());
@@ -201,6 +202,7 @@ pub struct GeneratorExpr<const N : usize,F,R>
 /// ```
 /// use mosekcomodel::*;
 /// use mosekcomodel::experimental::*;
+/// use mosekcomodel::dummy::Model;
 ///
 /// let mut m = Model::new(None);
 /// let x = m.variable(None, &[5,5]);
@@ -373,6 +375,7 @@ pub trait ExprGenerator1Ex<F,E,T,I>
     /// ```
     /// use mosekcomodel::*;
     /// use mosekcomodel::experimental::*;
+    /// use mosekcomodel::dummy::Model;
     ///
     /// let mut m = Model::new(None);
     /// let x = m.variable(None,unbounded().with_shape(&[5]));
@@ -477,6 +480,7 @@ pub trait ExprGenerator2Ex<F,E,T0,T1,I0,I1>
     /// ```
     /// use mosekcomodel::*;
     /// use mosekcomodel::experimental::*;
+    /// use mosekcomodel::dummy::Model;
     ///
     /// let mut m = Model::new(None);
     /// let x = m.variable(None,unbounded().with_shape(&[5,5]));
@@ -516,7 +520,7 @@ mod test {
     use crate::*;
     use std::collections::HashMap;
 
-    type Model = ModelAPI<crate::dummy::Backend>;
+    type Model = crate::dummy::Model;
 
     use super::*;
     #[test]

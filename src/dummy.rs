@@ -1,5 +1,5 @@
 use crate::*;
-use crate::model::{ModelWithLogCallback,ModelWithIntSolutionCallback,VectorConeModelTrait,PSDModelTrait};
+use crate::model::{DJCDomainTrait, DJCModelTrait, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, VectorConeModelTrait};
 use crate::domain::*;
 use crate::utils::iter::{ChunksByIterExt, PermuteByEx, PermuteByMutEx};
 use std::f64;
@@ -30,7 +30,7 @@ impl Item {
 }
 
 #[derive(Clone)]
-enum ConeType {
+pub enum ConeType {
     QuadraticCone,
     RoteatedQuadraticCone,
     SVecPSDCone,
@@ -38,6 +38,11 @@ enum ConeType {
     PowerCone(Vec<f64>),
     ExponentialCone,
     PSD,
+
+    Zero,
+    Free,
+    NonNegative,
+    NonPositive,
 }
 
 #[derive(Clone,Copy)]
@@ -177,7 +182,12 @@ impl BaseModelTrait for Backend {
     {
         let (dt,b,sp,shape,_is_integer) = dom.dissolve();
 
-        assert_eq!(b.len(),ptr.len()-1); 
+        if let Some(sp) = &sp {
+            assert_eq!(b.len(),sp.len()); 
+        }
+        else {
+            assert_eq!(b.len(),ptr.len()-1); 
+        }
         let nrow = b.len();
 
         let a_row0 = self.a_ptr.len();
@@ -248,7 +258,7 @@ impl BaseModelTrait for Backend {
         self.a_subj.extend_from_slice(subj);
         self.a_cof.extend_from_slice(cof);
         self.con_elt.reserve(con_row0+n);
-        for (&lb,&ub) in (bl.iter().zip(bu.iter())) {
+        for (&lb,&ub) in bl.iter().zip(bu.iter()) {
             self.con_elt.push(Element::Linear { lb, ub });
         }
 
@@ -511,5 +521,41 @@ impl PSDModelTrait for Backend {
 
     fn psd_constraint<const N : usize>(& mut self, name : Option<&str>, dom : PSDDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String> {
         unimplemented!();
+    }
+}
+
+
+impl<const N : usize> DJCDomainTrait<Backend> for LinearDomain<N> {
+    fn extract(&self) -> <Backend as DJCModelTrait>::DomainData {
+        let (dt,ofs,shape,sparsity,_) = LinearDomain::extract(self.clone());
+        let ct = match dt {
+            LinearDomainType::Zero        => ConeType::Zero,
+            LinearDomainType::Free        => ConeType::Free,
+            LinearDomainType::NonNegative => ConeType::NonNegative,
+            LinearDomainType::NonPositive => ConeType::NonPositive,
+        };
+
+        let ofs = if let Some(sp) = sparsity {
+            let mut res = vec![0.0; shape.iter().product()];
+            res.permute_by_mut(sp.as_slice()).zip(ofs.iter()).for_each(|(t,&s)| *t = s);
+            res
+        }
+        else {
+            ofs
+        };
+
+        (ct,ofs,shape.to_vec(),if N == 0 { 0 } else { N-1 })
+    }
+}
+
+impl DJCModelTrait for Backend {
+    type DomainData = (ConeType,Vec<f64>,Vec<usize>,usize); // conetype,offset,shape,conedim
+    fn disjunction(& mut self, 
+                   name : Option<&str>, 
+                   exprs     : &[(&[usize],&[usize],&[usize],&[f64])], 
+                   domains   : &[Box<dyn model::DJCDomainTrait<Self>>],
+                   term_size : &[usize]) -> Result<model::Disjunction,String> {
+        println!("TODO! Implement disjunction for dummy");
+        Ok(model::Disjunction::new(0))
     }
 }
