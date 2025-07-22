@@ -13,7 +13,7 @@ categories = ["mathematics","science"]
 [dependencies]
 mosek = "~11.0.0"
 itertools = "0.14"
-mosekcomodel = { version="0.3.0", path=".." }
+mosekcomodel = { version="0.4.0", path=".." }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = [ "html_reports" ] }
