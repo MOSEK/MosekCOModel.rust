@@ -3,6 +3,7 @@ extern crate itertools;
 
 use mosekcomodel::*;
 use mosekcomodel::matrix;
+use mosekcomodel_mosek::Model;
 use itertools::izip;
 
 // Structure defining an ellipsoid as
