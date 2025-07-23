@@ -1,3 +1,6 @@
+//! This module implements a dummy backend that allows inputting data, but has no support for
+//! solving or writing data.
+//!
 use crate::*;
 use crate::model::{DJCDomainTrait, DJCModelTrait, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, VectorConeModelTrait};
 use crate::domain::*;
@@ -70,6 +73,12 @@ pub struct Backend {
     con_a_row     : Vec<usize>, // index into a_ptr
     cons          : Vec<Item>,
 
+    djc_a_row     : Vec<usize>, // index into a_ptr 
+    djc_dom       : Vec<ConeType>,
+    djc_clause_ptr : Vec<usize>, 
+    djc_term_ptr : Vec<usize>,
+
+
     sense_max     : bool,
     c_subj        : Vec<usize>,
     c_cof         : Vec<f64>,
@@ -79,6 +88,8 @@ impl BaseModelTrait for Backend {
     fn new(name : Option<&str>) -> Self {
         Backend{
             name         : name.map(|v| v.to_string()),
+            djc_clause_ptr : vec![1usize],
+            djc_term_ptr : vec![1usize],
             .. Default::default()
         }
     }
@@ -555,7 +566,13 @@ impl DJCModelTrait for Backend {
                    exprs     : &[(&[usize],&[usize],&[usize],&[f64])], 
                    domains   : &[Box<dyn model::DJCDomainTrait<Self>>],
                    term_size : &[usize]) -> Result<model::Disjunction,String> {
+        let djci = self.djc_term_ptr.len()-1;
+        assert_eq!(exprs.len(),domains.len());
+        let nclause 
+
+
+
         println!("TODO! Implement disjunction for dummy");
-        Ok(model::Disjunction::new(0))
+        Ok(model::Disjunction::new(djci))
     }
 }
