@@ -4,11 +4,11 @@
 use crate::*;
 use crate::model::{DJCDomainTrait, DJCModelTrait, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, VectorConeModelTrait};
 use crate::domain::*;
-use crate::utils::iter::{ChunksByIterExt, PermuteByEx, PermuteByMutEx};
+use crate::utils::iter::{ChunksByIterExt, PermuteByMutEx};
 use std::f64;
 use std::ops::ControlFlow;
 use std::path::Path;
-use itertools::{iproduct, izip, Either};
+use itertools::{iproduct, izip};
 use model::ModelWithControlCallback;
 
 pub type Model = ModelAPI<Backend>;
@@ -54,7 +54,8 @@ enum Element {
     Conic{coneidx:usize,offset:usize,b:f64},
 }
 
-/// Simple model object.
+/// Simple model object that supports input of linear, conic and disjunctive constraints. It only
+/// stores data, it does not support solving or writing problems.
 #[derive(Default)]
 pub struct Backend {
     name : Option<String>,
@@ -73,10 +74,11 @@ pub struct Backend {
     con_a_row     : Vec<usize>, // index into a_ptr
     cons          : Vec<Item>,
 
-    djc_a_row     : Vec<usize>, // index into a_ptr 
-    djc_dom       : Vec<ConeType>,
-    djc_clause_ptr : Vec<usize>, 
-    djc_term_ptr : Vec<usize>,
+    djc_rows      : Vec<(usize,f64)>, // index into djc_clause_ptr, right-hand-side
+    djc_block     : Vec<(ConeType,usize,usize)>,// conetype, first row, num rows
+    djc_clause_ptr : Vec<usize>,  // index into djc_dom, djc_a_row
+    djc_term_ptr  : Vec<usize>, // index into djc_clause_ptr
+    djc_ptr       : Vec<usize>,
 
 
     sense_max     : bool,
@@ -88,8 +90,9 @@ impl BaseModelTrait for Backend {
     fn new(name : Option<&str>) -> Self {
         Backend{
             name         : name.map(|v| v.to_string()),
-            djc_clause_ptr : vec![1usize],
-            djc_term_ptr : vec![1usize],
+            djc_clause_ptr : vec![0],
+            djc_term_ptr : vec![0],
+            djc_ptr : vec![0],
             .. Default::default()
         }
     }
@@ -565,14 +568,46 @@ impl DJCModelTrait for Backend {
                    name : Option<&str>, 
                    exprs     : &[(&[usize],&[usize],&[usize],&[f64])], 
                    domains   : &[Box<dyn model::DJCDomainTrait<Self>>],
-                   term_size : &[usize]) -> Result<model::Disjunction,String> {
+                   term_size : &[usize]) -> Result<model::Disjunction,String> {        
         let djci = self.djc_term_ptr.len()-1;
+        let first_a_row = self.a_ptr.len()-1;
+
         assert_eq!(exprs.len(),domains.len());
-        let nclause 
 
+        let mut nblocks = Vec::new();
+        for ((_,ptr,subj,cof),dom) in exprs.iter().zip(domains.iter()) {
+            let ptr0 = self.a_ptr.len();
+            for (p,n) in ptr.iter().zip(ptr[1..].iter()).scan(self.a_subj.len(),|v, (p0,p1)| { let r = (*v,p1-p0); *v += p1-p0; Some(r) }) {
+                self.a_ptr.push([p,n]);
+            }
+            self.a_subj.extend_from_slice(subj);
+            self.a_cof.extend_from_slice(cof);
 
+            let (ct,offset,shape,conedim) = dom.extract();
+            let n = ptr.len()-1;
 
-        println!("TODO! Implement disjunction for dummy");
-        Ok(model::Disjunction::new(djci))
+            let (d0,d1,d2) = (shape[..conedim].iter().product(),shape[conedim],shape[conedim+1..].iter().product());
+            
+            let djc_row0 = self.djc_rows.len();
+            for ((i0,i2,i1),b) in iproduct!(0..d0,0..d2,0..d1).zip(offset.iter()) {
+                self.djc_rows.push((ptr0 + i0*d1*d2+i1*d2+i2,*b));
+            }
+
+            for i in (0..n).step_by(d1) {
+                self.djc_block.push((ct.clone(),djc_row0+i,d1));
+            }
+            nblocks.push(d0*d2);
+        }
+            
+        let mut term_ptr0 = 0;
+        for (p0,p1) in term_size.iter().scan(0usize,|c,s| { let r = (*c,*c+s); *c += s; Some(r) }) {
+            let nb : usize = nblocks[p0..p1].iter().sum();
+            term_ptr0 += nb;
+            self.djc_term_ptr.push(term_ptr0);
+        }
+
+        self.djc_ptr.push(self.djc_term_ptr.len()-1);
+
+        Ok(model::Disjunction::new(djci as i64))
     }
 }
