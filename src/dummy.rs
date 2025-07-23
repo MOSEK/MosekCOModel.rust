@@ -596,7 +596,7 @@ impl DJCModelTrait for Backend {
             for i in 0..n {
                 self.djc_block.push((ct.clone(),djc_row0+i,1));
             }
-            nblocks.push(offset.len())
+            nblocks.push(n)
         }
             
         let mut term_ptr0 = 0;
