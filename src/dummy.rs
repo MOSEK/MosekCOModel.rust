@@ -570,7 +570,7 @@ impl DJCModelTrait for Backend {
                    domains   : &[Box<dyn model::DJCDomainTrait<Self>>],
                    term_size : &[usize]) -> Result<model::Disjunction,String> {        
         let djci = self.djc_term_ptr.len()-1;
-        let first_a_row = self.a_ptr.len()-1;
+        let first_a_row = self.a_ptr.len();
 
         assert_eq!(exprs.len(),domains.len());
 
@@ -586,17 +586,17 @@ impl DJCModelTrait for Backend {
             let (ct,offset,shape,conedim) = dom.extract();
             let n = ptr.len()-1;
 
-            let (d0,d1,d2) = (shape[..conedim].iter().product(),shape[conedim],shape[conedim+1..].iter().product());
-            
+            // NOTE: since we currently only allow linear domains, the cone dimension doesn't
+            // matter.
             let djc_row0 = self.djc_rows.len();
-            for ((i0,i2,i1),b) in iproduct!(0..d0,0..d2,0..d1).zip(offset.iter()) {
-                self.djc_rows.push((ptr0 + i0*d1*d2+i1*d2+i2,*b));
+            for (i,b) in offset.iter().enumerate() {
+                self.djc_rows.push((ptr0 + i,*b));
             }
 
-            for i in (0..n).step_by(d1) {
-                self.djc_block.push((ct.clone(),djc_row0+i,d1));
+            for i in 0..n {
+                self.djc_block.push((ct.clone(),djc_row0+i,1));
             }
-            nblocks.push(d0*d2);
+            nblocks.push(offset.len())
         }
             
         let mut term_ptr0 = 0;
