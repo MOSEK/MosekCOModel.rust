@@ -6,9 +6,11 @@ use crate::model::{DJCDomainTrait, DJCModelTrait, ModelWithIntSolutionCallback, 
 use crate::domain::*;
 use crate::utils::iter::{ChunksByIterExt, PermuteByMutEx};
 use itertools::{iproduct, izip};
+use std::fs::File;
 use std::net::TcpStream;
+use std::path::Path;
 
-pub type Model = ModelAPI<Backend<T>>;
+pub type Model = ModelAPI<Backend<DefaultURIOpener>>;
 
 #[derive(Clone,Copy)]
 enum Item {
@@ -39,8 +41,13 @@ pub trait URIOpener {
     fn connect(&mut self, uri : String) -> std::io::Result<TcpStream>;
 }
 
-pub struct TCPOpener {
+#[derive(Default)]
+pub struct DefaultURIOpener {}
 
+impl URIOpener for DefaultURIOpener {
+    fn connect(&mut self, uri : String) -> std::io::Result<TcpStream> {
+        todo!("Implement connect")
+    }
 }
 
 /// Simple model object that supports input of linear, conic and disjunctive constraints. It only
@@ -57,8 +64,8 @@ pub struct Backend<T> where T : URIOpener {
     a_ptr         : Vec<[usize;2]>,
     a_subj        : Vec<usize>,
     a_cof         : Vec<f64>,
-    con_elt       : Vec<Element>,
 
+    con_elt       : Vec<Element>,
     con_a_row     : Vec<usize>, // index into a_ptr
     cons          : Vec<Item>,
 
@@ -71,11 +78,29 @@ pub struct Backend<T> where T : URIOpener {
     address       : String
 }
 
-impl BaseModelTrait for Backend {
+impl<T> BaseModelTrait for Backend<T> where T : URIOpener+Default {
     fn new(name : Option<&str>) -> Self {
         Backend{
-            name         : name.map(|v| v.to_string()),
-            .. Default::default()
+            name : name.map(|v| v.to_string()),
+            var_elt    : Default::default(), 
+            var_int    : Default::default(), 
+
+            vars       : Default::default(), 
+
+            a_ptr      : Default::default(), 
+            a_subj     : Default::default(), 
+            a_cof      : Default::default(), 
+
+            con_elt    : Default::default(), 
+            con_a_row  : Default::default(), 
+            cons       : Default::default(), 
+
+            sense_max  : Default::default(), 
+            c_subj     : Default::default(), 
+            c_cof      : Default::default(), 
+
+            url_opener : Default::default(), 
+            address    : Default::default(), 
         }
     }
     fn free_variable<const N : usize>
@@ -302,9 +327,21 @@ impl BaseModelTrait for Backend {
         Ok(())
     }
 
-    fn write_problem<P>(&self, _filename : P) -> Result<(),String> where P : AsRef<Path>
+    fn write_problem<P>(&self, filename : P) -> Result<(),String> where P : AsRef<Path>
     {
-        Err("Writing problem not supported".to_string())
+        let p = filename.as_ref();
+        if let Some(ext) = p.extension().and_then(|ext| ext.to_str()) {
+            if let std::cmp::Ordering::Equal = ext.cmp("ptf") {
+                let mut f = File::create_new(p).map_err(|e| e.to_string())?;
+                self.format_json_to(&mut f).map_err(|e| e.to_string())
+            }
+            else {
+                Err("Writing problem not supported".to_string())
+            }
+        }
+        else {
+            Err("Writing problem not supported".to_string())
+        }
     }
 
     fn solve(& mut self, _sol_bas : & mut Solution, _sol_itr : &mut Solution, _sol_itg : &mut Solution) -> Result<(),String>
@@ -324,8 +361,205 @@ impl BaseModelTrait for Backend {
     {
         Err("Parameters not supported".to_string())
     }
+
 }
 
+mod JSON {
+    pub struct QString<'a>(&'a str);
+    pub struct JSONStream<'a,T> where T : std::io::Write {
+        s : &'a mut T,
+        buf : [u8; 4096],
+        pos : usize
+    }
+    pub trait JSONWritable<T> where T : std::io::Write { fn write(self,s : &mut JSONStream<'_,T>) -> std::io::Result<()>; }
 
+    impl<T> std::io::Write for JSONStream<'_,T> where T : std::io::Write {
+        fn write(&mut self, data : &[u8]) -> std::io::Result<usize> {
+            let nleft = self.buf.len()-self.pos;
 
+            if nleft >= data.len() {
+                self.buf[self.pos..self.pos+data.len()].copy_from_slice(data);
+                return Ok(data.len())
+            }
+            
+            let mut datapos = 0;
+            if self.pos > 0 {
+                self.buf[self.pos..].copy_from_slice(&data[..nleft])
+            }
+            self.flush()?;
+            if self.buf.len()+nleft < data.len() {
+                self.s.write_all(&data[nleft..])?;
+            }
+            else {
+                self.buf[..data.len()-nleft].copy_from_slice(&data[nleft..]);
+            }
+           Ok(data.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.flush()
+        }
+
+    }
+
+    impl<'a,T> JSONStream<'a,T> where T : std::io::Write {
+        pub fn new(s : &'a mut T) -> JSONStream<'a,T> {
+            JSONStream{
+                s,
+                buf : [0u8;4096],
+                pos : 0
+            }
+        }
+        pub fn flush(&mut self) -> std::io::Result<()> {
+            if self.pos > 0 {
+                self.s.write_all(&self.buf[self.pos..])?;
+                self.pos = 0;
+            }
+            Ok(())
+        }
+
+        pub fn putc(&mut self, c : u8) -> std::io::Result<()> {
+            if self.pos == self.buf.len() { self.flush()?; }
+            self.buf[self.pos] = c;
+            self.pos += 1;
+            Ok(())
+        }
+
+        pub fn write<D>(&mut self, data : D) -> std::io::Result<()> where D : JSONWritable<T> {
+            data.write(self)
+        }
+
+        pub fn with_dict<F>(&mut self, f : F)  -> std::io::Result<()> where F : FnOnce(&mut Self) -> std::io::Result<()> {
+            self.putc(b'{')?;
+            f(self)?;
+            self.putc(b'}')
+        }
+
+    }
+
+    fn hex(b : u8) -> (u8,u8) {
+        let l = match b & 0xf {
+            b @ (0..=9) => b'0'+b,
+            b => b'a'+b-10
+        };
+        let u = match b >> 4 {
+            b @ (0..=9) => b'0'+b,
+            b => b'a'+b-10
+        };
+        (l,u)
+    }
+    impl<T> JSONWritable<T> for &str where T : std::io::Write {
+        fn write(self,s : &mut JSONStream<'_,T>) -> std::io::Result<()> {
+            s.putc(b'"')?;
+            for b in self.as_bytes().iter() {
+                match b {
+                    b'\\' => { s.putc(b'\\')?; s.putc(b'\\')?; },
+                    b'"'  => { s.putc(b'\\')?; s.putc(b'"')?; },
+                    b'\n' => { s.putc(b'\\')?; s.putc(b'n')?; },
+                    b'\t' => { s.putc(b'\t')?; },
+                    b'\r' => { s.putc(b'\\')?; s.putc(b'r')?; },
+                    b'\r' => { s.putc(b'\\')?; s.putc(b'r')?; },
+                    0..31 => { s.putc(b'\\')?; s.putc(b'x')?; let (l,u) = hex(*b); s.putc(l)?; s.putc(u)?; },
+                    _ => s.putc(*b)?
+                }
+            }
+            s.putc(b'"')?;
+            Ok(())
+        }
+    }
+
+    impl<T,D> JSONWritable<T> for &[D] where D : JSONWritable<T>+Copy, T : std::io::Write {
+        fn write(self,s : &mut JSONStream<T>) -> std::io::Result<()> {
+            s.putc(b'[')?;
+            let mut it = self.iter();
+            if let Some(v) = it.next() { (*v).write(s)?; }
+            while let Some(v) = it.next() {
+                s.putc(b',')?;
+                (*v).write(s)?;
+            }
+            s.putc(b']')?;
+            Ok(())
+        }
+    }
+
+    impl<T> JSONWritable<T> for &f64 where T : std::io::Write {
+        fn write(self,s : &mut JSONStream<'_,T>) -> std::io::Result<()> { std::io::Write::write_fmt(s,format_args!("{}",self)) }
+    }
+    impl<T> JSONWritable<T> for &usize where T : std::io::Write {
+        fn write(self,s : &mut JSONStream<'_,T>) -> std::io::Result<()> { std::io::Write::write_fmt(s,format_args!("{}",self)) }
+    }
+    impl<T> JSONWritable<T> for &i32 where T : std::io::Write {
+        fn write(self,s : &mut JSONStream<'_,T>) -> std::io::Result<()> { std::io::Write::write_fmt(s,format_args!("{}",self)) }
+    }
+
+    impl<T> JSONWritable<T> for f64 where T : std::io::Write {
+        fn write(self,s : &mut JSONStream<'_,T>) -> std::io::Result<()> { (&self).write(s) }
+    }
+    impl<T> JSONWritable<T> for usize where T : std::io::Write {
+        fn write(self,s : &mut JSONStream<'_,T>) -> std::io::Result<()> { (&self).write(s) }
+    }
+    impl<T> JSONWritable<T> for i32 where T : std::io::Write {
+        fn write(self,s : &mut JSONStream<'_,T>) -> std::io::Result<()> { (&self).write(s) }
+    }
+    impl<T,D> JSONWritable<T> for (&str,D) where D : JSONWritable<T>, T : std::io::Write {
+        fn write(self,s : &mut JSONStream<T>) -> std::io::Result<()> {
+            self.0.write(s)?;
+            s.putc(b':')?;
+            self.1.write(s)?;
+            Ok(())
+        }
+    }
+} 
+
+impl<T> Backend<T> where T : URIOpener {
+    /// JSON Task format writer.
+    ///
+    /// See https://docs.mosek.com/latest/capi/json-format.html
+    fn format_json_to<S>(&self, strm : &mut S) -> std::io::Result<()> 
+        where 
+            S : std::io::Write 
+    {
+        use JSON::*;
+        let mut s = JSON::JSONStream::new(strm);
+        s.putc(b'{')?;
+        s.write(("$schema","http://mosek.com/json/schema#"))?;
+        if let Some(name) = &self.name {
+            s.putc(b',')?;
+            s.write(("Task/name", name.as_str()))?;
+        }
+        s.putc(b',')?;
+        s.write("Task/info")?;
+//        s.putc(b':')?;
+//        {
+//            s.putc(b'{')?;
+//            s.write(&("numvar",self.vars.len()))?;
+//            s.putc(b',')?;
+//            s.write(&("numcon",self.con_elt.len()))?;
+//            //"Task/INFO":{"numvar":7,"numcon":1,"numcone":0,"numbarvar":0,"numanz":6,"numsymmat":0,"numafe":13,"numfnz":12,"numacc":4,"numdjc":0,"numdom":3,"mosekver":[10,0,0,3]},
+//            s.putc(b'}')?;
+//        }
+//        s.putc(b',')?;
+//       
+//        s.write(&"Task/data")?;
+//        s.putc(b':')?;
+//        s.putc(b'{')?;
+//        {
+//            s.write(&"var")?;
+//            s.putc(b':')?;
+//            s.putc(b'{')?;
+//            {
+//                s.write(&"bk")?;
+//                s.putc(b':')?;
+//            }
+//            s.putc(b'{')?;
+//
+//            s.write(("numcon",self.con_elt.len()))?;
+//        }
+//        s.putc(b'}')?;
+//
+        s.putc(b'}')?;
+        s.flush()?;
+
+        Ok(())
+    }
+}
 
