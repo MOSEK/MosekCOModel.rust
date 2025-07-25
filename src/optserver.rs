@@ -524,19 +524,19 @@ impl<T> Backend<T> where T : URIOpener {
         s.write(("$schema","http://mosek.com/json/schema#"))?;
         if let Some(name) = &self.name {
             s.putc(b',')?;
-            s.write(("Task/name", name.as_str()))?;
+            s.write(("Task/name", name.as_str()))?; 
         }
         s.putc(b',')?;
         s.write("Task/info")?;
-//        s.putc(b':')?;
-//        {
-//            s.putc(b'{')?;
-//            s.write(&("numvar",self.vars.len()))?;
-//            s.putc(b',')?;
-//            s.write(&("numcon",self.con_elt.len()))?;
-//            //"Task/INFO":{"numvar":7,"numcon":1,"numcone":0,"numbarvar":0,"numanz":6,"numsymmat":0,"numafe":13,"numfnz":12,"numacc":4,"numdjc":0,"numdom":3,"mosekver":[10,0,0,3]},
-//            s.putc(b'}')?;
-//        }
+        s.putc(b':')?;
+        {
+            s.putc(b'{')?;
+            s.write(&("numvar",self.vars.len()))?;
+            s.putc(b',')?;
+            s.write(&("numcon",self.con_elt.len()))?;
+            //"Task/INFO":{"numvar":7,"numcon":1,"numcone":0,"numbarvar":0,"numanz":6,"numsymmat":0,"numafe":13,"numfnz":12,"numacc":4,"numdjc":0,"numdom":3,"mosekver":[10,0,0,3]},
+            s.putc(b'}')?;
+        }
 //        s.putc(b',')?;
 //       
 //        s.write(&"Task/data")?;
