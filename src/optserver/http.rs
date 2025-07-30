@@ -1,31 +1,12 @@
 //! A very basic http module, only implements just enough for simple communication with an
 //! optserver.
 //!
-//! # Usage
-//!
-//! ```
-//! fn send_and_receive(s & std::net::TcpStream) {
-//!     Request::get()_
-//!     
-//! }
-//! ```
 //!
 
-use std::net::TcpStream;
 use std::io::{Read, Write};
 
 /// HTTP 1.1 request. 
 ///
-/// # Example
-/// ```
-/// fn test(s : &mut TcpStream) {
-///   Request::get("/")
-///     .add_header("X-Mosek-Access","SECRET TOKEN")
-///     .submit(s)
-///     .
-/// }
-/// ```
-/// 
 ///
 #[derive(Clone)]
 pub struct Request {
@@ -333,40 +314,55 @@ impl<'a,T> Response<'a,T> where T : Read
 impl<'a,T> Read for Response<'a,T> where T : Read {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.chunked {
-            if self.eof { Ok(0) }
-            else if self.chunk_remains > 0 {
-                if self.pos == self.readbuf.len() {
-                    self.pos = 0;
-                    self.readbuf.resize(4096,0);
-                    let n = self.s.read(self.readbuf.as_mut_slice())?;
-                    self.readbuf.truncate(n);
+            if self.eof { return Ok(0); }
+            else if self.pos < self.readbuf.len() {
+                // do nothing
+            }
+            else if self.chunk_remains == 0 {
+                // read until CRLF
+                let mut sizebuf = [0u8;2];
+                let mut chunksize = 0usize;
+                loop {
+                    self.s.read_exact(&mut sizebuf[0..1])?;
+                    match sizebuf[0] {
+                        c @ b'0'..=b'9' => chunksize = (chunksize << 4) + (c-b'0') as usize,
+                        c @ b'a'..=b'f' => chunksize = (chunksize << 4) + (c-b'a'+10) as usize,
+                        c @ b'A'..=b'F' => chunksize = (chunksize << 4) + (c-b'A'+10) as usize,
+                        b'\r' => break,
+                        _ => return Err(std::io::Error::other("Invalid chunk header"))
+                    }
                 }
+                self.s.read_exact(&mut sizebuf[0..1])?; 
+                if sizebuf[0] != b'\n' { return Err(std::io::Error::other("Invalid chunk header")); }
 
-                let n = buf.len().min(self.readbuf.len() - self.pos).min(self.chunk_remains);
-                buf[..n].copy_from_slice(self.readbuf[self.pos..self.pos+n]);
-                self.pos += n;
+                if chunksize == 0 {
+                    self.s.read_exact(&mut sizebuf)?;
+                    if &sizebuf != b"\r\n" { return Err(std::io::Error::other("Invalid chunk header")); }
+                    self.eof = true;
+                }
+                self.chunk_remains = chunksize;
+            }
+
+            if self.pos == self.readbuf.len() {
+                // read into buffer
+                self.pos = 0;
+                self.readbuf.resize(4096,0);
+                let n = self.s.read(self.readbuf.as_mut_slice())?;
+                self.readbuf.truncate(n);
                 self.chunk_remains -= n;
-                Ok(n)
-            }
-            else {
-                while self.readbuf.len()-self.pos <= 2 {
-                    if self.pos+1 == self.readbuf.len() {
-                        self.readbuf[0] = self.readbuf[self.pos];
-                        self.pos = 1;
-                    }
-                    else {
-                        self.pos = 0;
-                    }
 
-                    self.readbuf.resize(4096,0);
-                        let n = self.s.read(&mut self.readbuf[self.pos..])?;
-                        self.readbuf.truncate(n+self.pos);
-                        
-                    }
+                // read trailing CRLF
+                if self.chunk_remains == 0 {
+                    let mut sizebuf = [0u8;2];
+                    self.s.read_exact(&mut sizebuf)?;
+                    if &sizebuf != b"\r\n" { return Err(std::io::Error::other("Invalid chunk header")); }
                 }
-            ...................
-
             }
+
+            let n = buf.len().min(self.readbuf.len()-self.pos);
+            buf[..n].copy_from_slice(&self.readbuf[self.pos..self.pos+n]);
+            self.pos += n;
+            Ok(n)
         }
         else {
             if self.pos == self.readbuf.len() {
@@ -469,19 +465,22 @@ mod test {
             assert_eq!(&buf[106..112],b"0064\r\n");
         }
         {
-            let mut buf = RWBuf::new(b"HTTP/1.1 200 Ok\r\nContent-Length: 10\r\nX-Mosek-Token: SECRET\r\n\r\nabcdefghi");
-            let resp = Request::post("/path/to/something")
+            let mut buf = RWBuf::new(b"HTTP/1.1 200 Ok\r\nContent-Length: 12\r\nX-Mosek-Token: SECRET\r\n\r\nabcdefghi\n\n");
+            let mut resp = Request::post("/path/to/something")
                 .content_length(12)
                 .add_header("Secret-Data", "SUPER SECRET")
                 .submit_data(&mut buf, b"MESSAGE BODY")
                 .unwrap();
-            for ((k,v),(kx,vx)) in resp.headers().zip([("Content-Length","10"),("X-Mosek-Token","SECRET")].iter()) {
+            for ((k,v),(kx,vx)) in resp.headers().zip([("Content-Length","12"),("X-Mosek-Token","SECRET")].iter()) {
                 assert_eq!(std::str::from_utf8(k).unwrap(),*kx);
                 assert_eq!(std::str::from_utf8(v).unwrap(),*vx);
             }
 
             let mut data = Vec::new();
-            resp.read()
+            let _= resp.read_to_end(&mut data).map_err(|e| e.to_string()).unwrap();
+            println!("data = '{}'",std::str::from_utf8(data.as_slice()).unwrap());
+            assert_eq!(data.as_slice(),b"abcdefghi\n\n");
+
         }
     }
 }
