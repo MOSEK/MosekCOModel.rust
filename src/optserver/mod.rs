@@ -6,7 +6,7 @@ use crate::model::{DJCDomainTrait, DJCModelTrait, ModelWithIntSolutionCallback, 
 use crate::domain::*;
 use crate::utils::iter::{ChunksByIterExt, PermuteByEx, PermuteByMutEx};
 use itertools::{iproduct, izip};
-use std::fs::File;
+use std::fs::{write, File};
 use std::net::TcpStream;
 use std::path::Path;
 
@@ -397,114 +397,54 @@ impl<T> Backend<T> where T : URIOpener {
         where 
             S : std::io::Write 
     {
-        use json::*;
-        let mut s = json::JSONStream::new(strm);
-        s.putc(b'{')?;
-        s.write(("$schema","http://mosek.com/json/schema#"))?;
-        if let Some(name) = &self.name {
-            s.putc(b',')?;
-            s.write(("Task/name", name.as_str()))?; 
-        }
-        s.putc(b',')?;
-        s.write("Task/info")?;
-        s.putc(b':')?;
-        {
-            s.putc(b'{')?;
-            s.write(("numvar",self.vars.len()))?;
-            s.putc(b',')?;
-            s.write(("numcon",self.con_elt.len()))?;
-            s.putc(b'}')?;
-        }
-        s.putc(b',')?;
-       
-        s.write("Task/data")?;
-        s.putc(b':')?;
-        s.putc(b'{')?;
-        {
-            s.write("var")?;
-            s.putc(b':')?;
-            s.putc(b'{')?;
-            {
-                s.write("bk")?;
-                s.putc(b':')?;
-                s.write_list(self.var_elt.iter().map(|e| bnd_to_bk(e.lb,e.ub)))?;
-                s.putc(b',')?;
-                s.write("bl")?;
-                s.putc(b':')?;
-                s.write_list(self.var_elt.iter().map(|e| e.lb))?;
-                s.putc(b',')?;
-                s.write("bu")?;
-                s.putc(b':')?;
-                s.write_list(self.var_elt.iter().map(|e| e.ub))?;
-                s.putc(b',')?;
-                s.write("type")?;
-                s.putc(b':')?;
-                s.write_list(self.var_int.iter().map(|&e| if e { "int" } else { "cont" }))?;
-            }
-            s.putc(b',')?;
-            s.write("con")?;
-            s.putc(b':')?;
-            s.putc(b'{')?;
-            {
-                s.write("bk")?;
-                s.putc(b':')?;
-                s.write_list(self.con_elt.iter().map(|e| bnd_to_bk(e.lb,e.ub)))?;
-                s.putc(b',')?;
-                s.write("bl")?;
-                s.putc(b':')?;
-                s.write_list(self.con_elt.iter().map(|e| e.lb))?;
-                s.putc(b',')?;
-                s.write("bu")?;
-                s.putc(b':')?;
-                s.write_list(self.con_elt.iter().map(|e| e.ub))?;
-            }
-            s.putc(b',')?;
-            s.write("objective")?;
-            s.putc(b':')?;
-            s.putc(b'{')?;
-            {
-                s.write(("sense", if self.sense_max { "max" } else { "min" }))?;
-                s.putc(b',')?;
-                s.write(("cfix",0.0f64))?;
-                s.putc(b',')?;
-                s.write("c")?;
-                s.putc(b':')?;
-                s.putc(b'{')?;
-                {
-                    s.write("subj")?;
-                    s.putc(b':')?;
-                    s.write(self.c_subj.as_slice())?;
-                    s.putc(b',')?;
-                    s.write("val")?;
-                    s.putc(b':')?;
-                    s.write(self.c_cof.as_slice())?;
-                }
-                s.putc(b'}')?;
-                s.putc(b',')?;
-                s.write("A")?;
-                s.putc(b':')?;
-                s.putc(b'{')?;
-                {
-                    s.write("subi")?;
-                    s.putc(b':')?;
-                    s.write_list(self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_subj[row[0]..row[0]+row[1]].iter()))?;
-                    s.putc(b',')?;
-                    s.write("subj")?;
-                    s.putc(b':')?;
-                    s.write_list(self.a_ptr.permute_by(self.con_a_row.as_slice()).enumerate().flat_map(|(i,row)| std::iter::repeat(i).take(row[1])))?;
-                    s.putc(b',')?;
-                    s.write("val")?;
-                    s.putc(b':')?;
-                    s.write_list(self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_cof[row[0]..row[0]+row[1]].iter()))?;
-                }
-                s.putc(b'}')?;
-            }
-            s.putc(b'}')?;
-        }
-        s.putc(b'}')?;
+        use json::JSON;
+        
+        let mut top = json::Dict::new();
+        top.append("$schema",JSON::String("http://mosek.com/json/schema#".to_string()));
 
-        s.putc(b'}')?;
-        s.flush()?;
+        if let Some(name) = &self.name {
+            top.append("Task/name", name.clone());
+        }
+
+        top.append(
+            "Task/info",
+            json::Dict::from(|taskinfo| {
+                taskinfo.append("numvar",self.vars.len() as i64);
+                taskinfo.append("numcon",self.con_elt.len() as i64);
+            }));
+            
+        top.append(
+            "Task/data",
+            json::Dict::from(|taskdata| {
+                taskdata.append("var",json::Dict::from(|d| {
+                    d.append("bk",  JSON::List(self.var_elt.iter().map(|e| bnd_to_bk(e.lb,e.ub).into()).collect()));
+                    d.append("bl",  JSON::List(self.var_elt.iter().map(|&e| JSON::Float(e.lb)).collect()));
+                    d.append("bu",  JSON::List(self.var_elt.iter().map(|&e| JSON::Float(e.ub)).collect()));
+                    d.append("type",JSON::List(self.var_int.iter().map(|&e| if e { "int".into() } else { "cont".into() }).collect()));
+                }));
+                taskdata.append("con",json::Dict::from(|d| {
+                    d.append("bk",  JSON::List(self.con_elt.iter().map(|e| bnd_to_bk(e.lb,e.ub).into()).collect()));
+                    d.append("bl",  JSON::List(self.con_elt.iter().map(|e| JSON::Float(e.lb)).collect()));
+                    d.append("bu",  JSON::List(self.con_elt.iter().map(|e| JSON::Float(e.ub)).collect()));
+                }));
+                taskdata.append(
+                    "objective",
+                    json::Dict::from(|d| {
+                        d.append("sense", if self.sense_max { "max" } else { "min" });
+                        d.append("cfix",0.0f64);
+                        d.append("c", json::Dict::from(|d2| {
+                            d2.append("subj",JSON::List(self.c_subj.iter().map(|&i| JSON::Int(i as i64)).collect()));
+                            d2.append("val", self.c_cof.as_slice());
+                    }));
+                }));
+                taskdata.append(
+                    "A", 
+                    json::Dict::from(|d| {
+                        d.append("subi",JSON::List(self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_subj[row[0]..row[0]+row[1]].iter()).map(|&i| JSON::Int(i as i64)).collect()));
+                        d.append("subj",JSON::List(self.a_ptr.permute_by(self.con_a_row.as_slice()).enumerate().flat_map(|(i,row)| std::iter::repeat(i).take(row[1])).map(|i| JSON::Int(i as i64)).collect()));
+                        d.append("val", JSON::List(self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_cof[row[0]..row[0]+row[1]].iter()).map(|&d| JSON::Float(d)).collect()));
+                }));
+        }));
 
         Ok(())
     }
