@@ -13,7 +13,7 @@ use std::path::Path;
 mod http;
 mod json;
 
-pub type Model = ModelAPI<Backend<DefaultURIOpener>>;
+pub type Model = ModelAPI<Backend>;
 
 #[derive(Clone,Copy)]
 enum Item {
@@ -37,25 +37,10 @@ struct Element {
     lb:f64,ub:f64
 }
 
-
-
-pub trait URIOpener {
-    fn connect(&mut self, uri : String) -> std::io::Result<TcpStream>;
-}
-
-#[derive(Default)]
-pub struct DefaultURIOpener {}
-
-impl URIOpener for DefaultURIOpener {
-    fn connect(&mut self, uri : String) -> std::io::Result<TcpStream> {
-        todo!("Implement connect")
-    }
-}
-
 /// Simple model object that supports input of linear, conic and disjunctive constraints. It only
 /// stores data, it does not support solving or writing problems.
 #[derive(Default)]
-pub struct Backend<T> where T : URIOpener {
+pub struct Backend {
     name : Option<String>,
 
     var_elt       : Vec<Element>, // Either lb,ub,int or index,coneidx,offset
@@ -78,11 +63,10 @@ pub struct Backend<T> where T : URIOpener {
     c_subj        : Vec<usize>,
     c_cof         : Vec<f64>,
 
-    url_opener    : T,
     address       : String
 }
 
-impl<T> BaseModelTrait for Backend<T> where T : URIOpener+Default {
+impl BaseModelTrait for Backend {
     fn new(name : Option<&str>) -> Self {
         Backend{
             name : name.map(|v| v.to_string()),
@@ -105,7 +89,6 @@ impl<T> BaseModelTrait for Backend<T> where T : URIOpener+Default {
             c_subj     : Default::default(), 
             c_cof      : Default::default(), 
 
-            url_opener : Default::default(), 
             address    : Default::default(), 
         }
     }
@@ -363,7 +346,15 @@ impl<T> BaseModelTrait for Backend<T> where T : URIOpener+Default {
 
     fn solve(& mut self, _sol_bas : & mut Solution, _sol_itr : &mut Solution, _sol_itg : &mut Solution) -> Result<(),String>
     {
-        unimplemented!("Dummy Backend does not implement solve")
+        use http::*;
+        let mut con = TcpStream::connect(self.address.as_str()).map_err(|e| e.to_string())?;
+
+
+        let resp = Request::post("/api/v1/sbumit+solve")
+            .add_header("Content-Type", "application/x-mosek-json")
+            .submit_with_writer(&mut con,|w| self.format_json_to(w).map_err(|e| e.to_string()));
+       
+        Ok(())
     }
 
     fn objective(&mut self, _name : Option<&str>, sense : Sense, subj : &[usize],cof : &[f64]) -> Result<(),String>
@@ -389,7 +380,7 @@ fn bnd_to_bk(lb : f64, ub : f64) -> &'static str {
         (true,true)   => if lb < ub { "ra" } else { "fx" }
     }
 }
-impl<T> Backend<T> where T : URIOpener {
+impl Backend {
     /// JSON Task format writer.
     ///
     /// See https://docs.mosek.com/latest/capi/json-format.html
@@ -399,21 +390,21 @@ impl<T> Backend<T> where T : URIOpener {
     {
         use json::JSON;
         
-        let mut top = json::Dict::new();
-        top.append("$schema",JSON::String("http://mosek.com/json/schema#".to_string()));
+        let mut doc = json::Dict::new();
+        doc.append("$schema",JSON::String("http://mosek.com/json/schema#".to_string()));
 
         if let Some(name) = &self.name {
-            top.append("Task/name", name.clone());
+            doc.append("Task/name", name.clone());
         }
 
-        top.append(
+        doc.append(
             "Task/info",
             json::Dict::from(|taskinfo| {
                 taskinfo.append("numvar",self.vars.len() as i64);
                 taskinfo.append("numcon",self.con_elt.len() as i64);
             }));
             
-        top.append(
+        doc.append(
             "Task/data",
             json::Dict::from(|taskdata| {
                 taskdata.append("var",json::Dict::from(|d| {
@@ -446,7 +437,7 @@ impl<T> Backend<T> where T : URIOpener {
                 }));
         }));
 
-        Ok(())
+        JSON::Dict(doc).write(strm)
     }
 }
 

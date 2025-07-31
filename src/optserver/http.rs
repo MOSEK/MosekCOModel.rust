@@ -110,6 +110,17 @@ impl<'a,T> MsgWriter<'a,T> where T : std::io::Write {
     }
 }
 
+impl<'a,T> Write for MsgWriter<'a,T> where T : Write {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.write(buf)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.flush()
+    }
+}
+
 
 impl Request {
     fn new(method : &str, path : &str) -> Request { 

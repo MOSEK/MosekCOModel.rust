@@ -99,19 +99,24 @@ impl JSON {
                 }
                 s.write_all(b"]")?;
             },
-            JSON::Dict(d)   => { 
+            JSON::Dict(d) => { 
                 s.write_all(b"{")?;
                 let mut it = d.0.iter();
                 if let Some((k,v)) = it.next() {
                     Self::write_str(s,k.as_str())?;
+                    s.write_all(b":")?;
+                    v.write(s)?;
+
                     for (k,v) in it {
                         s.write_all(b",")?;
                         Self::write_str(s,k.as_str())?;
+                        s.write_all(b":")?;
+                        v.write(s)?;
                     }
                 }
                 s.write_all(b"}")?;
             },
-            JSON::Null      => write!(s,"null")?
+            JSON::Null => write!(s,"null")?
         }
         Ok(())
     }
@@ -125,7 +130,7 @@ impl JSON {
                 let b1 = s.peek_expect()?;
                 let b2 = s.peek_expect()?;
 
-                if b1 == b'n' || b1 == b'f' {
+                if b1 == b'n' || b2 == b'f' {
                     if neg {
                         Ok(JSON::Float(f64::NEG_INFINITY))
                     }
@@ -149,7 +154,7 @@ impl JSON {
                     }
                 }
                 
-                let res = std::str::from_utf8(res.as_slice()).map_err(|e| std::io::Error::other("Invalid JSON numeric format"))?;
+                let res = std::str::from_utf8(res.as_slice()).map_err(|_| std::io::Error::other("Invalid JSON numeric format"))?;
                 if let Ok(v) = res.parse::<i64>()  {
                     Ok(JSON::Int(if neg { -v } else { v }))
                 }
@@ -237,7 +242,7 @@ impl JSON {
                                     }
                                 }
                             }
-                        } 
+                        }
                     }
 
                     break Ok(JSON::List(res));
