@@ -333,7 +333,7 @@ impl BaseModelTrait for Backend {
         if let Some(ext) = p.extension().and_then(|ext| ext.to_str()) {
             match ext {
                 "json"|"jtask" => {
-                    let mut f = File::create_new(p).map_err(|e| e.to_string())?;
+                    let mut f = File::create(p).map_err(|e| e.to_string())?;
                     self.format_json_to(&mut f).map_err(|e| e.to_string())
                 },
                 _ => Err("Writing problem not supported".to_string())
@@ -366,7 +366,7 @@ impl BaseModelTrait for Backend {
     }
 }
 
-pub struct SolverAddress(String);
+pub struct SolverAddress(pub String);
 
 impl SolverParameterValue<Backend> for SolverAddress {
     type Key = ();
