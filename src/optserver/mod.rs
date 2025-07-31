@@ -331,12 +331,12 @@ impl BaseModelTrait for Backend {
     {
         let p = filename.as_ref();
         if let Some(ext) = p.extension().and_then(|ext| ext.to_str()) {
-            if let std::cmp::Ordering::Equal = ext.cmp("ptf") {
-                let mut f = File::create_new(p).map_err(|e| e.to_string())?;
-                self.format_json_to(&mut f).map_err(|e| e.to_string())
-            }
-            else {
-                Err("Writing problem not supported".to_string())
+            match ext {
+                "json"|"jtask" => {
+                    let mut f = File::create_new(p).map_err(|e| e.to_string())?;
+                    self.format_json_to(&mut f).map_err(|e| e.to_string())
+                },
+                _ => Err("Writing problem not supported".to_string())
             }
         }
         else {
@@ -364,13 +364,18 @@ impl BaseModelTrait for Backend {
         self.c_cof.resize(cof.len(),0.0); self.c_cof.copy_from_slice(cof);
         Ok(())
     }
-
-    fn set_parameter<V>(&mut self, _parname : V::Key, _parval : V) -> Result<(),String> where V : SolverParameterValue<Self>,Self: Sized
-    {
-        Err("Parameters not supported".to_string())
-    }
-
 }
+
+pub struct SolverAddress(String);
+
+impl SolverParameterValue<Backend> for SolverAddress {
+    type Key = ();
+    fn set(self,_parname : Self::Key, model : & mut Backend) -> Result<(),String> {
+        model.address = self.0;
+        Ok(())
+    }
+}
+
 
 fn bnd_to_bk(lb : f64, ub : f64) -> &'static str {
     match (lb.is_finite(),ub.is_finite()) {
@@ -441,3 +446,42 @@ impl Backend {
     }
 }
 
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_optserver() {
+        let addr = "solve.mosek.com:30080".to_string();
+        let mut m = Model::new(Some("SuperModel"));
+        m.set_parameter((), SolverAddress(addr));
+
+        let a0 : &[f64] = &[ 3.0, 1.0, 2.0, 0.0 ];
+        let a1 : &[f64] = &[ 2.0, 1.0, 3.0, 1.0 ];
+        let a2 : &[f64] = &[ 0.0, 2.0, 0.0, 3.0 ];
+        let c  : &[f64] = &[ 3.0, 1.0, 5.0, 1.0 ];
+
+        // Create variable 'x' of length 4
+        let x = m.variable(Some("x0"), nonnegative().with_shape(&[4]));
+
+        // Create constraints
+        let _ = m.constraint(None, x.index(1), less_than(10.0));
+        let _ = m.constraint(Some("c1"), x.dot(a0), equal_to(30.0));
+        let _ = m.constraint(Some("c2"), x.dot(a1), greater_than(15.0));
+        let _ = m.constraint(Some("c3"), x.dot(a2), less_than(25.0));
+
+        // Set the objective function to (c^t * x)
+        m.objective(Some("obj"), Sense::Maximize, x.dot(c));
+
+        // Solve the problem
+        m.write_problem("lo1-nosol.json");
+        m.solve();
+
+        // Get the solution values
+        let (psta,dsta) = m.solution_status(SolutionType::Default);
+        println!("Status = {:?}/{:?}",psta,dsta);
+        let xx = m.primal_solution(SolutionType::Default,&x);
+        println!("x = {:?}", xx);
+    }
+
+}

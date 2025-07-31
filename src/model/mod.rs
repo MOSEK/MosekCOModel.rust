@@ -215,7 +215,9 @@ pub trait BaseModelTrait {
 
     fn objective(&mut self, name : Option<&str>, sense : Sense, subj : &[usize],cof : &[f64]) -> Result<(),String>;
 
-    fn set_parameter<V>(&mut self, parname : V::Key, parval : V) -> Result<(),String> where V : SolverParameterValue<Self>,Self: Sized;
+    fn set_parameter<V>(&mut self, parname : V::Key, parval : V) -> Result<(),String> where V : SolverParameterValue<Self>,Self: Sized {
+        parval.set(parname, self)
+    }
 }
 
 /// Trait for adding vector conic constraints and variables. This is implemented per cone type `D` for
