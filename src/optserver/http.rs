@@ -96,7 +96,7 @@ impl<'a,T> MsgWriter<'a,T> where T : std::io::Write {
         Ok(())
     }
 
-    fn finalize(&mut self) -> Result<(),String> {
+    fn finalize(mut self) -> Result<&'a mut T,String> {
         self.flush().map_err(|e| e.to_string())?;
         if !self.chunked {
             if self.remains > 0 {
@@ -106,7 +106,7 @@ impl<'a,T> MsgWriter<'a,T> where T : std::io::Write {
         else {
             self.s.write_all(b"0\r\n\r\n").map_err(|e| e.to_string())?;
         }
-        Ok(())
+        Ok(self.s)
     }
 }
 
@@ -199,7 +199,7 @@ impl Request {
         self.wait_response(s)
     }
 
-    pub fn submit_with_writer<'a,T,W>(mut self, s : & 'a mut T, body_writer : W) -> Result<(),String>
+    pub fn submit_with_writer<'a,T,W>(mut self, s : & 'a mut T, body_writer : W) -> Result<Response<'a,T>,String>
         where W : FnOnce(&mut MsgWriter<'a,T>) -> Result<(),String>,
               T : Write+Read
     {
@@ -211,7 +211,10 @@ impl Request {
             self.header.extend_from_slice(b"Transfer-Encoding: chunked\r\n"); 
         }
 
-        body_writer(&mut msgw)
+        body_writer(&mut msgw)?;
+        let s = msgw.finalize()?;
+
+        self.wait_response(s)
     }
 
     fn wait_response<'a,T>(&mut self, s : &'a mut T) -> Result<Response<'a,T>,String> 
@@ -317,13 +320,19 @@ impl Request {
 
 impl<'a,T> Response<'a,T> where T : Read 
 {
-    fn headers<'b>(&'b self) -> impl Iterator<Item=(&'b[u8],&'b[u8])> {
+    pub fn headers<'b>(&'b self) -> impl Iterator<Item=(&'b[u8],&'b[u8])> {
         self.headers.iter().map(|&(k0,k1,v0,v1)| (&self.header[k0..k1],self.header[v0..v1].trim_ascii()))
+    }
+
+    pub fn finalize(mut self) -> std::io::Result<&'a mut T> {
+        let mut buf = [0;4096];
+        while 0 < self.read(&mut buf)? { }
+        Ok(self.s)
     }
 }
 
 impl<'a,T> Read for Response<'a,T> where T : Read {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    pub fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.chunked {
             if self.eof { return Ok(0); }
             else if self.pos < self.readbuf.len() {

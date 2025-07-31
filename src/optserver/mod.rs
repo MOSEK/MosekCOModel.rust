@@ -6,6 +6,7 @@ use crate::model::{DJCDomainTrait, DJCModelTrait, ModelWithIntSolutionCallback, 
 use crate::domain::*;
 use crate::utils::iter::{ChunksByIterExt, PermuteByEx, PermuteByMutEx};
 use itertools::{iproduct, izip};
+use json::JSON;
 use std::fs::{write, File};
 use std::net::TcpStream;
 use std::path::Path;
@@ -350,10 +351,25 @@ impl BaseModelTrait for Backend {
         let mut con = TcpStream::connect(self.address.as_str()).map_err(|e| e.to_string())?;
 
 
-        let resp = Request::post("/api/v1/sbumit+solve")
-            .add_header("Content-Type", "application/x-mosek-json")
-            .submit_with_writer(&mut con,|w| self.format_json_to(w).map_err(|e| e.to_string()));
-       
+        let mut resp = Request::post("/api/v1/sbumit+solve")
+            .add_header("Content-Type", "application/x-mosek-jtask")
+            .add_header("Accept", "application/x-mosek-jtask")
+            .submit_with_writer(&mut con,|w| self.format_json_to(w).map_err(|e| e.to_string()))?;
+      
+        for (k,v) in resp.headers() {
+            if k.eq_ignore_ascii_case(b"Content-Type") {
+                if v.eq(b"application/json") {
+                    // ok
+                }
+                else {
+                    return Err(format!("Unsupported solution format: {}",std::str::from_utf8(v).unwrap_or("<invalid utf-8>")));
+                }
+            }
+        }
+
+        let data = JSON::read(& mut resp).map_err(|e| e.to_string())?;
+        
+
         Ok(())
     }
 
