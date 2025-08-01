@@ -345,7 +345,7 @@ impl BaseModelTrait for Backend {
         }
     }
 
-    fn solve(& mut self, _sol_bas : & mut Solution, _sol_itr : &mut Solution, _sol_itg : &mut Solution) -> Result<(),String>
+    fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String>
     {
         use http::*;
         let mut con = TcpStream::connect(self.address.as_str()).map_err(|e| e.to_string())?;
@@ -356,6 +356,12 @@ impl BaseModelTrait for Backend {
             .add_header("Accept", "application/x-mosek-jtask")
             .submit_with_writer(&mut con,|w| self.format_json_to(w).map_err(|e| e.to_string()))?;
       
+        if resp.code() != 200 {
+            return Err(format!("OptServer responded with code {}",resp.code()))
+        }
+
+        let mut rescode = None;
+
         for (k,v) in resp.headers() {
             if k.eq_ignore_ascii_case(b"Content-Type") {
                 if v.eq(b"application/json") {
@@ -365,9 +371,74 @@ impl BaseModelTrait for Backend {
                     return Err(format!("Unsupported solution format: {}",std::str::from_utf8(v).unwrap_or("<invalid utf-8>")));
                 }
             }
+            else if k.eq_ignore_ascii_case(b"X-Mosek-Res") {
+                if let Ok(r) = std::str::from_utf8(v) {
+                    rescode = Some(r.to_string());
+                }
+            }
         }
 
         let data = JSON::read(& mut resp).map_err(|e| e.to_string())?;
+        if let JSON::Dict(d) = data {
+            if let Some((k,v)) = d.0.iter().find(|kv| kv.0.as_str() == "Task/solutions") {
+                if let JSON::Dict(d) = v {
+                    for (k,v) in d.0.iter() {
+                        let sol =
+                            match k.as_str() {   
+                                "basic" => sol_bas,
+                                "interior" => sol_itr,
+                                "integer" => sol_itg,
+                                _ => break
+                            };
+
+                        if let JSON::Dict(d) = v {
+                            let mut xx  = Vec::new();
+                            let mut slx = Vec::new();
+                            let mut sux = Vec::new();
+                            let mut xc  = Vec::new();
+                            let mut slc = Vec::new();
+                            let mut suc = Vec::new();
+                            for (k,v) in d.0.iter() {
+                                match (k.as_str(),v) {
+                                    ("solsta",JSON::String(v)) => {
+                                        match v.as_str() {
+                                            "unknown" => { sol.primal.status = SolutionStatus::Unknown; sol.dual.status = SolutionStatus::Unknown; }
+                                            "optimal" => { sol.primal.status = SolutionStatus::Optimal; sol.dual.status = SolutionStatus::Optimal; }
+                                            "integer_optimal" => { sol.primal.status = SolutionStatus::Optimal; sol.dual.status = SolutionStatus::Undefined; }
+                                            "prim_and_dual_feas" => { sol.primal.status = SolutionStatus::Feasible; sol.dual.status = SolutionStatus::Feasible; }
+                                            "prim_feas" => { sol.primal.status = SolutionStatus::Feasible; sol.dual.status = SolutionStatus::Unknown; }
+                                            "dual_feas" => { sol.primal.status = SolutionStatus::Unknown; sol.dual.status = SolutionStatus::Feasible; }
+                                            "prim_infeas_cer" =>  { sol.primal.status = SolutionStatus::Undefined; sol.dual.status = SolutionStatus::CertInfeas; }  
+                                            "dual_infeas_cer" =>  { sol.primal.status = SolutionStatus::CertInfeas; sol.dual.status = SolutionStatus::Undefined }  
+                                            "prim_illposed_cer" =>  { sol.primal.status = SolutionStatus::Undefined; sol.dual.status = SolutionStatus::CertInfeas; }  
+                                            "dual_illposed_cer" =>  { sol.primal.status = SolutionStatus::CertInfeas; sol.dual.status = SolutionStatus::Undefined; }  
+                                            _ => {}
+                                        }
+                                    },
+                                    ("xx",v)  => if let Ok(val) = v.try_into::<Vec<f64>>() { xx = val; },
+                                    ("slx",v) => if let Ok(val) = v.try_into::<Vec<f64>>() { slx = val; },
+                                    ("sux",v) => if let Ok(val) = v.try_into::<Vec<f64>>() { sux = val; },
+                                    ("xc",v)  => if let Ok(val) = v.try_into::<Vec<f64>>() { xc = val; },
+                                    ("slc",v) => if let Ok(val) = v.try_into::<Vec<f64>>() { slc = val; },
+                                    ("suc",v) => if let Ok(val) = v.try_into::<Vec<f64>>() { suc = val; },
+                                    _ => {}
+                                }
+                            }
+                        }
+//prosta: problem status (string).
+//solsta: solution status (string).
+//xx, xc, y, slc, suc, slx, sux, snx: one for each component of the solution of the same name (list(double)).
+//skx, skc, skn: status keys (list(string)).
+//doty: the dual
+//    solution, grouped by ACC (list(list(double))).
+//    barx, bars: the primal/dual semidefinite solution, grouped by matrix variable (list(list(double))).
+                    }
+                }
+            }
+        }
+        else {
+            return Err("Invalid solution format".to_string());
+        }
 
         // interpret data as solution
 

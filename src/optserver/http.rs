@@ -324,6 +324,9 @@ impl<'a,T> Response<'a,T> where T : Read
         self.headers.iter().map(|&(k0,k1,v0,v1)| (&self.header[k0..k1],self.header[v0..v1].trim_ascii()))
     }
 
+    pub fn code(&self) -> u16 { self.code }
+    pub fn reason(&self) -> & str { self.reason.as_str() }
+        
     pub fn finalize(mut self) -> std::io::Result<&'a mut T> {
         let mut buf = [0;4096];
         while 0 < self.read(&mut buf)? { }
@@ -332,7 +335,7 @@ impl<'a,T> Response<'a,T> where T : Read
 }
 
 impl<'a,T> Read for Response<'a,T> where T : Read {
-    pub fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.chunked {
             if self.eof { return Ok(0); }
             else if self.pos < self.readbuf.len() {

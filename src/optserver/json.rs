@@ -1,7 +1,7 @@
 use std::{io::{Read, Write}, ptr::fn_addr_eq};
 
 
-pub struct Dict(Vec<(String,JSON)>);
+pub struct Dict(pub Vec<(String,JSON)>);
 impl Dict {
     pub fn new() -> Dict { Dict(Vec::new()) }
     pub fn append<K,V>(&mut self, k : K,v : V) where K : Into<String>, V : Into<JSON> { self.0.push((k.into(),v.into())) }
@@ -61,6 +61,53 @@ impl<T> Into<JSON> for Vec<T> where T : Into<JSON>+Copy {
 }
 impl Into<JSON> for Dict {
     fn into(self) -> JSON { JSON::Dict(self) }
+}
+
+impl TryFrom<&JSON> for String {
+    type Error = ();
+    fn try_from(value: &JSON) -> Result<Self, Self::Error> {
+        if let JSON::String(s) = value { Ok(s.clone()) } else { Err(()) }
+    }
+}
+
+impl TryFrom<&JSON> for usize {
+    type Error = ();
+    fn try_from(value: &JSON) -> Result<Self, Self::Error> {
+        if let JSON::Int(s) = value { Ok(*s) } else { Err(()) }
+    }
+}
+
+impl TryFrom<&JSON> for f64 {
+    type Error = ();
+    fn try_from(value: &JSON) -> Result<Self, Self::Error> {
+        match value {
+            JSON::Float(v) => Ok(*s),
+            JSON::Int(v) => Ok(*s as f64),
+            _ => Err(())
+        }
+    }
+}
+
+impl<T> TryFrom<&JSON> for Vec<T> where T : TryFrom<&JSON> {
+    type Error = ();
+    fn try_from(value: &JSON) -> Result<Self, Self::Error> {
+        if let JSON::List(l) = value {
+            let mut res = Vec::new();
+            
+            for item in l.iter() {
+                if let Ok(v) = item.try_into() {
+                    res.push(v);
+                }
+                else {
+                    return Err(());
+                }
+            }
+            Ok(res)
+        }
+        else {
+            Err(())
+        }
+    }
 }
 
 
