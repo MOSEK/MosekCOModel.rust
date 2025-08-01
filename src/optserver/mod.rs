@@ -348,12 +348,19 @@ impl BaseModelTrait for Backend {
     fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String>
     {
         use http::*;
+
+        if self.address.is_empty() {
+            return Err("No optserver address given".to_string());
+        }
+
+        println!("Solve using: {}",self.address.as_str());
+
         let mut con = TcpStream::connect(self.address.as_str()).map_err(|e| e.to_string())?;
 
-
-        let mut resp = Request::post("/api/v1/sbumit+solve")
+        let mut resp = Request::post("/api/v1/submit+solve")
             .add_header("Content-Type", "application/x-mosek-jtask")
             .add_header("Accept", "application/x-mosek-jtask")
+            .add_header("Host", self.address.as_str())
             .submit_with_writer(&mut con,|w| self.format_json_to(w).map_err(|e| e.to_string()))?;
       
         if resp.code() != 200 {
@@ -364,7 +371,7 @@ impl BaseModelTrait for Backend {
 
         for (k,v) in resp.headers() {
             if k.eq_ignore_ascii_case(b"Content-Type") {
-                if v.eq(b"application/json") {
+                if v.eq(b"application/json") || v.eq(b"application/x-mosek-jtask") {
                     // ok
                 }
                 else {
@@ -377,61 +384,58 @@ impl BaseModelTrait for Backend {
                 }
             }
         }
-
         let data = JSON::read(& mut resp).map_err(|e| e.to_string())?;
-        if let JSON::Dict(d) = data {
-            if let Some((k,v)) = d.0.iter().find(|kv| kv.0.as_str() == "Task/solutions") {
-                if let JSON::Dict(d) = v {
-                    for (k,v) in d.0.iter() {
-                        let sol =
-                            match k.as_str() {   
-                                "basic" => sol_bas,
-                                "interior" => sol_itr,
-                                "integer" => sol_itg,
-                                _ => break
-                            };
+        resp.finalize().map_err(|e| e.to_string())?;
 
-                        if let JSON::Dict(d) = v {
-                            let mut xx  = Vec::new();
-                            let mut slx = Vec::new();
-                            let mut sux = Vec::new();
-                            let mut xc  = Vec::new();
-                            let mut slc = Vec::new();
-                            let mut suc = Vec::new();
-                            for (k,v) in d.0.iter() {
-                                match (k.as_str(),v) {
-                                    ("solsta",JSON::String(v)) => {
-                                        match v.as_str() {
-                                            "unknown" => { sol.primal.status = SolutionStatus::Unknown; sol.dual.status = SolutionStatus::Unknown; }
-                                            "optimal" => { sol.primal.status = SolutionStatus::Optimal; sol.dual.status = SolutionStatus::Optimal; }
-                                            "integer_optimal" => { sol.primal.status = SolutionStatus::Optimal; sol.dual.status = SolutionStatus::Undefined; }
-                                            "prim_and_dual_feas" => { sol.primal.status = SolutionStatus::Feasible; sol.dual.status = SolutionStatus::Feasible; }
-                                            "prim_feas" => { sol.primal.status = SolutionStatus::Feasible; sol.dual.status = SolutionStatus::Unknown; }
-                                            "dual_feas" => { sol.primal.status = SolutionStatus::Unknown; sol.dual.status = SolutionStatus::Feasible; }
-                                            "prim_infeas_cer" =>  { sol.primal.status = SolutionStatus::Undefined; sol.dual.status = SolutionStatus::CertInfeas; }  
-                                            "dual_infeas_cer" =>  { sol.primal.status = SolutionStatus::CertInfeas; sol.dual.status = SolutionStatus::Undefined }  
-                                            "prim_illposed_cer" =>  { sol.primal.status = SolutionStatus::Undefined; sol.dual.status = SolutionStatus::CertInfeas; }  
-                                            "dual_illposed_cer" =>  { sol.primal.status = SolutionStatus::CertInfeas; sol.dual.status = SolutionStatus::Undefined; }  
-                                            _ => {}
-                                        }
-                                    },
-                                    ("xx",v)  => if let Ok(val) = v.try_into::<Vec<f64>>() { xx = val; },
-                                    ("slx",v) => if let Ok(val) = v.try_into::<Vec<f64>>() { slx = val; },
-                                    ("sux",v) => if let Ok(val) = v.try_into::<Vec<f64>>() { sux = val; },
-                                    ("xc",v)  => if let Ok(val) = v.try_into::<Vec<f64>>() { xc = val; },
-                                    ("slc",v) => if let Ok(val) = v.try_into::<Vec<f64>>() { slc = val; },
-                                    ("suc",v) => if let Ok(val) = v.try_into::<Vec<f64>>() { suc = val; },
-                                    _ => {}
-                                }
+        if let JSON::Dict(d) = data {
+            if let Some((k,JSON::Dict(d))) = d.0.iter().find(|kv| kv.0.as_str() == "Task/solutions") {
+                for (k,v) in d.0.iter() {
+
+                    if let JSON::Dict(d) = v {
+                        let mut xx  : Vec<f64> = Vec::new();
+                        let mut slx : Vec<f64> = Vec::new();
+                        let mut sux : Vec<f64> = Vec::new();
+                        let mut xc  : Vec<f64> = Vec::new();
+                        let mut slc : Vec<f64> = Vec::new();
+                        let mut suc : Vec<f64> = Vec::new();
+                        let mut psta = SolutionStatus::Undefined;
+                        let mut dsta = SolutionStatus::Undefined;
+                        for (k,v) in d.0.iter() {
+                            match (k.as_str(),v) {
+                                ("solsta",JSON::String(v)) => {
+                                    match v.as_str() {
+                                        "unknown" => { psta = SolutionStatus::Unknown; dsta = SolutionStatus::Unknown; }
+                                        "optimal" => { psta = SolutionStatus::Optimal; dsta = SolutionStatus::Optimal; }
+                                        "integer_optimal" => { psta = SolutionStatus::Optimal; dsta = SolutionStatus::Undefined; }
+                                        "prim_and_dual_feas" => { psta = SolutionStatus::Feasible; dsta = SolutionStatus::Feasible; }
+                                        "prim_feas" => { psta = SolutionStatus::Feasible; dsta = SolutionStatus::Unknown; }
+                                        "dual_feas" => { psta = SolutionStatus::Unknown; dsta = SolutionStatus::Feasible; }
+                                        "prim_infeas_cer" =>  { psta = SolutionStatus::Undefined; dsta = SolutionStatus::CertInfeas; }  
+                                        "dual_infeas_cer" =>  { psta = SolutionStatus::CertInfeas; dsta = SolutionStatus::Undefined }  
+                                        "prim_illposed_cer" =>  { psta = SolutionStatus::Undefined; dsta = SolutionStatus::CertInfeas; }  
+                                        "dual_illposed_cer" =>  { psta = SolutionStatus::CertInfeas; dsta = SolutionStatus::Undefined; }  
+                                        _ => {}
+                                    }
+                                },
+                                ("xx",v)  => if let Ok(val) = v.try_into() { xx = val; },
+                                ("slx",v) => if let Ok(val) = v.try_into() { slx = val; },
+                                ("sux",v) => if let Ok(val) = v.try_into() { sux = val; },
+                                ("xc",v)  => if let Ok(val) = v.try_into() { xc = val; },
+                                ("slc",v) => if let Ok(val) = v.try_into() { slc = val; },
+                                ("suc",v) => if let Ok(val) = v.try_into() { suc = val; },
+                                _ => {}
                             }
                         }
-//prosta: problem status (string).
-//solsta: solution status (string).
-//xx, xc, y, slc, suc, slx, sux, snx: one for each component of the solution of the same name (list(double)).
-//skx, skc, skn: status keys (list(string)).
-//doty: the dual
-//    solution, grouped by ACC (list(list(double))).
-//    barx, bars: the primal/dual semidefinite solution, grouped by matrix variable (list(list(double))).
+
+                        self.copy_solution(
+                            match k.as_str() { "basic" => sol_bas, "interior" => sol_itr, "integer" => sol_itg, _ => continue },
+                            psta,dsta,
+                            xx.as_slice(),
+                            slx.as_slice(),
+                            sux.as_slice(),
+                            xc.as_slice(),
+                            slc.as_slice(),
+                            suc.as_slice());
                     }
                 }
             }
@@ -443,7 +447,7 @@ impl BaseModelTrait for Backend {
         // interpret data as solution
 
         Ok(())
-    }
+    } 
 
     fn objective(&mut self, _name : Option<&str>, sense : Sense, subj : &[usize],cof : &[f64]) -> Result<(),String>
     {
@@ -474,6 +478,51 @@ fn bnd_to_bk(lb : f64, ub : f64) -> &'static str {
     }
 }
 impl Backend {
+    fn copy_solution(&self, 
+                     sol : &mut Solution,
+                     psta : SolutionStatus,
+                     dsta : SolutionStatus,
+                     xx  : &[f64],
+                     slx : &[f64],
+                     sux : &[f64],
+                     xc  : &[f64],
+                     slc : &[f64],
+                     suc : &[f64]) {
+ 
+        sol.primal.status = 
+            if xx.len() != self.var_elt.len() || xc.len() != self.con_elt.len() { SolutionStatus::Undefined } else { psta };
+        sol.dual.status = 
+            if slx.len() != self.var_elt.len() ||
+               sux.len() != self.var_elt.len() ||  
+               slc.len() != self.con_elt.len() ||
+               suc.len() != self.con_elt.len()  {
+                SolutionStatus::Undefined
+            }
+            else {
+                dsta
+            };
+
+        if let SolutionStatus::Undefined = sol.primal.status {}
+        else {
+            for (v,tgt) in self.vars.iter().zip(sol.primal.var.iter_mut()) {
+                *tgt = 
+                    match v {
+                        Item::Linear{index} => slx[*index]-sux[*index],
+                        Item::RangedUpper{index} => -sux[*index],
+                        Item::RangedLower{index} => slx[*index],
+                    }
+            }
+            for (c,tgt) in self.cons.iter().zip(sol.primal.con.iter_mut()) {
+                *tgt = 
+                    match c {
+                        Item::Linear{index} => slc[*index]-suc[*index],
+                        Item::RangedUpper{index} => -suc[*index],
+                        Item::RangedLower{index} => slc[*index],
+                    }
+            }
+        }
+    }
+
     /// JSON Task format writer.
     ///
     /// See https://docs.mosek.com/latest/capi/json-format.html
@@ -562,7 +611,7 @@ mod test {
         m.objective(Some("obj"), Sense::Maximize, x.dot(c));
 
         // Solve the problem
-        m.write_problem("lo1-nosol.json");
+        m.write_problem("lo1-nosol.jtask");
         m.solve();
 
         // Get the solution values

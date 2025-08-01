@@ -2,7 +2,8 @@
 use mosekcomodel::*;
 
 fn lo1() {
-    let addr = "solve.mosek.com:30080".to_string();
+    //let addr = "solve.mosek.com:30080".to_string();
+    let addr = "localhost:9999".to_string();
     let mut m = optserver::Model::new(Some("SuperModel"));
     m.set_parameter((), optserver::SolverAddress(addr));
 
@@ -24,7 +25,7 @@ fn lo1() {
     m.objective(Some("obj"), Sense::Maximize, x.dot(c));
 
     // Solve the problem
-    m.write_problem("lo1-nosol.json");
+    m.write_problem("lo1.jtask");
     m.solve();
 
     // Get the solution values

@@ -22,7 +22,7 @@ pub struct Response<'a,T> where T : Read {
     header : Vec<u8>,
     headers : Vec<(usize,usize,usize,usize)>,
 
-    chunked : bool,
+    //chunked : bool,
     chunk_remains : usize,
     content_length : Option<usize>,
     readbuf : Vec<u8>,
@@ -78,17 +78,24 @@ impl<'a,T> MsgWriter<'a,T> where T : std::io::Write {
     fn flush(&mut self) -> std::io::Result<()> {
         if self.pos > 0 {
             if self.chunked {
-                let (b0,b1) = hex_byte(((self.pos-6) & 0xff) as u8);
-                let (b2,b3) = hex_byte(((self.pos-6) >> 8) as u8);
+                let b0 = hex_byte((self.pos-6)         as u8);
+                let b1 = hex_byte(((self.pos-6) >> 4)  as u8);
+                let b2 = hex_byte(((self.pos-6) >> 8)  as u8);
+                let b3 = hex_byte(((self.pos-6) >> 12) as u8);
+
                 self.buffer[0] = b3;
                 self.buffer[1] = b2;
                 self.buffer[2] = b1;
                 self.buffer[3] = b0;
                 self.buffer[4] = b'\r';
                 self.buffer[5] = b'\n';
+                println!("size = ({},{},{},{}), pos = {}",b3 as char, b2 as char, b1 as char, b0 as char,self.pos-6);
+                println!("----------\n{}\r\n\n----------\n",std::str::from_utf8(&self.buffer[..self.pos]).unwrap());
                 self.s.write_all(&self.buffer[..self.pos])?;
+                self.s.write_all(b"\r\n")?;
             }
             else {
+                println!("----------\n{}\n----------\n",std::str::from_utf8(&self.buffer[6..self.pos]).unwrap());
                 self.s.write_all(&self.buffer[6..self.pos])?;
             }
             self.pos = 6;
@@ -104,7 +111,9 @@ impl<'a,T> MsgWriter<'a,T> where T : std::io::Write {
             }
         }            
         else {
+            println!("Write final chunk");
             self.s.write_all(b"0\r\n\r\n").map_err(|e| e.to_string())?;
+            self.s.flush().map_err(|e| e.to_string())?;
         }
         Ok(self.s)
     }
@@ -203,13 +212,19 @@ impl Request {
         where W : FnOnce(&mut MsgWriter<'a,T>) -> Result<(),String>,
               T : Write+Read
     {
-        let mut msgw = MsgWriter::new(self.content_length, s);
         if let Some(len) = self.content_length {
-            write!(self.header,"Content-Length: {}\r\n",len);
+            _ = write!(self.header,"Content-Length: {}\r\n",len);
         }
         else {
             self.header.extend_from_slice(b"Transfer-Encoding: chunked\r\n"); 
         }
+        
+        self.header.extend_from_slice(b"\r\n");
+
+        s.write_all(self.header.as_slice()).map_err(|e| e.to_string()).map_err(|e| e.to_string())?;
+        s.flush().map_err(|e| e.to_string())?;
+
+        let mut msgw = MsgWriter::new(self.content_length, s);
 
         body_writer(&mut msgw)?;
         let s = msgw.finalize()?;
@@ -248,7 +263,6 @@ impl Request {
         let mut line_iter = buf.chunk_by(|c,_| *c != b'\n').scan(0,|pos,line| { let start = *pos; *pos += line.len(); if line.len() == 2 { None } else { Some((start, line)) } });
         let (code,proto_ver,reason) = {            
             let (_,line) = line_iter.next().ok_or_else(|| "Invalid HTTP{ status line".to_string())?;
-            println!("line = '{}'",std::str::from_utf8(line).unwrap());
             let mut code = 0u16;
             // read first line in the format "'HTTP/' [0-9] '.' [0-9]" [ ]+ [0-9]+ [ ]+ .*
             if !line.starts_with(b"HTTP/") { return Err("Invalid HTTP status line".to_string()); }
@@ -260,7 +274,7 @@ impl Request {
             if it.peek().is_some() {
                 loop {
                     match it.next() {
-                        Some((_,b @ (b'0'..=b'9'))) => code = code * 10 + (*b as u16),
+                        Some((_,b @ (b'0'..=b'9'))) => code = code * 10 + ((*b-b'0') as u16),
                         Some((_,b' ')) => break,
                         _ => return Err("Invalid HTTP status line".to_string()),
                     }
@@ -297,6 +311,10 @@ impl Request {
             headers.push((start,start+colon_pos,start+colon_pos+1,start+line.len()))                
         }
 
+        if content_length.is_none() && ! chunked {
+            self.content_length = Some(0);
+        }
+
         let readbuf = buf[lastcrlfpos..].to_vec();
 
         Ok(Response{
@@ -307,7 +325,7 @@ impl Request {
             headers,
 
             content_length,
-            chunked, 
+            //chunked, 
             chunk_remains : 0,
             readbuf,
             pos : 0,
@@ -328,82 +346,103 @@ impl<'a,T> Response<'a,T> where T : Read
     pub fn reason(&self) -> & str { self.reason.as_str() }
         
     pub fn finalize(mut self) -> std::io::Result<&'a mut T> {
+        println!("Finalize response reader!");
         let mut buf = [0;4096];
-        while 0 < self.read(&mut buf)? { }
+        while 0 < self.read(&mut buf)? {
+            println!("")
+        }
+        
+        println!("---------- Response done!");
         Ok(self.s)
     }
 }
 
 impl<'a,T> Read for Response<'a,T> where T : Read {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        if self.chunked {
-            if self.eof { return Ok(0); }
-            else if self.pos < self.readbuf.len() {
-                // do nothing
-            }
-            else if self.chunk_remains == 0 {
-                // read until CRLF
-                let mut sizebuf = [0u8;2];
-                let mut chunksize = 0usize;
-                loop {
-                    self.s.read_exact(&mut sizebuf[0..1])?;
-                    match sizebuf[0] {
-                        c @ b'0'..=b'9' => chunksize = (chunksize << 4) + (c-b'0') as usize,
-                        c @ b'a'..=b'f' => chunksize = (chunksize << 4) + (c-b'a'+10) as usize,
-                        c @ b'A'..=b'F' => chunksize = (chunksize << 4) + (c-b'A'+10) as usize,
-                        b'\r' => break,
-                        _ => return Err(std::io::Error::other("Invalid chunk header"))
-                    }
+        if let Some(remains) = self.content_length {
+            println!("--- read response body: {} bytes",remains);
+            if remains > 0 {
+                if self.pos == self.readbuf.len() {
+                    self.pos = 0;
+                    self.readbuf.resize(remains.min(4096),0);
+                    let n = self.s.read(self.readbuf.as_mut_slice())?;
+                    self.content_length.iter_mut().for_each(|v| *v -= n);
+                    self.readbuf.truncate(n);
                 }
-                self.s.read_exact(&mut sizebuf[0..1])?; 
-                if sizebuf[0] != b'\n' { return Err(std::io::Error::other("Invalid chunk header")); }
 
-                if chunksize == 0 {
-                    self.s.read_exact(&mut sizebuf)?;
-                    if &sizebuf != b"\r\n" { return Err(std::io::Error::other("Invalid chunk header")); }
-                    self.eof = true;
+                if self.pos < self.readbuf.len() {
+                    let n = buf.len().min(self.readbuf.len()-self.pos);
+                    buf[..n].copy_from_slice(&self.readbuf[self.pos..self.pos+n]);
+                    self.pos += n;
+                    Ok(n)
                 }
-                self.chunk_remains = chunksize;
-            }
-
-            if self.pos == self.readbuf.len() {
-                // read into buffer
-                self.pos = 0;
-                self.readbuf.resize(4096,0);
-                let n = self.s.read(self.readbuf.as_mut_slice())?;
-                self.readbuf.truncate(n);
-                self.chunk_remains -= n;
-
-                // read trailing CRLF
-                if self.chunk_remains == 0 {
-                    let mut sizebuf = [0u8;2];
-                    self.s.read_exact(&mut sizebuf)?;
-                    if &sizebuf != b"\r\n" { return Err(std::io::Error::other("Invalid chunk header")); }
+                else {
+                    Ok(0)
                 }
-            }
-
-            let n = buf.len().min(self.readbuf.len()-self.pos);
-            buf[..n].copy_from_slice(&self.readbuf[self.pos..self.pos+n]);
-            self.pos += n;
-            Ok(n)
-        }
-        else {
-            if self.pos == self.readbuf.len() {
-                self.pos = 0;
-                self.readbuf.resize(4096,0);
-                let n = self.s.read(self.readbuf.as_mut_slice())?;
-                self.readbuf.truncate(n);
-            }
-
-            if self.pos < self.readbuf.len() {
-                let n = buf.len().min(self.readbuf.len()-self.pos);
-                buf[..n].copy_from_slice(&self.readbuf[self.pos..self.pos+n]);
-                self.pos += n;
-                Ok(n)
             }
             else {
                 Ok(0)
             }
+        }
+        else {
+            println!("--- read: {}, chunk remains: {}",buf.len() ,self.chunk_remains);
+            if self.eof { return Ok(0); }
+            else if self.pos < self.readbuf.len() {
+                // do nothing
+            }
+            else { 
+                if self.chunk_remains == 0 {
+                    // read until CRLF
+                    let mut chunksize = 0usize;
+                    loop {
+                        let mut sizebuf = [0;1];
+                        self.s.read_exact(&mut sizebuf)?;
+                        match sizebuf[0] {
+                            c @ b'0'..=b'9' => chunksize = (chunksize << 4) + (c-b'0') as usize,
+                            c @ b'a'..=b'f' => chunksize = (chunksize << 4) + (c-b'a'+10) as usize,
+                            c @ b'A'..=b'F' => chunksize = (chunksize << 4) + (c-b'A'+10) as usize,
+                            b'\r' => {
+                                self.s.read_exact(&mut sizebuf)?;
+                                if sizebuf[0] != b'\n' {
+                                    return Err(std::io::Error::other("Invalid chunk header"))
+                                }
+                                break;
+                            },
+                            _ => return Err(std::io::Error::other("Invalid chunk header"))
+                        }
+                    }
+                    self.chunk_remains = chunksize;
+                    if chunksize == 0 {
+                        let mut sizebuf = [0;2];
+                        self.s.read_exact(&mut sizebuf)?;
+                        if &sizebuf != b"\r\n" { return Err(std::io::Error::other("Invalid chunk header")); }
+                        self.eof = true;
+                        return Ok(0);
+                    }
+                }
+
+                let n = self.chunk_remains.min(4096);
+                if n > 0 {
+                    self.readbuf.resize(n,0);
+                    self.s.read_exact(self.readbuf.as_mut_slice())?;
+                    self.chunk_remains -= n;
+                    self.pos = 0;
+
+                    if self.chunk_remains == 0 {
+                        // read trailing CRLF
+                        let mut buf = [0;2];
+                        self.s.read_exact(&mut buf)?; 
+                        if &buf != b"\r\n" {
+                            return Err(std::io::Error::other(format!("Invalid chunk trailer: {:?}",&buf)));
+                        }
+                    }
+                }
+            }
+        
+            let n = buf.len().min(self.readbuf.len()-self.pos);
+            buf[..n].copy_from_slice(&self.readbuf[self.pos..self.pos+n]);
+            self.pos += n;
+            Ok(n)
         }
     }
 }
@@ -411,15 +450,11 @@ impl<'a,T> Read for Response<'a,T> where T : Read {
 //
 // Utilities
 //
-fn hex_byte(b : u8) -> (u8,u8) {
-    (match b & 0xf {
+fn hex_byte(b : u8) -> u8 {
+    match b & 0xf {
         b @ 0..=9 => b'0' + b,
-        b => b'a' + b
-    },
-    match b >> 4 {
-        b @ 0..=9 => b'0' + b,
-        b => b'a' + b
-    })
+        b => b'a' + b - 10
+    }
 }
 
 #[cfg(test)]
@@ -503,7 +538,6 @@ mod test {
             let _= resp.read_to_end(&mut data).map_err(|e| e.to_string()).unwrap();
             println!("data = '{}'",std::str::from_utf8(data.as_slice()).unwrap());
             assert_eq!(data.as_slice(),b"abcdefghi\n\n");
-
         }
     }
 }

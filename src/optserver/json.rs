@@ -1,6 +1,7 @@
 use std::{io::{Read, Write}, ptr::fn_addr_eq};
 
 
+#[derive(Debug)]
 pub struct Dict(pub Vec<(String,JSON)>);
 impl Dict {
     pub fn new() -> Dict { Dict(Vec::new()) }
@@ -12,6 +13,7 @@ impl Dict {
     }
 }
 
+#[derive(Debug)]
 pub enum JSON {
     String(String),
     Int(i64),
@@ -73,7 +75,7 @@ impl TryFrom<&JSON> for String {
 impl TryFrom<&JSON> for usize {
     type Error = ();
     fn try_from(value: &JSON) -> Result<Self, Self::Error> {
-        if let JSON::Int(s) = value { Ok(*s) } else { Err(()) }
+        if let JSON::Int(s) = value { Ok((*s).try_into().map_err(|_|())?) } else { Err(()) }
     }
 }
 
@@ -81,16 +83,16 @@ impl TryFrom<&JSON> for f64 {
     type Error = ();
     fn try_from(value: &JSON) -> Result<Self, Self::Error> {
         match value {
-            JSON::Float(v) => Ok(*s),
-            JSON::Int(v) => Ok(*s as f64),
+            JSON::Float(v) => Ok((*v).try_into().map_err(|_| ())?),
+            JSON::Int(v) => Ok((*v) as f64),
             _ => Err(())
         }
     }
 }
 
-impl<T> TryFrom<&JSON> for Vec<T> where T : TryFrom<&JSON> {
+impl<'a,T> TryFrom<&'a JSON> for Vec<T> where T : TryFrom<&'a JSON> {
     type Error = ();
-    fn try_from(value: &JSON) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a JSON) -> Result<Self, Self::Error> {
         if let JSON::List(l) = value {
             let mut res = Vec::new();
             
@@ -121,7 +123,7 @@ impl JSON {
                 [b'\r'] => s.write_all(b"\\r")?,
                 [b'\n'] => s.write_all(b"\\n")?,
                 [b'\t'] => s.write_all(b"\\t")?,
-                [b]     => s.write_all(&[b'\\',b'x',hexbyte_u(*b),hexbyte_l(*b)])?,
+                [b@(0..32)]     => s.write_all(&[b'\\',b'x',hexbyte_u(*b),hexbyte_l(*b)])?,
                 _ => _ = s.write(c)?
             }
         }
@@ -133,7 +135,15 @@ impl JSON {
         match self {
             JSON::String(value) => Self::write_str(s,value.as_str())?,
             JSON::Int(value)    => write!(s,"{}",value)?,
-            JSON::Float(value)  => write!(s,"{}",value)?,
+            JSON::Float(value)  => {
+                if value.is_infinite() {
+                    if *value < 0.0 { s.write_all(b"-1e500")?; }
+                    else { s.write_all(b"1e500")?; } 
+                }
+                else {
+                    write!(s,"{}",value)?;
+                }
+            },
             JSON::List(l)   => {
                 s.write_all(b"[")?;
                 let mut it = l.iter();
@@ -173,22 +183,6 @@ impl JSON {
         let mut res = Vec::new();
 
         match s.get()?.ok_or_else(|| std::io::Error::other("JSON syntax error: Expected item"))? {
-            b'i' => {
-                let b1 = s.peek_expect()?;
-                let b2 = s.peek_expect()?;
-
-                if b1 == b'n' || b2 == b'f' {
-                    if neg {
-                        Ok(JSON::Float(f64::NEG_INFINITY))
-                    }
-                    else {
-                        Ok(JSON::Float(f64::INFINITY))
-                    }
-                }
-                else {
-                    Err(std::io::Error::other("Invalid JSON integer syntax"))
-                }
-            },
             b @ (b'0'..=b'9') => {
                 res.push(b);
                 while let Some(c) = s.peek()? {
@@ -257,112 +251,113 @@ impl JSON {
     }
 
     fn read_hlp<'a,T>(s : &mut PeekReader<'a,T>) -> std::io::Result<JSON> where T : Read {
-        loop {
-            match s.peek_expect()? {
-                b'"' => { 
-                    let s = Self::parse_string(s)?;
-                    break Ok(JSON::String(s));
-                },
-                b' '|b'\t'|b'\r'|b'\n' => _ = s.get(),
-                b'[' => {
-                    _ = s.get();
-                    let mut res = Vec::new();
+        Self::skip_space(s)?;
+        match s.peek_expect()? {
+            b'"' => { 
+                let s = Self::parse_string(s)?;
+                Ok(JSON::String(s))
+            },
+            b'[' => {
+                _ = s.get();
+                let mut res = Vec::new();
 
-                    'outer: loop {
-                        match s.peek_expect()? {
-                            b' '|b'\t'|b'\r'|b'\n' => _ = s.get(), 
-                            b']' => {
-                                _ = s.get();
-                                break;
-                            }
-                            _ => {
-                                res.push(Self::read_hlp(s)?);
-
-                                loop {
-                                    match s.get()?.ok_or_else(|| std::io::Error::other("JSON syntax error: Expected item"))? { 
-                                        b' '|b'\t'|b'\r'|b'\n' => {},
-                                        b']' => break 'outer,
-                                        b',' => { 
-                                            res.push(Self::read_hlp(s)?);
-                                        },
-                                        _ => return Err(std::io::Error::other("Syntax error in JSON list"))
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    break Ok(JSON::List(res));
-                },
-                b'{' => { 
-                    _ = s.get();
-                    let mut res = Dict::new();
-                    
-                    Self::skip_space(s)?;
-
-                    match s.peek()?.ok_or_else(|| std::io::Error::other("JSON syntax error: Expected item"))? {
-                        b'}' => {
+                'outer: loop {
+                    match s.peek_expect()? {
+                        b' '|b'\t'|b'\r'|b'\n' => _ = s.get(), 
+                        b']' => {
                             _ = s.get();
-                        },
+                            break;
+                        }
                         _ => {
-                            let k = Self::parse_string(s)?;
-                            Self::skip_space(s)?;
-                            match s.get_expect()? { 
-                                b':' => { }
-                                _ => return Err(std::io::Error::other("Syntax error in JSON dictionary"))
-                            }
-                            let v = Self::read_hlp(s)?;
-
-                            res.append(k,v);
+                            res.push(Self::read_hlp(s)?);
 
                             loop {
-                                Self::skip_space(s)?;
-                                match s.get_expect()? {
-                                    b'}' => break,
-                                    b',' => {
-                                        Self::skip_space(s)?;
-                                        let k = Self::parse_string(s)?;
-                                        Self::skip_space(s)?;
-                                        match s.get_expect()? { 
-                                            b':' => { }
-                                            _ => return Err(std::io::Error::other("Syntax error in JSON dictionary"))
-                                        }
-                                        let v = Self::read_hlp(s)?;
-
-                                        res.append(k,v);
+                                match s.get()?.ok_or_else(|| std::io::Error::other("JSON syntax error: Expected item"))? { 
+                                    b' '|b'\t'|b'\r'|b'\n' => {},
+                                    b']' => break 'outer,
+                                    b',' => { 
+                                        res.push(Self::read_hlp(s)?);
                                     },
-                                    _ => return Err(std::io::Error::other("Syntax error in JSON dictionary"))
+                                    _ => return Err(std::io::Error::other("Syntax error in JSON list"))
                                 }
                             }
                         }
                     }
+                }
 
-                    break Ok(JSON::Dict(res));
-                },
-                b'-' => break Self::parse_number(s,true),
-                b'0'..=b'9'|b'i' => break Self::parse_number(s,false),
-                b'n' => {
-                    _ = s.get();
-                    let b1 = s.get()?.ok_or_else(|| std::io::Error::other("JSON syntax error"))?;
-                    let b2 = s.get()?.ok_or_else(|| std::io::Error::other("JSON syntax error"))?;
-                    let b3 = s.get()?.ok_or_else(|| std::io::Error::other("JSON syntax error"))?;
+                Ok(JSON::List(res))
+            },
+            b'{' => { 
+                _ = s.get();
+                let mut res = Dict::new();
+                
+                Self::skip_space(s)?;
 
-                    if b1 ==  b'u' && b2 == b'l' && b3 == b'l' {
-                        break Ok(JSON::Null);
+                match s.peek()?.ok_or_else(|| std::io::Error::other("JSON syntax error: Expected item"))? {
+                    b'}' => {
+                        _ = s.get();
+                    },
+                    _ => {
+                        let k = Self::parse_string(s)?;
+                        Self::skip_space(s)?;
+                        match s.get_expect()? { 
+                            b':' => { }
+                            _ => return Err(std::io::Error::other("Syntax error in JSON dictionary"))
+                        }
+                        let v = Self::read_hlp(s)?;
+
+                        res.append(k,v);
+
+                        loop {
+                            Self::skip_space(s)?;
+                            match s.get_expect()? {
+                                b'}' => break,
+                                b',' => {
+                                    Self::skip_space(s)?;
+                                    let k = Self::parse_string(s)?;
+                                    Self::skip_space(s)?;
+                                    match s.get_expect()? { 
+                                        b':' => { }
+                                        _ => return Err(std::io::Error::other("Syntax error in JSON dictionary"))
+                                    }
+                                    let v = Self::read_hlp(s)?;
+
+                                    res.append(k,v);
+                                },
+                                _ => return Err(std::io::Error::other("Syntax error in JSON dictionary"))
+                            }
+                        }
                     }
-                    else {
-                        break Err(std::io::Error::other("Invalid JSON syntax"));
-                    }
-                },
-                _ => return Err(std::io::Error::other("Invalid JSON syntax")),
-            }
+                }
+                Ok(JSON::Dict(res))
+            },
+            b'-' => Self::parse_number(s,true),
+            b'0'..=b'9' => Self::parse_number(s,false),
+            b'n' => {
+                _ = s.get();
+                let b1 = s.get()?.ok_or_else(|| std::io::Error::other("JSON syntax error"))?;
+                let b2 = s.get()?.ok_or_else(|| std::io::Error::other("JSON syntax error"))?;
+                let b3 = s.get()?.ok_or_else(|| std::io::Error::other("JSON syntax error"))?;
+
+                if b1 ==  b'u' && b2 == b'l' && b3 == b'l' {
+                    Ok(JSON::Null)
+                }
+                else {
+                    Err(std::io::Error::other("Invalid JSON syntax"))
+                }
+            },
+            _ => Err(std::io::Error::other("Invalid JSON syntax")),
         }
     }
 
 
     pub fn read<T>(s : &mut T) -> std::io::Result<JSON> where T : Read {
         let mut r = PeekReader::new(s);
-        Self::read_hlp(&mut r)
+        Self::skip_space(&mut r)?;
+        match r.peek_expect()? {
+            b'{'|b'[' => Self::read_hlp(&mut r),
+            b => Err(std::io::Error::other(format!("Invalid JSON top-level item: '{}'",b as char)))
+        }
     }
 }
 
