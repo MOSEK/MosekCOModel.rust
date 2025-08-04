@@ -9,9 +9,10 @@ comments and suggestions are welcome!**
 
 # MosekCOModel
 
-The `MosekCOModel` crate is a modeling package for building linear and conic optimization models. The crate does not include a solver - these are implemented in separate projects, currently:
+The `MosekCOModel` crate is a modeling package for building linear and conic optimization models. The crate does not directly include a solver - these are implemented in separate projects, currently:
 - [MOSEK](https://crates.io/crates/mosekcomodel_mosek) 
 - [HIGHS](https://crates.io/crates/mosekcomodel_highs)
+Furthermore, it is (currently) possible to solve linear problems using the MOSEK optserver. See `example/lo1_optserver.rs` for an example of this.
 
 Published crates: https://crates.io/crates/mosekcomodel
 
