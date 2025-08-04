@@ -1,7 +1,14 @@
-use std::{io::{Read, Write}, ptr::fn_addr_eq};
+//! Minimalistic and non-optimized JSON parser and formatter.
+//!
+//! This module defines a basic JSON structure which can be parsed from a text stream and formatted
+//! to a text stream.
+//!
+//! It is not particularly efficient and mostly designed to be a proof-of-concept.
+//! 
+use std::io::{Read, Write};
 
-
-#[derive(Debug)]
+/// JSON dictionary object.
+#[derive(Debug,Default)]
 pub struct Dict(pub Vec<(String,JSON)>);
 impl Dict {
     pub fn new() -> Dict { Dict(Vec::new()) }
@@ -13,6 +20,9 @@ impl Dict {
     }
 }
 
+/// JSON structure defining all JSON types.
+///
+/// Structures can be built directly or be parsed from a stream.
 #[derive(Debug)]
 pub enum JSON {
     String(String),
@@ -131,6 +141,11 @@ impl JSON {
         Ok(())
     }
 
+
+    /// Format JSON value to a writer stream.
+    ///
+    /// #Arguments
+    /// - `s` A writer to format to.
     pub fn write<T>(&self, s : & mut T) -> std::io::Result<()> where T : Write {
         match self {
             JSON::String(value) => Self::write_str(s,value.as_str())?,
@@ -177,7 +192,6 @@ impl JSON {
         }
         Ok(())
     }
-
 
     fn parse_number<'a,T>(s : &mut PeekReader<'a,T>, neg : bool) -> std::io::Result<JSON> where T : Read {
         let mut res = Vec::new();
@@ -353,6 +367,12 @@ impl JSON {
     }
 
 
+    /// Parse JSON from stream.
+    ///
+    /// # Arguments
+    /// - `s` A stream reader.
+    /// # Returns
+    /// Either a successfully parsed JSON value or an IO error.
     pub fn read<T>(s : &mut T) -> std::io::Result<JSON> where T : Read {
         let mut r = PeekReader::new(s);
         Self::skip_space(&mut r)?;

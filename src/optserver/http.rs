@@ -292,6 +292,10 @@ impl Request {
             (code,(proto_v1,proto_v2),reason)
         };
 
+        if proto_ver.0 != 1 || (proto_ver.1 != 0 && proto_ver.1 != 0) {
+            return Err(format!("Unsupported protocol version: {}.{}",proto_ver.0,proto_ver.1));
+        }
+
         for (start,line) in line_iter {
             let colon_pos : usize = line.iter().enumerate().find(|&item| *item.1 == b':').ok_or_else(|| "Invalid HTTP header".to_string())?.0;
 
@@ -313,9 +317,6 @@ impl Request {
         if content_length.is_none() && ! chunked {
             self.content_length = Some(0);
         }
-
-        let readbuf = buf[lastcrlfpos..].to_vec();
-        //println!("Response::new(), initial text = [[[{}]]]",std::str::from_utf8(&buf[lastcrlfpos..]).unwrap_or("<invalid UTF-8>"));
 
         Ok(Response::with_data(proto_ver, code, reason,&buf[..lastcrlfpos], headers, content_length, s, &buf[lastcrlfpos..]))
     }

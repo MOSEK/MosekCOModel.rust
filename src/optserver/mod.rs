@@ -364,7 +364,7 @@ impl BaseModelTrait for Backend {
             .submit_with_writer(&mut con,|w| self.format_json_to(w).map_err(|e| e.to_string()))?;
       
         if resp.code() != 200 {
-            return Err(format!("OptServer responded with code {}",resp.code()))
+            return Err(format!("OptServer responded with code {}: {}",resp.code(),resp.reason()))
         }
 
         let mut rescode = None;
