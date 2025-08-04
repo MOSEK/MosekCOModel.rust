@@ -1,6 +1,6 @@
-//! This module implements a backend that can offload to a mosek OptServer. 
+//! This module implements a backend that uses a MOSEK OptServer instance for solving, for example
+//! [solve.mosek.com:30080](http://solve.mosek.com). 
 //!
-//! It works by 
 use crate::*;
 use crate::model::{DJCDomainTrait, DJCModelTrait, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, VectorConeModelTrait};
 use crate::domain::*;

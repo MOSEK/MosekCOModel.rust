@@ -1,6 +1,5 @@
-//! A very basic http module, only implements just enough for simple communication with an
+//! A very minimalistic http module, only implements just enough for simple communication with an
 //! optserver.
-//!
 
 use std::io::{Read, Write};
 
