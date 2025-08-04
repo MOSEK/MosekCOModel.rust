@@ -15,7 +15,7 @@ pub struct Request {
 }
 
 pub struct Response<'a,T> where T : Read {
-    proto_ver : (u8,u8),
+    proto_ver :(u8,u8),
     code : u16,
     reason : String,
     header : Vec<u8>,
@@ -292,7 +292,7 @@ impl Request {
             (code,(proto_v1,proto_v2),reason)
         };
 
-        if proto_ver.0 != 1 || (proto_ver.1 != 0 && proto_ver.1 != 0) {
+        if proto_ver.0 != 1 || (proto_ver.1 != 1 && proto_ver.1 != 0) {
             return Err(format!("Unsupported protocol version: {}.{}",proto_ver.0,proto_ver.1));
         }
 
@@ -571,9 +571,9 @@ mod test {
             w.flush().unwrap();
             w.write(b"0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789").unwrap();
             w.finalize().unwrap();
-            assert_eq!(buf.len(),212+5);
+            assert_eq!(buf.len(),212+9);
             assert_eq!(&buf[0..6],b"0064\r\n");
-            assert_eq!(&buf[106..112],b"0064\r\n");
+            assert_eq!(&buf[106..114],b"\r\n0064\r\n"); 
         }
         {
             let mut buf = RWBuf::new(b"HTTP/1.1 200 Ok\r\nContent-Length: 12\r\nX-Mosek-Token: SECRET\r\n\r\nabcdefghi\n\n");
