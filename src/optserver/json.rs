@@ -204,7 +204,9 @@ impl JSON {
                     Ok(JSON::Float(if neg { -v } else { v }))
                 }
             }, 
-            _ => Err(std::io::Error::other("Invalid JSON integer syntax"))
+            _ => {
+                Err(std::io::Error::other("Invalid JSON integer syntax"))
+            }
         }
     }
     fn parse_string<'a,T>(s : &mut PeekReader<'a,T>) -> std::io::Result<String> where T : Read {
@@ -331,7 +333,7 @@ impl JSON {
                 }
                 Ok(JSON::Dict(res))
             },
-            b'-' => Self::parse_number(s,true),
+            b'-' => { _ = s.get(); Self::parse_number(s,true) },
             b'0'..=b'9' => Self::parse_number(s,false),
             b'n' => {
                 _ = s.get();

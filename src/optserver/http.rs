@@ -88,13 +88,13 @@ impl<'a,T> MsgWriter<'a,T> where T : std::io::Write {
                 self.buffer[3] = b0;
                 self.buffer[4] = b'\r';
                 self.buffer[5] = b'\n';
-                println!("size = ({},{},{},{}), pos = {}",b3 as char, b2 as char, b1 as char, b0 as char,self.pos-6);
-                println!("----------\n{}\r\n\n----------\n",std::str::from_utf8(&self.buffer[..self.pos]).unwrap());
+                //println!("size = ({},{},{},{}), pos = {}",b3 as char, b2 as char, b1 as char, b0 as char,self.pos-6);
+                //println!("----------\n{}\r\n\n----------\n",std::str::from_utf8(&self.buffer[..self.pos]).unwrap());
                 self.s.write_all(&self.buffer[..self.pos])?;
                 self.s.write_all(b"\r\n")?;
             }
             else {
-                println!("----------\n{}\n----------\n",std::str::from_utf8(&self.buffer[6..self.pos]).unwrap());
+                //println!("----------\n{}\n----------\n",std::str::from_utf8(&self.buffer[6..self.pos]).unwrap());
                 self.s.write_all(&self.buffer[6..self.pos])?;
             }
             self.pos = 6;
@@ -110,7 +110,7 @@ impl<'a,T> MsgWriter<'a,T> where T : std::io::Write {
             }
         }            
         else {
-            println!("Write final chunk");
+            //println!("Write final chunk");
             self.s.write_all(b"0\r\n\r\n").map_err(|e| e.to_string())?;
             self.s.flush().map_err(|e| e.to_string())?;
         }
@@ -317,15 +317,7 @@ impl Request {
         let readbuf = buf[lastcrlfpos..].to_vec();
         //println!("Response::new(), initial text = [[[{}]]]",std::str::from_utf8(&buf[lastcrlfpos..]).unwrap_or("<invalid UTF-8>"));
 
-        Ok(Response::with_data(
-                proto_ver,
-                code,
-                reason,
-                &buf[..lastcrlfpos],
-                headers,
-                content_length,
-                s,
-                &buf[lastcrlfpos..]))
+        Ok(Response::with_data(proto_ver, code, reason,&buf[..lastcrlfpos], headers, content_length, s, &buf[lastcrlfpos..]))
     }
 }
 
@@ -370,6 +362,14 @@ impl<'a,T> Response<'a,T> where T : Read
         s : &'a mut T,
         initial_data : &[u8]) -> Response<'a,T>
     {
+        //println!("header = [[[{}]]]",std::str::from_utf8(header).unwrap());
+        //println!("body part = [[[{}]]]",std::str::from_utf8(initial_data).unwrap());
+        if let Some(content_length) = content_length {
+            //println!("content-length: {}",content_length);
+        }
+        else {
+            //println!("transfer-coding: chunked");
+        }
         Response{
             proto_ver,
             code,
@@ -395,13 +395,12 @@ impl<'a,T> Response<'a,T> where T : Read
     pub fn reason(&self) -> & str { self.reason.as_str() }
         
     pub fn finalize(mut self) -> std::io::Result<&'a mut T> {
-        println!("Finalize response reader!");
+        //println!("Finalize response reader!");
         let mut buf = [0;4096];
         while 0 < self.read(&mut buf)? {
-            println!("")
         }
         
-        println!("---------- Response done!");
+        //println!("---------- Response done!");
         Ok(self.s.s)
     }
 }
@@ -439,13 +438,14 @@ impl<'a,T> Read for Response<'a,T> where T : Read {
             else if self.pos < self.readbuf.len() {
                 // do nothing
             }
-            else { 
+            else {
                 if self.chunk_remains == 0 {
                     // read until CRLF
                     let mut chunksize = 0usize;
                     loop {
                         let mut sizebuf = [0;1];
                         self.s.read_exact(&mut sizebuf)?;
+                        //println!("Response::read, Got ({}), chunksize = {}",sizebuf[0], chunksize);
                         match sizebuf[0] {
                             c @ b'0'..=b'9' => chunksize = (chunksize << 4) + (c-b'0') as usize,
                             c @ b'a'..=b'f' => chunksize = (chunksize << 4) + (c-b'a'+10) as usize,
@@ -460,7 +460,7 @@ impl<'a,T> Read for Response<'a,T> where T : Read {
                             _ => return Err(std::io::Error::other("Invalid chunk header"))
                         }
                     }
-                    //println!("Response::read, read chunk header ({})",self.chunk_remains);
+                    //println!("Response::read, read chunk header ({})",chunksize);
                     self.chunk_remains = chunksize;
                     if chunksize == 0 {
                         let mut sizebuf = [0;2];
@@ -478,7 +478,7 @@ impl<'a,T> Read for Response<'a,T> where T : Read {
                     self.chunk_remains -= n;
                     self.pos = 0;
 
-                    //println!("Response::read, read chunk [[[{}]]]", std::str::from_utf8(self.readbuf.as_slice()).unwrap_or("<Invalid UTF-8>"));
+                    //println!("------ Response::read, read chunk [[[{}]]]", std::str::from_utf8(self.readbuf.as_slice()).unwrap_or("<Invalid UTF-8>"));
 
                     if self.chunk_remains == 0 {
                         // read trailing CRLF

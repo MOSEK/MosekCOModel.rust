@@ -487,8 +487,8 @@ impl Backend {
                      sux : &[f64],
                      xc  : &[f64],
                      slc : &[f64],
-                     suc : &[f64]) {
- 
+                     suc : &[f64])
+    {
         sol.primal.status = 
             if xx.len() != self.var_elt.len() || xc.len() != self.con_elt.len() { SolutionStatus::Undefined } else { psta };
         sol.dual.status = 
@@ -502,9 +502,36 @@ impl Backend {
                 dsta
             };
 
+        let numvar = self.vars.len();
+        let numcon = self.cons.len();
+
         if let SolutionStatus::Undefined = sol.primal.status {}
-        else {
+        else {           
+            sol.primal.var.resize(numvar,0.0);
+            sol.primal.con.resize(numcon,0.0);
             for (v,tgt) in self.vars.iter().zip(sol.primal.var.iter_mut()) {
+                *tgt = 
+                    match v {
+                        Item::Linear{index} => xx[*index],
+                        Item::RangedUpper{index} => xx[*index],
+                        Item::RangedLower{index} => xx[*index],
+                    }
+            }
+            for (c,tgt) in self.cons.iter().zip(sol.primal.con.iter_mut()) {
+                *tgt = 
+                    match c {
+                        Item::Linear{index} => xc[*index],
+                        Item::RangedUpper{index} => xc[*index],
+                        Item::RangedLower{index} => xc[*index],
+                    }
+            }
+            
+        }
+        if let SolutionStatus::Undefined = sol.dual.status {} 
+        else {
+            sol.dual.var.resize(numvar,0.0);
+            sol.dual.con.resize(numcon,0.0);
+            for (v,tgt) in self.vars.iter().zip(sol.dual.var.iter_mut()) {
                 *tgt = 
                     match v {
                         Item::Linear{index} => slx[*index]-sux[*index],
@@ -512,7 +539,7 @@ impl Backend {
                         Item::RangedLower{index} => slx[*index],
                     }
             }
-            for (c,tgt) in self.cons.iter().zip(sol.primal.con.iter_mut()) {
+            for (c,tgt) in self.cons.iter().zip(sol.dual.con.iter_mut()) {
                 *tgt = 
                     match c {
                         Item::Linear{index} => slc[*index]-suc[*index],
@@ -620,5 +647,4 @@ mod test {
         let xx = m.primal_solution(SolutionType::Default,&x);
         println!("x = {:?}", xx);
     }
-
 }
