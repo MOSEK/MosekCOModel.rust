@@ -3,7 +3,7 @@ use mosekcomodel::*;
 
 fn lo1() {
     //let addr = "solve.mosek.com:30080".to_string();
-    let addr = "localhost:9999".to_string();
+    let addr = "solve.mosek.com:30080".to_string();
     let mut m = optserver::Model::new(Some("SuperModel"));
     m.set_parameter((), optserver::SolverAddress(addr));
 
