@@ -1,13 +1,14 @@
 //! This module implements a backend that uses a MOSEK OptServer instance for solving, for example
 //! [solve.mosek.com:30080](http://solve.mosek.com). 
 //!
+use crate::model::{ModelWithControlCallback, ModelWithIntSolutionCallback, ModelWithLogCallback};
 use crate::*;
-use crate::model::{DJCDomainTrait, DJCModelTrait, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, VectorConeModelTrait};
 use crate::domain::*;
-use crate::utils::iter::{ChunksByIterExt, PermuteByEx, PermuteByMutEx};
-use itertools::{iproduct, izip};
+use crate::utils::iter::{ChunksByIterExt, PermuteByEx};
+use itertools::izip;
 use json::JSON;
-use std::fs::{write, File};
+use std::fs::File;
+use std::io::{BufReader, Read};
 use std::net::TcpStream;
 use std::path::Path;
 
@@ -44,6 +45,9 @@ struct Element {
 pub struct Backend {
     name : Option<String>,
 
+    log_cb        : Option<Box<dyn Fn(&str)>>,
+    sol_cb        : Option<Box<dyn FnMut(f64,&[f64],&[f64])>>,
+
     var_elt       : Vec<Element>, // Either lb,ub,int or index,coneidx,offset
     var_int       : Vec<bool>,
 
@@ -59,7 +63,6 @@ pub struct Backend {
     cons          : Vec<Item>,
     con_names     : Vec<Option<String>>,
 
-
     sense_max     : bool,
     c_subj        : Vec<usize>,
     c_cof         : Vec<f64>,
@@ -71,6 +74,8 @@ impl BaseModelTrait for Backend {
     fn new(name : Option<&str>) -> Self {
         Backend{
             name : name.map(|v| v.to_string()),
+            log_cb     : None,
+            sol_cb     : None,
             var_elt    : Default::default(), 
             var_int    : Default::default(), 
 
@@ -359,7 +364,9 @@ impl BaseModelTrait for Backend {
 
         let mut resp = Request::post("/api/v1/submit+solve")
             .add_header("Content-Type", "application/x-mosek-jtask")
-            .add_header("Accept", "application/x-mosek-jtask")
+            .add_header("Accept", "application/x-mosek-multiplex")
+            .add_header("X-Mosek-Callback", "values")
+            .add_header("X-Mosek-Stream", "log")
             .add_header("Host", self.address.as_str())
             .submit_with_writer(&mut con,|w| self.format_json_to(w).map_err(|e| e.to_string()))?;
       
@@ -367,23 +374,101 @@ impl BaseModelTrait for Backend {
             return Err(format!("OptServer responded with code {}: {}",resp.code(),resp.reason()))
         }
 
-        let mut rescode = None;
-
         for (k,v) in resp.headers() {
             if k.eq_ignore_ascii_case(b"Content-Type") {
-                if v.eq(b"application/json") || v.eq(b"application/x-mosek-jtask") {
-                    // ok
-                }
-                else {
+                if ! v.eq(b"application/x-mosek-multistream") {
                     return Err(format!("Unsupported solution format: {}",std::str::from_utf8(v).unwrap_or("<invalid utf-8>")));
                 }
             }
-            else if k.eq_ignore_ascii_case(b"X-Mosek-Res") {
-                if let Ok(r) = std::str::from_utf8(v) {
-                    rescode = Some(r.to_string());
+        }
+
+        // parse incoming stream 
+        {
+            let mut br = BufReader::new(resp);
+            let mut buf = Vec::new();
+
+            loop { // loop over messages
+                // for each message loop over frames
+                buf.clear();
+                let mut mr = MessageReader::new(&mut resp);
+             
+                mr.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+
+                let head_end = subseq_location(buf.as_slice(), b"\n").ok_or_else(|| "Invalid response format".to_string())?;
+                let headers_end = subseq_location_from(head_end,buf.as_slice(),b"\n\n").ok_or_else(|| "Invalid response format".to_string())?;
+
+                let head = &buf[..head_end];
+                let body = &buf[headers_end+2..];
+                let headers = buf[head_end+1..headers_end]
+                    .chunk_by(|a,_| *a == b'\n')
+                    .map(|s| { if let Some(p) = subseq_location(s, b":") { (&s[..p],&s[p+1..]) } else { (&s[..0],s) } });
+
+
+                let mut it = buf.chunk_by(|a,_| *a == b'\n');
+
+                match head {
+                    b"log" => {
+                        if let Some(f) = &self.log_cb {
+                           if let Ok(s) = std::str::from_utf8(body) {
+                               f(s)
+                           }
+                        }
+                    },
+                    b"msg" => {},
+                    b"wrn" => {},
+                    b"err" => {},
+                    b"cbmap" => {},
+                    b"cbinfo" => {},
+                    b"cbcode" => {},
+                    b"cbwarn" => {},
+                    b"ok" => {
+                        let mut trm = None;
+                        for (k,v) in headers {
+                            match k {
+                                b"trm" => trm = Some(v),
+                                b"content-type" => {
+                                    if v != b"application/x-mosek-b" {
+                                        return Err(format!("Unexpected solution format: {}",std::str::from_utf8(v).unwrap_or("<?>")));
+                                    }
+                                }
+                                _ => {},
+                           }
+                        }
+
+                        self.read_bsolution(&self, sol_bas,sol_itr,sol_itg,body)
+                    },
+                    b"fail" => { 
+                        let mut res = None;
+                        for (k,v) in it {
+                            match k {
+                                b"res" => res = Some(v),
+                                _ => {},
+                            }
+                        }
+
+                        let message = std::str::from_utf8(body).unwrap_or("");
+                        return Err(format!("Solve failed ({}): {}",
+                                std::str::from_utf8(res.unwrap_or(b"?")).unwrap_or("?"),
+                                message));
+                    },
+                    _ => {},
                 }
             }
         }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         let data = JSON::read(& mut resp).map_err(|e| e.to_string())?;
         resp.finalize().map_err(|e| e.to_string())?;
 
@@ -455,6 +540,45 @@ impl BaseModelTrait for Backend {
         self.c_subj.resize(subj.len(),0); self.c_subj.copy_from_slice(subj);
         self.c_cof.resize(cof.len(),0.0); self.c_cof.copy_from_slice(cof);
         Ok(())
+    }
+}
+
+struct MessageReader<'a,R> where R : Read {
+    eof : bool,
+    frame_remains : usize,
+    s : & 'a mut R
+
+}
+impl<'a,R> MessageReader<'a,R> where R : Read {
+    fn new(s : &'a mut R) -> MessageReader<'a,R> { MessageReader { eof: false, frame_remains: 0, s }}
+    pub fn skip(&mut self) -> std::io::Result<()> {
+        let mut buf = [0;4096];
+        while 0 < self.read(&mut buf)? {}
+        Ok(())
+    }
+}
+
+impl<'a,R> Read for MessageReader<'a,R> where R : Read {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.eof {
+            Ok(0)
+        }
+        else {
+            if self.frame_remains == 0 {
+                let mut buf = [0;2];
+                self.s.read_exact(&mut buf)?;
+                self.frame_remains = ((buf[0] as usize) << 8) | (buf[1] as usize);
+                if self.frame_remains == 0 {
+                    self.eof = true;
+                    return Ok(0);
+                }
+            }
+
+            let n = buf.len().min(self.frame_remains);
+            let nr = self.s.read(&mut buf[..n])?;
+            self.frame_remains -= nr;
+            Ok(nr)
+        }
     }
 }
 
@@ -550,6 +674,55 @@ impl Backend {
         }
     }
 
+
+
+    fn bsol_array<'b>(itemsize : usize, data : &'b [u8]) -> Result<(usize,&'b[u8]),String> {
+        let b0 = data.get(0).ok_or_else(|| "Invalid solution format".to_string())?;
+        let nb = (b0 >> 5) as usize;
+        if nb == 7 { return Err("Invalid solution format".to_string()); }
+        let mut l = (nb & 0x1f) as usize;
+        for &b in data.get(1..l+1).ok_or_else(|| "Invalid solution format".to_string())?.iter() {
+            l = l << 8 + b as usize;
+        }
+
+        l *= itemsize;
+
+        Ok((nb+l+1, &data[nb+1..nb+1+l]))
+    }
+    fn read_bsolution(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution, data : &[u8]) -> Result<(),String>
+    {
+        if ! data.starts_with(b"BASF") { return Err("Invalid solution format".to_string()) }
+        let mut p = 4;
+        while p < data.len() {
+            let name_len = data.get(p).ok_or_else(|| "Invalid solution format".to_string())?;
+            let name = data.get(p+1..p+1+name_len).ok_or_else(|| "Invalid solution format".to_string())?;
+            p += name_len+1;
+            let fmt_len = data.get(p).ok_or_else(|| "Invalid solution format".to_string())?;
+            let fmt = data.get(p+1..p+1+name_len).ok_or_else(|| "Invalid solution format".to_string())?;
+            p += fmt_len+1;
+    
+            match name {
+                b"solution/basic/status" => {
+                    if fmt != b"[B[B" { return Err("Invalid solution format".to_string()) }
+
+                },
+                b"solution/basic/var" => {},
+                b"solution/basic/con" => {},
+                _ => { /*ignore*/ }
+            }
+
+
+            let mut fi = fmt.iter();
+            while let Some(b) = fi.next() {
+                match b {
+                }
+            }
+        }
+            
+        Ok(())
+    }
+
+
     /// JSON Task format writer.
     ///
     /// See https://docs.mosek.com/latest/capi/json-format.html
@@ -608,6 +781,37 @@ impl Backend {
 
         JSON::Dict(doc).write(strm)
     }
+}
+
+impl ModelWithLogCallback for Backend {
+    fn set_log_handler<F>(& mut self, func : F) where F : 'static+Fn(&str) {
+        self.log_cb = Some(Box::new(func));
+    }
+}
+
+fn subseq_location_from<T>(pos : usize, src : &[T], seq : &[T]) -> Option<usize> where T : Eq {
+    if pos > src.len()-seq.len() {
+        return None;
+    }
+
+    for i in pos..src.len()-seq.len()+1 {
+        if unsafe{ *src.get_unchecked(i) == *seq.get_unchecked(0) } {
+            let mut found = true;
+            for (j0,j1) in (i..i+seq.len()).enumerate() {
+                if unsafe{ *src.get_unchecked(j1) != *seq.get_unchecked(j0) } {
+                    found = false;
+                    break;
+                }
+            }
+            if found {
+                return Some(i);
+            }
+        }
+    }
+    None
+}
+fn subseq_location<T>(src : &[T], seq : &[T]) -> Option<usize> where T : Eq {
+    subseq_location_from(0,src, seq)
 }
 
 
