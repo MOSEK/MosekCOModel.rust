@@ -290,6 +290,7 @@ pub mod experimental;
 pub mod utils;
 pub mod dummy;
 //pub mod variable_index;
+pub mod optserver;
 
 use expr::workstack::WorkStack;
 
