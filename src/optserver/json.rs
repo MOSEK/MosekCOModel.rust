@@ -343,10 +343,10 @@ impl JSON {
                     Ok(JSON::Null)
                 }
                 else {
-                    Err(std::io::Error::other("Invalid JSON syntax"))
+                    Err(std::io::Error::other("Invalid JSON syntax: expected 'null'"))
                 }
             },
-            _ => Err(std::io::Error::other("Invalid JSON syntax")),
+            b => Err(std::io::Error::other(format!("Invalid JSON syntax: '{}'",b as char))),
         }
     }
 

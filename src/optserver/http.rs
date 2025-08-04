@@ -1,7 +1,6 @@
 //! A very basic http module, only implements just enough for simple communication with an
 //! optserver.
 //!
-//!
 
 use std::io::{Read, Write};
 
@@ -29,7 +28,7 @@ pub struct Response<'a,T> where T : Read {
     pos : usize,
     eof : bool,
 
-    s : & 'a mut T,
+    s : InitDataReader<'a,T>,
 }
 
 
@@ -287,7 +286,7 @@ impl Request {
             let message_start = it.peek().unwrap().0+5;
             let message_end = it.find(|c| *c.1 == b'\n').unwrap().0+5+1;
             
-            let reason = std::str::from_utf8(line[message_start..message_end].trim_ascii()).map_err(|_| "Invalid HTTP status line".to_string())?.to_string();
+            let reason = std::str::from_utf8(line[message_start..message_end].trim_ascii()).map_err(|_| "Invalid HTTP status line".to_string())?;
     
 
             (code,(proto_v1,proto_v2),reason)
@@ -316,28 +315,78 @@ impl Request {
         }
 
         let readbuf = buf[lastcrlfpos..].to_vec();
+        //println!("Response::new(), initial text = [[[{}]]]",std::str::from_utf8(&buf[lastcrlfpos..]).unwrap_or("<invalid UTF-8>"));
 
-        Ok(Response{
-            proto_ver,
-            code,
-            reason,
-            header : buf,
-            headers,
-
-            content_length,
-            //chunked, 
-            chunk_remains : 0,
-            readbuf,
-            pos : 0,
-            eof : false,
-
-            s
-        })
+        Ok(Response::with_data(
+                proto_ver,
+                code,
+                reason,
+                &buf[..lastcrlfpos],
+                headers,
+                content_length,
+                s,
+                &buf[lastcrlfpos..]))
     }
 }
 
+struct InitDataReader<'a,T> where T : Read {
+    data : Vec<u8>,
+    pos  : usize,
+    s : &'a mut T
+}
+impl<'a,T> InitDataReader<'a,T> where T : Read {
+    fn new(data : &[u8], s : &'a mut T) -> InitDataReader<'a,T> {
+        InitDataReader{
+            data : data.to_vec(),
+            pos : 0,
+            s
+        }
+    }
+}
+impl<'a,T> Read for InitDataReader<'a,T> where T : Read {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.pos < self.data.len() {
+            let n = buf.len().min(self.data.len()-self.pos);
+            buf[..n].copy_from_slice(&self.data[self.pos..self.pos+n]);
+            self.pos += n;
+            Ok(n)
+        }
+        else {
+            self.s.read(buf)
+        }
+    }
+}
+
+
 impl<'a,T> Response<'a,T> where T : Read 
 {
+    pub fn with_data(
+        proto_ver : (u8,u8),
+        code : u16,
+        reason : &str,
+        header : &[u8],
+        headers : Vec<(usize,usize,usize,usize)>,
+        content_length : Option<usize>,
+        s : &'a mut T,
+        initial_data : &[u8]) -> Response<'a,T>
+    {
+        Response{
+            proto_ver,
+            code,
+            reason : reason.to_string(),
+            header : header.to_vec(), 
+            headers,
+
+            //chunked : bool,
+            chunk_remains : 0,
+            content_length,
+            readbuf : Vec::new(),
+            pos : 0,
+            eof : false,
+            s : InitDataReader::new(initial_data,s)
+        }
+    }
+
     pub fn headers<'b>(&'b self) -> impl Iterator<Item=(&'b[u8],&'b[u8])> {
         self.headers.iter().map(|&(k0,k1,v0,v1)| (&self.header[k0..k1],self.header[v0..v1].trim_ascii()))
     }
@@ -353,14 +402,14 @@ impl<'a,T> Response<'a,T> where T : Read
         }
         
         println!("---------- Response done!");
-        Ok(self.s)
+        Ok(self.s.s)
     }
 }
 
 impl<'a,T> Read for Response<'a,T> where T : Read {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        //println!("--- Response::read {} bytes",buf.len());
         if let Some(remains) = self.content_length {
-            println!("--- read response body: {} bytes",remains);
             if remains > 0 {
                 if self.pos == self.readbuf.len() {
                     self.pos = 0;
@@ -385,7 +434,7 @@ impl<'a,T> Read for Response<'a,T> where T : Read {
             }
         }
         else {
-            println!("--- read: {}, chunk remains: {}",buf.len() ,self.chunk_remains);
+            //println!("--- read: {}, chunk remains: {}, eof={}, pos={}/{}",buf.len() ,self.chunk_remains,self.eof,self.pos,self.readbuf.len());
             if self.eof { return Ok(0); }
             else if self.pos < self.readbuf.len() {
                 // do nothing
@@ -411,6 +460,7 @@ impl<'a,T> Read for Response<'a,T> where T : Read {
                             _ => return Err(std::io::Error::other("Invalid chunk header"))
                         }
                     }
+                    //println!("Response::read, read chunk header ({})",self.chunk_remains);
                     self.chunk_remains = chunksize;
                     if chunksize == 0 {
                         let mut sizebuf = [0;2];
@@ -427,6 +477,8 @@ impl<'a,T> Read for Response<'a,T> where T : Read {
                     self.s.read_exact(self.readbuf.as_mut_slice())?;
                     self.chunk_remains -= n;
                     self.pos = 0;
+
+                    //println!("Response::read, read chunk [[[{}]]]", std::str::from_utf8(self.readbuf.as_slice()).unwrap_or("<Invalid UTF-8>"));
 
                     if self.chunk_remains == 0 {
                         // read trailing CRLF
@@ -541,3 +593,5 @@ mod test {
         }
     }
 }
+
+
