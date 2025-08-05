@@ -1,19 +1,21 @@
 //! This module implements a backend that uses a MOSEK OptServer instance for solving, for example
 //! [solve.mosek.com:30080](http://solve.mosek.com). 
 //!
-use crate::model::{ModelWithControlCallback, ModelWithIntSolutionCallback, ModelWithLogCallback};
+use crate::model::ModelWithLogCallback;
 use crate::*;
 use crate::domain::*;
 use crate::utils::iter::{ChunksByIterExt, PermuteByEx};
+use bio::DataType;
 use itertools::izip;
 use json::JSON;
-use std::fs::File;
+use std::fs::{write, File};
 use std::io::{BufReader, Read};
 use std::net::TcpStream;
 use std::path::Path;
 
 mod http;
 mod json;
+mod bio;
 
 pub type Model = ModelAPI<Backend>;
 
@@ -676,7 +678,7 @@ impl Backend {
 
 
 
-    fn bsol_array<'b>(itemsize : usize, data : &'b [u8]) -> Result<(usize,&'b[u8]),String> {
+    fn bsol_array<'b>(data : &'b [u8]) -> Result<(usize,&'b[u8]),String> {
         let b0 = data.get(0).ok_or_else(|| "Invalid solution format".to_string())?;
         let nb = (b0 >> 5) as usize;
         if nb == 7 { return Err("Invalid solution format".to_string()); }
@@ -685,40 +687,254 @@ impl Backend {
             l = l << 8 + b as usize;
         }
 
-        l *= itemsize;
-
         Ok((nb+l+1, &data[nb+1..nb+1+l]))
     }
-    fn read_bsolution(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution, data : &[u8]) -> Result<(),String>
-    {
-        if ! data.starts_with(b"BASF") { return Err("Invalid solution format".to_string()) }
-        let mut p = 4;
-        while p < data.len() {
-            let name_len = data.get(p).ok_or_else(|| "Invalid solution format".to_string())?;
-            let name = data.get(p+1..p+1+name_len).ok_or_else(|| "Invalid solution format".to_string())?;
-            p += name_len+1;
-            let fmt_len = data.get(p).ok_or_else(|| "Invalid solution format".to_string())?;
-            let fmt = data.get(p+1..p+1+name_len).ok_or_else(|| "Invalid solution format".to_string())?;
-            p += fmt_len+1;
-    
-            match name {
-                b"solution/basic/status" => {
-                    if fmt != b"[B[B" { return Err("Invalid solution format".to_string()) }
 
-                },
-                b"solution/basic/var" => {},
-                b"solution/basic/con" => {},
-                _ => { /*ignore*/ }
+
+    fn read_one_bsol<'a>(&self, sol : &mut Solution, bs : &mut bio::BAIO<'a>) -> Result<(),String> {
+        let numvar = self.var_elt.len();
+        let numcon = self.con_elt.len();
+        let (prefix,whichsol,psta,dsta) =
+        {
+            let mut entry = bs.expect()?;
+            let name = entry.name();
+            let prefix = name.strip_suffix(b"/status").unwrap();
+            let whichsol = prefix.strip_prefix(b"solution/").unwrap();
+
+            if entry.fmt() != b"[B[B" { return Err("Invalid solution format".to_string()); }
+
+            _ = entry.next()?.unwrap();
+
+            let (psta,dsta) = {
+                let (dt,solsta) = entry.next()?.unwrap();
+                if let DataType::U8 = dt {
+                    match solsta {
+                        b"unknown" =>            (SolutionStatus::Unknown,SolutionStatus::Unknown),
+                        b"optimal" =>            (SolutionStatus::Optimal,SolutionStatus::Optimal),
+                        b"prim_feas" =>          (SolutionStatus::Feasible,SolutionStatus::Unknown),
+                        b"dual_feas" =>          (SolutionStatus::Unknown,SolutionStatus::Feasible),
+                        b"prim_and_dual_feas" => (SolutionStatus::Feasible,SolutionStatus::Feasible),
+                        b"prim_infeas_cer" =>    (SolutionStatus::Undefined,SolutionStatus::CertInfeas),
+                        b"dual_infeas_cer" =>    (SolutionStatus::CertInfeas,SolutionStatus::Undefined),
+                        b"prim_illposed_cer" =>  (SolutionStatus::Undefined,SolutionStatus::CertIllposed),
+                        b"dual_illposed_cer" =>  (SolutionStatus::CertIllposed,SolutionStatus::Undefined),
+                        b"integer_optimal" =>    (SolutionStatus::Optimal,SolutionStatus::Undefined),
+                        _ => return Err("Invalid solution format".to_string())
+                    }
+                } else { 
+                    return Err("Invalid solution format".to_string())
+                }
+            };
+            if let SolutionStatus::Undefined = psta { }
+            else {
+                sol.primal.var.resize(numvar,0.0);
+                sol.primal.con.resize(numcon,0.0);
+            }
+            if let SolutionStatus::Undefined = dsta { }
+            else {
+                sol.dual.var.resize(numvar,0.0);
+                sol.dual.con.resize(numcon,0.0);
             }
 
+            sol.primal.status = psta;
+            sol.dual.status = dsta;
 
-            let mut fi = fmt.iter();
-            while let Some(b) = fi.next() {
-                match b {
+            (prefix,whichsol,psta,dsta)
+        };
+
+        // expect ".../var"
+        let (xx,sx) = {
+            let mut entry = bs.expect()?;
+            let name  = entry.name();
+            let fmt   = entry.fmt();
+            if !name.starts_with(prefix) || !name.ends_with(b"/var") { return Err("Invalid solution format".to_string()); }
+
+            match fmt {
+                b"[B[D" => { 
+                    // primal solution only
+                    _ = entry.next()?.unwrap(); // stakey
+                    let (_,bxx) = entry.next()?.unwrap();
+                    if bxx.len() != numvar*8 {
+                        return Err("Invalid solution format".to_string());
+                    }
+                    let mut xx = vec![0.0; numvar];
+                    unsafe {
+                        xx.as_mut_slice().align_to_mut::<u8>().1.copy_from_slice(bxx);
+                    }
+                    (xx,None)
+                },
+                b"[B[D[D[D[D" | 
+                b"[B[D[D[D" => {
+                    // primal and linear dual solution
+                    _ = entry.next()?.unwrap(); // stakey
+                    let (_,bxx)  = entry.next()?.unwrap();
+                    let (_,bslx) = entry.next()?.unwrap();
+                    let (_,bsux) = entry.next()?.unwrap();
+                    entry.finalize();
+                    if bxx.len()  != numvar*8 ||
+                       bslx.len() != numvar*8 || 
+                       bsux.len() != numvar*8
+                    {
+                        return Err("Invalid solution format".to_string());
+                    }
+                    let mut xx  = vec![0.0; numvar];
+                    let mut slx = vec![0.0; numvar];
+                    let mut sux = vec![0.0; numvar];
+                    unsafe {
+                        xx.as_mut_slice().align_to_mut().1.copy_from_slice(bxx);
+                        slx.as_mut_slice().align_to_mut().1.copy_from_slice(bslx);
+                        sux.as_mut_slice().align_to_mut().1.copy_from_slice(bsux);
+                    }
+                    let dobjpart : f64 = izip!(slx.iter(),sux.iter(),self.var_elt.iter()).map(|(sl,su,e)| sl*e.lb-su*e.ub).sum(); 
+                    (xx,Some((slx,sux,dobjpart)))
+                },
+                _ => return Err("Invalid solution format".to_string())
+            }
+        };
+
+
+        // expect ".../con"
+        let (xc,sc) = {
+            let mut entry = bs.expect()?;
+            let name = entry.name();
+            let fmt = entry.fmt();
+            if !name.starts_with(prefix) || !name.ends_with(b"/con") { return Err("Invalid solution format".to_string()); }
+
+            match fmt {
+                b"[B[D" => { 
+                    // primal solution only
+                    _ = entry.next()?; // stakey
+                    let (_,bxx) = entry.next()?.unwrap();
+                    if bxx.len() != numvar*8 {
+                        return Err("Invalid solution format".to_string());
+                    }
+                    let mut xx = vec![0.0; numvar];
+                    unsafe {
+                        xx.as_mut_slice().align_to_mut::<u8>().1.copy_from_slice(bxx);
+                    }
+                    (xx,None)
+                },
+                b"[B[D[D[D" |
+                b"[B[D[D[D[D" => {
+                    // primal and linear dual solution
+                    _ = entry.next()?; // stakey
+                    let (_,bxx)  = entry.next()?.unwrap();
+                    let (_,bslx) = entry.next()?.unwrap();
+                    let (_,bsux) = entry.next()?.unwrap();
+                    entry.finalize()?;
+                    if bxx.len()  != numvar*8 ||
+                       bslx.len() != numvar*8 || 
+                       bsux.len() != numvar*8
+                    {
+                        return Err("Invalid solution format".to_string());
+                    }
+                    let mut xx  = vec![0.0; numvar];
+                    let mut slx = vec![0.0; numvar];
+                    let mut sux = vec![0.0; numvar];
+                    unsafe {
+                        xx.as_mut_slice().align_to_mut().1.copy_from_slice(bxx);
+                        slx.as_mut_slice().align_to_mut().1.copy_from_slice(bslx);
+                        sux.as_mut_slice().align_to_mut().1.copy_from_slice(bsux);
+                    }
+                    let dobjpart : f64 = izip!(slx.iter(),sux.iter(),self.con_elt.iter()).map(|(sl,su,e)| sl*e.lb - su*e.ub).sum();
+                    (xx,Some((slx,sux,dobjpart)))
+                },
+                _ => return Err("Invalid solution format".to_string())
+            }
+        };
+       
+        sol.primal.obj = izip!(xx.permute_by(self.c_subj.as_slice()),self.c_cof.iter()).map(|(&x,&cj)| x*cj).sum();
+
+        if let SolutionStatus::Undefined = psta {}
+        else {
+            for (v,x) in izip!(self.vars.iter(),sol.primal.var.iter_mut()) {
+                *x = match v {
+                    Item::Linear { index } => xx[*index],
+                    Item::RangedUpper { index } => xx[*index],
+                    Item::RangedLower { index } => xx[*index]
+                };
+            }
+            for (v,x) in izip!(self.cons.iter(),sol.primal.con.iter_mut()) {
+                *x = match v {
+                    Item::Linear { index } => xc[*index],
+                    Item::RangedUpper { index } => xc[*index],
+                    Item::RangedLower { index } => xc[*index]
+                };
+            }
+        }
+        match (dsta,sx,sc) {
+            (SolutionStatus::Undefined,_,_) => {},
+            (_,Some((slx,sux,dobjpartx)),Some((slc,suc,dobjpartc))) => {
+                sol.dual.obj = dobjpartx+dobjpartc;
+                for (v,x) in izip!(self.vars.iter(),sol.dual.var.iter_mut()) {
+                    *x = match v {
+                        Item::Linear { index }      => slx[*index]-sux[*index],
+                        Item::RangedUpper { index } => -sux[*index],
+                        Item::RangedLower { index } => slx[*index]
+                    };
+                }
+                for (v,x) in izip!(self.cons.iter(),sol.dual.con.iter_mut()) {
+                    *x = match v {
+                        Item::Linear { index }      => slc[*index]-suc[*index],
+                        Item::RangedUpper { index } => -suc[*index],
+                        Item::RangedLower { index } => suc[*index]
+                    };
+                }
+            },
+            _ => return Err("Invalid solution format".to_string()),
+        }
+
+        Ok(())
+    }
+
+    fn read_bsolution(&self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution, data : &[u8]) -> Result<(),String>
+    {
+        if ! data.starts_with(b"BASF") { return Err("Invalid solution format".to_string()) }
+
+        let mut bs = bio::BAIO::new(&data[4..]);
+
+        //INFO/MOSEKVER III
+        //INFO/name [B
+        //INFO/numvar I
+        //INFO/numcon I
+        //INFO/numcone I
+        //INFO/numbarvar I
+        //INFO/numdomain L
+        //INFO/numafe L
+        //INFO/numacc L
+        //INFO/numdjc L
+        //INFO/numsymmat L
+        //INFO/atruncatetol d 
+        //
+        //solution/basic/status [B[B
+        //solution/basic/var [B[D[D[D
+        //solution/basic/con [B[D[D[D[D
+        //solution/basic/accdoty [B[D
+        //solution/basic/barvar [D[D
+        //
+        //solution/interior/status [B[B
+        //solution/interior/var [B[D[D[D[D
+        //solution/interior/con [B[D[D[D[D 
+        //solution/interior/accdoty [B[D
+        //
+        //solution/integer/status [B[B
+        //solution/integer/var [B[D
+        //solution/integer/con [B[D
+
+        while let Some((name,fmt)) = bs.peek()? {
+            if let Some(rest) = name.strip_prefix(b"solution/") {
+                let which = name.strip_suffix(b"/status").ok_or_else(|| "Invalid solution format".to_string())?;
+                match which {
+                    b"basic"    => self.read_one_bsol(sol_bas, &mut bs)?,
+                    b"interior" => self.read_one_bsol(sol_itr, &mut bs)?,
+                    b"integer"  => self.read_one_bsol(sol_itg, &mut bs)?,
+                    _ => return Err("Invalid solution format".to_string()),
                 }
             }
         }
-            
+
+        while bs.next()?.is_some() { }
+
         Ok(())
     }
 
