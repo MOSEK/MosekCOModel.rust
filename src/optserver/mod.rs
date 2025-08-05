@@ -7,7 +7,7 @@ use crate::domain::*;
 use crate::utils::iter::{ChunksByIterExt, PermuteByEx};
 use bio::DataType;
 use itertools::izip;
-use json::JSON;
+//use json::JSON;
 use std::fs::{write, File};
 use std::io::{BufReader, Read};
 use std::net::TcpStream;
@@ -378,41 +378,41 @@ impl BaseModelTrait for Backend {
 
         for (k,v) in resp.headers() {
             if k.eq_ignore_ascii_case(b"Content-Type") {
-                if ! v.eq(b"application/x-mosek-multistream") {
+                if ! v.eq(b"application/x-mosek-multiplex") {
                     return Err(format!("Unsupported solution format: {}",std::str::from_utf8(v).unwrap_or("<invalid utf-8>")));
                 }
             }
         }
 
         // parse incoming stream 
-        {
-            let mut br = BufReader::new(resp);
-            let mut buf = Vec::new();
+        let mut buf = Vec::new();
 
-            loop { // loop over messages
-                // for each message loop over frames
-                buf.clear();
+        loop { // loop over messages
+            // for each message loop over frames
+            buf.clear();
+            {
                 let mut mr = MessageReader::new(&mut resp);
              
                 mr.read_to_end(&mut buf).map_err(|e| e.to_string())?;
 
-                let head_end = subseq_location(buf.as_slice(), b"\n").ok_or_else(|| "Invalid response format".to_string())?;
-                let headers_end = subseq_location_from(head_end,buf.as_slice(),b"\n\n").ok_or_else(|| "Invalid response format".to_string())?;
-
-                let head = &buf[..head_end];
-                let body = &buf[headers_end+2..];
-                let headers = buf[head_end+1..headers_end]
-                    .chunk_by(|a,_| *a == b'\n')
+                let headers_end = subseq_location(buf.as_slice(),b"\n\n").ok_or_else(|| "Invalid response format B".to_string())?;
+                let mut lines = buf[..headers_end].chunk_by(|&a,_| a != b'\n');
+                
+                let head = lines.next().ok_or_else(|| "Invalid response format A".to_string())?.trim_ascii_end();
+                let mut headers = lines
+                    .map(|s| s.trim_ascii_end())
                     .map(|s| { if let Some(p) = subseq_location(s, b":") { (&s[..p],&s[p+1..]) } else { (&s[..0],s) } });
+                let body = &buf[headers_end+2..];
 
 
                 let mut it = buf.chunk_by(|a,_| *a == b'\n');
 
                 match head {
                     b"log" => {
+                        print!("{}",std::str::from_utf8(body).unwrap_or("<?>"));
                         if let Some(f) = &self.log_cb {
                            if let Ok(s) = std::str::from_utf8(body) {
-                               f(s)
+                               f(s)                                   
                            }
                         }
                     },
@@ -437,11 +437,11 @@ impl BaseModelTrait for Backend {
                            }
                         }
 
-                        self.read_bsolution(&self, sol_bas,sol_itr,sol_itg,body)
+                        return self.read_bsolution(sol_bas,sol_itr,sol_itg,body);
                     },
                     b"fail" => { 
                         let mut res = None;
-                        for (k,v) in it {
+                        for (k,v) in headers {
                             match k {
                                 b"res" => res = Some(v),
                                 _ => {},
@@ -457,83 +457,6 @@ impl BaseModelTrait for Backend {
                 }
             }
         }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        let data = JSON::read(& mut resp).map_err(|e| e.to_string())?;
-        resp.finalize().map_err(|e| e.to_string())?;
-
-        if let JSON::Dict(d) = data {
-            if let Some((k,JSON::Dict(d))) = d.0.iter().find(|kv| kv.0.as_str() == "Task/solutions") {
-                for (k,v) in d.0.iter() {
-
-                    if let JSON::Dict(d) = v {
-                        let mut xx  : Vec<f64> = Vec::new();
-                        let mut slx : Vec<f64> = Vec::new();
-                        let mut sux : Vec<f64> = Vec::new();
-                        let mut xc  : Vec<f64> = Vec::new();
-                        let mut slc : Vec<f64> = Vec::new();
-                        let mut suc : Vec<f64> = Vec::new();
-                        let mut psta = SolutionStatus::Undefined;
-                        let mut dsta = SolutionStatus::Undefined;
-                        for (k,v) in d.0.iter() {
-                            match (k.as_str(),v) {
-                                ("solsta",JSON::String(v)) => {
-                                    match v.as_str() {
-                                        "unknown" => { psta = SolutionStatus::Unknown; dsta = SolutionStatus::Unknown; }
-                                        "optimal" => { psta = SolutionStatus::Optimal; dsta = SolutionStatus::Optimal; }
-                                        "integer_optimal" => { psta = SolutionStatus::Optimal; dsta = SolutionStatus::Undefined; }
-                                        "prim_and_dual_feas" => { psta = SolutionStatus::Feasible; dsta = SolutionStatus::Feasible; }
-                                        "prim_feas" => { psta = SolutionStatus::Feasible; dsta = SolutionStatus::Unknown; }
-                                        "dual_feas" => { psta = SolutionStatus::Unknown; dsta = SolutionStatus::Feasible; }
-                                        "prim_infeas_cer" =>  { psta = SolutionStatus::Undefined; dsta = SolutionStatus::CertInfeas; }  
-                                        "dual_infeas_cer" =>  { psta = SolutionStatus::CertInfeas; dsta = SolutionStatus::Undefined }  
-                                        "prim_illposed_cer" =>  { psta = SolutionStatus::Undefined; dsta = SolutionStatus::CertInfeas; }  
-                                        "dual_illposed_cer" =>  { psta = SolutionStatus::CertInfeas; dsta = SolutionStatus::Undefined; }  
-                                        _ => {}
-                                    }
-                                },
-                                ("xx",v)  => if let Ok(val) = v.try_into() { xx = val; },
-                                ("slx",v) => if let Ok(val) = v.try_into() { slx = val; },
-                                ("sux",v) => if let Ok(val) = v.try_into() { sux = val; },
-                                ("xc",v)  => if let Ok(val) = v.try_into() { xc = val; },
-                                ("slc",v) => if let Ok(val) = v.try_into() { slc = val; },
-                                ("suc",v) => if let Ok(val) = v.try_into() { suc = val; },
-                                _ => {}
-                            }
-                        }
-
-                        self.copy_solution(
-                            match k.as_str() { "basic" => sol_bas, "interior" => sol_itr, "integer" => sol_itg, _ => continue },
-                            psta,dsta,
-                            xx.as_slice(),
-                            slx.as_slice(),
-                            sux.as_slice(),
-                            xc.as_slice(),
-                            slc.as_slice(),
-                            suc.as_slice());
-                    }
-                }
-            }
-        }
-        else {
-            return Err("Invalid solution format".to_string());
-        }
-
-        // interpret data as solution
-
-        Ok(())
     } 
 
     fn objective(&mut self, _name : Option<&str>, sense : Sense, subj : &[usize],cof : &[f64]) -> Result<(),String>
@@ -548,11 +471,12 @@ impl BaseModelTrait for Backend {
 struct MessageReader<'a,R> where R : Read {
     eof : bool,
     frame_remains : usize,
+    final_frame : bool,
     s : & 'a mut R
 
 }
 impl<'a,R> MessageReader<'a,R> where R : Read {
-    fn new(s : &'a mut R) -> MessageReader<'a,R> { MessageReader { eof: false, frame_remains: 0, s }}
+    fn new(s : &'a mut R) -> MessageReader<'a,R> { MessageReader { eof: false, frame_remains: 0, s , final_frame : false}}
     pub fn skip(&mut self) -> std::io::Result<()> {
         let mut buf = [0;4096];
         while 0 < self.read(&mut buf)? {}
@@ -562,18 +486,20 @@ impl<'a,R> MessageReader<'a,R> where R : Read {
 
 impl<'a,R> Read for MessageReader<'a,R> where R : Read {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        //println!("MessageReader::read(), eof = {}",self.eof);
         if self.eof {
             Ok(0)
         }
         else {
             if self.frame_remains == 0 {
-                let mut buf = [0;2];
-                self.s.read_exact(&mut buf)?;
-                self.frame_remains = ((buf[0] as usize) << 8) | (buf[1] as usize);
-                if self.frame_remains == 0 {
-                    self.eof = true;
+                if self.final_frame {
                     return Ok(0);
                 }
+                let mut buf = [0;2];
+                self.s.read_exact(&mut buf)?;
+
+                self.final_frame = buf[0] > 127;
+                self.frame_remains = (((buf[0] & 0x7f) as usize) << 8) | (buf[1] as usize);
             }
 
             let n = buf.len().min(self.frame_remains);
@@ -1005,8 +931,21 @@ impl ModelWithLogCallback for Backend {
     }
 }
 
+fn ascii_from_bytes_lossy(data : &[u8]) -> String {
+    let mut res = String::new();
+    for &b in data.iter() {
+        match b {
+            b'\n' => res.push('\n'),
+            b'\r' => res.push_str("\\r"),
+            32..127 => res.push(b as char),
+            _ => res.push('.')
+        }
+    }
+    res
+}
+
 fn subseq_location_from<T>(pos : usize, src : &[T], seq : &[T]) -> Option<usize> where T : Eq {
-    if pos > src.len()-seq.len() {
+    if pos+seq.len() > src.len() {
         return None;
     }
 
