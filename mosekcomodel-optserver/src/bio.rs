@@ -1,3 +1,288 @@
+//! Module implementing functionality for formatting and parsing `bdata` files. `bdata` is
+//! a general MOSEK format serializing basic array types in a tagged format. 
+//!
+//! # The B-format:
+//! ```text
+//! FILE -> BOM ENTRY* LASTENTRY
+//!
+//! BOM -> b"BASF"|b"FSAB" # depending on endian. If "FSAB", then all entries of size>1 must be byte-swapped.
+//! ENTRY -> NAME FORMAT DATAENTRY # the item size and content of DATAENTRY is implied by FORMAT
+//! NAME -> size:u8, u8[size]
+//! FORMAT-> size:u8, fmt:u8[size]
+//! ```
+//! The `fmt` is a string that describes the format of DATAENTRY
+//! ```text
+//! fmt -> FMTENTRY*
+//! FMTENTRY -> FMTPRIM
+//!          -> FMTARR
+//! FMTPRIM  -> 'b' # i8
+//!             'B' # u8
+//!             'h' # i16
+//!             'H' # u16
+//!             'i' # i32
+//!             'I' # u32
+//!             'l' # i64
+//!             'L' # u64
+//!             'f' # f32
+//!             'd' # f64
+//! FMTARR -> '[' FMTPRIM # array or stream of primitives
+//! ```
+//!
+//! The `DATAENTRY` for a primitive (`FMTPRIM`) is a single value with type
+//! indicated by the format char. For an array `DATAENTRY` has the format
+//! ```text
+//! DATAENTRY -> {b0:u8 | (b0 >> 5) != 7 }, bx : [u8; b0 >> 5], data : [u8; [b0 & 0x1f, bx] as NBO integer ]
+//!           |  {b0:u8 | (b0 >> 5) == 7 }, data : STREAM
+//! STREAM -> CHUNK* ENDCHUNK
+//! ENDCHUNK -> hdr:u16 = 0
+//! CHUNK    -> N:NBO u16, [u8;N]
+//! LASTENTRY: 0u16 
+//! ```
+
+use std::io::{self, Read, Write};
+
+const BBOM : u32 = 0x42534142;
+const REV_BBOM : u32 = 0x42415342;
+
+
+pub struct Ser<'a,T> where T : Write {
+    w : &'a mut T,
+    curfmt : Vec<u8>,
+    entry_active : bool
+}
+
+pub struct SerEntry<'a,'b,T> where T : Write {
+    ser : &'b mut Ser<'a,T>,
+    fmt : &'b [u8]
+}
+
+fn validate_signature(sig : &[u8]) -> bool {
+    sig.iter()
+        .fold(Some(0),
+              |pb,&b| 
+                  pb.and_then(|pb|
+                      match b {
+                          b'b'| b'B'| b'h'| b'H'| 
+                          b'i'| b'I'| b'l'| b'L'| 
+                          b'f'| b'd' => Ok(b),
+                          b'[' => if pb == b'[' { None } else { Some(b) },
+                      }))
+        .and_then(|b| if *b == b'[' { None } else { Some(b) })
+        .is_some()
+}
+
+impl<'a,T> Ser<'a,T> where T : Write {
+    pub fn new(w : &'a mut T) -> std::io::Result<Self> {
+        let bom = [BBOM];
+        let cbom : &[u8] = unsafe{ bom.align_to().1 };
+        w.write_all(cbom)?;
+        Ok(Ser{
+            w,
+            curfmt: Vec::new(),
+            entry_active : false
+        })
+    }
+
+    pub fn entry<'b>(&'b mut self,name : &[u8], fmt : &[u8]) -> std::io::Result<SerEntry<'b,T>> {
+        if self.entry_active {
+            Err(std::io::Error::other("Unterminated entry"))
+        }
+        else if ! validate_signature(fmt) {
+            Err(std::io::Error::other("Format error"))
+        }
+        else {
+            self.curfmt.clear();
+            self.curfmt.extend_from_slice(fmt);
+            self.entry_active = true;
+
+            Ok(SerEntry { ser: self, fmt: self.curfmt.as_slice() })
+        }
+    }
+}
+
+
+impl<'a,'b,T> SerEntry<'a,'b,T> where T : Write {
+    pub fn write_value(&mut self, data : T) -> std::io::Result<()> where T : Serializable {
+        let b0 = self.fmt.get(0).ok_or_else(|| std::io::Error::other("Write beyond entry end"))?;
+        if b0 == b'[' { return Err(std::io::Error::other("Expected an array in entry")); } 
+        self.fmt = &self.fmt[1..];
+        
+        if T::sig() != b0 { return Err(std::io::Error::other("Incorrect type in entry")); }
+        let data = [data];
+        let bdata = unsafe{ data.align_to().1 };
+        self.ser.w.write_all(bdata)?;
+
+        if self.fmt.len() == 0 {
+            self.ser.entry_active = false;
+        }
+        Ok(())
+    }
+
+    pub fn write_array(&mut self, data : &[T]) -> std::io::Result<()> where T : Serializable {
+        let b0 = self.fmt.get(0).ok_or_else(|| std::io::Error::other("Write beyond entry end"))?;
+        if b0 != b'[' { return Err(std::io::Error::other("Expected a single element in entry")); } 
+        let b0 = self.fmt[1];
+        self.fmt = &self.fmt[2..];
+        
+        if T::sig() != b0 { return Err(std::io::Error::other("Incorrect type in entry")); }
+       
+        let n = data.len();
+        let nb = 
+            if      n <= 0x1f { 0 }
+            else if n <= 0x1fff { 1 } 
+            else if n <= 0x1fffff { 2} 
+            else if n <= 0x1fffffff { 3 } 
+            else if n <= 0x1fffffffff { 4 } 
+            else if n <= 0x1fffffffffff { 5 } 
+            else if n <= 0x1fffffffffffff { 6 }
+            else  { return Err(std::io::Error::other("Array too large")) };
+
+        let mut size = [0;7];
+        size.iter_mut().rev().fold(n,|n,b| { *b = n & 0xff; n >> 8 });
+        size[6-nb as usize] |= nb << 5;
+
+        self.ser.w.write_all(&size[6-nb..])?;
+        let bdata = unsafe { data.align_to().1 };
+        self.ser.w.write_all(bdata)?;
+        
+        if self.fmt.len() == 0 {
+            self.ser.entry_active = false;
+        }
+        Ok(())
+    }
+    
+    pub fn write_stream<F>(&mut self, cb : F) -> std::io::Result<()> where T : Serializable, F : FnMut(&[T]) -> std::io::Result<()> {
+        let b0 = self.fmt.get(0).ok_or_else(|| std::io::Error::other("Write beyond entry end"))?;
+        if b0 != b'[' { return Err(std::io::Error::other("Expected a single element in entry")); } 
+        let b0 = self.fmt[1];
+        self.fmt = &self.fmt[2..];
+       
+        if T::sig() != b0 { return Err(std::io::Error::other("Incorrect type in entry")); }
+
+        let mut hd = [0xe0];
+        self.ser.w.write_all(&hd)?;
+
+        cb(&mut SerEntryChunkWriter{sig:b0, ent:self})?;
+        let hd = [0;2];
+        self.ser.w.write_all(&hd)?;
+
+
+        if self.fmt.len() == 0 {
+            self.ser.entry_active = false;
+        }
+        Ok(())
+    }
+}
+
+struct SerEntryChunkWriter<'a,'b,'c,T> where T : Write {
+    sig : u8,
+    ent : &'c mut SerEntry<'a,'b,T>,
+}
+
+impl<'a,'b,'c,T> Write for SerEntryChunkWriter<'a,'b,'c,T> {
+    fn write<B>(&mut self, buf: &[B]) -> io::Result<()> where B : Serializable {
+        if B::sig() != self.sig { return Err(std::io::Error::other("Invalid data type")) }
+        
+        let mut bdata : &[u8] = unsafe{ buf.align_to() } ;
+
+        while ! bdata.is_empty() {
+            let n = bdata.len().min(0xfff0);
+            let mut hd = [(n >> 8) as u8, (n & 0xff) as u8];
+            self.ent.ser.write_all(&bdata[..n])?;
+            bdata = &bdata[n..];
+        }
+        Ok(())
+    }
+    fn flush(&mut self) -> io::Result<()> { Ok(()) }
+}
+
+pub trait Serializable { fn sig() -> u8; }
+
+impl Serializable for u8   { fn sig() -> u8 { b'B' } }
+impl Serializable for i8   { fn sig() -> u8 { b'b' } }
+impl Serializable for u16  { fn sig() -> u8 { b'H' } }
+impl Serializable for i16  { fn sig() -> u8 { b'h' } }
+impl Serializable for u32  { fn sig() -> u8 { b'U' } }
+impl Serializable for i32  { fn sig() -> u8 { b'i' } }
+impl Serializable for u64  { fn sig() -> u8 { b'L' } }
+impl Serializable for i64  { fn sig() -> u8 { b'l' } }
+impl Serializable for f32  { fn sig() -> u8 { b'f' } }
+impl Serializable for f64  { fn sig() -> u8 { b'd' } }
+
+
+
+//------------------------------------------------------------------
+struct Des<'a,R> where R : Read {
+    r : &'a mut R,
+    curfmt : Vec<u8>,
+    curname : Vec<u8>,
+    
+    byte_swap : bool,
+
+    entry_active : bool,
+
+    end_of_stream : bool
+}
+
+impl<'a,R> Des<a,R> where R : Read {
+    pub fn new(r : &'a mut R) -> std::io::Result<Self> { 
+        let mut bom = &[0u32];
+        let mut bbom = unsafe{ bom.align_to_mut() };
+        r.read_all(bbom)?;
+
+        let byte_swap = match bom[0] {
+            BBOM => false,
+            REV_BBOM => unimplemented!("Byte swapping in data"),
+            _ => return Err(std::io::Error::other("Invalid BOM"))
+        };
+
+        Ok(Des{ r, curfmt : Vec::new(), curname : Vec::new(), entry_active : false, byte_swap, end_of_stream : false })
+    }
+
+    pub fn next_entry<'b>(&'b mut self) -> std::io::Result<Option<DesEntry<'a,'b,R>>> {
+        if self.entry_active { return Err(std::io::Error::other("Previous entry not finished")) }
+        if self.end_of_stream { return Ok(None); }
+        let mut namelen = [0;1];
+        self.r.read_exact(&namelen)?;
+        if namelen[0] > 0 {
+            self.curname.resize(namelen[0] as usize,0);
+            self.r.read_exact(self.curname.as_mut_slice())?
+        }
+        let mut fmtlen = [0;1];
+        self.r.read_exact(&fmtlen)?;
+        if fmtlen[0] > 0 {
+            self.curname.resize(fmtlen[0] as usize,0);
+            self.r.read_exact(self.curfmt.as_mut_slice())?;
+            if ! validate_signature(self.curfmt.as_slice()) {
+                return Err(std::io::Error::other("Invalid signature"));
+            }
+        }
+        
+        if namelen[0] == 0 && fmtlen[0] == 0 {
+            self.end_of_stream = true;
+            Ok(None)
+        }
+        else {
+            Ok(Some(DesEntry{des : self, fmt : &self.fmt.as_slice()}))
+        }
+    }
+}
+
+struct DesEntry<'a,'b,R> where R : Read {
+    des : &'b mut Des<'a,R>,
+    fmt : &'b[u8]
+}
+
+
+
+
+
+
+
+
+
+
+
 
 
 pub struct BAIO<'a> {
