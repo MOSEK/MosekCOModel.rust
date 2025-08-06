@@ -12,7 +12,7 @@ use std::io::Read;
 use std::net::TcpStream;
 use std::path::Path;
 
-mod http;
+//mod http;
 mod json;
 mod bio;
 
@@ -353,8 +353,6 @@ impl BaseModelTrait for Backend {
 
     fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String>
     {
-        use http::*;
-
         if self.address.is_empty() {
             return Err("No optserver address given".to_string());
         }
