@@ -41,6 +41,8 @@
 
 use std::io::{self, Read, Write};
 
+use itertools::Either;
+
 const BBOM : u32 = 0x42534142;
 const REV_BBOM : u32 = 0x42415342;
 
@@ -209,8 +211,6 @@ impl Serializable for i64  { fn sig() -> u8 { b'l' } }
 impl Serializable for f32  { fn sig() -> u8 { b'f' } }
 impl Serializable for f64  { fn sig() -> u8 { b'd' } }
 
-
-
 //------------------------------------------------------------------
 struct Des<'a,R> where R : Read {
     r : &'a mut R,
@@ -224,7 +224,7 @@ struct Des<'a,R> where R : Read {
     end_of_stream : bool
 }
 
-impl<'a,R> Des<a,R> where R : Read {
+impl<'a,R> Des<'a,R> where R : Read {
     pub fn new(r : &'a mut R) -> std::io::Result<Self> { 
         let mut bom = &[0u32];
         let mut bbom = unsafe{ bom.align_to_mut() };
@@ -273,9 +273,120 @@ struct DesEntry<'a,'b,R> where R : Read {
     fmt : &'b[u8]
 }
 
+impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
+    pub fn name(&self) -> &'b[u8] { self.des.curname.as_slice() }
+    pub fn fmt(&self) -> &'b[u8] { self.des.curfmt.as_slice() }
+   
+    pub fn next_value<T>(&mut self) -> std::io::Result<Option<T>> where T : Serializable {
+        if self.fmt.len() == 0 { return Ok(None); }
+        if T::sig() != self.fmt.get(0).ok_or_else(|| std::io::Error::other("Incorrect field type requested"))?;
+        let mut data = [0];
+        let mut bdata = unsafe{ data.align_to_mut().1 };
+        self.des.r.read_exact(bdata)?;
+        self.fmt = &self.fmt[1..];
+        Ok(Some(data[0]))
+    }
+    pub fn next<'c,T>(&'c mut self) -> std::io::Result<Option<DesEntryReader<'a,'b,'c,R,T>>> where T : Serializable { 
+        if self.fmt.len() == 0 { return Ok(None); }
+        
+        let size = 
+            match self.fmt.get(0).ok_or_else(|| std::io::Error::other("Incorrect field type requested"))? {
+                b'[' => {
+                    let b = self.fmt[1];
+                    if T::sig() != b {
+                        return Err(std::io::Error::other("Incorrect field type requested"));
+                    }
+
+                    self.fmt = &self.fmt[2..];
+                    let mut buf = [0;7];
+                    self.des.r.read_exact(&buf[..1])?;
+                    let nb = (buf[0] >> 5) as usize;
+                    if nb == 7 {
+                        EntryKind::Stream(0)
+                    }
+                    else {
+                        buf[0] = buf[0] & 0x1f;
+                        self.des.r.read_exact(&buf[1..nb+1]);
+                        EntryKind::Array(buf[..nb+1].iter().fold(0,|v,&b| (v << 8) | (b as usize)))
+                    }
+                },
+                b => {
+                    if T::sig() != b {
+                        return Err(std::io::Error::other("Incorrect field type requested"));
+                    }
+                    else {
+                        self.fmt = &self.fmt[1..];
+                        EntryKind::Value
+                    }
+                }
 
 
+            };
+        Ok(Some(DesEntryReader{entry : self, size }))
+    }
+}
 
+#[derive(Copy)]
+enum EntryKind {
+    Empty,
+    Value,
+    Array(usize),
+    Stream(usize)
+}
+
+struct DesEntryReader<'a,'b,'c,R,T> where R : Read {
+    entry : &'c DesEntry<'a,'b,R>,
+    size : EntryKind
+}
+
+impl<'a,'b,'c,R,T> DesEntryReader<'a,'b,'c,R,T> where R : Read {
+    fn read(&mut self, buf: &mut [T]) -> io::Result<usize> {
+        match self.size {
+            EntryKind::Empty => Ok(0),
+            EntryKind::Value => {
+                if let Some(buf) = buf.get(..1) {
+                    self.entry.des.r.read_exact(unsafe{ buf.align_to_mut().1 })?;
+                    self.size = EntryKind::Empty;
+                    Ok(1)
+                }
+                else {
+                    Ok(0)
+                }
+            },
+            EntryKind::Array(nleft) => {
+                let n = nleft.min(buf.len());
+                self.entry.des.r.read_exact(unsafe{ buf[..n].align_to_mut().1 })?;
+                self.size = if nleft == n { EntryKind::Empty } else { EntryKind::Array(nleft-n) };
+                Ok(n)
+            },
+            EntryKind::Stream(nleft) => {
+                let mut buf = buf;
+                let chunk_left = nleft;
+                let nread = 0;
+                while ! buf.is_empty() {
+                    if chunk_left == 0 {
+                        let mut buf = [0;2];
+                        self.entry.des.r.read_exact(&buf)?;
+                        chunk_left = ((buf[0] as usize) << 8) | (buf[1] as usize);
+                        if chunk_left == 0 {
+                            self.size = EntryKind::Empty;
+                            break;
+                        }
+
+                    }
+                    let n = (chunk_left / size_of::<T>).min(buf.len());
+                    assert!(n > 0);
+                    self.entry.des.r.read_exact(unsafe { buf[..n].align_to_mut() })?;
+                    nread += n;
+                    chunk_left -= n * size_of::<T>();
+                    buf = &mut buf[n..];
+                }
+                
+                Ok(nread)
+            }
+        }
+    }
+}
 
 
 

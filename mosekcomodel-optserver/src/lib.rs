@@ -361,6 +361,8 @@ impl BaseModelTrait for Backend {
 
         let mut con = TcpStream::connect(self.address.as_str()).map_err(|e| e.to_string())?;
 
+        reqwest::blocking::post
+
         let mut resp = Request::post("/api/v1/submit+solve")
             .add_header("Content-Type", "application/x-mosek-jtask")
             .add_header("Accept", "application/x-mosek-multiplex")
