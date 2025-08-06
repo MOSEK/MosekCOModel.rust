@@ -1,11 +1,14 @@
+//! This module implements a dummy backend that allows inputting data, but has no support for
+//! solving or writing data.
+//!
 use crate::*;
 use crate::model::{DJCDomainTrait, DJCModelTrait, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, VectorConeModelTrait};
 use crate::domain::*;
-use crate::utils::iter::{ChunksByIterExt, PermuteByEx, PermuteByMutEx};
+use crate::utils::iter::{ChunksByIterExt, PermuteByMutEx};
 use std::f64;
 use std::ops::ControlFlow;
 use std::path::Path;
-use itertools::{iproduct, izip, Either};
+use itertools::{iproduct, izip};
 use model::ModelWithControlCallback;
 
 pub type Model = ModelAPI<Backend>;
@@ -51,7 +54,8 @@ enum Element {
     Conic{coneidx:usize,offset:usize,b:f64},
 }
 
-/// Simple model object.
+/// Simple model object that supports input of linear, conic and disjunctive constraints. It only
+/// stores data, it does not support solving or writing problems.
 #[derive(Default)]
 pub struct Backend {
     name : Option<String>,
@@ -70,6 +74,13 @@ pub struct Backend {
     con_a_row     : Vec<usize>, // index into a_ptr
     cons          : Vec<Item>,
 
+    djc_rows      : Vec<(usize,f64)>, // index into djc_clause_ptr, right-hand-side
+    djc_block     : Vec<(ConeType,usize,usize)>,// conetype, first row, num rows
+    djc_clause_ptr : Vec<usize>,  // index into djc_dom, djc_a_row
+    djc_term_ptr  : Vec<usize>, // index into djc_clause_ptr
+    djc_ptr       : Vec<usize>,
+
+
     sense_max     : bool,
     c_subj        : Vec<usize>,
     c_cof         : Vec<f64>,
@@ -79,6 +90,9 @@ impl BaseModelTrait for Backend {
     fn new(name : Option<&str>) -> Self {
         Backend{
             name         : name.map(|v| v.to_string()),
+            djc_clause_ptr : vec![0],
+            djc_term_ptr : vec![0],
+            djc_ptr : vec![0],
             .. Default::default()
         }
     }
@@ -554,8 +568,46 @@ impl DJCModelTrait for Backend {
                    name : Option<&str>, 
                    exprs     : &[(&[usize],&[usize],&[usize],&[f64])], 
                    domains   : &[Box<dyn model::DJCDomainTrait<Self>>],
-                   term_size : &[usize]) -> Result<model::Disjunction,String> {
-        println!("TODO! Implement disjunction for dummy");
-        Ok(model::Disjunction::new(0))
+                   term_size : &[usize]) -> Result<model::Disjunction,String> {        
+        let djci = self.djc_term_ptr.len()-1;
+        let first_a_row = self.a_ptr.len();
+
+        assert_eq!(exprs.len(),domains.len());
+
+        let mut nblocks = Vec::new();
+        for ((_,ptr,subj,cof),dom) in exprs.iter().zip(domains.iter()) {
+            let ptr0 = self.a_ptr.len();
+            for (p,n) in ptr.iter().zip(ptr[1..].iter()).scan(self.a_subj.len(),|v, (p0,p1)| { let r = (*v,p1-p0); *v += p1-p0; Some(r) }) {
+                self.a_ptr.push([p,n]);
+            }
+            self.a_subj.extend_from_slice(subj);
+            self.a_cof.extend_from_slice(cof);
+
+            let (ct,offset,shape,conedim) = dom.extract();
+            let n = ptr.len()-1;
+
+            // NOTE: since we currently only allow linear domains, the cone dimension doesn't
+            // matter.
+            let djc_row0 = self.djc_rows.len();
+            for (i,b) in offset.iter().enumerate() {
+                self.djc_rows.push((ptr0 + i,*b));
+            }
+
+            for i in 0..n {
+                self.djc_block.push((ct.clone(),djc_row0+i,1));
+            }
+            nblocks.push(n)
+        }
+            
+        let mut term_ptr0 = 0;
+        for (p0,p1) in term_size.iter().scan(0usize,|c,s| { let r = (*c,*c+s); *c += s; Some(r) }) {
+            let nb : usize = nblocks[p0..p1].iter().sum();
+            term_ptr0 += nb;
+            self.djc_term_ptr.push(term_ptr0);
+        }
+
+        self.djc_ptr.push(self.djc_term_ptr.len()-1);
+
+        Ok(model::Disjunction::new(djci as i64))
     }
 }

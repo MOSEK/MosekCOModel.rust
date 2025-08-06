@@ -188,13 +188,14 @@
 //! use mosekcomodel::*;
 //! use mosekcomodel::dummy::Model;
 //!
+//! // Create a model with the name 'lo1'
+//! let mut m = Model::new(Some("lo1"));
+//!
 //! let a0 = vec![ 3.0, 1.0, 2.0, 0.0 ];
 //! let a1 = vec![ 2.0, 1.0, 3.0, 1.0 ];
 //! let a2 = vec![ 0.0, 2.0, 0.0, 3.0 ];
 //! let c  = vec![ 3.0, 1.0, 5.0, 1.0 ];
 //!
-//! // Create a model with the name 'lo1'
-//! let mut m = Model::new(Some("lo1"));
 //! // Redirect log output from the solver to stdout for debugging.
 //! // if uncommented.
 //! m.set_log_handler(|msg| print!("{}",msg));
@@ -209,6 +210,36 @@
 //!
 //! // Set the objective function to (c^t * x)
 //! m.objective(Some("obj"), Sense::Maximize, x.dot(c.as_slice()));
+//! ```
+//! 
+//! The project does not include a solver directly, but it is possible to solve (currently
+//! linear-only) models by using the OptServer backend to offload to a MOSEK OptServer instance,
+//! for example [solve.mosek.com:30080](http://solve.mosek.com) or an instance running locally:
+//! ```
+//! use mosekcomodel::*;
+//! use mosekcomodel::optserver::Model;
+//!
+//! let mut m = Model::new(Some("lo1"));
+//! // ...
+//! # let a0 = vec![ 3.0, 1.0, 2.0, 0.0 ];
+//! # let a1 = vec![ 2.0, 1.0, 3.0, 1.0 ];
+//! # let a2 = vec![ 0.0, 2.0, 0.0, 3.0 ];
+//! # let c  = vec![ 3.0, 1.0, 5.0, 1.0 ];
+//! let x = m.variable(Some("x"), greater_than(vec![0.0,0.0,0.0,0.0]));
+//! // ...
+//! # _ = m.constraint(None,       x.index(1),           less_than(10.0));
+//! # _ = m.constraint(Some("c1"), x.dot(a0.as_slice()), equal_to(30.0));
+//! # _ = m.constraint(Some("c2"), x.dot(a1.as_slice()), greater_than(15.0));
+//! # _ = m.constraint(Some("c3"), x.dot(a2.as_slice()), less_than(25.0));
+//! # m.objective(Some("obj"), Sense::Maximize, x.dot(c.as_slice()));
+//!
+//! m.set_parameter((), optserver::SolverAddress("solve.mosek.com:30080".to_string()));
+//! 
+//! m.solve();
+//! let (psta,dsta) = m.solution_status(SolutionType::Default);
+//! println!("Status = {:?}/{:?}",psta,dsta);
+//! let xx = m.primal_solution(SolutionType::Default,&x);
+//!  println!("x = {:?}", xx);
 //!
 //! ```
 //!
@@ -290,6 +321,7 @@ pub mod experimental;
 pub mod utils;
 pub mod dummy;
 //pub mod variable_index;
+pub mod optserver;
 
 use expr::workstack::WorkStack;
 
