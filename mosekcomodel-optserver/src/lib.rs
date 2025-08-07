@@ -4,17 +4,15 @@
 use mosekcomodel::*;
 use mosekcomodel::model::ModelWithLogCallback;
 use mosekcomodel::utils::iter::{ChunksByIterExt, PermuteByEx};
-use bio::DataType;
 use itertools::izip;
-//use json::JSON;
 use std::fs::File;
-use std::io::Read;
-use std::net::TcpStream;
+use std::io::{Read, Write};
 use std::path::Path;
 
 //mod http;
 mod json;
 mod bio;
+mod pipe;
 
 pub type Model = ModelAPI<Backend>;
 
@@ -68,7 +66,7 @@ pub struct Backend {
     c_subj        : Vec<usize>,
     c_cof         : Vec<f64>,
 
-    address       : String
+    address       : Option<reqwest::Url>,
 }
 
 impl BaseModelTrait for Backend {
@@ -96,7 +94,7 @@ impl BaseModelTrait for Backend {
             c_subj     : Default::default(), 
             c_cof      : Default::default(), 
 
-            address    : Default::default(), 
+            address    : None,
         }
     }
     fn free_variable<const N : usize>
@@ -353,109 +351,125 @@ impl BaseModelTrait for Backend {
 
     fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String>
     {
-        if self.address.is_empty() {
+        if let Some(address) = self.address {
+        
+            let mut client = reqwest::blocking::Client::new();
+
+            let (mut req_r,mut req_w) = pipe::new();
+            let (mut resp_r,mut resp_w) = pipe::new();
+
+            let t = std::thread::spawn(move || {
+                let resp = client.post(address)
+                    .header("Content-Type", "application/x-mosek-b")
+                    .header("Accept", "application/x-mosek-multiplex")
+                    .header("X-Mosek-Callback", "values")
+                    .header("X-Mosek-Stream", "log")
+                    .body(reqwest::blocking::Body::new(req_r))
+                    .send()
+                    .map_err(|e| e.to_string())?
+                    ;
+
+                if ! resp.status().is_success() {
+                    return Err(format!("OptServer responded with code {}",resp.status()));
+                }
+
+                for (k,v) in resp.headers().iter() {
+                    if k.as_str().eq_ignore_ascii_case("Content-Type") {
+                        if ! v.as_bytes().eq(b"application/x-mosek-multiplex") {
+                            return Err(format!("Unsupported solution format: {}",std::str::from_utf8(v.as_bytes()).unwrap_or("<invalid utf-8>")));
+                        }
+                    }
+                }
+                resp.copy_to(&mut resp_w).map_err(|e| e.to_string())?;
+
+                Ok(())
+            });
+
+            self.write_btask(&mut req_w)?;
+                
+            // We should now receive an application/x-mosek-multiplex stream ending with either a
+            // fail or a result.
+            // parse incoming stream 
+            let mut buf = Vec::new();
+
+            loop { // loop over messages
+                // for each message loop over frames
+                buf.clear();
+                {
+                    let mut mr = MessageReader::new(&mut resp);
+                 
+                    mr.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+
+                    let headers_end = subseq_location(buf.as_slice(),b"\n\n").ok_or_else(|| "Invalid response format B".to_string())?;
+                    let mut lines = buf[..headers_end].chunk_by(|&a,_| a != b'\n');
+                    
+                    let head = lines.next().ok_or_else(|| "Invalid response format A".to_string())?.trim_ascii_end();
+                    let mut headers = lines
+                        .map(|s| s.trim_ascii_end())
+                        .map(|s| { if let Some(p) = subseq_location(s, b":") { (&s[..p],&s[p+1..]) } else { (&s[..0],s) } });
+                    let body = &buf[headers_end+2..];
+
+
+                    let mut it = buf.chunk_by(|a,_| *a == b'\n');
+
+                    match head {
+                        b"log" => {
+                            print!("{}",std::str::from_utf8(body).unwrap_or("<?>"));
+                            if let Some(f) = &self.log_cb {
+                               if let Ok(s) = std::str::from_utf8(body) {
+                                   f(s)                                   
+                               }
+                            }
+                        },
+                        b"msg" => {},
+                        b"wrn" => {},
+                        b"err" => {},
+                        b"cbmap" => {},
+                        b"cbinfo" => {},
+                        b"cbcode" => {},
+                        b"cbwarn" => {},
+                        b"ok" => {
+                            let mut trm = None;
+                            for (k,v) in headers {
+                                match k {
+                                    b"trm" => trm = Some(v),
+                                    b"content-type" => {
+                                        if v != b"application/x-mosek-b" {
+                                            return Err(format!("Unexpected solution format: {}",std::str::from_utf8(v).unwrap_or("<?>")));
+                                        }
+                                    }
+                                    _ => {},
+                               }
+                            }
+
+                            return self.read_bsolution(sol_bas,sol_itr,sol_itg,body);
+                        },
+                        b"fail" => { 
+                            let mut res = None;
+                            for (k,v) in headers {
+                                match k {
+                                    b"res" => res = Some(v),
+                                    _ => {},
+                                }
+                            }
+
+                            let message = std::str::from_utf8(body).unwrap_or("");
+                            return Err(format!("Solve failed ({}): {}",
+                                    std::str::from_utf8(res.unwrap_or(b"?")).unwrap_or("?"),
+                                    message));
+                        },
+                        _ => {},
+                    }
+                }
+            }
+        }
+        else {
             return Err("No optserver address given".to_string());
         }
+        t.join()?;
 
-        println!("Solve using: {}",self.address.as_str());
+        Ok(())
 
-        let mut con = TcpStream::connect(self.address.as_str()).map_err(|e| e.to_string())?;
-
-        reqwest::blocking::post
-
-        let mut resp = Request::post("/api/v1/submit+solve")
-            .add_header("Content-Type", "application/x-mosek-jtask")
-            .add_header("Accept", "application/x-mosek-multiplex")
-            .add_header("X-Mosek-Callback", "values")
-            .add_header("X-Mosek-Stream", "log")
-            .add_header("Host", self.address.as_str())
-            .submit_with_writer(&mut con,|w| self.format_json_to(w).map_err(|e| e.to_string()))?;
-      
-        if resp.code() != 200 {
-            return Err(format!("OptServer responded with code {}: {}",resp.code(),resp.reason()))
-        }
-
-        for (k,v) in resp.headers() {
-            if k.eq_ignore_ascii_case(b"Content-Type") {
-                if ! v.eq(b"application/x-mosek-multiplex") {
-                    return Err(format!("Unsupported solution format: {}",std::str::from_utf8(v).unwrap_or("<invalid utf-8>")));
-                }
-            }
-        }
-
-        // parse incoming stream 
-        let mut buf = Vec::new();
-
-        loop { // loop over messages
-            // for each message loop over frames
-            buf.clear();
-            {
-                let mut mr = MessageReader::new(&mut resp);
-             
-                mr.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-
-                let headers_end = subseq_location(buf.as_slice(),b"\n\n").ok_or_else(|| "Invalid response format B".to_string())?;
-                let mut lines = buf[..headers_end].chunk_by(|&a,_| a != b'\n');
-                
-                let head = lines.next().ok_or_else(|| "Invalid response format A".to_string())?.trim_ascii_end();
-                let mut headers = lines
-                    .map(|s| s.trim_ascii_end())
-                    .map(|s| { if let Some(p) = subseq_location(s, b":") { (&s[..p],&s[p+1..]) } else { (&s[..0],s) } });
-                let body = &buf[headers_end+2..];
-
-
-                let mut it = buf.chunk_by(|a,_| *a == b'\n');
-
-                match head {
-                    b"log" => {
-                        print!("{}",std::str::from_utf8(body).unwrap_or("<?>"));
-                        if let Some(f) = &self.log_cb {
-                           if let Ok(s) = std::str::from_utf8(body) {
-                               f(s)                                   
-                           }
-                        }
-                    },
-                    b"msg" => {},
-                    b"wrn" => {},
-                    b"err" => {},
-                    b"cbmap" => {},
-                    b"cbinfo" => {},
-                    b"cbcode" => {},
-                    b"cbwarn" => {},
-                    b"ok" => {
-                        let mut trm = None;
-                        for (k,v) in headers {
-                            match k {
-                                b"trm" => trm = Some(v),
-                                b"content-type" => {
-                                    if v != b"application/x-mosek-b" {
-                                        return Err(format!("Unexpected solution format: {}",std::str::from_utf8(v).unwrap_or("<?>")));
-                                    }
-                                }
-                                _ => {},
-                           }
-                        }
-
-                        return self.read_bsolution(sol_bas,sol_itr,sol_itg,body);
-                    },
-                    b"fail" => { 
-                        let mut res = None;
-                        for (k,v) in headers {
-                            match k {
-                                b"res" => res = Some(v),
-                                _ => {},
-                            }
-                        }
-
-                        let message = std::str::from_utf8(body).unwrap_or("");
-                        return Err(format!("Solve failed ({}): {}",
-                                std::str::from_utf8(res.unwrap_or(b"?")).unwrap_or("?"),
-                                message));
-                    },
-                    _ => {},
-                }
-            }
-        }
     } 
 
     fn objective(&mut self, _name : Option<&str>, sense : Sense, subj : &[usize],cof : &[f64]) -> Result<(),String>
@@ -514,7 +528,18 @@ pub struct SolverAddress(pub String);
 impl SolverParameterValue<Backend> for SolverAddress {
     type Key = ();
     fn set(self,_parname : Self::Key, model : & mut Backend) -> Result<(),String> {
-        model.address = self.0;
+        model.address = Some(reqwest::Url::parse(self.0.as_str())
+            .map_err(|e| "Invalid SolverAddress value".to_string())
+            .and_then(|mut url| 
+                if url.scheme() == "" {
+                    url.set_scheme("http").unwrap();
+                    Ok(url)
+                }
+                else if url.scheme().eq_ignore_ascii_case("http") || url.scheme().eq_ignore_ascii_case("https") { 
+                    Ok(url) 
+                } else {
+                    Err(format!("Invalid url scheme: {}",url.as_str()))
+                })?);
         Ok(())
     }
 }
@@ -600,6 +625,13 @@ impl Backend {
             }
         }
     }
+
+    
+    fn stream_btask<W>(&self, w : &mut W) -> std::io::Result<()> where W : Write {
+       unimplemented!();
+    }
+
+    
 
 
 
@@ -923,6 +955,19 @@ impl Backend {
         JSON::Dict(doc).write(strm)
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 impl ModelWithLogCallback for Backend {
     fn set_log_handler<F>(& mut self, func : F) where F : 'static+Fn(&str) {
