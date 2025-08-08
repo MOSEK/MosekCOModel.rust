@@ -3,7 +3,7 @@
 //!
 use mosekcomodel::*;
 use mosekcomodel::model::ModelWithLogCallback;
-use mosekcomodel::utils::iter::{ChunksByIterExt, PermuteByEx};
+use mosekcomodel::utils::iter::{ChunksByIterExt, PermuteByEx, PermuteByMutEx};
 use itertools::izip;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -339,7 +339,7 @@ impl BaseModelTrait for Backend {
             match ext {
                 "json"|"jtask" => {
                     let mut f = File::create(p).map_err(|e| e.to_string())?;
-                    self.format_json_to(&mut f).map_err(|e| e.to_string())
+                    self.write_jtask(&mut f).map_err(|e| e.to_string())
                 },
                 _ => Err("Writing problem not supported".to_string())
             }
@@ -630,7 +630,9 @@ impl Backend {
     
     /// MOSEK B fomat
     /// The order of entries are fixed, some may be left out. If the presence is conditional, the
-    /// condition is mentioned in brackets after the format. 
+    /// condition is mentioned in brackets after the format. A condition `{C}` means that the entry
+    /// is present if and only if `C` is satisfied, while `{C, optional}` means that it _may_ be
+    /// present if `C` is satisfied. If no condition is listed, the entry is mandatory.
     ///
     /// # Into section
     /// ```text
@@ -665,42 +667,42 @@ impl Backend {
     /// ```
     ///
     /// # Names section 
+    /// All name lists are a list of `\0`-terminated strings, and entries are only present if they contain at least one name.
     /// ```text
-    /// names/obj [B - a single name
-    /// # All name lists are a list of '\0'-terminated strings, and entries are only present if they contain at least one name.
-    /// names/var:    [B
-    /// names/barvar: [B
-    /// names/con:    [B
-    /// names/cone:   [B
-    /// names/domain: [B
-    /// names/acc:    [B
-    /// names/djc:    [B
+    /// names/obj:    [B         - a single name
+    /// names/var:    [B      {numvar > 0}
+    /// names/barvar: [B      {numbarvar > 0}
+    /// names/con:    [B      {numcon > 0}
+    /// names/cone:   [B      {numcone > 0}
+    /// names/domain: [B      {numdomain > 0}
+    /// names/acc:    [B      {numacc > 0}
+    /// names/djc:    [B      {numdjc > 0}
     /// ```
     ///
     /// # Solutions section
     /// ```text
     /// solution/basic/status [B[B       -- prosta, solsta
-    /// solution/basic/var [B[D[D[D      -- stakey,level,slx,sux
-    /// solution/basic/con [B[D[D[D[D    -- stakey,level,slc,suc,y
-    /// solution/basic/acc [D            -- doty
+    /// solution/basic/var [B[D[D[D      {numvar > 0} -- stakey,level,slx,sux
+    /// solution/basic/con [B[D[D[D[D    {numcon > 0} -- stakey,level,slc,suc,y
+    /// solution/basic/acc [D            {numacc > 0} -- doty
     ///
     /// solution/interior/status [B[B    -- prosta, solsta
-    /// solution/interior/var [B[D[D[D   -- stakey,level,slx,sux,snx
-    /// solution/interior/barvar [D[D    -- barx,bars
-    /// solution/interior/con [B[D[D[D[D -- stakey,level,slc,suc,y
-    /// solution/interior/acc [D         -- doty
+    /// solution/interior/var [B[D[D[D   {numvar > 0} -- stakey,level,slx,sux,snx
+    /// solution/interior/barvar [D[D    {numbarvar > 0} -- barx,bars
+    /// solution/interior/con [B[D[D[D[D {numcon > 0} -- stakey,level,slc,suc,y
+    /// solution/interior/acc [D         {numacc > 0} -- doty
     ///
     /// solution/integer/status [B[B     -- prosta, solsta
-    /// solution/integer/var [B[D[D[D    -- stakey,level
-    /// solution/integer/barvar [D[D     -- barx,bars
-    /// solution/integer/con [B[D[D[D[D  -- stakey,level
+    /// solution/integer/var [B[D[D[D    {numvar > 0} -- stakey,level
+    /// solution/integer/barvar [D[D     {numbarvar > 0} -- barx,bars
+    /// solution/integer/con [B[D[D[D[D  {numcon > 0} -- stakey,level
     /// ``` 
     /// 
     /// # Parameters section
     /// ```text
-    /// parameter/double: [B[d
-    /// parameter/integer: [B[i
-    /// parameter/symbolic: [B[B # second element is a list of  of '\0'-terminated value strings
+    /// parameter/double: [B[d   {optional}
+    /// parameter/integer: [B[i  {optional}
+    /// parameter/symbolic: [B[B {optional} # second element is a list of  of '\0'-terminated value strings
     /// ```
     ///
     /// # Bounds indicators
@@ -729,7 +731,7 @@ impl Backend {
     /// MSK_DOMAIN_PRIMAL_POWER_CONE:    'p'
     /// MSK_DOMAIN_DUAL_POWER_CONE:      'o'
     /// ```
-    fn write_btask<W>(&self,w : &mut W) -> std::io::Result<()> where W : Write {
+    pub fn write_btask<W>(&self,w : &mut W) -> std::io::Result<()> where W : Write {
         let mut w = bio::Ser::new(w)?;
         // INFO/MOSEKVER: III
         // INFO/name: [B
@@ -763,7 +765,7 @@ impl Backend {
         w.entry(b"INFO/atruncatetol",b"d")?.write_value(0.0)?;
 
         // data/symmat: [B[i[l[i[i[d  {numsymmat > 0}
-        // var/bound:   [B[d[d []     {numvar > 0}    -- bk,lb,ub
+        // var/bound:   [B[d[d        {numvar > 0}    -- bk,lb,ub
         // data/c:      [B[dd                         -- sense, c, cfix
         // data/barc:   I[i[l[l[d     {numbarvar > 0, optional} -- nnz, subi,numterm,alpha, if and only if numbarvar > 0
         // con/bound:   [B[d[d        {numcon > 0}    --
@@ -774,12 +776,77 @@ impl Backend {
         // data/domain: [B[l[d        {numdomain > 0}
         // data/acc:    [l[l[l[d      {numacc > 0}
         // data/djc:    [l[l[l[l[l[d  {numdjc > 0}
-        {
+        if self.var_elt.len() > 0 {
             w.entry(b"var/bound", b"[B[d[d")?
-                .write_array(self.var_elt.iter(|e| bounds_to_bbk(e. , ub). ))
-                        
-            
+                .write_array(self.var_elt.iter().map(bounds_to_bbk).collect::<Vec<u8>>().as_slice())?
+                .write_array(self.var_elt.iter().map(|e| e.lb).collect::<Vec<f64>>().as_slice())?
+                .write_array(self.var_elt.iter().map(|e| e.ub).collect::<Vec<f64>>().as_slice())?
+                ;
         }
+        {
+            let mut c = vec![0.0; self.var_elt.len()];
+            c.permute_by_mut(&self.c_subj.as_slice()).zip(self.c_cof.iter()).for_each(|(d,&s)| *d = s);
+            w.entry(b"data/c",b"[B[d[d")?
+                .write_array(if self.sense_max {b"maximize"} else {b"minimize"})?
+                .write_array(c.as_slice())?
+                .write_value(0.0)?
+                ;
+        }
+
+        w.entry(b"con/bound",b"[B[d[d")?
+            .write_array(self.con_elt.iter().map(bounds_to_bbk).collect::<Vec<u8>>().as_slice())?
+            .write_array(self.con_elt.iter().map(|e| e.lb).collect::<Vec<f64>>().as_slice())?
+            .write_array(self.con_elt.iter().map(|e| e.ub).collect::<Vec<f64>>().as_slice())?
+            ;
+
+        {
+            let a_row_len : Vec<u32> = self.a_ptr.permute_by(self.con_a_row.as_slice()).map(|row| row[1] as u32).collect();
+            let numanz = a_row_len.iter().sum();
+            let a_subj : Vec<i32> = self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_subj[row[0]..row[0]+row[1]].iter()).collect();
+            let a_cof  : Vec<f64> = self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_cof[row[0]..row[0]+row[1]].iter()).collect();
+            
+            w.entry(b"data/A",b"[I[i[d")?
+                .write_array(a_row_len.as_slice())?
+                .write_array(a_subj.as_slice())?
+                .write_array(a_cof.as_slice())?
+                ;
+        }
+
+        // names/obj:    [B                      - a single name
+        // names/var:    [B      {numvar    > 0}
+        // names/barvar: [B      {numbarvar > 0}
+        // names/con:    [B      {numcon    > 0}
+        // names/cone:   [B      {numcone   > 0}
+        // names/domain: [B      {numdomain > 0}
+        // names/acc:    [B      {numacc    > 0}
+        // names/djc:    [B      {numdjc    > 0}
+        
+        w.entry(b"names/obj",b"[B")?
+            .write_array(b"obj")?
+            ;
+        if self.var_elt.len() > 0 {
+            let mut ew = w.entry(b"names/var",b"[B")?.stream_writer::<u8>()?;
+            for n in self.var_names.iter() {
+                ew.write(n.map(|n| n.as_bytes()).unwrap_or(b""))?;
+                ew.write(&[0])?;
+            }
+            ew.close()?;
+        }
+        
+        if self.con_elt.len() > 0 {
+            let mut ew = w.entry(b"names/con",b"[B")?.stream_writer::<u8>()?;
+            for n in self.con_names.iter() {
+                ew.write(n.map(|n| n.as_bytes()).unwrap_or(b""))?;
+                ew.write(&[0])?;
+            }
+            ew.close();
+        }
+    
+        // parameter/double: [B[d
+        // parameter/integer: [B[i
+        // parameter/symbolic: [B[B # second element is a list of  of '\0'-terminated value strings
+        
+        // Do not send parameters
 
         Ok(())
     }
@@ -994,39 +1061,100 @@ impl Backend {
         Ok(())
     }
 
-    fn read_bsolution(&self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution, data : &[u8]) -> Result<(),String>
+    /// The b-solution is a solution in the same format as the btask.
+    ///
+    /// # Info section
+    /// The info section is identical to the btask info section. 
+    /// ```text
+    /// INFO/MOSEKVER III
+    /// INFO/name [B
+    /// INFO/numvar I
+    /// INFO/numcon I
+    /// INFO/numcone I
+    /// INFO/numbarvar I
+    /// INFO/numdomain L
+    /// INFO/numafe L
+    /// INFO/numacc L
+    /// INFO/numdjc L
+    /// INFO/numsymmat L
+    /// INFO/atruncatetol d 
+    /// ```
+    /// 
+    /// # Solution 
+    /// Solution section is the same as in btask. 
+    ///
+    /// Note that both primal and dual solution values are present, even for values that are
+    /// logically unknown or undefined (for e.g. certificates or unknown status).
+    ///
+    /// ## Basic solution
+    /// The entire section is optional. 
+    /// ```text
+    /// solution/basic/status [B[B       -- prosta, solsta
+    /// solution/basic/var [B[D[D[D      {numvar > 0} -- stakey,level,slx,sux
+    /// solution/basic/con [B[D[D[D[D    {numcon > 0} -- stakey,level,slc,suc,y
+    /// solution/basic/acc [D            {numacc > 0} -- doty
+    /// ```
+    ///
+    /// ## Interior solution
+    /// The entire section is optional. 
+    /// ```text
+    /// solution/interior/status [B[B    -- prosta, solsta
+    /// solution/interior/var [B[D[D[D   {numvar > 0} -- stakey,level,slx,sux,snx
+    /// solution/interior/barvar [D[D    {numbarvar > 0} -- barx,bars
+    /// solution/interior/con [B[D[D[D[D {numcon > 0} -- stakey,level,slc,suc,y
+    /// solution/interior/acc [D         {numacc > 0} -- doty
+    /// ```
+    ///
+    /// ## Integer solution
+    /// The entire section is optional. 
+    /// ```text
+    /// solution/integer/status [B[B     -- prosta, solsta
+    /// solution/integer/var [B[D[D[D    {numvar > 0} -- stakey,level
+    /// solution/integer/barvar [D[D     {numbarvar > 0} -- barx,bars
+    /// solution/integer/con [B[D[D[D[D  {numcon > 0} -- stakey,level
+    /// ```
+    ///
+    /// # Information items
+    /// ```text
+    /// information/int    [I[B[i 
+    /// information/double [I[B[d
+    /// information/long   [I[B[l 
+    /// ```
+    fn read_bsolution<R>(&self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution,r : &mut R) -> std::io::Result<()> where R : Read 
+    {
+        let mut r = bio::Des::new(r)?;
+
+        let mut got_sol_itr = false;
+        let mut got_sol_itg = false;
+        let mut got_sol_bas = false;
+        let mut got_sol_inf = false;
+
+        {
+            let entry = r.expect(b"INFO/MOSEKVER").check_fmt(b"III")?;
+            _ = entry.next_value::<u32>()?;
+            _ = entry.next_value::<u32>()?;
+            _ = entry.next_value::<u32>()?;
+        }
+        _ = r.expect(b"INFO/name")?.check_fmt(b"[B")?.read::<u8>()?;
+        let numvar    = r.expect(b"INFO/numvar")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let numcon    = r.expect(b"INFO/numcon")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let numcone   = r.expect(b"INFO/numcone")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let numbarvar = r.expect(b"INFO/numbarvar")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let numdomain = r.expect(b"INFO/numdomain")?.check_fmt(b"I")?.next_value::<u64>()?;
+        let numafe    = r.expect(b"INFO/numafe")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let numacc    = r.expect(b"INFO/numacc")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let numdjc    = r.expect(b"INFO/numdjc")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let numsymmat = r.expect(b"INFO/numsymmat")?.check_fmt(b"I")?.next_value::<u32>()?;
+
+        Ok(())
+    }
+
+    fn read_bsolution_(&self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution, data : &[u8]) -> Result<(),String>
     {
         if ! data.starts_with(b"BASF") { return Err("Invalid solution format".to_string()) }
 
         let mut bs = bio::BAIO::new(&data[4..]);
 
-        //INFO/MOSEKVER III
-        //INFO/name [B
-        //INFO/numvar I
-        //INFO/numcon I
-        //INFO/numcone I
-        //INFO/numbarvar I
-        //INFO/numdomain L
-        //INFO/numafe L
-        //INFO/numacc L
-        //INFO/numdjc L
-        //INFO/numsymmat L
-        //INFO/atruncatetol d 
-        //
-        //solution/basic/status [B[B
-        //solution/basic/var [B[D[D[D
-        //solution/basic/con [B[D[D[D[D
-        //solution/basic/accdoty [B[D
-        //solution/basic/barvar [D[D
-        //
-        //solution/interior/status [B[B
-        //solution/interior/var [B[D[D[D[D
-        //solution/interior/con [B[D[D[D[D 
-        //solution/interior/accdoty [B[D
-        //
-        //solution/integer/status [B[B
-        //solution/integer/var [B[D
-        //solution/integer/con [B[D
 
         while let Some((name,fmt)) = bs.peek()? {
             if let Some(rest) = name.strip_prefix(b"solution/") {
@@ -1049,7 +1177,7 @@ impl Backend {
     /// JSON Task format writer.
     ///
     /// See https://docs.mosek.com/latest/capi/json-format.html
-    fn format_json_to<S>(&self, strm : &mut S) -> std::io::Result<()> 
+    fn write_jtask<S>(&self, strm : &mut S) -> std::io::Result<()> 
         where 
             S : std::io::Write 
     {
@@ -1164,12 +1292,12 @@ fn subseq_location<T>(src : &[T], seq : &[T]) -> Option<usize> where T : Eq {
 }
 
 
-fn bounds_to_bbk(lb : f64, ub : f64) -> u8 {
-    match (lb.is_finite(),ub.is_finite()) {
+fn bounds_to_bbk(e : & Element) -> u8 {
+    match (e.lb.is_finite(),e.ub.is_finite()) {
         (false,false) => b'f',
         (true,false) => b'l',
         (false,true) => b'u',
-        (true,true) => if lb<ub||lb>ub { b'r' } else { b'f' },
+        (true,true) => if e.lb<e.ub||e.lb>e.ub { b'r' } else { b'f' },
     }
 }
 

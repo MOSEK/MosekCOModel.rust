@@ -373,6 +373,13 @@ impl<'a,R> Des<'a,R> where R : Read {
             Ok(Some(DesEntry{des : self, fmt, name, fmtpos : 0, ready : true }))
         }
     }
+
+    pub fn expect<'b>(&'b mut self, name : &[u8]) -> std::io::Result<DesEntry<'a,'b,R>> {
+        match self.next_entry()? {
+            None => Err(std::io::Error::other("Expected a entry, got end-of-file")),
+            Some(v) => if v.name() == name { Ok(v) } else { Err(std::io::Error::other(format!("Expected a entry '{}'", std::str::from_utf8(name).unwrap_or("<invalid utf-8>")))) },
+        }
+    }
 }
 
 impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
@@ -380,6 +387,10 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
     pub fn name(&self) -> &[u8] { &self.name[1..1+self.name[0] as usize] }
     /// Return the fmt name
     pub fn fmt(&self)  -> &[u8] { &self.fmt[1..1+self.fmt[0] as usize] }
+    pub fn check_fmt(self, fmt : &[u8]) -> std::io::Result<Self> {
+        if self.fmt != fmt { Err(std::io::Error::other(format!("Expected entry in format '{}'",std::str::from_utf8(fmt).unwrap_or("<invalid utf-8>")))) }
+        else { Ok(self) }
+    }
    
     /// Get next field as a value of specific type. The type must match the signture.
     pub fn next_value<E>(&mut self) -> std::io::Result<Option<E>> where E : Serializable+Default+Copy {
@@ -391,6 +402,26 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
         self.fmtpos += 1;
         Ok(Some(data[0]))
     }
+
+    pub fn read<'c,E>(&'c mut self) -> std::io::Result<Vec<E>>
+        where 
+            E : Serializable+Default+Copy 
+    { 
+        if let Some(r) = self.next::<E>()? {
+            let mut res : Vec<E> = Vec::new();
+            loop {
+                let base = res.len(); res.resize(res.len()+4096,E::default());
+                let n = r.read(&mut res[base..])?;
+                res.truncate(base+n);
+                if n == 0 { break; }
+            }
+            Ok(res)
+        }
+        else {
+            Err(std::io::Error::other("Read beyond end of entry"))
+        }
+    }
+    
 
     /// Get a reader for the next field. It may be necessary to specify the type of the field,
     /// which must match the signature.
