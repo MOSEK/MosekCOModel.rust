@@ -1164,7 +1164,7 @@ impl Backend {
 
         while let Some(entry) = r.next_entry()? {
             match entry.name() {
-                b"solutions/basic/status"    => { entry.check_fmt(b"[B[B")?; bas_sta = Some((entry.read()?,entry.read()?)); },
+                b"solutions/basic/status"    => { entry.check_fmt(b"[B[B")?; _ = entry.read()?; bas_sta = Some(str_to_pdsolsta(entry.read().as_bytes())); },
                 b"solutions/interior/status" => { entry.check_fmt(b"[B[B")?; itr_sta = Some((entry.read()?,entry.read()?)); },
                 b"solutions/integer/status"  => { entry.check_fmt(b"[B[B")?; itg_sta = Some((entry.read()?,entry.read()?)); },
 
@@ -1186,6 +1186,7 @@ impl Backend {
         if let Some(bas_sta) = bas_sta {
             if numvar > 0 && bas_var.is_none() { return Err(std::io::Error::other("Missing solution element")) }
             if numcon > 0 && bas_con.is_none() { return Err(std::io::Error::other("Missing solution element")) }
+            
             
 
         }
