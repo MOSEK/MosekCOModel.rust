@@ -349,6 +349,7 @@ impl BaseModelTrait for Backend {
         }
     }
 
+
     fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String>
     {
         if let Some(address) = self.address {
@@ -627,12 +628,161 @@ impl Backend {
     }
 
     
-    fn stream_btask<W>(&self, w : &mut W) -> std::io::Result<()> where W : Write {
-       unimplemented!();
+    /// MOSEK B fomat
+    /// The order of entries are fixed, some may be left out. If the presence is conditional, the
+    /// condition is mentioned in brackets after the format. 
+    ///
+    /// # Into section
+    /// ```text
+    /// INFO/MOSEKVER: III
+    /// INFO/name: [B
+    /// INFO/numvar: I
+    /// INFO/numcon: I
+    /// INFO/numcone: I
+    /// INFO/numbarvar: I
+    /// INFO/numdomain: L
+    /// INFO/numafe: L
+    /// INFO/numacc: L
+    /// INFO/numdjc: L
+    /// INFO/numsymmat: L
+    /// INFO/atruncatetol: d
+    /// ```
+    ///
+    /// # Data section 
+    /// ```text
+    /// data/symmat: [B[i[l[i[i[d  {numsymmat > 0}
+    /// var/bound:   [B[d[d []     {numvar > 0}    -- bk,lb,ub
+    /// data/c:      [B[dd                         -- sense, c, cfix
+    /// data/barc:   I[i[l[l[d     {numbarvar > 0, optional} -- nnz, subi,numterm,alpha, if and only if numbarvar > 0
+    /// con/bound:   [B[d[d        {numcon > 0}    --
+    /// data/A:      [I[i[d                        -- rowlen, subj, valj    
+    /// data/bara:   [i[i[l[l[d    {numbarvar > 0, optional}
+    /// data/Fg:     [I[l[d[d      {numafe > 0} 
+    /// data/barf:   [l[i[i[l[l[d  {numbarvar > 0, optional} -- subi,rowlen,subj,numterm,midx,alpha
+    /// data/domain: [B[l[d        {numdomain > 0}
+    /// data/acc:    [l[l[l[d      {numacc > 0}
+    /// data/djc:    [l[l[l[l[l[d  {numdjc > 0}
+    /// ```
+    ///
+    /// # Names section 
+    /// ```text
+    /// names/obj [B - a single name
+    /// # All name lists are a list of '\0'-terminated strings, and entries are only present if they contain at least one name.
+    /// names/var:    [B
+    /// names/barvar: [B
+    /// names/con:    [B
+    /// names/cone:   [B
+    /// names/domain: [B
+    /// names/acc:    [B
+    /// names/djc:    [B
+    /// ```
+    ///
+    /// # Solutions section
+    /// ```text
+    /// solution/basic/status [B[B       -- prosta, solsta
+    /// solution/basic/var [B[D[D[D      -- stakey,level,slx,sux
+    /// solution/basic/con [B[D[D[D[D    -- stakey,level,slc,suc,y
+    /// solution/basic/acc [D            -- doty
+    ///
+    /// solution/interior/status [B[B    -- prosta, solsta
+    /// solution/interior/var [B[D[D[D   -- stakey,level,slx,sux,snx
+    /// solution/interior/barvar [D[D    -- barx,bars
+    /// solution/interior/con [B[D[D[D[D -- stakey,level,slc,suc,y
+    /// solution/interior/acc [D         -- doty
+    ///
+    /// solution/integer/status [B[B     -- prosta, solsta
+    /// solution/integer/var [B[D[D[D    -- stakey,level
+    /// solution/integer/barvar [D[D     -- barx,bars
+    /// solution/integer/con [B[D[D[D[D  -- stakey,level
+    /// ``` 
+    /// 
+    /// # Parameters section
+    /// ```text
+    /// parameter/double: [B[d
+    /// parameter/integer: [B[i
+    /// parameter/symbolic: [B[B # second element is a list of  of '\0'-terminated value strings
+    /// ```
+    ///
+    /// # Bounds indicators
+    /// ```text
+    /// MSK_BK_FR: 'f'
+    /// MSK_BK_FX: 'x'
+    /// MSK_BK_LO: 'l'
+    /// MSK_BK_UP: 'u'
+    /// MSK_BK_RA: 'r'
+    /// ```
+    /// # Domain type indicators
+    /// ```text
+    /// MSK_DOMAIN_R:                    'R'
+    /// MSK_DOMAIN_RMINUS:               '-'
+    /// MSK_DOMAIN_RPLUS:                '+'
+    /// MSK_DOMAIN_RZERO:                '0'
+    /// MSK_DOMAIN_QUADRATIC_CONE:       'q'
+    /// MSK_DOMAIN_RQUADRATIC_CONE:      'r'
+    /// MSK_DOMAIN_PRIMAL_EXP_CONE:      'e'
+    /// MSK_DOMAIN_DUAL_EXP_CONE:        'x'
+    /// MSK_DOMAIN_INF_NORM_CONE:        'i'
+    /// MSK_DOMAIN_ONE_NORM_CONE:        '1'
+    /// MSK_DOMAIN_PRIMAL_GEO_MEAN_CONE: 'g'
+    /// MSK_DOMAIN_DUAL_GEO_MEAN_CONE:   'G'
+    /// MSK_DOMAIN_SVEC_PSD_CONE:        'V'
+    /// MSK_DOMAIN_PRIMAL_POWER_CONE:    'p'
+    /// MSK_DOMAIN_DUAL_POWER_CONE:      'o'
+    /// ```
+    fn write_btask<W>(&self,w : &mut W) -> std::io::Result<()> where W : Write {
+        let mut w = bio::Ser::new(w)?;
+        // INFO/MOSEKVER: III
+        // INFO/name: [B
+        // INFO/numvar: I
+        // INFO/numcon: I
+        // INFO/numcone: I
+        // INFO/numbarvar: I
+        // INFO/numdomain: L
+        // INFO/numafe: L
+        // INFO/numacc: L
+        // INFO/numdjc: L
+        // INFO/numsymmat: L
+        // INFO/atruncatetol: d
+
+        {
+            let mut e = w.entry(b"INFO/MOSEKVER",b"III")?;
+            e.write_value::<u32>(10)?;
+            e.write_value::<u32>(0)?;
+            e.write_value::<u32>(0)?;
+        }
+        w.entry(b"INFO/name",b"[B")?.write_array(self.name.map(|s| s.as_bytes()).unwrap_or(b""))?;     
+        w.entry(b"INFO/numvar",b"I")?.write_value(self.var_elt.len() as u32)?;
+        w.entry(b"INFO/numcon",b"I")?.write_value(self.con_elt.len() as u32)?;
+        w.entry(b"INFO/numcone",b"I")?.write_value(0u32)?;
+        w.entry(b"INFO/numbarvar",b"I")?.write_value(0u32)?;
+        w.entry(b"INFO/numdomain",b"L")?.write_value(0u64)?;
+        w.entry(b"INFO/numafe",b"L")?.write_value(0u64)?;
+        w.entry(b"INFO/numacc",b"L")?.write_value(0u64)?;
+        w.entry(b"INFO/numdjc",b"L")?.write_value(0u64)?;
+        w.entry(b"INFO/numsymmat",b"L")?.write_value(0u64)?;
+        w.entry(b"INFO/atruncatetol",b"d")?.write_value(0.0)?;
+
+        // data/symmat: [B[i[l[i[i[d  {numsymmat > 0}
+        // var/bound:   [B[d[d []     {numvar > 0}    -- bk,lb,ub
+        // data/c:      [B[dd                         -- sense, c, cfix
+        // data/barc:   I[i[l[l[d     {numbarvar > 0, optional} -- nnz, subi,numterm,alpha, if and only if numbarvar > 0
+        // con/bound:   [B[d[d        {numcon > 0}    --
+        // data/A:      [I[i[d                        -- rowlen, subj, valj    
+        // data/bara:   [i[i[l[l[d    {numbarvar > 0, optional}
+        // data/Fg:     [I[l[d[d      {numafe > 0} 
+        // data/barf:   [l[i[i[l[l[d  {numbarvar > 0, optional} -- subi,rowlen,subj,numterm,midx,alpha
+        // data/domain: [B[l[d        {numdomain > 0}
+        // data/acc:    [l[l[l[d      {numacc > 0}
+        // data/djc:    [l[l[l[l[l[d  {numdjc > 0}
+        {
+            w.entry(b"var/bound", b"[B[d[d")?
+                .write_array(self.var_elt.iter(|e| bounds_to_bbk(e. , ub). ))
+                        
+            
+        }
+
+        Ok(())
     }
-
-    
-
 
 
     fn bsol_array<'b>(data : &'b [u8]) -> Result<(usize,&'b[u8]),String> {
@@ -1013,6 +1163,15 @@ fn subseq_location<T>(src : &[T], seq : &[T]) -> Option<usize> where T : Eq {
     subseq_location_from(0,src, seq)
 }
 
+
+fn bounds_to_bbk(lb : f64, ub : f64) -> u8 {
+    match (lb.is_finite(),ub.is_finite()) {
+        (false,false) => b'f',
+        (true,false) => b'l',
+        (false,true) => b'u',
+        (true,true) => if lb<ub||lb>ub { b'r' } else { b'f' },
+    }
+}
 
 #[cfg(test)]
 mod test {

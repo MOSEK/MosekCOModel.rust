@@ -154,13 +154,12 @@ impl<'a,T> Ser<'a,T> where T : Write {
     }
 }
 
-
 impl<'a,'b,T> SerEntry<'a,'b,T> where T : Write {
     /// Write a single value of the given type. 
     ///
     /// # Arguments
     /// - `data` The value to write. The format must match the value type.
-    pub fn write_value<E>(&mut self, data : E) -> std::io::Result<()> where E : Serializable {
+    pub fn write_value<E>(&mut self, data : E) -> std::io::Result<&mut Self> where E : Serializable {
         if ! self.ready { return Err(std::io::Error::other("Entry not ready")); }
         if self.fmtpos == self.ser.curfmt.len() { return Err(std::io::Error::other("Write beyond entry end")); }
         let b0 = self.ser.curfmt[self.fmtpos];
@@ -176,14 +175,14 @@ impl<'a,'b,T> SerEntry<'a,'b,T> where T : Write {
         if self.fmtpos == self.ser.curfmt.len() {
             self.ser.entry_active = false;
         }
-        Ok(())
+        Ok(self)
     }
 
     /// Write a fixed-length array to b-stream.
     ///
     /// # Arguments
     /// - `data` The value array to write. The format must match the value type.
-    pub fn write_array<E>(&mut self, data : &[E]) -> std::io::Result<()> where E : Serializable {
+    pub fn write_array<E>(&mut self, data : &[E]) -> std::io::Result<&mut Self> where E : Serializable {
         if ! self.ready { return Err(std::io::Error::other("Entry not ready")); }
         if self.fmtpos == self.ser.curfmt.len() { return Err(std::io::Error::other("Write beyond entry end")); }
         let b0 = self.ser.curfmt[0];
@@ -215,7 +214,7 @@ impl<'a,'b,T> SerEntry<'a,'b,T> where T : Write {
         if self.fmtpos == self.ser.curfmt.len() {
             self.ser.entry_active = false;
         }
-        Ok(())
+        Ok(self)
     }
     
     /// Create a value stream writer for the b-stream. 
