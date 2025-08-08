@@ -1090,28 +1090,28 @@ impl Backend {
     /// The entire section is optional. 
     /// ```text
     /// solution/basic/status [B[B       -- prosta, solsta
-    /// solution/basic/var [B[D[D[D      {numvar > 0} -- stakey,level,slx,sux
-    /// solution/basic/con [B[D[D[D[D    {numcon > 0} -- stakey,level,slc,suc,y
-    /// solution/basic/acc [D            {numacc > 0} -- doty
+    /// solution/basic/var [B[d[d[d      {numvar > 0} -- stakey,level,slx,sux
+    /// solution/basic/con [B[d[d[d[d    {numcon > 0} -- stakey,level,slc,suc,y
+    /// solution/basic/acc [d            {numacc > 0} -- doty
     /// ```
     ///
     /// ## Interior solution
     /// The entire section is optional. 
     /// ```text
     /// solution/interior/status [B[B    -- prosta, solsta
-    /// solution/interior/var [B[D[D[D   {numvar > 0} -- stakey,level,slx,sux,snx
-    /// solution/interior/barvar [D[D    {numbarvar > 0} -- barx,bars
-    /// solution/interior/con [B[D[D[D[D {numcon > 0} -- stakey,level,slc,suc,y
-    /// solution/interior/acc [D         {numacc > 0} -- doty
+    /// solution/interior/var [B[d[d[d[d {numvar > 0} -- stakey,level,slx,sux,snx
+    /// solution/interior/barvar [d[d    {numbarvar > 0} -- barx,bars
+    /// solution/interior/con [B[d[d[d[d {numcon > 0} -- stakey,level,slc,suc,y
+    /// solution/interior/acc [d         {numacc > 0} -- doty
     /// ```
     ///
     /// ## Integer solution
     /// The entire section is optional. 
     /// ```text
     /// solution/integer/status [B[B     -- prosta, solsta
-    /// solution/integer/var [B[D[D[D    {numvar > 0} -- stakey,level
-    /// solution/integer/barvar [D[D     {numbarvar > 0} -- barx,bars
-    /// solution/integer/con [B[D[D[D[D  {numcon > 0} -- stakey,level
+    /// solution/integer/var [B[d        {numvar > 0} -- stakey,level
+    /// solution/integer/barvar [d       {numbarvar > 0} -- barx,bars
+    /// solution/integer/con [B[d        {numcon > 0} -- stakey,level
     /// ```
     ///
     /// # Information items
@@ -1136,8 +1136,8 @@ impl Backend {
             _ = entry.next_value::<u32>()?;
         }
         _ = r.expect(b"INFO/name")?.check_fmt(b"[B")?.read::<u8>()?;
-        let numvar    = r.expect(b"INFO/numvar")?.check_fmt(b"I")?.next_value::<u32>()?;
-        let numcon    = r.expect(b"INFO/numcon")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let numvar    = r.expect(b"INFO/numvar")?.check_fmt(b"I")?.next_value::<u32>()? as usize;
+        let numcon    = r.expect(b"INFO/numcon")?.check_fmt(b"I")?.next_value::<u32>()? as usize;
         let numcone   = r.expect(b"INFO/numcone")?.check_fmt(b"I")?.next_value::<u32>()?;
         let numbarvar = r.expect(b"INFO/numbarvar")?.check_fmt(b"I")?.next_value::<u32>()?;
         let numdomain = r.expect(b"INFO/numdomain")?.check_fmt(b"I")?.next_value::<u64>()?;
@@ -1145,6 +1145,50 @@ impl Backend {
         let numacc    = r.expect(b"INFO/numacc")?.check_fmt(b"I")?.next_value::<u32>()?;
         let numdjc    = r.expect(b"INFO/numdjc")?.check_fmt(b"I")?.next_value::<u32>()?;
         let numsymmat = r.expect(b"INFO/numsymmat")?.check_fmt(b"I")?.next_value::<u32>()?;
+
+        if self.var_elt.len() != numvar { return Err(std::io::Error::other("Invalid solution dimension")); }
+        if self.con_elt.len() != numcon { return Err(std::io::Error::other("Invalid solution dimension")); }
+
+        let mut bas_sta : Option<(Vec<u8>,Vec<u8>)> = None;
+        let mut bas_var : Option<(Vec<u8>,Vec<f64>,Vec<f64>,Vec<f64>)> = None;
+        let mut bas_con : Option<(Vec<u8>,Vec<f64>,Vec<f64>,Vec<f64>,Vec<f64>)> = None;
+        let mut itr_sta : Option<(Vec<u8>,Vec<u8>)> = None;
+        let mut itr_var : Option<(Vec<u8>,Vec<f64>,Vec<f64>,Vec<f64>,Vec<f64>)> = None;
+        let mut itr_con : Option<(Vec<u8>,Vec<f64>,Vec<f64>,Vec<f64>,Vec<f64>)> = None;
+        let mut itg_sta : Option<(Vec<u8>,Vec<u8>)> = None;
+        let mut itg_var : Option<(Vec<u8>,Vec<f64>)> = None;
+        let mut itg_con : Option<(Vec<u8>,Vec<f64>)> = None;
+        let mut int_inf  : Option<(Vec<u32>,Vec<u8>,Vec<i32>)> = None;
+        let mut lint_inf : Option<(Vec<u32>,Vec<u8>,Vec<i64>)> = None;
+        let mut dou_inf  : Option<(Vec<u32>,Vec<u8>,Vec<f64>)> = None;
+
+        while let Some(entry) = r.next_entry()? {
+            match entry.name() {
+                b"solutions/basic/status"    => { entry.check_fmt(b"[B[B")?; bas_sta = Some((entry.read()?,entry.read()?)); },
+                b"solutions/interior/status" => { entry.check_fmt(b"[B[B")?; itr_sta = Some((entry.read()?,entry.read()?)); },
+                b"solutions/integer/status"  => { entry.check_fmt(b"[B[B")?; itg_sta = Some((entry.read()?,entry.read()?)); },
+
+                b"solution/basic/var"        => { entry.check_fmt(b"[B[d[d[d")?;   bas_sta = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
+                b"solution/interior/var"     => { entry.check_fmt(b"[B[d[d[d[d")?; itr_sta = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
+                b"solution/integer/var"      => { entry.check_fmt(b"[B[d")?;       itg_sta = Some((entry.read()?,entry.read()?)); },
+
+                b"solution/basic/con"        => { entry.check_fmt(b"[B[d[d[d[d")?; bas_sta = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
+                b"solution/interior/con"     => { entry.check_fmt(b"[B[d[d[d[d")?; itr_sta = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
+                b"solution/integer/con"      => { entry.check_fmt(b"[B[d")?;       itg_sta = Some((entry.read()?,entry.read()?)); },
+
+                b"information/int"           => { entry.check_fmt(b"[I[B[i")?; int_inf = Some((entry.read()?,entry.read()?,entry.read()?)); },
+                b"information/long"          => { entry.check_fmt(b"[I[B[i")?; lint_inf = Some((entry.read()?,entry.read()?,entry.read()?)); },
+                b"information/double"        => { entry.check_fmt(b"[I[B[i")?; dou_inf = Some((entry.read()?,entry.read()?,entry.read()?)); },
+                name => return Err(std::io::Error::other(format!("Unexpected section in solution: '{}'",std::str::from_utf8(name).unwrap_or("<invalid utf-8>")))),
+            }
+        }
+
+        if let Some(bas_sta) = bas_sta {
+            if numvar > 0 && bas_var.is_none() { return Err(std::io::Error::other("Missing solution element")) }
+            if numcon > 0 && bas_con.is_none() { return Err(std::io::Error::other("Missing solution element")) }
+            
+
+        }
 
         Ok(())
     }
@@ -1298,6 +1342,22 @@ fn bounds_to_bbk(e : & Element) -> u8 {
         (true,false) => b'l',
         (false,true) => b'u',
         (true,true) => if e.lb<e.ub||e.lb>e.ub { b'r' } else { b'f' },
+    }
+}
+
+fn str_to_pdsolsta(solsta : &[u8]) -> std::io::Result<(SolutionStatus,SolutionStatus)> {
+    match solsta {
+        b"unknown" =>            Ok((SolutionStatus::Unknown,SolutionStatus::Unknown)),
+        b"optimal" =>            Ok((SolutionStatus::Optimal,SolutionStatus::Optimal)),
+        b"prim_feas" =>          Ok((SolutionStatus::Feasible,SolutionStatus::Unknown)),
+        b"dual_feas" =>          Ok((SolutionStatus::Unknown,SolutionStatus::Feasible)),
+        b"prim_and_dual_feas" => Ok((SolutionStatus::Feasible,SolutionStatus::Feasible)),
+        b"prim_infeas_cer" =>    Ok((SolutionStatus::Undefined,SolutionStatus::CertInfeas)),
+        b"dual_infeas_cer" =>    Ok((SolutionStatus::CertInfeas,SolutionStatus::Undefined)),
+        b"prim_illposed_cer" =>  Ok((SolutionStatus::Undefined,SolutionStatus::CertIllposed)),
+        b"dual_illposed_cer" =>  Ok((SolutionStatus::CertIllposed,SolutionStatus::Undefined)),
+        b"integer_optimal" =>    Ok((SolutionStatus::Optimal,SolutionStatus::Undefined)),
+        _ => Err(std::io::Error::other("Invalid solution format".to_string()))
     }
 }
 
