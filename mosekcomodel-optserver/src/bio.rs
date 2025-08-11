@@ -51,10 +51,12 @@ const REV_BBOM : u32 = 0x42415342;
 /// name, a format and a series of fields. Each field is either a single value, a fixed-size array
 /// of values or a stream og values.
 pub struct Ser<'a,T> where T : Write {
+    /// Unserlying writer
     w : &'a mut T,
+    /// Buffer holding the current entry format
     curfmt : Vec<u8>,
+    /// Indicates is an entry is currently active
     entry_active : bool,
-    ready : bool,
 }
 
 /// Writer for a single b-stream entry.
@@ -97,7 +99,6 @@ impl<'a,T> Ser<'a,T> where T : Write {
             w,
             curfmt: Vec::new(),
             entry_active : false,
-            ready : true,
         })
     }
 
