@@ -6,7 +6,7 @@ use mosekcomodel::model::ModelWithLogCallback;
 use mosekcomodel::utils::iter::{ChunksByIterExt, PermuteByEx, PermuteByMutEx};
 use itertools::izip;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{BufReader,BufRead,Read,Write};
 use std::path::Path;
 
 //mod http;
@@ -350,9 +350,10 @@ impl BaseModelTrait for Backend {
     }
 
 
+
     fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String>
     {
-        if let Some(address) = self.address {
+        if let Some(address) = self.address.map(|a| a.as_str()) {
         
             let mut client = reqwest::blocking::Client::new();
 
@@ -360,7 +361,7 @@ impl BaseModelTrait for Backend {
             let (mut resp_r,mut resp_w) = pipe::new();
 
             let t = std::thread::spawn(move || {
-                let resp = client.post(address)
+                let mut resp = client.post(address)
                     .header("Content-Type", "application/x-mosek-b")
                     .header("Accept", "application/x-mosek-multiplex")
                     .header("X-Mosek-Callback", "values")
@@ -381,93 +382,21 @@ impl BaseModelTrait for Backend {
                         }
                     }
                 }
+
                 resp.copy_to(&mut resp_w).map_err(|e| e.to_string())?;
 
                 Ok(())
             });
 
-            self.write_btask(&mut req_w)?;
+            self.write_btask(&mut req_w).map_err(|e| e.to_string())?;
                 
-            // We should now receive an application/x-mosek-multiplex stream ending with either a
-            // fail or a result.
-            // parse incoming stream 
-            let mut buf = Vec::new();
 
-            loop { // loop over messages
-                // for each message loop over frames
-                buf.clear();
-                {
-                    let mut mr = MessageReader::new(&mut resp);
-                 
-                    mr.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-
-                    let headers_end = subseq_location(buf.as_slice(),b"\n\n").ok_or_else(|| "Invalid response format B".to_string())?;
-                    let mut lines = buf[..headers_end].chunk_by(|&a,_| a != b'\n');
-                    
-                    let head = lines.next().ok_or_else(|| "Invalid response format A".to_string())?.trim_ascii_end();
-                    let mut headers = lines
-                        .map(|s| s.trim_ascii_end())
-                        .map(|s| { if let Some(p) = subseq_location(s, b":") { (&s[..p],&s[p+1..]) } else { (&s[..0],s) } });
-                    let body = &buf[headers_end+2..];
-
-
-                    let mut it = buf.chunk_by(|a,_| *a == b'\n');
-
-                    match head {
-                        b"log" => {
-                            print!("{}",std::str::from_utf8(body).unwrap_or("<?>"));
-                            if let Some(f) = &self.log_cb {
-                               if let Ok(s) = std::str::from_utf8(body) {
-                                   f(s)                                   
-                               }
-                            }
-                        },
-                        b"msg" => {},
-                        b"wrn" => {},
-                        b"err" => {},
-                        b"cbmap" => {},
-                        b"cbinfo" => {},
-                        b"cbcode" => {},
-                        b"cbwarn" => {},
-                        b"ok" => {
-                            let mut trm = None;
-                            for (k,v) in headers {
-                                match k {
-                                    b"trm" => trm = Some(v),
-                                    b"content-type" => {
-                                        if v != b"application/x-mosek-b" {
-                                            return Err(format!("Unexpected solution format: {}",std::str::from_utf8(v).unwrap_or("<?>")));
-                                        }
-                                    }
-                                    _ => {},
-                               }
-                            }
-
-                            return self.read_bsolution(sol_bas,sol_itr,sol_itg,body);
-                        },
-                        b"fail" => { 
-                            let mut res = None;
-                            for (k,v) in headers {
-                                match k {
-                                    b"res" => res = Some(v),
-                                    _ => {},
-                                }
-                            }
-
-                            let message = std::str::from_utf8(body).unwrap_or("");
-                            return Err(format!("Solve failed ({}): {}",
-                                    std::str::from_utf8(res.unwrap_or(b"?")).unwrap_or("?"),
-                                    message));
-                        },
-                        _ => {},
-                    }
-                }
-            }
+            let res = self.parse_multistream(&mut resp_r,sol_bas,sol_itr,sol_itg);
+            t.join().unwrap().and_then(|_| res)?;
         }
         else {
             return Err("No optserver address given".to_string());
         }
-        t.join()?;
 
         Ok(())
 
@@ -627,6 +556,83 @@ impl Backend {
         }
     }
 
+    fn parse_multistream<R>(&mut self, r : &mut R, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String> where R : Read {
+        // We should now receive an application/x-mosek-multiplex stream ending with either a
+        // fail or a result.
+        // parse incoming stream 
+        let mut buf = Vec::new();
+
+        let mut head = String::new();
+
+        'outer: loop { // loop over messages
+            // for each message loop over frames
+            head.clear();
+            {
+                let mut mr = BufReader::new(MessageReader::new(r));
+                mr.read_line(&mut head).map_err(|e| e.to_string())?;
+                while mr.read_line(&mut head).map_err(|e| e.to_string())? >= 1 { }
+
+                head.trim_ascii_end();
+                let mut lines = head.as_bytes().chunk_by(|&a,_| a != b'\n');
+                let hd = lines.next().ok_or_else(|| "Invalid response format A".to_string())?.trim_ascii_end();
+                let mut headers = lines
+                    .map(|s| s.trim_ascii_end())
+                    .map(|s| { if let Some(p) = subseq_location(s, b":") { (&s[..p],&s[p+1..]) } else { (&s[..0],s) } });
+                
+                match hd {
+                    b"log" => {
+                        if let Some(f) = &self.log_cb {
+                            buf.clear();
+                            mr.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+                            if let Ok(s) = std::str::from_utf8(buf.as_slice()) {
+                                f(s)
+                            }
+                        }
+                    },
+                    b"msg" => {},
+                    b"wrn" => {},
+                    b"err" => {},
+                    b"cbmap" => {},
+                    b"cbinfo" => {},
+                    b"cbcode" => {},
+                    b"cbwarn" => {},
+                    b"ok" => {
+                        let mut trm = None;
+                        for (k,v) in headers {
+                            match k {
+                                b"trm" => trm = Some(v),
+                                b"content-type" => {
+                                    if v != b"application/x-mosek-b" {
+                                        break 'outer Err(format!("Unexpected solution format: {}",std::str::from_utf8(v).unwrap_or("<?>")));
+                                    }
+                                }
+                                _ => {},
+                           }
+                        }
+
+                        self.read_bsolution(sol_bas,sol_itr,sol_itg,&mut mr).map_err(|e| e.to_string())?;
+                    },
+                    b"fail" => { 
+                        let mut res = None;
+                        for (k,v) in headers {
+                            match k {
+                                b"res" => res = Some(v),
+                                _ => {},
+                            }
+                        }
+
+                        buf.clear();
+                        mr.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+                        let message = std::str::from_utf8(buf.as_slice()).unwrap_or("");
+                        break 'outer Err(format!("Solve failed ({}): {}",
+                                         std::str::from_utf8(res.unwrap_or(b"?")).unwrap_or("?"),
+                                         message));
+                    },
+                    _ => {},
+                }
+            }
+        }
+    }
     
     /// MOSEK B fomat
     /// The order of entries are fixed, some may be left out. If the presence is conditional, the
@@ -801,9 +807,9 @@ impl Backend {
 
         {
             let a_row_len : Vec<u32> = self.a_ptr.permute_by(self.con_a_row.as_slice()).map(|row| row[1] as u32).collect();
-            let numanz = a_row_len.iter().sum();
-            let a_subj : Vec<i32> = self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_subj[row[0]..row[0]+row[1]].iter()).collect();
-            let a_cof  : Vec<f64> = self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_cof[row[0]..row[0]+row[1]].iter()).collect();
+            let numanz : usize = a_row_len.iter().map(|&v| v as usize).sum();
+            let a_subj : Vec<i32> = self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_subj[row[0]..row[0]+row[1]].iter()).map(|&i| i as i32).collect();
+            let a_cof  : Vec<f64> = self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_cof[row[0]..row[0]+row[1]].iter()).cloned().collect();
             
             w.entry(b"data/A",b"[I[i[d")?
                 .write_array(a_row_len.as_slice())?
@@ -865,6 +871,7 @@ impl Backend {
     }
 
 
+    /*
     fn read_one_bsol<'a>(&self, sol : &mut Solution, bs : &mut bio::BAIO<'a>) -> Result<(),String> {
         let numvar = self.var_elt.len();
         let numcon = self.con_elt.len();
@@ -1060,6 +1067,7 @@ impl Backend {
 
         Ok(())
     }
+*/
 
     /// The b-solution is a solution in the same format as the btask.
     ///
@@ -1130,14 +1138,14 @@ impl Backend {
         let mut got_sol_inf = false;
 
         {
-            let entry = r.expect(b"INFO/MOSEKVER").check_fmt(b"III")?;
+            let entry = r.expect(b"INFO/MOSEKVER")?.check_fmt(b"III")?;
             _ = entry.next_value::<u32>()?;
             _ = entry.next_value::<u32>()?;
             _ = entry.next_value::<u32>()?;
         }
         _ = r.expect(b"INFO/name")?.check_fmt(b"[B")?.read::<u8>()?;
-        let numvar    = r.expect(b"INFO/numvar")?.check_fmt(b"I")?.next_value::<u32>()? as usize;
-        let numcon    = r.expect(b"INFO/numcon")?.check_fmt(b"I")?.next_value::<u32>()? as usize;
+        let numvar    = r.expect(b"INFO/numvar")?.check_fmt(b"I")?.next_value::<u32>()?.unwrap() as usize;
+        let numcon    = r.expect(b"INFO/numcon")?.check_fmt(b"I")?.next_value::<u32>()?.unwrap() as usize;
         let numcone   = r.expect(b"INFO/numcone")?.check_fmt(b"I")?.next_value::<u32>()?;
         let numbarvar = r.expect(b"INFO/numbarvar")?.check_fmt(b"I")?.next_value::<u32>()?;
         let numdomain = r.expect(b"INFO/numdomain")?.check_fmt(b"I")?.next_value::<u64>()?;
@@ -1149,13 +1157,13 @@ impl Backend {
         if self.var_elt.len() != numvar { return Err(std::io::Error::other("Invalid solution dimension")); }
         if self.con_elt.len() != numcon { return Err(std::io::Error::other("Invalid solution dimension")); }
 
-        let mut bas_sta : Option<(Vec<u8>,Vec<u8>)> = None;
+        let mut bas_sta : Option<(SolutionType,SolutionType)> = None;
         let mut bas_var : Option<(Vec<u8>,Vec<f64>,Vec<f64>,Vec<f64>)> = None;
         let mut bas_con : Option<(Vec<u8>,Vec<f64>,Vec<f64>,Vec<f64>,Vec<f64>)> = None;
-        let mut itr_sta : Option<(Vec<u8>,Vec<u8>)> = None;
+        let mut itr_sta : Option<(SolutionType,SolutionType)> = None;
         let mut itr_var : Option<(Vec<u8>,Vec<f64>,Vec<f64>,Vec<f64>,Vec<f64>)> = None;
         let mut itr_con : Option<(Vec<u8>,Vec<f64>,Vec<f64>,Vec<f64>,Vec<f64>)> = None;
-        let mut itg_sta : Option<(Vec<u8>,Vec<u8>)> = None;
+        let mut itg_sta : Option<(SolutionType,SolutionType)> = None;
         let mut itg_var : Option<(Vec<u8>,Vec<f64>)> = None;
         let mut itg_con : Option<(Vec<u8>,Vec<f64>)> = None;
         let mut int_inf  : Option<(Vec<u32>,Vec<u8>,Vec<i32>)> = None;
@@ -1164,21 +1172,21 @@ impl Backend {
 
         while let Some(entry) = r.next_entry()? {
             match entry.name() {
-                b"solutions/basic/status"    => { entry.check_fmt(b"[B[B")?; _ = entry.read()?; bas_sta = Some(str_to_pdsolsta(entry.read().as_bytes())); },
-                b"solutions/interior/status" => { entry.check_fmt(b"[B[B")?; itr_sta = Some((entry.read()?,entry.read()?)); },
-                b"solutions/integer/status"  => { entry.check_fmt(b"[B[B")?; itg_sta = Some((entry.read()?,entry.read()?)); },
+                b"solutions/basic/status"    => { entry.check_fmt(b"[B[B")?; _ = entry.read()?; bas_sta = Some(str_to_pdsolsta(entry.read()?.as_bytes())?); },
+                b"solutions/interior/status" => { entry.check_fmt(b"[B[B")?; _ = entry.read()?; itr_sta = Some(str_to_pdsolsta(entry.read()?.as_bytes())?); }, 
+                b"solutions/integer/status"  => { entry.check_fmt(b"[B[B")?; _ = entry.read()?; itg_sta = Some(str_to_pdsolsta(entry.read()?.as_bytes())?); },
 
-                b"solution/basic/var"        => { entry.check_fmt(b"[B[d[d[d")?;   bas_sta = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
-                b"solution/interior/var"     => { entry.check_fmt(b"[B[d[d[d[d")?; itr_sta = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
-                b"solution/integer/var"      => { entry.check_fmt(b"[B[d")?;       itg_sta = Some((entry.read()?,entry.read()?)); },
+                b"solution/basic/var"        => { entry.check_fmt(b"[B[d[d[d")?;   bas_var = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
+                b"solution/interior/var"     => { entry.check_fmt(b"[B[d[d[d[d")?; itr_var = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
+                b"solution/integer/var"      => { entry.check_fmt(b"[B[d")?;       itg_var = Some((entry.read()?,entry.read()?)); },
 
-                b"solution/basic/con"        => { entry.check_fmt(b"[B[d[d[d[d")?; bas_sta = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
-                b"solution/interior/con"     => { entry.check_fmt(b"[B[d[d[d[d")?; itr_sta = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
-                b"solution/integer/con"      => { entry.check_fmt(b"[B[d")?;       itg_sta = Some((entry.read()?,entry.read()?)); },
+                b"solution/basic/con"        => { entry.check_fmt(b"[B[d[d[d[d")?; bas_con = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
+                b"solution/interior/con"     => { entry.check_fmt(b"[B[d[d[d[d")?; itr_con = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
+                b"solution/integer/con"      => { entry.check_fmt(b"[B[d")?;       itg_con = Some((entry.read()?,entry.read()?)); },
 
-                b"information/int"           => { entry.check_fmt(b"[I[B[i")?; int_inf = Some((entry.read()?,entry.read()?,entry.read()?)); },
+                b"information/int"           => { entry.check_fmt(b"[I[B[i")?; int_inf  = Some((entry.read()?,entry.read()?,entry.read()?)); },
                 b"information/long"          => { entry.check_fmt(b"[I[B[i")?; lint_inf = Some((entry.read()?,entry.read()?,entry.read()?)); },
-                b"information/double"        => { entry.check_fmt(b"[I[B[i")?; dou_inf = Some((entry.read()?,entry.read()?,entry.read()?)); },
+                b"information/double"        => { entry.check_fmt(b"[I[B[i")?; dou_inf  = Some((entry.read()?,entry.read()?,entry.read()?)); },
                 name => return Err(std::io::Error::other(format!("Unexpected section in solution: '{}'",std::str::from_utf8(name).unwrap_or("<invalid utf-8>")))),
             }
         }
@@ -1194,29 +1202,29 @@ impl Backend {
         Ok(())
     }
 
-    fn read_bsolution_(&self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution, data : &[u8]) -> Result<(),String>
-    {
-        if ! data.starts_with(b"BASF") { return Err("Invalid solution format".to_string()) }
-
-        let mut bs = bio::BAIO::new(&data[4..]);
-
-
-        while let Some((name,fmt)) = bs.peek()? {
-            if let Some(rest) = name.strip_prefix(b"solution/") {
-                let which = name.strip_suffix(b"/status").ok_or_else(|| "Invalid solution format".to_string())?;
-                match which {
-                    b"basic"    => self.read_one_bsol(sol_bas, &mut bs)?,
-                    b"interior" => self.read_one_bsol(sol_itr, &mut bs)?,
-                    b"integer"  => self.read_one_bsol(sol_itg, &mut bs)?,
-                    _ => return Err("Invalid solution format".to_string()),
-                }
-            }
-        }
-
-        while bs.next()?.is_some() { }
-
-        Ok(())
-    }
+//    fn read_bsolution_(&self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution, data : &[u8]) -> Result<(),String>
+//    {
+//        if ! data.starts_with(b"BASF") { return Err("Invalid solution format".to_string()) }
+//
+//        let mut bs = bio::Des::new(&data[4..])?;
+//
+//
+//        while let Some((name,fmt)) = bs.peek()? {
+//            if let Some(rest) = name.strip_prefix(b"solution/") {
+//                let which = name.strip_suffix(b"/status").ok_or_else(|| "Invalid solution format".to_string())?;
+//                match which {
+//                    b"basic"    => self.read_one_bsol(sol_bas, &mut bs)?,
+//                    b"interior" => self.read_one_bsol(sol_itr, &mut bs)?,
+//                    b"integer"  => self.read_one_bsol(sol_itg, &mut bs)?,
+//                    _ => return Err("Invalid solution format".to_string()),
+//                }
+//            }
+//        }
+//
+//        while bs.next()?.is_some() { }
+//
+//        Ok(())
+//    }
 
 
     /// JSON Task format writer.
