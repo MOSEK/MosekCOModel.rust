@@ -353,14 +353,14 @@ impl BaseModelTrait for Backend {
 
     fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String>
     {
-        if let Some(address) = self.address.map(|a| a.as_str()) {
+        if let Some(address) = self.address.clone() {
         
-            let mut client = reqwest::blocking::Client::new();
 
             let (mut req_r,mut req_w) = pipe::new();
             let (mut resp_r,mut resp_w) = pipe::new();
 
             let t = std::thread::spawn(move || {
+                let mut client = reqwest::blocking::Client::new();
                 let mut resp = client.post(address)
                     .header("Content-Type", "application/x-mosek-b")
                     .header("Accept", "application/x-mosek-multiplex")
@@ -758,7 +758,13 @@ impl Backend {
             e.write_value::<u32>(0)?;
             e.write_value::<u32>(0)?;
         }
-        w.entry(b"INFO/name",b"[B")?.write_array(self.name.map(|s| s.as_bytes()).unwrap_or(b""))?;     
+
+        if let Some(name) = &self.name {
+           w.entry(b"INFO/name",b"[B")?.write_array(name.as_bytes())?;
+        }
+        else {
+           w.entry(b"INFO/name",b"[B")?.write_array(b"")?;
+        }
         w.entry(b"INFO/numvar",b"I")?.write_value(self.var_elt.len() as u32)?;
         w.entry(b"INFO/numcon",b"I")?.write_value(self.con_elt.len() as u32)?;
         w.entry(b"INFO/numcone",b"I")?.write_value(0u32)?;
@@ -831,18 +837,30 @@ impl Backend {
             .write_array(b"obj")?
             ;
         if self.var_elt.len() > 0 {
-            let mut ew = w.entry(b"names/var",b"[B")?.stream_writer::<u8>()?;
+            let mut e = w.entry(b"names/var",b"[B")?;
+            let mut ew = e.stream_writer::<u8>()?;
             for n in self.var_names.iter() {
-                ew.write(n.map(|n| n.as_bytes()).unwrap_or(b""))?;
+                if let Some(n) = n {
+                    ew.write(n.as_bytes())?;
+                }
+                else {
+                    ew.write(b"")?;
+                }
                 ew.write(&[0])?;
             }
             ew.close()?;
         }
         
         if self.con_elt.len() > 0 {
-            let mut ew = w.entry(b"names/con",b"[B")?.stream_writer::<u8>()?;
+            let mut e = w.entry(b"names/con",b"[B")?;
+            let mut ew = e.stream_writer::<u8>()?;
             for n in self.con_names.iter() {
-                ew.write(n.map(|n| n.as_bytes()).unwrap_or(b""))?;
+                if let Some(n) = n {
+                    ew.write(n.as_bytes())?;
+                }
+                else {
+                    ew.write(b"")?;
+                }
                 ew.write(&[0])?;
             }
             ew.close();
@@ -1157,13 +1175,13 @@ impl Backend {
         if self.var_elt.len() != numvar { return Err(std::io::Error::other("Invalid solution dimension")); }
         if self.con_elt.len() != numcon { return Err(std::io::Error::other("Invalid solution dimension")); }
 
-        let mut bas_sta : Option<(SolutionType,SolutionType)> = None;
+        let mut bas_sta : Option<(SolutionStatus,SolutionStatus)> = None;
         let mut bas_var : Option<(Vec<u8>,Vec<f64>,Vec<f64>,Vec<f64>)> = None;
         let mut bas_con : Option<(Vec<u8>,Vec<f64>,Vec<f64>,Vec<f64>,Vec<f64>)> = None;
-        let mut itr_sta : Option<(SolutionType,SolutionType)> = None;
+        let mut itr_sta : Option<(SolutionStatus,SolutionStatus)> = None;
         let mut itr_var : Option<(Vec<u8>,Vec<f64>,Vec<f64>,Vec<f64>,Vec<f64>)> = None;
         let mut itr_con : Option<(Vec<u8>,Vec<f64>,Vec<f64>,Vec<f64>,Vec<f64>)> = None;
-        let mut itg_sta : Option<(SolutionType,SolutionType)> = None;
+        let mut itg_sta : Option<(SolutionStatus,SolutionStatus)> = None;
         let mut itg_var : Option<(Vec<u8>,Vec<f64>)> = None;
         let mut itg_con : Option<(Vec<u8>,Vec<f64>)> = None;
         let mut int_inf  : Option<(Vec<u32>,Vec<u8>,Vec<i32>)> = None;
@@ -1172,9 +1190,9 @@ impl Backend {
 
         while let Some(entry) = r.next_entry()? {
             match entry.name() {
-                b"solutions/basic/status"    => { entry.check_fmt(b"[B[B")?; _ = entry.read()?; bas_sta = Some(str_to_pdsolsta(entry.read()?.as_bytes())?); },
-                b"solutions/interior/status" => { entry.check_fmt(b"[B[B")?; _ = entry.read()?; itr_sta = Some(str_to_pdsolsta(entry.read()?.as_bytes())?); }, 
-                b"solutions/integer/status"  => { entry.check_fmt(b"[B[B")?; _ = entry.read()?; itg_sta = Some(str_to_pdsolsta(entry.read()?.as_bytes())?); },
+                b"solutions/basic/status"    => { entry.check_fmt(b"[B[B")?; _ = entry.read::<u8>()?; bas_sta = Some(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?); },
+                b"solutions/interior/status" => { entry.check_fmt(b"[B[B")?; _ = entry.read::<u8>()?; itr_sta = Some(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?); }, 
+                b"solutions/integer/status"  => { entry.check_fmt(b"[B[B")?; _ = entry.read::<u8>()?; itg_sta = Some(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?); },
 
                 b"solution/basic/var"        => { entry.check_fmt(b"[B[d[d[d")?;   bas_var = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
                 b"solution/interior/var"     => { entry.check_fmt(b"[B[d[d[d[d")?; itr_var = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
