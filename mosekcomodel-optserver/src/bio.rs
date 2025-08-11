@@ -62,8 +62,11 @@ pub struct Ser<'a,T> where T : Write {
 
 /// Writer for a single b-stream entry.
 pub struct SerEntry<'a,'b,T> where T : Write {
+    /// Underlying serializer object
     ser : &'b mut Ser<'a,T>,
+    /// Indicates if the entry is ready for writing 
     ready : bool,
+    /// Position in current format of the next field to write.
     fmtpos : usize,
 }
 
@@ -409,6 +412,7 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
     /// Return the entry name
     pub fn name(&self) -> &[u8] { &self.name[1..1+self.name[0] as usize] }
     /// Return the fmt name
+    #[allow(unused)]
     pub fn fmt(&self)  -> &[u8] { &self.fmt[1..1+self.fmt[0] as usize] }
     pub fn check_fmt(self, fmt : &[u8]) -> std::io::Result<Self> {
         if self.fmt != fmt { Err(std::io::Error::other(format!("Expected entry in format '{}'",std::str::from_utf8(fmt).unwrap_or("<invalid utf-8>")))) }

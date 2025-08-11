@@ -131,7 +131,7 @@ impl BaseModelTrait for Backend {
 
     fn linear_variable<const N : usize,R>
         (&mut self, 
-         _name : Option<&str>,
+         name : Option<&str>,
          dom  : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String>    
         where 
             Self : Sized
@@ -167,10 +167,33 @@ impl BaseModelTrait for Backend {
         }
         self.var_int.resize(last,is_integer);
 
+        if let Some(name) = name {
+            let mut name_index_buf = [1usize; N];
+            let mut strides = [0;N];
+            strides.iter_mut().zip(shape.iter()).rev().fold(1,|s,(st,&d)| { *st = s; d * s });
+            if let Some(sp) = &sp {
+                for &i in sp.iter() {
+                    name_index_buf.iter_mut().zip(strides.iter()).fold(i,|i,(ni,&st)| { *ni = i/st; i%st });
+                    self.var_names.push(Some(format!("{}{:?}", name, name_index_buf)));
+                }
+            }
+            else {
+                for _ in 0..n {
+                    name_index_buf.iter_mut().zip(shape.iter()).rev().fold(1,|c,(i,&d)| { *i += c; if *i > d { *i = 1; 1 } else { 0 } });
+                    self.var_names.push(Some(format!("{}{:?}", name, name_index_buf)));
+                }
+            }
+        }
+        else {
+            for _ in 0..n {
+                self.var_names.push(None);
+            }
+        }
+
         Ok(Variable::new((firstvari..firstvari+n).collect::<Vec<usize>>(), sp, &shape))
     }
     
-    fn ranged_variable<const N : usize,R>(&mut self, _name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> 
+    fn ranged_variable<const N : usize,R>(&mut self, name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> 
         where 
             Self : Sized 
     {
@@ -192,6 +215,29 @@ impl BaseModelTrait for Backend {
             self.var_elt.push(Element{ lb, ub })
         }
         self.var_int.resize(last,is_integer);
+        
+        if let Some(name) = name {
+            let mut name_index_buf = [1usize; N];
+            let mut strides = [0;N];
+            strides.iter_mut().zip(shape.iter()).rev().fold(1,|s,(st,&d)| { *st = s; d * s });
+            if let Some(sp) = &sp {
+                for &i in sp.iter() {
+                    name_index_buf.iter_mut().zip(strides.iter()).fold(i,|i,(ni,&st)| { *ni = i/st; i%st });
+                    self.var_names.push(Some(format!("{}{:?}", name, name_index_buf)));
+                }
+            }
+            else {
+                for _ in 0..n {
+                    name_index_buf.iter_mut().zip(shape.iter()).rev().fold(1,|c,(i,&d)| { *i += c; if *i > d { *i = 1; 1 } else { 0 } });
+                    self.var_names.push(Some(format!("{}{:?}", name, name_index_buf)));
+                }
+            }
+        }
+        else {
+            for _ in 0..n {
+                self.var_names.push(None);
+            }
+        }
 
         Ok((Variable::new((ptr0..ptr1).collect::<Vec<usize>>(), sp.clone(), &shape),
             Variable::new((ptr1..ptr2).collect::<Vec<usize>>(), sp, &shape)))
@@ -257,6 +303,20 @@ impl BaseModelTrait for Backend {
             },
         }
 
+        if let Some(name) = name {
+            let mut name_index_buf = [1usize; N];
+            for _ in 0..n {
+                name_index_buf.iter_mut().zip(shape.iter()).rev().fold(1,|c,(i,&d)| { *i += c; if *i > d { *i = 1; 1 } else { 0 } });
+                self.con_names.push(Some(format!("{}{:?}", name, name_index_buf)));
+            }
+        }
+        else {
+            for _ in 0..n {
+                self.con_names.push(None);
+            }
+        }
+
+
         Ok(Constraint::new((con0..con0+n).collect::<Vec<usize>>(), &shape))
     }
 
@@ -294,7 +354,19 @@ impl BaseModelTrait for Backend {
         self.cons.reserve(n*2);
         for i in con_row0..con_row0+n { self.cons.push(Item::RangedLower { index: i }); }
         for i in con_row0..con_row0+n { self.cons.push(Item::RangedUpper { index: i }); }
-
+        
+        if let Some(name) = name {
+            let mut name_index_buf = [1usize; N];
+            for _ in 0..n {
+                name_index_buf.iter_mut().zip(shape.iter()).rev().fold(1,|c,(i,&d)| { *i += c; if *i > d { *i = 1; 1 } else { 0 } });
+                self.con_names.push(Some(format!("{}{:?}", name, name_index_buf)));
+            }
+        }
+        else {
+            for _ in 0..n {
+                self.con_names.push(None);
+            }
+        }
         Ok((Constraint::new((con0..con0+n).collect::<Vec<usize>>(), &shape),
             Constraint::new((con0+n..con0+2*n).collect::<Vec<usize>>(), &shape)))
     }
@@ -338,8 +410,10 @@ impl BaseModelTrait for Backend {
         if let Some(ext) = p.extension().and_then(|ext| ext.to_str()) {
             match ext {
                 "json"|"jtask" => {
-                    let mut f = File::create(p).map_err(|e| e.to_string())?;
-                    self.write_jtask(&mut f).map_err(|e| e.to_string())
+                    self.write_jtask(&mut File::create(p).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+                 },
+                "b"|"btask" => {
+                    self.write_btask(&mut File::create(p).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
                 },
                 _ => Err("Writing problem not supported".to_string())
             }
@@ -411,55 +485,64 @@ impl BaseModelTrait for Backend {
     }
 }
 
-struct MessageReader<'a,R> where R : Read {
-    eof : bool,
-    frame_remains : usize,
-    final_frame : bool,
-    s : & 'a mut R
 
-}
-impl<'a,R> MessageReader<'a,R> where R : Read {
-    fn new(s : &'a mut R) -> MessageReader<'a,R> { MessageReader { eof: false, frame_remains: 0, s , final_frame : false}}
-    pub fn skip(&mut self) -> std::io::Result<()> {
-        let mut buf = [0;4096];
-        while 0 < self.read(&mut buf)? {}
-        Ok(())
+
+
+mod msgread {
+    use std::io::Read;
+
+    pub struct MessageReader<'a,R> where R : Read {
+        eof : bool,
+        frame_remains : usize,
+        final_frame : bool,
+        s : & 'a mut R
+
     }
-}
-
-impl<'a,R> Read for MessageReader<'a,R> where R : Read {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        //println!("MessageReader::read(), eof = {}",self.eof);
-        if self.eof {
-            Ok(0)
+    impl<'a,R> MessageReader<'a,R> where R : Read {
+        pub fn new(s : &'a mut R) -> MessageReader<'a,R> { MessageReader { eof: false, frame_remains: 0, s , final_frame : false}}
+        #[allow(unused)]
+        pub fn skip(&mut self) -> std::io::Result<()> {
+            let mut buf = [0;4096];
+            while 0 < self.read(&mut buf)? {}
+            Ok(())
         }
-        else {
-            if self.frame_remains == 0 {
-                if self.final_frame {
-                    return Ok(0);
-                }
-                let mut buf = [0;2];
-                self.s.read_exact(&mut buf)?;
+    }
 
-                self.final_frame = buf[0] > 127;
-                self.frame_remains = (((buf[0] & 0x7f) as usize) << 8) | (buf[1] as usize);
+    impl<'a,R> Read for MessageReader<'a,R> where R : Read {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            //println!("MessageReader::read(), eof = {}",self.eof);
+            if self.eof {
+                Ok(0)
             }
+            else {
+                if self.frame_remains == 0 {
+                    if self.final_frame {
+                        return Ok(0);
+                    }
+                    let mut buf = [0;2];
+                    self.s.read_exact(&mut buf)?;
 
-            let n = buf.len().min(self.frame_remains);
-            let nr = self.s.read(&mut buf[..n])?;
-            self.frame_remains -= nr;
-            Ok(nr)
+                    self.final_frame = buf[0] > 127;
+                    self.frame_remains = (((buf[0] & 0x7f) as usize) << 8) | (buf[1] as usize);
+                }
+
+                let n = buf.len().min(self.frame_remains);
+                let nr = self.s.read(&mut buf[..n])?;
+                self.frame_remains -= nr;
+                Ok(nr)
+            }
         }
     }
 }
 
+use msgread::*;
 pub struct SolverAddress(pub String);
 
 impl SolverParameterValue<Backend> for SolverAddress {
     type Key = ();
     fn set(self,_parname : Self::Key, model : & mut Backend) -> Result<(),String> {
         model.address = Some(reqwest::Url::parse(self.0.as_str())
-            .map_err(|e| "Invalid SolverAddress value".to_string())
+            .map_err(|_| "Invalid SolverAddress value".to_string())
             .and_then(|mut url| 
                 if url.scheme() == "" {
                     url.set_scheme("http").unwrap();
@@ -484,78 +567,6 @@ fn bnd_to_bk(lb : f64, ub : f64) -> &'static str {
     }
 }
 impl Backend {
-    fn copy_solution(&self, 
-                     sol : &mut Solution,
-                     psta : SolutionStatus,
-                     dsta : SolutionStatus,
-                     xx  : &[f64],
-                     slx : &[f64],
-                     sux : &[f64],
-                     xc  : &[f64],
-                     slc : &[f64],
-                     suc : &[f64])
-    {
-        sol.primal.status = 
-            if xx.len() != self.var_elt.len() || xc.len() != self.con_elt.len() { SolutionStatus::Undefined } else { psta };
-        sol.dual.status = 
-            if slx.len() != self.var_elt.len() ||
-               sux.len() != self.var_elt.len() ||  
-               slc.len() != self.con_elt.len() ||
-               suc.len() != self.con_elt.len()  {
-                SolutionStatus::Undefined
-            }
-            else {
-                dsta
-            };
-
-        let numvar = self.vars.len();
-        let numcon = self.cons.len();
-
-        if let SolutionStatus::Undefined = sol.primal.status {}
-        else {           
-            sol.primal.var.resize(numvar,0.0);
-            sol.primal.con.resize(numcon,0.0);
-            for (v,tgt) in self.vars.iter().zip(sol.primal.var.iter_mut()) {
-                *tgt = 
-                    match v {
-                        Item::Linear{index} => xx[*index],
-                        Item::RangedUpper{index} => xx[*index],
-                        Item::RangedLower{index} => xx[*index],
-                    }
-            }
-            for (c,tgt) in self.cons.iter().zip(sol.primal.con.iter_mut()) {
-                *tgt = 
-                    match c {
-                        Item::Linear{index} => xc[*index],
-                        Item::RangedUpper{index} => xc[*index],
-                        Item::RangedLower{index} => xc[*index],
-                    }
-            }
-            
-        }
-        if let SolutionStatus::Undefined = sol.dual.status {} 
-        else {
-            sol.dual.var.resize(numvar,0.0);
-            sol.dual.con.resize(numcon,0.0);
-            for (v,tgt) in self.vars.iter().zip(sol.dual.var.iter_mut()) {
-                *tgt = 
-                    match v {
-                        Item::Linear{index} => slx[*index]-sux[*index],
-                        Item::RangedUpper{index} => -sux[*index],
-                        Item::RangedLower{index} => slx[*index],
-                    }
-            }
-            for (c,tgt) in self.cons.iter().zip(sol.dual.con.iter_mut()) {
-                *tgt = 
-                    match c {
-                        Item::Linear{index} => slc[*index]-suc[*index],
-                        Item::RangedUpper{index} => -suc[*index],
-                        Item::RangedLower{index} => slc[*index],
-                    }
-            }
-        }
-    }
-
     fn parse_multistream<R>(&mut self, r : &mut R, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String> where R : Read {
         // We should now receive an application/x-mosek-multiplex stream ending with either a
         // fail or a result.
@@ -596,11 +607,40 @@ impl Backend {
                     b"cbinfo" => {},
                     b"cbcode" => {},
                     b"cbwarn" => {},
+                    b"cb-intsol" => {
+                        if self.sol_cb.is_some() {
+                            let mut xxbytes = Vec::new();
+                            mr.read_to_end(&mut xxbytes).map_err(|e| e.to_string())?;
+                            let n = xxbytes.len()/size_of::<f64>();
+                            if n == self.var_elt.len() {
+                                let mut xx : Vec<f64> = Vec::new(); xx.resize(n,0.0);
+                                unsafe{xx.align_to_mut().1}.copy_from_slice(&xxbytes[..n*size_of::<f64>()]);
+
+                                let mut solxx = Vec::new(); solxx.resize(self.vars.len(),0.0);
+                                for (v,d) in self.vars.iter().zip(solxx.iter_mut()) {
+                                    match v {
+                                        Item::RangedLower { index } => *d = xx[*index],
+                                        Item::RangedUpper { index } => *d = xx[*index],
+                                        Item::Linear { index } => *d = xx[*index],
+                                    }                                
+                                }
+                                let c : f64 = self.c_cof.iter().zip(solxx.permute_by(self.c_subj.as_slice())).map(|(c,x)| *c * *x).sum();
+                                let mut solxc = Vec::new(); solxc.resize(self.cons.len(),0.0);
+                                for (xc,arow) in solxc.iter_mut().zip(self.a_ptr.permute_by(self.con_a_row.as_slice())) {
+                                    *xc = self.a_cof[arow[0]..arow[0]+arow[1]].iter().zip(solxx.permute_by(&self.a_subj[arow[0]..arow[0]+arow[1]])).map(|(c,x)| *c * *x).sum(); 
+                                }
+
+                                if let Some(cb) = & mut self.sol_cb {
+                                    cb(c,solxx.as_slice(),solxc.as_slice());
+                                }
+                            }
+                        }
+                    },
                     b"ok" => {
-                        let mut trm = None;
+                        let mut _trm = None;
                         for (k,v) in headers {
                             match k {
-                                b"trm" => trm = Some(v),
+                                b"trm" => _trm = Some(v),
                                 b"content-type" => {
                                     if v != b"application/x-mosek-b" {
                                         break 'outer Err(format!("Unexpected solution format: {}",std::str::from_utf8(v).unwrap_or("<?>")));
@@ -615,10 +655,7 @@ impl Backend {
                     b"fail" => { 
                         let mut res = None;
                         for (k,v) in headers {
-                            match k {
-                                b"res" => res = Some(v),
-                                _ => {},
-                            }
+                            if k == b"res" { res = Some(v); }
                         }
 
                         buf.clear();
@@ -630,6 +667,9 @@ impl Backend {
                     },
                     _ => {},
                 }
+
+                let mut flushbuf = [0u8;4096];
+                while 0 < mr.read(&mut flushbuf).map_err(|e| e.to_string())? {}
             }
         }
     }
@@ -813,7 +853,7 @@ impl Backend {
 
         {
             let a_row_len : Vec<u32> = self.a_ptr.permute_by(self.con_a_row.as_slice()).map(|row| row[1] as u32).collect();
-            let numanz : usize = a_row_len.iter().map(|&v| v as usize).sum();
+            let _numanz : usize = a_row_len.iter().map(|&v| v as usize).sum();
             let a_subj : Vec<i32> = self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_subj[row[0]..row[0]+row[1]].iter()).map(|&i| i as i32).collect();
             let a_cof  : Vec<f64> = self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_cof[row[0]..row[0]+row[1]].iter()).cloned().collect();
             
@@ -863,7 +903,7 @@ impl Backend {
                 }
                 ew.write(&[0])?;
             }
-            ew.close();
+            ew.close()?;
         }
     
         // parameter/double: [B[d
@@ -875,18 +915,6 @@ impl Backend {
         Ok(())
     }
 
-
-    fn bsol_array<'b>(data : &'b [u8]) -> Result<(usize,&'b[u8]),String> {
-        let b0 = data.get(0).ok_or_else(|| "Invalid solution format".to_string())?;
-        let nb = (b0 >> 5) as usize;
-        if nb == 7 { return Err("Invalid solution format".to_string()); }
-        let mut l = (nb & 0x1f) as usize;
-        for &b in data.get(1..l+1).ok_or_else(|| "Invalid solution format".to_string())?.iter() {
-            l = l << 8 + b as usize;
-        }
-
-        Ok((nb+l+1, &data[nb+1..nb+1+l]))
-    }
 
 
     /*
@@ -1150,11 +1178,6 @@ impl Backend {
     {
         let mut r = bio::Des::new(r)?;
 
-        let mut got_sol_itr = false;
-        let mut got_sol_itg = false;
-        let mut got_sol_bas = false;
-        let mut got_sol_inf = false;
-
         {
             let mut entry = r.expect(b"INFO/MOSEKVER")?.check_fmt(b"III")?;
             _ = entry.next_value::<u32>()?;
@@ -1166,8 +1189,8 @@ impl Backend {
         let numcon    = r.expect(b"INFO/numcon")?.check_fmt(b"I")?.next_value::<u32>()?.unwrap() as usize;
         let _numcone   = r.expect(b"INFO/numcone")?.check_fmt(b"I")?.next_value::<u32>()?;
         let _numbarvar = r.expect(b"INFO/numbarvar")?.check_fmt(b"I")?.next_value::<u32>()?;
-        let numdomain = r.expect(b"INFO/numdomain")?.check_fmt(b"I")?.next_value::<u64>()?;
-        let numafe    = r.expect(b"INFO/numafe")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let _numdomain = r.expect(b"INFO/numdomain")?.check_fmt(b"I")?.next_value::<u64>()?;
+        let _numafe    = r.expect(b"INFO/numafe")?.check_fmt(b"I")?.next_value::<u32>()?;
         let _numacc    = r.expect(b"INFO/numacc")?.check_fmt(b"I")?.next_value::<u32>()?;
         let _numdjc    = r.expect(b"INFO/numdjc")?.check_fmt(b"I")?.next_value::<u32>()?;
         let _numsymmat = r.expect(b"INFO/numsymmat")?.check_fmt(b"I")?.next_value::<u32>()?;
@@ -1188,7 +1211,7 @@ impl Backend {
         let mut _lint_inf : Option<(Vec<u32>,Vec<u8>,Vec<i64>)> = None;
         let mut _dou_inf  : Option<(Vec<u32>,Vec<u8>,Vec<f64>)> = None;
 
-        while let Some(mut entry) = r.next_entry()? {
+        while let Some(entry) = r.next_entry()? {
             match entry.name() {
                 b"solutions/basic/status"    => bas_sta = entry.check_fmt(b"[B[B").and_then(|mut entry| { _ = entry.read::<u8>()?; Ok(Some(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?)) })?,
                 b"solutions/interior/status" => itr_sta = entry.check_fmt(b"[B[B").and_then(|mut entry| { _ = entry.read::<u8>()?; Ok(Some(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?)) })?, 
@@ -1447,19 +1470,6 @@ impl ModelWithLogCallback for Backend {
     fn set_log_handler<F>(& mut self, func : F) where F : 'static+Fn(&str) {
         self.log_cb = Some(Box::new(func));
     }
-}
-
-fn ascii_from_bytes_lossy(data : &[u8]) -> String {
-    let mut res = String::new();
-    for &b in data.iter() {
-        match b {
-            b'\n' => res.push('\n'),
-            b'\r' => res.push_str("\\r"),
-            32..127 => res.push(b as char),
-            _ => res.push('.')
-        }
-    }
-    res
 }
 
 fn subseq_location_from<T>(pos : usize, src : &[T], seq : &[T]) -> Option<usize> where T : Eq {
