@@ -572,10 +572,10 @@ impl Backend {
                 mr.read_line(&mut head).map_err(|e| e.to_string())?;
                 while mr.read_line(&mut head).map_err(|e| e.to_string())? >= 1 { }
 
-                head.trim_ascii_end();
+                let head = head.trim_ascii_end();
                 let mut lines = head.as_bytes().chunk_by(|&a,_| a != b'\n');
                 let hd = lines.next().ok_or_else(|| "Invalid response format A".to_string())?.trim_ascii_end();
-                let mut headers = lines
+                let headers = lines
                     .map(|s| s.trim_ascii_end())
                     .map(|s| { if let Some(p) = subseq_location(s, b":") { (&s[..p],&s[p+1..]) } else { (&s[..0],s) } });
                 

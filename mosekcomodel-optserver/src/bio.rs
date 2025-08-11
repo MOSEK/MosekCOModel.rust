@@ -57,6 +57,7 @@ pub struct Ser<'a,T> where T : Write {
     curfmt : Vec<u8>,
     /// Indicates is an entry is currently active
     entry_active : bool,
+    ready : bool,
 }
 
 /// Writer for a single b-stream entry.
@@ -75,16 +76,15 @@ pub struct SerEntryChunkWriter<'a,'b,'c,T,E> where T : Write, E : Serializable {
 
 fn validate_signature(sig : &[u8]) -> bool {
     sig.iter()
-        .fold(Some(0),
+        .try_fold(0,
               |pb,&b| 
-                  pb.and_then(|pb|
-                      match b {
-                          b'b'| b'B'| b'h'| b'H'| 
-                          b'i'| b'I'| b'l'| b'L'| 
-                          b'f'| b'd' => Some(b),
-                          b'[' => if pb == b'[' { None } else { Some(b) },
-                          _ => None,
-                      }))
+                  match b {
+                      b'b'| b'B'| b'h'| b'H'| 
+                      b'i'| b'I'| b'l'| b'L'| 
+                      b'f'| b'd' => Some(b),
+                      b'[' => if pb == b'[' { None } else { Some(b) },
+                      _ => None,
+                  })
         .and_then(|b| if b == b'[' { None } else { Some(b) })
         .is_some()
 }
@@ -99,6 +99,7 @@ impl<'a,T> Ser<'a,T> where T : Write {
             w,
             curfmt: Vec::new(),
             entry_active : false,
+            ready : true,
         })
     }
 
@@ -152,6 +153,12 @@ impl<'a,T> Ser<'a,T> where T : Write {
         else {
             Ok(())
         }
+    }
+}
+
+impl<'a,T> Drop for Ser<'a,T> where T : Write {
+    fn drop(&mut self) {
+        self.finalize().unwrap();
     }
 }
 
@@ -292,21 +299,32 @@ impl Serializable for f64  { fn sig() -> u8 { b'd' } }
 
 /// Structure for parsing a b-stream.
 pub struct Des<'a,R> where R : Read {
+    /// Underlying stream reader
     r : &'a mut R,
-    
+   
+    /// Indicates if data entries are in native endian or should be byte-swapped. We currently
+    /// ignore it and hope everyone are using little-endian.
+    #[allow(unused)]
     byte_swap : bool,
 
+    /// Indicates if an entry is currently partially read.
     entry_active : bool,
 
+    /// Indicates EOF
     end_of_stream : bool
 }
 
 /// Structure for reading a single entry from a b-stream
 pub struct DesEntry<'a,'b,R> where R : Read {
+    /// Current entry format
     fmt : [u8;256],
+    /// Current entry name
     name : [u8;256],
+    /// Current opsition in fmt: Index of the format of the next field to be read.
     fmtpos : usize,
+    /// Underlying deserializer object
     des : &'b mut Des<'a,R>,
+    /// Entry is ready for reading next field.
     ready : bool,
 }
 
@@ -324,10 +342,12 @@ pub struct DesEntryReader<'a,'b,'c,R,E>
         R : Read, 
         E : Serializable 
 {
+    /// Current entry being read.
     entry : & 'c mut DesEntry<'a,'b,R>,
+    /// Necessary because we need to use the `E` type in the struct or the compiler will complain.
     _t    : PhantomData<E>,
+    /// Field kind
     kind  : EntryKind,
-    ready : bool,
 }
 
 impl<'a,R> Des<'a,R> where R : Read {
@@ -448,7 +468,7 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
                     }
                     else {
                         buf[0] &= 0x1f;
-                        self.des.r.read_exact(&mut buf[1..nb+1]);
+                        self.des.r.read_exact(&mut buf[1..nb+1])?;
                         EntryKind::Array(buf[..nb+1].iter().fold(0,|v,&b| (v << 8) | (b as usize)))
                     }
                 },
@@ -465,8 +485,7 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
         Ok(Some(DesEntryReader{
             entry : self,
             kind,
-            _t : Default::default(),
-            ready : true }))
+            _t : Default::default() }))
     }
 }
 
