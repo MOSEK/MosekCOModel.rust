@@ -355,11 +355,13 @@ impl<'a,R> Des<'a,R> where R : Read {
         let mut fmt  = [0u8; 256];
         self.r.read_exact(&mut name[..1])?;
         if name[0] > 0 {
-            self.r.read_exact(&mut name[1..1+name[0] as usize])?;
+            let len = name[0] as usize;
+            self.r.read_exact(&mut name[1..1+len])?;
         }
         self.r.read_exact(&mut fmt[..1])?;
         if fmt[0] > 0 {
-            self.r.read_exact(&mut fmt[1..1+fmt[0] as usize])?;
+            let len = fmt[0] as usize;
+            self.r.read_exact(&mut fmt[1..1+len])?;
             if ! validate_signature(&fmt[1..1+fmt[0] as usize]) {
                 return Err(std::io::Error::other("Invalid signature"));
             }
@@ -403,11 +405,11 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
         Ok(Some(data[0]))
     }
 
-    pub fn read<'c,E>(&'c mut self) -> std::io::Result<Vec<E>>
+    pub fn read<E>(&mut self) -> std::io::Result<Vec<E>>
         where 
             E : Serializable+Default+Copy 
     { 
-        if let Some(r) = self.next::<E>()? {
+        if let Some(mut r) = self.next::<E>()? {
             let mut res : Vec<E> = Vec::new();
             loop {
                 let base = res.len(); res.resize(res.len()+4096,E::default());

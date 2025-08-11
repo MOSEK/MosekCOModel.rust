@@ -356,11 +356,11 @@ impl BaseModelTrait for Backend {
         if let Some(address) = self.address.clone() {
         
 
-            let (mut req_r,mut req_w) = pipe::new();
+            let (req_r,mut req_w) = pipe::new();
             let (mut resp_r,mut resp_w) = pipe::new();
 
             let t = std::thread::spawn(move || {
-                let mut client = reqwest::blocking::Client::new();
+                let client = reqwest::blocking::Client::new();
                 let mut resp = client.post(address)
                     .header("Content-Type", "application/x-mosek-b")
                     .header("Accept", "application/x-mosek-multiplex")
@@ -1156,7 +1156,7 @@ impl Backend {
         let mut got_sol_inf = false;
 
         {
-            let entry = r.expect(b"INFO/MOSEKVER")?.check_fmt(b"III")?;
+            let mut entry = r.expect(b"INFO/MOSEKVER")?.check_fmt(b"III")?;
             _ = entry.next_value::<u32>()?;
             _ = entry.next_value::<u32>()?;
             _ = entry.next_value::<u32>()?;
@@ -1164,13 +1164,13 @@ impl Backend {
         _ = r.expect(b"INFO/name")?.check_fmt(b"[B")?.read::<u8>()?;
         let numvar    = r.expect(b"INFO/numvar")?.check_fmt(b"I")?.next_value::<u32>()?.unwrap() as usize;
         let numcon    = r.expect(b"INFO/numcon")?.check_fmt(b"I")?.next_value::<u32>()?.unwrap() as usize;
-        let numcone   = r.expect(b"INFO/numcone")?.check_fmt(b"I")?.next_value::<u32>()?;
-        let numbarvar = r.expect(b"INFO/numbarvar")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let _numcone   = r.expect(b"INFO/numcone")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let _numbarvar = r.expect(b"INFO/numbarvar")?.check_fmt(b"I")?.next_value::<u32>()?;
         let numdomain = r.expect(b"INFO/numdomain")?.check_fmt(b"I")?.next_value::<u64>()?;
         let numafe    = r.expect(b"INFO/numafe")?.check_fmt(b"I")?.next_value::<u32>()?;
-        let numacc    = r.expect(b"INFO/numacc")?.check_fmt(b"I")?.next_value::<u32>()?;
-        let numdjc    = r.expect(b"INFO/numdjc")?.check_fmt(b"I")?.next_value::<u32>()?;
-        let numsymmat = r.expect(b"INFO/numsymmat")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let _numacc    = r.expect(b"INFO/numacc")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let _numdjc    = r.expect(b"INFO/numdjc")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let _numsymmat = r.expect(b"INFO/numsymmat")?.check_fmt(b"I")?.next_value::<u32>()?;
 
         if self.var_elt.len() != numvar { return Err(std::io::Error::other("Invalid solution dimension")); }
         if self.con_elt.len() != numcon { return Err(std::io::Error::other("Invalid solution dimension")); }
@@ -1184,37 +1184,162 @@ impl Backend {
         let mut itg_sta : Option<(SolutionStatus,SolutionStatus)> = None;
         let mut itg_var : Option<(Vec<u8>,Vec<f64>)> = None;
         let mut itg_con : Option<(Vec<u8>,Vec<f64>)> = None;
-        let mut int_inf  : Option<(Vec<u32>,Vec<u8>,Vec<i32>)> = None;
-        let mut lint_inf : Option<(Vec<u32>,Vec<u8>,Vec<i64>)> = None;
-        let mut dou_inf  : Option<(Vec<u32>,Vec<u8>,Vec<f64>)> = None;
+        let mut _int_inf  : Option<(Vec<u32>,Vec<u8>,Vec<i32>)> = None;
+        let mut _lint_inf : Option<(Vec<u32>,Vec<u8>,Vec<i64>)> = None;
+        let mut _dou_inf  : Option<(Vec<u32>,Vec<u8>,Vec<f64>)> = None;
 
-        while let Some(entry) = r.next_entry()? {
+        while let Some(mut entry) = r.next_entry()? {
             match entry.name() {
-                b"solutions/basic/status"    => { entry.check_fmt(b"[B[B")?; _ = entry.read::<u8>()?; bas_sta = Some(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?); },
-                b"solutions/interior/status" => { entry.check_fmt(b"[B[B")?; _ = entry.read::<u8>()?; itr_sta = Some(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?); }, 
-                b"solutions/integer/status"  => { entry.check_fmt(b"[B[B")?; _ = entry.read::<u8>()?; itg_sta = Some(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?); },
+                b"solutions/basic/status"    => bas_sta = entry.check_fmt(b"[B[B").and_then(|mut entry| { _ = entry.read::<u8>()?; Ok(Some(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?)) })?,
+                b"solutions/interior/status" => itr_sta = entry.check_fmt(b"[B[B").and_then(|mut entry| { _ = entry.read::<u8>()?; Ok(Some(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?)) })?, 
+                b"solutions/integer/status"  => itg_sta = entry.check_fmt(b"[B[B").and_then(|mut entry| { _ = entry.read::<u8>()?; Ok(Some(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?)) })?,
 
-                b"solution/basic/var"        => { entry.check_fmt(b"[B[d[d[d")?;   bas_var = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
-                b"solution/interior/var"     => { entry.check_fmt(b"[B[d[d[d[d")?; itr_var = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
-                b"solution/integer/var"      => { entry.check_fmt(b"[B[d")?;       itg_var = Some((entry.read()?,entry.read()?)); },
+                b"solution/basic/var"        => bas_var = entry.check_fmt(b"[B[d[d[d")  .and_then(|mut entry| Ok(Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?))))?,
+                b"solution/interior/var"     => itr_var = entry.check_fmt(b"[B[d[d[d[d").and_then(|mut entry| Ok(Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?))))?,
+                b"solution/integer/var"      => itg_var = entry.check_fmt(b"[B[d")      .and_then(|mut entry| Ok(Some((entry.read()?,entry.read()?))))?,
+                                                          
+                b"solution/basic/con"        => bas_con = entry.check_fmt(b"[B[d[d[d[d").and_then(|mut entry| Ok(Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?))))?,
+                b"solution/interior/con"     => itr_con = entry.check_fmt(b"[B[d[d[d[d").and_then(|mut entry| Ok(Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?))))?,
+                b"solution/integer/con"      => itg_con = entry.check_fmt(b"[B[d")      .and_then(|mut entry| Ok(Some((entry.read()?,entry.read()?))))?,
 
-                b"solution/basic/con"        => { entry.check_fmt(b"[B[d[d[d[d")?; bas_con = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
-                b"solution/interior/con"     => { entry.check_fmt(b"[B[d[d[d[d")?; itr_con = Some((entry.read()?,entry.read()?,entry.read()?,entry.read()?,entry.read()?)); },
-                b"solution/integer/con"      => { entry.check_fmt(b"[B[d")?;       itg_con = Some((entry.read()?,entry.read()?)); },
-
-                b"information/int"           => { entry.check_fmt(b"[I[B[i")?; int_inf  = Some((entry.read()?,entry.read()?,entry.read()?)); },
-                b"information/long"          => { entry.check_fmt(b"[I[B[i")?; lint_inf = Some((entry.read()?,entry.read()?,entry.read()?)); },
-                b"information/double"        => { entry.check_fmt(b"[I[B[i")?; dou_inf  = Some((entry.read()?,entry.read()?,entry.read()?)); },
+                b"information/int"           => _int_inf  = entry.check_fmt(b"[I[B[i").and_then(|mut entry| Ok(Some((entry.read()?,entry.read()?,entry.read()?))))?,
+                b"information/long"          => _lint_inf = entry.check_fmt(b"[I[B[i").and_then(|mut entry| Ok(Some((entry.read()?,entry.read()?,entry.read()?))))?,
+                b"information/double"        => _dou_inf  = entry.check_fmt(b"[I[B[i").and_then(|mut entry| Ok(Some((entry.read()?,entry.read()?,entry.read()?))))?,
                 name => return Err(std::io::Error::other(format!("Unexpected section in solution: '{}'",std::str::from_utf8(name).unwrap_or("<invalid utf-8>")))),
             }
         }
 
-        if let Some(bas_sta) = bas_sta {
+        // Basic colution
+        if let Some((psta,dsta)) = bas_sta {
             if numvar > 0 && bas_var.is_none() { return Err(std::io::Error::other("Missing solution element")) }
             if numcon > 0 && bas_con.is_none() { return Err(std::io::Error::other("Missing solution element")) }
-            
-            
+           
+            sol_bas.primal.status = psta;
+            sol_bas.primal.status = dsta;
 
+            if let Some((_sk,xx,slx,sux)) = bas_var {
+                if numvar != xx.len() || numvar != slx.len() || numvar != sux.len() { return Err(std::io::Error::other("Incorrect solution element 'solutions/basic/var'")) }
+                sol_bas.primal.var.resize(self.vars.len(),Default::default());
+                sol_bas.dual.var.resize(self.vars.len(),Default::default());
+                for (i,e) in self.vars.iter().enumerate() {
+                    sol_bas.dual.var[i] =
+                        match e {
+                            Item::Linear { index }      => slx[*index]-sux[*index],
+                            Item::RangedUpper { index } => -sux[*index],
+                            Item::RangedLower { index } => slx[*index]
+                        };
+                    sol_bas.primal.var[i] =
+                        match e {
+                            Item::Linear { index }      => xx[*index],
+                            Item::RangedUpper { index } => xx[*index],
+                            Item::RangedLower { index } => xx[*index]
+                        };
+                }
+            }
+            
+            if let Some((_sk,xc,slc,suc,y)) = bas_con {
+                if numvar != xc.len() || numvar != slc.len() || numvar != suc.len() || numcon != y.len() { return Err(std::io::Error::other("Incorrect solution element 'solutions/basic/con'")) }
+                sol_bas.primal.con.resize(self.vars.len(),Default::default());
+                sol_bas.dual.con.resize(self.vars.len(),Default::default());
+                for (i,e) in self.cons.iter().enumerate() {
+                    sol_bas.dual.con[i] =
+                        match e {
+                            Item::Linear { index }      => y[*index],
+                            Item::RangedUpper { index } => -suc[*index],
+                            Item::RangedLower { index } => slc[*index]
+                        };
+                    sol_bas.primal.con[i] =
+                        match e {
+                            Item::Linear { index }      => xc[*index],
+                            Item::RangedUpper { index } => xc[*index],
+                            Item::RangedLower { index } => xc[*index]
+                        };
+                }
+            }
+        }
+        
+        // Interior colution
+        if let Some((psta,dsta)) = itr_sta {
+            if numvar > 0 && itr_var.is_none() { return Err(std::io::Error::other("Missing solution element")) }
+            if numcon > 0 && itr_con.is_none() { return Err(std::io::Error::other("Missing solution element")) }
+           
+            sol_itr.primal.status = psta;
+            sol_itr.primal.status = dsta;
+
+            if let Some((_sk,xx,slx,sux,_snx)) = itr_var {
+                if numvar != xx.len() || numvar != slx.len() || numvar != sux.len() { return Err(std::io::Error::other("Incorrect solution element 'solutions/interior/var'")) }
+                sol_itr.primal.var.resize(self.vars.len(),Default::default());
+                sol_itr.dual.var.resize(self.vars.len(),Default::default());
+                for (i,e) in self.vars.iter().enumerate() {
+                    sol_itr.dual.var[i] =
+                        match e {
+                            Item::Linear { index }      => slx[*index]-sux[*index],
+                            Item::RangedUpper { index } => -sux[*index],
+                            Item::RangedLower { index } => slx[*index]
+                        };
+                    sol_itr.primal.var[i] =
+                        match e {
+                            Item::Linear { index }      => xx[*index],
+                            Item::RangedUpper { index } => xx[*index],
+                            Item::RangedLower { index } => xx[*index]
+                        };
+                }
+            }
+            
+            if let Some((_sk,xc,slc,suc,y)) = itr_con {
+                if numvar != xc.len() || numvar != slc.len() || numvar != suc.len() || numcon != y.len() { return Err(std::io::Error::other("Incorrect solution element 'solutions/interior/con'")) }
+                sol_itr.primal.con.resize(self.vars.len(),Default::default());
+                sol_itr.dual.con.resize(self.vars.len(),Default::default());
+                for (i,e) in self.cons.iter().enumerate() {
+                    sol_itr.dual.con[i] =
+                        match e {
+                            Item::Linear { index }      => y[*index],
+                            Item::RangedUpper { index } => -suc[*index],
+                            Item::RangedLower { index } => slc[*index]
+                        };
+                    sol_itr.primal.con[i] =
+                        match e {
+                            Item::Linear { index }      => xc[*index],
+                            Item::RangedUpper { index } => xc[*index],
+                            Item::RangedLower { index } => xc[*index]
+                        };
+                }
+            }
+        }
+        
+        // Integer colution
+        if let Some((psta,_)) = itg_sta {
+            if numvar > 0 && itg_var.is_none() { return Err(std::io::Error::other("Missing solution element")) }
+            if numcon > 0 && itg_con.is_none() { return Err(std::io::Error::other("Missing solution element")) }
+           
+            sol_itg.primal.status = psta;
+            sol_itg.primal.status = SolutionStatus::Undefined;
+
+            if let Some((_sk,xx)) = itg_var {
+                if numvar != xx.len() { return Err(std::io::Error::other("Incorrect solution element 'solutions/interior/var'")) }
+                sol_itg.primal.var.resize(self.vars.len(),Default::default());
+                for (i,e) in self.vars.iter().enumerate() {
+                    sol_itg.primal.var[i] =
+                        match e {
+                            Item::Linear { index }      => xx[*index],
+                            Item::RangedUpper { index } => xx[*index],
+                            Item::RangedLower { index } => xx[*index]
+                        };
+                }
+            }
+            
+            if let Some((_sk,xc)) = itg_con {
+                if numvar != xc.len() { return Err(std::io::Error::other("Incorrect solution element 'solutions/interior/con'")) }
+                sol_itg.primal.con.resize(self.vars.len(),Default::default());
+                for (i,e) in self.cons.iter().enumerate() {
+                    sol_itg.primal.con[i] =
+                        match e {
+                            Item::Linear { index }      => xc[*index],
+                            Item::RangedUpper { index } => xc[*index],
+                            Item::RangedLower { index } => xc[*index]
+                        };
+                }
+            }
         }
 
         Ok(())
