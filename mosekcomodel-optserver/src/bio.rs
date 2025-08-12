@@ -46,6 +46,44 @@ const BBOM : u32 = 0x42534142;
 const REV_BBOM : u32 = 0x42415342;
 
 
+pub enum FieldElementType {
+    U8,I8,
+    U16,I16,
+    U32,I32,
+    U64,I64,
+    F32,F64
+}
+
+impl TryFrom<&u8> for FieldElementType {
+    type Error = std::io::Error;
+    fn try_from(value: &u8) -> Result<Self, Self::Error> {
+        FieldElementType::try_from(*value)
+    }
+}
+impl TryFrom<u8> for FieldElementType {
+    type Error = std::io::Error;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value { 
+            b'b' => Ok(FieldElementType::I8),
+            b'B' => Ok(FieldElementType::U8),
+            b'h' => Ok(FieldElementType::I16),
+            b'H' => Ok(FieldElementType::U16),
+            b'i' => Ok(FieldElementType::I32),
+            b'I' => Ok(FieldElementType::U32),
+            b'l' => Ok(FieldElementType::I64),
+            b'L' => Ok(FieldElementType::U64),
+            b'f' => Ok(FieldElementType::F32),
+            b'd' => Ok(FieldElementType::F64),
+            _ => Err(std::io::Error::other("Invalid byte in format"))
+        }
+        
+    }
+}
+
+pub enum FieldType {
+    Value,
+    Array
+}
 
 /// Structure for serializing arrays. The b-stream consists of a series of entries, each entry a
 /// name, a format and a series of fields. Each field is either a single value, a fixed-size array
@@ -430,23 +468,47 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
         Ok(Some(data[0]))
     }
 
-    pub fn read<E>(&mut self) -> std::io::Result<Vec<E>>
+    pub fn field_type(&self) -> std::io::Result<Option<(FieldType,FieldElementType)>> {
+        if !self.ready { return Err(std::io::Error::other("Entry not ready")); }
+        if self.fmtpos == self.fmt[0] as usize { return Ok(None); }
+    
+        if self.fmt[self.fmtpos] == b'[' {
+            let fet = self.fmt.get(self.fmtpos+1)
+                .ok_or_else(|| std::io::Error::other("Invalid fmt string"))
+                .and_then(|c| c.try_into())?;
+            Ok(Some((FieldType::Array,fet)))
+        }
+        else {
+            Ok(Some((FieldType::Value,self.fmt[self.fmtpos].try_into()?)))
+        }
+
+        
+    }
+
+    pub fn read_into<E>(&mut self, res : &mut Vec<E>) -> std::io::<usize> 
         where 
             E : Serializable+Default+Copy 
-    { 
+    {
         if let Some(mut r) = self.next::<E>()? {
-            let mut res : Vec<E> = Vec::new();
+            let mut initial_length = res.len();
             loop {
                 let base = res.len(); res.resize(res.len()+4096,E::default());
                 let n = r.read(&mut res[base..])?;
                 res.truncate(base+n);
                 if n == 0 { break; }
             }
-            Ok(res)
+            Ok(res.len()-initial_length)
         }
         else {
             Err(std::io::Error::other("Read beyond end of entry"))
         }
+    }
+    pub fn read<E>(&mut self) -> std::io::Result<Vec<E>>
+        where 
+            E : Serializable+Default+Copy 
+    {
+        let mut res = Vec::new();
+        self.read_into(&mut res).and_then(|_| Ok(res))
     }
     
 
@@ -545,163 +607,67 @@ impl<'a,'b,'c,R,E> DesEntryReader<'a,'b,'c,R,E> where R : Read, E : Serializable
 
 
 
+#[cfg(test)]
+mod test {
+    use std::fs::File;
 
+    use super::*;
 
+    #[test]
+    fn test_ser_des_1() {
+        use FieldElementType::*;
+        let mut f = File::open("test/lo1-sol.b").unwrap();
+        let mut d = Des::new(&mut f).unwrap();
 
+        while let Some(mut entry) = d.next_entry().unwrap() {
+            println!("Field: {} ({})",
+                     std::str::from_utf8(entry.name()).unwrap(),
+                     std::str::from_utf8(entry.fmt()).unwrap());
+            
+            while let Some((_ft,et)) = entry.field_type().unwrap() {
+                match et {
+                    U8  => { let mut buf : Vec<u8>  = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); }, 
+                    I8  => { let mut buf : Vec<i8>  = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
+                    U16 => { let mut buf : Vec<u16> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
+                    I16 => { let mut buf : Vec<i16> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
+                    U32 => { let mut buf : Vec<u32> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
+                    I32 => { let mut buf : Vec<i32> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
+                    U64 => { let mut buf : Vec<u64> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
+                    I64 => { let mut buf : Vec<i64> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
+                    F32 => { let mut buf : Vec<f32> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
+                    F64 => { let mut buf : Vec<f64> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
+                }
+            }
+        }
+        println!("Deserialization done")
+    }
+    
+    #[test]
+    fn test_ser_des_2() {
+        use FieldElementType::*;
+        let mut f = File::open("tests/lo1-sol.b").unwrap();
+        let mut d = Des::new(&mut f).unwrap();
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-//
-//pub struct BAIO<'a> {
-//    data : &'a[u8],
-//    pos : usize,
-//
-//    entry_active : bool,
-//}
-//
-//pub struct Entry<'a,'b> {
-//    io : &'b mut BAIO<'a>,
-//    name : &'a[u8],
-//    fmt : &'a[u8],
-//    fmtpos : usize,
-//}
-//
-//pub enum DataType {
-//    U8,
-//    S8,
-//    U16,
-//    S16,
-//    U32,
-//    S32,
-//    U64,
-//    S64,
-//    F32,
-//    F64
-//}
-//
-//fn btotype(b : u8) -> Result<(usize,DataType),String> {
-//    match b {
-//        b'b' => Ok((1,DataType::U8)),
-//        b'B' => Ok((1,DataType::S8)),
-//        b'h' => Ok((2,DataType::U16)),
-//        b'H' => Ok((2,DataType::S16)),
-//        b'i' => Ok((4,DataType::U32)),
-//        b'I' => Ok((4,DataType::S32)),
-//        b'l' => Ok((8,DataType::U64)),
-//        b'L' => Ok((8,DataType::S64)),
-//        b'f' => Ok((4,DataType::F32)),
-//        b'd' => Ok((8,DataType::F64)),
-//        _ => Err("Invalid bdata format".to_string())
-//    }
-//}
-//
-//
-//
-//impl<'a,'b> Drop for Entry<'a,'b> { 
-//    fn drop(&mut self) {
-//        if self.io.entry_active {
-//            panic!("Usage error: Unfinished entry in bdata");
-//        }
-//    }
-//}
-//
-//impl<'a> BAIO<'a> {
-//    pub fn new(data : &'a[u8]) -> BAIO<'a> { BAIO{ data, pos : 0, entry_active : false } }
-//
-//    fn peek_internal(&self) -> Result<Option<(&'a[u8],&'a[u8],usize)>,String> {
-//        if self.entry_active { panic!("Invalid use of BAIO") }
-//        if self.pos == self.data.len() { return Ok(None); }
-//        let mut pos = self.pos;
-//
-//        let name_len = (*self.data.get(pos).ok_or_else(|| "Invalid bdata format".to_string())?) as usize;
-//        let name = self.data.get(pos+1..pos+1+name_len).ok_or_else(|| "Invalid bdata format".to_string())?;
-//        pos += name_len+1;
-//
-//        let fmt_len = (*self.data.get(pos).ok_or_else(|| "Invalid bdata format".to_string())?) as usize;
-//        let fmt = self.data.get(pos+1..pos+1+name_len).ok_or_else(|| "Invalid bdata format".to_string())?;
-//        pos += fmt_len+1;
-//
-//        Ok(Some((name,fmt,pos)))
-//
-//    }
-//    pub fn next<'b>(&'b mut self) -> Result<Option<Entry<'a,'b>>,String> {
-//        if let Some((name,fmt,pos)) = self.peek_internal()? {
-//            self.pos = pos;
-//
-//            Ok(Some(Entry{
-//                io : self,
-//                fmt,
-//                name,
-//                fmtpos : 0
-//            }))
-//        }
-//        else {
-//            Ok(None)
-//        }
-//    }
-//
-//    pub fn expect<'b>(&'b mut self) -> Result<Entry<'a,'b>,String> {
-//        self.next().and_then(|e| e.ok_or_else(|| "Expected entry bdata".to_string()))
-//    }
-//
-//    pub fn peek(&self) -> Result<Option<(&'a[u8],&'a[u8])>,String> {
-//        if let Some((name,fmt,_)) = self.peek_internal()? {
-//            Ok(Some((name,fmt)))
-//        }
-//        else {
-//            Ok(None)
-//        }
-//    }
-//}
-//
-//impl<'a,'b> Entry<'a,'b> {
-//    pub fn name(&self) -> &'a[u8] { self.name }
-//    pub fn fmt(&self) -> &'a[u8] { self.fmt }
-//    pub fn next(&mut self) -> Result<Option<(DataType,&'a[u8])>,String> {
-//        if self.fmtpos == self.fmt.len() { return Ok(None); }
-//        
-//        let b = self.fmt.get(self.fmtpos).ok_or_else(|| "Invalid solution format".to_string())?; self.fmtpos += 1;
-//        if *b == b'[' {
-//            let (sz,tp) = btotype(*self.fmt.get(self.fmtpos).ok_or_else(|| "Invalid solution format".to_string())?)?; self.fmtpos += 1;
-//            let b0 = self.io.data.get(self.io.pos).ok_or_else(|| "Invalid solution format".to_string())?; self.io.pos += 1;
-//            match b0 >> 5 {
-//                7 => Err("Invalid solution format".to_string()), 
-//                nb => {
-//                    let mut numbytes = (b0 & 0x1f) as usize;
-//                    for &b in self.io.data.get(self.io.pos+1..self.io.pos+1+nb as usize).ok_or_else(|| "Invalid solution format".to_string())?.iter() {
-//                        numbytes = numbytes << 8 | b as usize;
-//                    }
-//                    numbytes *= sz;
-//                    self.io.pos += nb as usize+1;
-//                    let res = &self.io.data[self.io.pos..self.io.pos+numbytes];
-//                    self.io.pos += numbytes;
-//                    if self.io.pos == self.io.data.len() { self.io.entry_active = false; }
-//                    Ok(Some((tp,res)))
-//                }
-//            }
-//        }
-//        else {
-//            let (sz,tp) = btotype(*b)?;
-//            let res = &self.io.data[self.io.pos..self.io.pos+sz];
-//            self.io.pos += sz;
-//            if self.io.pos == self.io.data.len() { self.io.entry_active = false; }
-//            Ok(Some((tp,res)))
-//        }
-//    }
-//    pub fn finalize(&mut self) -> Result<(),String> {
-//        while self.next()?.is_some() {
-//        }
-//        Ok(())
-//    }
-//}
+        while let Some(mut entry) = d.next_entry().unwrap() {
+            println!("Field: {} ({})",
+                     std::str::from_utf8(entry.name()).unwrap(),
+                     std::str::from_utf8(entry.fmt()).unwrap());
+            
+            while let Some((_ft,et)) = entry.field_type().unwrap() {
+                match et {
+                    U8  => _ = entry.read::<Vec<u8>> ().unwrap(), 
+                    I8  => _ = entry.read::<Vec<i8>> ().unwrap(),
+                    U16 => _ = entry.read::<Vec<u16>>().unwrap(),
+                    I16 => _ = entry.read::<Vec<i16>>().unwrap(),
+                    U32 => _ = entry.read::<Vec<u32>>().unwrap(),
+                    I32 => _ = entry.read::<Vec<i32>>().unwrap(),
+                    U64 => _ = entry.read::<Vec<u64>>().unwrap(),
+                    I64 => _ = entry.read::<Vec<i64>>().unwrap(),
+                    F32 => _ = entry.read::<Vec<f32>>().unwrap(),
+                    F64 => _ = entry.read::<Vec<f64>>().unwrap(),
+                }
+            }
+        }
+        println!("Deserialization done")
+    }
+}>
