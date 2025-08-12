@@ -39,13 +39,16 @@
 //! LASTENTRY: 0u16 
 //! ```
 
+use std::default;
+use std::fmt::Pointer;
 use std::io::{self, Read, Write};
 use std::marker::PhantomData;
 
-const BBOM : u32 = 0x42534142;
-const REV_BBOM : u32 = 0x42415342;
+const BBOM     : u32 = 0x424b534d;
+const REV_BBOM : u32 = 0x4d534b42;
 
 
+#[derive(Debug)]
 pub enum FieldElementType {
     U8,I8,
     U16,I16,
@@ -74,12 +77,13 @@ impl TryFrom<u8> for FieldElementType {
             b'L' => Ok(FieldElementType::U64),
             b'f' => Ok(FieldElementType::F32),
             b'd' => Ok(FieldElementType::F64),
-            _ => Err(std::io::Error::other("Invalid byte in format"))
+            _ => Err(std::io::Error::other(format!("Invalid byte in format: '{}'",value as char)))
         }
         
     }
 }
 
+#[derive(Debug)]
 pub enum FieldType {
     Value,
     Array
@@ -222,7 +226,7 @@ impl<'a,'b,T> SerEntry<'a,'b,T> where T : Write {
         self.ser.w.write_all(bdata)?;
 
         if self.fmtpos == self.ser.curfmt.len() {
-            self.ser.entry_active = false;
+            self.end_field();
         }
         Ok(self)
     }
@@ -241,7 +245,7 @@ impl<'a,'b,T> SerEntry<'a,'b,T> where T : Write {
         
         if E::sig() != b0 { return Err(std::io::Error::other("Incorrect type in entry")); }
        
-        let n = data.len();
+        let n = data.len()*size_of::<E>();
         let nb = 
             if      n <= 0x1f { 0 }
             else if n <= 0x1fff { 1 } 
@@ -261,7 +265,7 @@ impl<'a,'b,T> SerEntry<'a,'b,T> where T : Write {
         self.ser.w.write_all(bdata)?;
         
         if self.fmtpos == self.ser.curfmt.len() {
-            self.ser.entry_active = false;
+            self.end_field();
         }
         Ok(self)
     }
@@ -286,15 +290,26 @@ impl<'a,'b,T> SerEntry<'a,'b,T> where T : Write {
 
         Ok(SerEntryChunkWriter{ent:self,ready: true, _t : PhantomData::<E>::default()})
     }
-}
+
+    fn end_field(&mut self) {
+        self.ready = true; 
+        self.ser.entry_active = false;
+        if self.fmtpos == self.ser.curfmt.len() {
+            self.ready = false;
+            self.ser.ready = true;
+        }
+    }
+} 
 
 
 impl<'a,'b,'c,T,E> SerEntryChunkWriter<'a,'b,'c,T,E> where T : Write, E : Serializable, T : Write {
     /// Terminate the stream. No subsequent writes are allowed.
     pub fn close(&mut self) -> std::io::Result<()> {
-        self.ent.ser.w.write_all(&[0x80,0])?;
-        self.ready = false;
-        self.ent.ready = true;
+        if self.ready {
+            self.ent.ser.w.write_all(&[0,0])?;
+            self.ent.end_field();
+            self.ready = false;
+        }
         Ok(())            
     }
 
@@ -310,9 +325,16 @@ impl<'a,'b,'c,T,E> SerEntryChunkWriter<'a,'b,'c,T,E> where T : Write, E : Serial
             let n = bdata.len().min(0x7ff8);
             self.ent.ser.w.write_all(&[(n >> 8) as u8, (n & 0xff) as u8])?;
             self.ent.ser.w.write_all(&bdata[..n])?;
+            println!("Write chunk size: {} ({}) ",n,E::sig() as char);
             bdata = &bdata[n..];
         }
         Ok(())
+    }
+}
+
+impl<'a,'b,'c,T,E> Drop for SerEntryChunkWriter<'a,'b,'c,T,E> where T : Write, E : Serializable, T : Write {
+    fn drop(&mut self) {
+        self.close().unwrap();
     }
 }
 
@@ -323,7 +345,7 @@ impl Serializable for u8   { fn sig() -> u8 { b'B' } }
 impl Serializable for i8   { fn sig() -> u8 { b'b' } }
 impl Serializable for u16  { fn sig() -> u8 { b'H' } }
 impl Serializable for i16  { fn sig() -> u8 { b'h' } }
-impl Serializable for u32  { fn sig() -> u8 { b'U' } }
+impl Serializable for u32  { fn sig() -> u8 { b'I' } }
 impl Serializable for i32  { fn sig() -> u8 { b'i' } }
 impl Serializable for u64  { fn sig() -> u8 { b'L' } }
 impl Serializable for i64  { fn sig() -> u8 { b'l' } }
@@ -400,7 +422,7 @@ impl<'a,R> Des<'a,R> where R : Read {
         let byte_swap = match bom[0] {
             BBOM => false,
             REV_BBOM => unimplemented!("Byte swapping in data"),
-            _ => return Err(std::io::Error::other("Invalid BOM"))
+            _ => return Err(std::io::Error::other(format!("Invalid BOM 0x{:08x}",bom[0])))
         };
 
         Ok(Des{ r, entry_active : false, byte_swap, end_of_stream : false })
@@ -419,13 +441,18 @@ impl<'a,R> Des<'a,R> where R : Read {
         if name[0] > 0 {
             let len = name[0] as usize;
             self.r.read_exact(&mut name[1..1+len])?;
+            println!("Des::next_entry() name = '{}'",asciistr(&name[1..len+1]));
         }
         self.r.read_exact(&mut fmt[..1])?;
         if fmt[0] > 0 {
             let len = fmt[0] as usize;
             self.r.read_exact(&mut fmt[1..1+len])?;
+            println!("Des::next_entry() sig = '{}'",asciistr(&fmt[1..len+1]));
             if ! validate_signature(&fmt[1..1+fmt[0] as usize]) {
-                return Err(std::io::Error::other("Invalid signature"));
+                
+                return std::str::from_utf8(&fmt[1..1+fmt[0] as usize])
+                    .map_err(|_| std::io::Error::other(format!("Invalid signature: {}", std::str::from_utf8(fmt[1..1+fmt[0] as usize].iter().map(|&b| if (32..128).contains(&b) { b } else { b'?' }).collect::<Vec<u8>>().as_slice()).unwrap())))
+                    .and_then(|s| Err(std::io::Error::other(format!("Invalid signature: {}",std::str::from_utf8(&fmt[1..1+fmt[0] as usize]).unwrap_or("<?>")))));
             }
         }
         
@@ -434,14 +461,18 @@ impl<'a,R> Des<'a,R> where R : Read {
             Ok(None)
         }
         else {
-            Ok(Some(DesEntry{des : self, fmt, name, fmtpos : 0, ready : true }))
+            Ok(Some(DesEntry{des : self, fmt, name, fmtpos : 1, ready : true }))
         }
     }
 
     pub fn expect<'b>(&'b mut self, name : &[u8]) -> std::io::Result<DesEntry<'a,'b,R>> {
         match self.next_entry()? {
             None => Err(std::io::Error::other("Expected a entry, got end-of-file")),
-            Some(v) => if v.name() == name { Ok(v) } else { Err(std::io::Error::other(format!("Expected a entry '{}'", std::str::from_utf8(name).unwrap_or("<invalid utf-8>")))) },
+            Some(v) => if v.name() == name { 
+                Ok(v) 
+            } else {
+                Err(std::io::Error::other(format!("Expected a entry '{}'", std::str::from_utf8(name).unwrap_or("<invalid utf-8>")))) 
+            },
         }
     }
 }
@@ -453,7 +484,9 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
     #[allow(unused)]
     pub fn fmt(&self)  -> &[u8] { &self.fmt[1..1+self.fmt[0] as usize] }
     pub fn check_fmt(self, fmt : &[u8]) -> std::io::Result<Self> {
-        if self.fmt != fmt { Err(std::io::Error::other(format!("Expected entry in format '{}'",std::str::from_utf8(fmt).unwrap_or("<invalid utf-8>")))) }
+        if self.fmt() != fmt { Err(std::io::Error::other(format!("Expected entry in format '{}', got '{}'",
+                                                               std::str::from_utf8(fmt).unwrap_or("<invalid utf-8>"), 
+                                                               std::str::from_utf8(self.fmt()).unwrap_or("<?>")))) }
         else { Ok(self) }
     }
    
@@ -470,7 +503,9 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
 
     pub fn field_type(&self) -> std::io::Result<Option<(FieldType,FieldElementType)>> {
         if !self.ready { return Err(std::io::Error::other("Entry not ready")); }
-        if self.fmtpos == self.fmt[0] as usize { return Ok(None); }
+        if self.fmtpos == self.fmt[0] as usize + 1 { return Ok(None); }
+
+        //println!("DesEntry::field_type() fmt = '{}'",std::str::from_utf8(&self.fmt[self.fmtpos..self.fmt[0] as usize + 1]).unwrap_or("<?>"));
     
         if self.fmt[self.fmtpos] == b'[' {
             let fet = self.fmt.get(self.fmtpos+1)
@@ -485,7 +520,7 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
         
     }
 
-    pub fn read_into<E>(&mut self, res : &mut Vec<E>) -> std::io::<usize> 
+    pub fn read_into<E>(&mut self, res : &mut Vec<E>) -> std::io::Result<usize> 
         where 
             E : Serializable+Default+Copy 
     {
@@ -516,13 +551,13 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
     /// which must match the signature.
     pub fn next<'c,E>(&'c mut self) -> std::io::Result<Option<DesEntryReader<'a,'b,'c,R,E>>> where E : Serializable+Default+Copy { 
         if !self.ready { return Err(std::io::Error::other("Entry not ready")); }
-        if self.fmtpos == self.fmt[0] as usize { return Ok(None); }
+        if self.fmtpos == 1+self.fmt[0] as usize { return Ok(None); }
         
         let kind = 
-            match self.fmt[1+self.fmtpos] {
+            match self.fmt[self.fmtpos] {
                 b'[' => {
-                    let b = self.fmt[self.fmtpos+2];
-                    if E::sig() != b { return Err(std::io::Error::other("Incorrect field type requested")); }
+                    let b = self.fmt[self.fmtpos+1];
+                    if E::sig() != b { return Err(std::io::Error::other(format!("Incorrect field type requested: {:?}, expected {:?}",E::sig(), b))); }
 
                     self.fmtpos += 2;
                     self.ready = false;
@@ -540,7 +575,7 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
                 },
                 b => {
                     if E::sig() != b {
-                        return Err(std::io::Error::other("Incorrect field type requested"));
+                        return Err(std::io::Error::other(format!("Incorrect field type requested: {:?}, expected {:?}",E::sig() as char, b as char)));
                     }
                     else {
                         self.fmtpos += 1;
@@ -557,13 +592,15 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
 
 impl<'a,'b,'c,R,E> DesEntryReader<'a,'b,'c,R,E> where R : Read, E : Serializable+Default+Copy {
     /// Read from the net field.
-    fn read(&mut self, buf: &mut [E]) -> io::Result<usize> {
+    pub fn read(&mut self, buf: &mut [E]) -> io::Result<usize> {
         match self.kind {
             EntryKind::Empty => Ok(0),
             EntryKind::Value => {
+                //println!("DesEntryReader::read() value");
                 if let Some(buf) = buf.get_mut(..1) {
                     self.entry.des.r.read_exact(unsafe{ buf.align_to_mut().1 })?;
                     self.kind = EntryKind::Empty;
+                    self.entry.ready = true;
                     Ok(1)
                 }
                 else {
@@ -571,12 +608,23 @@ impl<'a,'b,'c,R,E> DesEntryReader<'a,'b,'c,R,E> where R : Read, E : Serializable
                 }
             },
             EntryKind::Array(nleft) => {
-                let n = nleft.min(buf.len());
+                //println!("DesEntryReader::read() array[{}]",nleft/size_of::<E>());
+                let nelmleft = nleft/size_of::<E>();
+                let n = nelmleft.min(buf.len());
                 self.entry.des.r.read_exact(unsafe{ buf[..n].align_to_mut().1 })?;
-                self.kind = if nleft == n { EntryKind::Empty } else { EntryKind::Array(nleft-n) };
+
+                if nleft == n*size_of::<E>() {
+                    self.entry.ready = true; 
+                    self.kind = EntryKind::Empty 
+                } 
+                else { 
+                    self.kind = EntryKind::Array(nleft-n) 
+                };
+                //println!("DesEntryReader::read() -> {}/{} elements", n/size_of::<E>(),buf.len());
                 Ok(n)
             },
             EntryKind::Stream(nleft) => {
+                println!("DesEntryReader::read() stream, cur chunk : {}",nleft);
                 let mut buf = buf;
                 let mut chunk_left = nleft;
                 let mut nread = 0;
@@ -587,9 +635,10 @@ impl<'a,'b,'c,R,E> DesEntryReader<'a,'b,'c,R,E> where R : Read, E : Serializable
                         chunk_left = ((buf[0] as usize) << 8) | (buf[1] as usize);
                         if chunk_left == 0 {
                             self.kind = EntryKind::Empty;
+                            self.entry.ready = true;
                             break;
                         }
-
+                        println!("DesEntryReader::read() stream loop: next chunk : {}",chunk_left);
                     }
                     let n = (chunk_left / size_of::<E>()).min(buf.len());
                     assert!(n > 0);
@@ -603,8 +652,35 @@ impl<'a,'b,'c,R,E> DesEntryReader<'a,'b,'c,R,E> where R : Read, E : Serializable
             }
         }
     }
+
+    pub fn read_vec(&mut self) -> io::Result<Vec<E>> {
+        let mut res = Vec::new();
+        self.read_all(&mut res)?;
+        Ok(res)
+    }
+    pub fn read_all(&mut self, buf: &mut Vec<E>) -> io::Result<usize> {
+        let len0 = buf.len();
+        loop {
+            let base = buf.len();
+            buf.resize(base+4096/size_of::<E>(),Default::default());
+            let n = self.read(&mut buf[base..])?;
+            buf.truncate(base+n);
+            if n == 0 { break; }
+        }
+        Ok(buf.len()-len0)
+    }
 }
 
+
+fn asciistr(bs : &[u8]) -> String {
+    let mut res = String::new();
+    for b in bs.iter() {
+        res.push(
+            if (32..128).contains(b) { *b as char }
+            else { '.' });
+    }
+    res
+}
 
 
 #[cfg(test)]
@@ -616,26 +692,27 @@ mod test {
     #[test]
     fn test_ser_des_1() {
         use FieldElementType::*;
-        let mut f = File::open("test/lo1-sol.b").unwrap();
+        let mut f = File::open("tests/lo1-sol.b").unwrap();
         let mut d = Des::new(&mut f).unwrap();
 
         while let Some(mut entry) = d.next_entry().unwrap() {
-            println!("Field: {} ({})",
+            println!("Entry: {} ({})",
                      std::str::from_utf8(entry.name()).unwrap(),
                      std::str::from_utf8(entry.fmt()).unwrap());
             
-            while let Some((_ft,et)) = entry.field_type().unwrap() {
+            while let Some((ft,et)) = entry.field_type().unwrap() {
+                println!("  Field type: {:?} of {:?}",ft,et);
                 match et {
-                    U8  => { let mut buf : Vec<u8>  = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); }, 
-                    I8  => { let mut buf : Vec<i8>  = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
-                    U16 => { let mut buf : Vec<u16> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
-                    I16 => { let mut buf : Vec<i16> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
-                    U32 => { let mut buf : Vec<u32> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
-                    I32 => { let mut buf : Vec<i32> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
-                    U64 => { let mut buf : Vec<u64> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
-                    I64 => { let mut buf : Vec<i64> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
-                    F32 => { let mut buf : Vec<f32> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
-                    F64 => { let mut buf : Vec<f64> = Vec::new(); entry.next().unwrap().unwrap().read(& mut buf).unwrap(); },
+                    U8  => { let mut buf : Vec<u8>  = Vec::new(); entry.next().unwrap().unwrap().read_all(& mut buf).unwrap(); println!("  Field data: '{}'", std::str::from_utf8(buf.as_slice()).unwrap_or("<?>")); },
+                    I8  => { let mut buf : Vec<i8>  = Vec::new(); entry.next().unwrap().unwrap().read_all(& mut buf).unwrap(); println!("  Field data: '{:?}'",buf); },
+                    U16 => { let mut buf : Vec<u16> = Vec::new(); entry.next().unwrap().unwrap().read_all(& mut buf).unwrap(); println!("  Field data: '{:?}'",buf); },
+                    I16 => { let mut buf : Vec<i16> = Vec::new(); entry.next().unwrap().unwrap().read_all(& mut buf).unwrap(); println!("  Field data: '{:?}'",buf); },
+                    U32 => { let mut buf : Vec<u32> = Vec::new(); entry.next().unwrap().unwrap().read_all(& mut buf).unwrap(); println!("  Field data: '{:?}'",buf); },
+                    I32 => { let mut buf : Vec<i32> = Vec::new(); entry.next().unwrap().unwrap().read_all(& mut buf).unwrap(); println!("  Field data: '{:?}'",buf); },
+                    U64 => { let mut buf : Vec<u64> = Vec::new(); entry.next().unwrap().unwrap().read_all(& mut buf).unwrap(); println!("  Field data: '{:?}'",buf); },
+                    I64 => { let mut buf : Vec<i64> = Vec::new(); entry.next().unwrap().unwrap().read_all(& mut buf).unwrap(); println!("  Field data: '{:?}'",buf); },
+                    F32 => { let mut buf : Vec<f32> = Vec::new(); entry.next().unwrap().unwrap().read_all(& mut buf).unwrap(); println!("  Field data: '{:?}'",buf); },
+                    F64 => { let mut buf : Vec<f64> = Vec::new(); entry.next().unwrap().unwrap().read_all(& mut buf).unwrap(); println!("  Field data: '{:?}'",buf); },
                 }
             }
         }
@@ -655,19 +732,91 @@ mod test {
             
             while let Some((_ft,et)) = entry.field_type().unwrap() {
                 match et {
-                    U8  => _ = entry.read::<Vec<u8>> ().unwrap(), 
-                    I8  => _ = entry.read::<Vec<i8>> ().unwrap(),
-                    U16 => _ = entry.read::<Vec<u16>>().unwrap(),
-                    I16 => _ = entry.read::<Vec<i16>>().unwrap(),
-                    U32 => _ = entry.read::<Vec<u32>>().unwrap(),
-                    I32 => _ = entry.read::<Vec<i32>>().unwrap(),
-                    U64 => _ = entry.read::<Vec<u64>>().unwrap(),
-                    I64 => _ = entry.read::<Vec<i64>>().unwrap(),
-                    F32 => _ = entry.read::<Vec<f32>>().unwrap(),
-                    F64 => _ = entry.read::<Vec<f64>>().unwrap(),
+                    U8  => _ = entry.read::<u8> ().unwrap(), 
+                    I8  => _ = entry.read::<i8> ().unwrap(),
+                    U16 => _ = entry.read::<u16>().unwrap(),
+                    I16 => _ = entry.read::<i16>().unwrap(),
+                    U32 => _ = entry.read::<u32>().unwrap(),
+                    I32 => _ = entry.read::<i32>().unwrap(),
+                    U64 => _ = entry.read::<u64>().unwrap(),
+                    I64 => _ = entry.read::<i64>().unwrap(),
+                    F32 => _ = entry.read::<f32>().unwrap(),
+                    F64 => _ = entry.read::<f64>().unwrap(),
                 }
             }
         }
         println!("Deserialization done")
     }
-}>
+
+    #[test]
+    fn test_ser_des_3() {
+        let mut data : Vec<u8> = Vec::new();
+        {
+            let mut s = Ser::new(&mut data).unwrap();
+            s.entry(b"INFO", b"[B").unwrap().write_array(b"This is a test!").unwrap();
+            s.entry(b"SomeData", b"[B[i[d").unwrap()
+                .write_array(b"Blablabla blabla bla").unwrap()
+                .write_array::<i32>(&[1,2,3,4,5,6,7,8,9]).unwrap()
+                .write_array(&[1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0]).unwrap();
+            {
+                let mut e = s.entry(b"StreamTest1",b"[d").unwrap();
+                { 
+                    let mut w = e.stream_writer::<f64>().unwrap();
+                    w.write(&[1.1,1.2,1.3,1.4,1.5,1.6]).unwrap();
+                    w.write(&[2.1,2.2,2.3,2.4,2.5,2.6]).unwrap();
+                    w.write(&[3.1,3.2,3.3,3.4,3.5,3.6]).unwrap();
+                    w.close().unwrap();
+                }            
+            }
+            {
+                let mut e = s.entry(b"StreamTest2",b"[B[d").unwrap();
+                { 
+                    let mut w = e.stream_writer::<u8>().unwrap();
+                    w.write(b"asdsfdfasdfdasfdsf").unwrap();
+                    w.write(b"qwerqewrqewrqewrqe").unwrap();
+                    w.write(b"213423421342134213").unwrap();
+                    w.close().unwrap();
+                }
+                { 
+                    let mut w = e.stream_writer::<f64>().unwrap();
+                    w.write(&[1.1,1.2,1.3,1.4,1.5,1.6]).unwrap();
+                    w.write(&[2.1,2.2,2.3,2.4,2.5,2.6]).unwrap();
+                    w.write(&[3.1,3.2,3.3,3.4,3.5,3.6]).unwrap();
+                    w.close().unwrap();
+                }            
+            }
+            s.finalize().unwrap();
+        }
+        {
+            let mut r = std::io::Cursor::new(data);
+            let mut d = Des::new(&mut r).unwrap();
+            {
+                let mut entry = d.expect(b"INFO").unwrap().check_fmt(b"[B").unwrap();
+                let data = entry.next::<u8>().unwrap().unwrap().read_vec().unwrap();
+                println!(" INFO data = {}",asciistr(data.as_slice()));
+            }
+            {
+                let mut entry = d.expect(b"SomeData").unwrap().check_fmt(b"[B[i[d").unwrap();
+
+                let data1 = entry.next::<u8>().unwrap().unwrap().read_vec().unwrap();
+                let data2 = entry.next::<i32>().unwrap().unwrap().read_vec().unwrap();
+                let data3 = entry.next::<f64>().unwrap().unwrap().read_vec().unwrap();
+                println!(" SomeData\n\tdata1 = {},\n\tdata2 = {:?}\n\tdata3 = {:?}",asciistr(data1.as_slice()),data2,data3);
+            }
+
+            {
+                let mut entry = d.expect(b"StreamTest1").unwrap().check_fmt(b"[d").unwrap();
+
+                let data2 = entry.next::<f64>().unwrap().unwrap().read_vec().unwrap();
+                println!(" StreamTest\n\tdata2 = {:?}",data2);
+            }
+            {
+                let mut entry = d.expect(b"StreamTest2").unwrap().check_fmt(b"[B[d").unwrap();
+
+                let data1 = entry.next::<u8>().unwrap().unwrap().read_vec().unwrap();
+                let data2 = entry.next::<f64>().unwrap().unwrap().read_vec().unwrap();
+                println!(" StreamTest\n\tdata1 = {},\n\tdata2 = {:?}",asciistr(data1.as_slice()),data2);
+            }
+        }
+    }
+}
