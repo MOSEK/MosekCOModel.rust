@@ -17,7 +17,8 @@ readme = "README.md"
 resolver = "3"
 
 members = [ "mosekcomodel-mosek", 
-            "mosekcomodel-highs"]
+            "mosekcomodel-highs", 
+            "mosekcomodel-optserver"]
 
 #[lib]
 #crate-type = ["dylib"]

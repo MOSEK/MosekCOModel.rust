@@ -1,0 +1,18 @@
+[package]
+name = "mosekcomodel-optserver"
+version = "0.1.0"
+edition = "2024"
+
+description = "MOSEK OptServer backend for mosekcomodel"
+authors = [ "Ulf Worsøe <ulf.worsoe@mosek.com>" ]
+keywords = ["mosek","optimization","linear_programming"]
+categories = ["mathematics","science"]
+license = "MIT"
+repository = "https://github.com/MOSEK/MosekCOModel.rust"
+readme = "README.md"
+
+[dependencies]
+zstd = "0.13.3"
+itertools = "0.14.0"
+mosekcomodel = { version = "0.4.0", path = ".." }
+reqwest = { version = "0.12.22", features = [ "blocking" ] }

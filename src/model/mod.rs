@@ -930,18 +930,20 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
             SolutionType::Interior => Some(&self.sol_itr),
             SolutionType::Integer  => Some(&self.sol_itg),
             SolutionType::Default  => {
-                match self.sol_itg.primal.status {
-                    SolutionStatus::Undefined =>
-                        match (self.sol_bas.primal.status,self.sol_bas.dual.status) {
-                            (SolutionStatus::Undefined,SolutionStatus::Undefined) =>
-                                match (self.sol_itr.primal.status,self.sol_itr.dual.status) {
-                                    (SolutionStatus::Undefined,SolutionStatus::Undefined) => None,
-                                    _ => Some(&self.sol_itr)
-                                }
-                            _ => Some(&self.sol_bas)
-                        },
+                (match self.sol_itg.primal.status {
+                    SolutionStatus::Undefined => None,
                     _ => Some(& self.sol_itg)
-                }
+                })
+                .or_else(|| 
+                    match (self.sol_bas.primal.status,self.sol_bas.dual.status) {
+                        (SolutionStatus::Undefined,SolutionStatus::Undefined) => None,
+                        _ => Some(&self.sol_bas)
+                    })
+                .or_else(|| 
+                    match (self.sol_itr.primal.status,self.sol_itr.dual.status) {
+                        (SolutionStatus::Undefined,SolutionStatus::Undefined) => None,
+                        _ => Some(&self.sol_itr)
+                    })
             }
         }
     }
