@@ -476,7 +476,7 @@ impl<'a,R> Des<'a,R> where R : Read {
             }
         }
         
-        println!("Des::next_entry(): {} | {} ",asciistr(&name[..namelen]),asciistr(&fmt[..fmtlen]));
+        //println!("Des::next_entry(): {} | {} ",asciistr(&name[..namelen]),asciistr(&fmt[..fmtlen]));
         
         if name[0] == 0 && fmt[0] == 0 {
             self.end_of_stream = true;

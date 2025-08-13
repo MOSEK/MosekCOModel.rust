@@ -3,12 +3,10 @@
 //!
 use mosekcomodel::*;
 use mosekcomodel::model::ModelWithLogCallback;
-use mosekcomodel::utils::iter::{ChunksByIterExt, PermuteByEx, PermuteByMutEx};
+use mosekcomodel::utils::iter::{ChunksByIterExt, PermuteByEx};
 use itertools::izip;
-use reqwest::Url;
 use std::fs::File;
-use std::future::poll_fn;
-use std::io::{BufReader,BufRead,Read,Write};
+use std::io::{BufReader,BufRead,Read};
 use std::path::Path;
 
 //mod http;
@@ -413,9 +411,6 @@ impl BaseModelTrait for Backend {
                 "json"|"jtask" => {
                     self.write_jtask(&mut File::create(p).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
                  },
-                "b"|"btask" => {
-                    self.write_btask(&mut File::create(p).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
-                },
                 _ => Err("Writing problem not supported".to_string())
             }
         }
@@ -432,12 +427,9 @@ impl BaseModelTrait for Backend {
             let mut url = url.clone(); 
             url.set_path("/api/v1/submit+solve");
 
-            let url = Url::parse("http://localhost:9999/api/v1/submit+solve").unwrap();
-
             let (req_r,mut req_w) = std::io::pipe().map_err(|e| e.to_string())?;
             let (mut resp_r,mut resp_w) = std::io::pipe().map_err(|e| e.to_string())?;
 
-            println!("Send HTTP request");
             let t = std::thread::spawn(move || {
                 let client = reqwest::blocking::Client::new();
                 let mut resp = client.post(url)
@@ -475,12 +467,10 @@ impl BaseModelTrait for Backend {
                 Ok(())
             });
 
-            println!("Write B-task");
             self.write_jtask(&mut req_w).map_err(|e| e.to_string())?;
             drop(req_w);
 
 
-            println!("Parse result stream");
             let res = self.parse_multistream(&mut resp_r,sol_bas,sol_itr,sol_itg);
             t.join().unwrap().and_then(|_| res)?;
         }
@@ -706,452 +696,6 @@ impl Backend {
         }
     }
     
-    /// MOSEK B fomat
-    /// The order of entries are fixed, some may be left out. If the presence is conditional, the
-    /// condition is mentioned in brackets after the format. A condition `{C}` means that the entry
-    /// is present if and only if `C` is satisfied, while `{C, optional}` means that it _may_ be
-    /// present if `C` is satisfied. If no condition is listed, the entry is mandatory.
-    ///
-    /// # Into section
-    /// ```text
-    /// INFO/MOSEKVER: III
-    /// INFO/name: [B
-    /// INFO/numvar: I
-    /// INFO/numcon: I
-    /// INFO/numcone: I
-    /// INFO/numbarvar: I
-    /// INFO/numdomain: L
-    /// INFO/numafe: L
-    /// INFO/numacc: L
-    /// INFO/numdjc: L
-    /// INFO/numsymmat: L
-    /// INFO/atruncatetol: d
-    /// ```
-    ///
-    /// # Data section 
-    /// ```text
-    /// data/symmat: [B[i[l[i[i[d  {numsymmat > 0}
-    /// var/bound:   [B[d[d []     {numvar > 0}    -- bk,lb,ub
-    /// data/c:      [B[dd                         -- sense, c, cfix
-    /// data/barc:   I[i[l[l[d     {numbarvar > 0, optional} -- nnz, subi,numterm,alpha, if and only if numbarvar > 0
-    /// con/bound:   [B[d[d        {numcon > 0}    --
-    /// data/A:      [I[i[d                        -- rowlen, subj, valj    
-    /// data/bara:   [i[i[l[l[d    {numbarvar > 0, optional}
-    /// data/Fg:     [I[l[d[d      {numafe > 0} 
-    /// data/barf:   [l[i[i[l[l[d  {numbarvar > 0, optional} -- subi,rowlen,subj,numterm,midx,alpha
-    /// data/domain: [B[l[d        {numdomain > 0}
-    /// data/acc:    [l[l[l[d      {numacc > 0}
-    /// data/djc:    [l[l[l[l[l[d  {numdjc > 0}
-    /// ```
-    ///
-    /// # Names section 
-    /// All name lists are a list of `\0`-terminated strings, and entries are only present if they contain at least one name.
-    /// ```text
-    /// names/obj:    [B         - a single name
-    /// names/var:    [B      {numvar > 0}
-    /// names/barvar: [B      {numbarvar > 0}
-    /// names/con:    [B      {numcon > 0}
-    /// names/cone:   [B      {numcone > 0}
-    /// names/domain: [B      {numdomain > 0}
-    /// names/acc:    [B      {numacc > 0}
-    /// names/djc:    [B      {numdjc > 0}
-    /// ```
-    ///
-    /// # Solutions section
-    /// ```text
-    /// sol/basic     [B[B          -- prosta, solsta
-    /// sol/basic/pobj d            -- prosta, solsta
-    /// sol/basic/dobj d            -- prosta, solsta
-    /// sol/basic/var [B[D[D[D      {numvar > 0} -- stakey,level,slx,sux
-    /// sol/basic/con [B[D[D[D[D    {numcon > 0} -- stakey,level,slc,suc,y
-    /// sol/basic/acc [D            {numacc > 0} -- doty
-    ///
-    /// sol/interior        [B[B    -- prosta, solsta
-    /// sol/interior/pobj   d       
-    /// sol/interior/dobj   d       
-    /// sol/interior/var    [B[D[D[D {numvar > 0} -- stakey,level,slx,sux,snx
-    /// sol/interior/barvar [D[D    {numbarvar > 0} -- barx,bars
-    /// sol/interior/con [B[D[D[D[D {numcon > 0} -- stakey,level,slc,suc,y
-    /// sol/interior/acc [D         {numacc > 0} -- doty
-    ///
-    /// sol/integer        [B[B       -- prosta, solsta
-    /// sol/integer/pobj   [B[B      
-    /// sol/integer/dobj   [B[B     
-    /// sol/integer/var    [B[D[D[D   {numvar > 0} -- stakey,level
-    /// sol/integer/barvar [D[D       {numbarvar > 0} -- barx,bars
-    /// sol/integer/con    [B[D[D[D[D {numcon > 0} -- stakey,level
-    /// ``` 
-    /// 
-    /// # Parameters section
-    /// ```text
-    /// parameter/double: [B[d   {optional}
-    /// parameter/integer: [B[i  {optional}
-    /// parameter/symbolic: [B[B {optional} # second element is a list of  of '\0'-terminated value strings
-    /// ```
-    ///
-    /// # Bounds indicators
-    /// ```text
-    /// MSK_BK_FR: 'f'
-    /// MSK_BK_FX: 'x'
-    /// MSK_BK_LO: 'l'
-    /// MSK_BK_UP: 'u'
-    /// MSK_BK_RA: 'r'
-    /// ```
-    /// # Domain type indicators
-    /// ```text
-    /// MSK_DOMAIN_R:                    'R'
-    /// MSK_DOMAIN_RMINUS:               '-'
-    /// MSK_DOMAIN_RPLUS:                '+'
-    /// MSK_DOMAIN_RZERO:                '0'
-    /// MSK_DOMAIN_QUADRATIC_CONE:       'q'
-    /// MSK_DOMAIN_RQUADRATIC_CONE:      'r'
-    /// MSK_DOMAIN_PRIMAL_EXP_CONE:      'e'
-    /// MSK_DOMAIN_DUAL_EXP_CONE:        'x'
-    /// MSK_DOMAIN_INF_NORM_CONE:        'i'
-    /// MSK_DOMAIN_ONE_NORM_CONE:        '1'
-    /// MSK_DOMAIN_PRIMAL_GEO_MEAN_CONE: 'g'
-    /// MSK_DOMAIN_DUAL_GEO_MEAN_CONE:   'G'
-    /// MSK_DOMAIN_SVEC_PSD_CONE:        'V'
-    /// MSK_DOMAIN_PRIMAL_POWER_CONE:    'p'
-    /// MSK_DOMAIN_DUAL_POWER_CONE:      'o'
-    /// ```
-    pub fn write_btask<W>(&self,w : &mut W) -> std::io::Result<()> where W : Write {
-        let mut w = bio::Ser::new(w)?;
-        // INFO/MOSEKVER: III
-        // INFO/name: [B
-        // INFO/numvar: I
-        // INFO/numcon: I
-        // INFO/numcone: I
-        // INFO/numbarvar: I
-        // INFO/numdomain: L
-        // INFO/numafe: L
-        // INFO/numacc: L
-        // INFO/numdjc: L
-        // INFO/numsymmat: L
-        // INFO/atruncatetol: d
-        {
-            let mut e = w.entry(b"INFO/MOSEKVER",b"III")?;
-            e.write_value::<u32>(10)?;
-            e.write_value::<u32>(0)?;
-            e.write_value::<u32>(0)?;
-        }
-
-        if let Some(name) = &self.name {
-           w.entry(b"INFO/name",b"[B")?.write_array(name.as_bytes())?;
-        }
-        else {
-           w.entry(b"INFO/name",b"[B")?.write_array(b"")?;
-        }
-        w.entry(b"INFO/numvar",b"I")?.write_value(self.var_elt.len() as u32)?;
-        w.entry(b"INFO/numcon",b"I")?.write_value(self.con_elt.len() as u32)?;
-        w.entry(b"INFO/numcone",b"I")?.write_value(0u32)?;
-        w.entry(b"INFO/numbarvar",b"I")?.write_value(0u32)?;
-        w.entry(b"INFO/numdomain",b"L")?.write_value(0u64)?;
-        w.entry(b"INFO/numafe",b"L")?.write_value(0u64)?;
-        w.entry(b"INFO/numacc",b"L")?.write_value(0u64)?;
-        w.entry(b"INFO/numdjc",b"L")?.write_value(0u64)?;
-        w.entry(b"INFO/numsymmat",b"L")?.write_value(0u64)?;
-        w.entry(b"INFO/atruncatetol",b"d")?.write_value(0.0)?;
-
-        // data/symmat: [B[i[l[i[i[d  {numsymmat > 0}
-        // var/bound:   [B[d[d        {numvar > 0}    -- bk,lb,ub
-        // data/c:      [B[dd                         -- sense, c, cfix
-        // data/barc:   I[i[l[l[d     {numbarvar > 0, optional} -- nnz, subi,numterm,alpha, if and only if numbarvar > 0
-        // con/bound:   [B[d[d        {numcon > 0}    --
-        // data/A:      [I[i[d                        -- rowlen, subj, valj    
-        // data/bara:   [i[i[l[l[d    {numbarvar > 0, optional}
-        // data/Fg:     [I[l[d[d      {numafe > 0} 
-        // data/barf:   [l[i[i[l[l[d  {numbarvar > 0, optional} -- subi,rowlen,subj,numterm,midx,alpha
-        // data/domain: [B[l[d        {numdomain > 0}
-        // data/acc:    [l[l[l[d      {numacc > 0}
-        // data/djc:    [l[l[l[l[l[d  {numdjc > 0}
-        if self.var_elt.len() > 0 {
-            w.entry(b"var/bound", b"[B[d[d")?
-                .write_array(self.var_elt.iter().map(bounds_to_bbk).collect::<Vec<u8>>().as_slice())?
-                .write_array(self.var_elt.iter().map(|e| e.lb).collect::<Vec<f64>>().as_slice())?
-                .write_array(self.var_elt.iter().map(|e| e.ub).collect::<Vec<f64>>().as_slice())?
-                ;
-        }
-        {
-            let mut c = vec![0.0; self.var_elt.len()];
-            c.permute_by_mut(&self.c_subj.as_slice()).zip(self.c_cof.iter()).for_each(|(d,&s)| *d = s);
-            w.entry(b"data/c",b"[B[d[d")?
-                .write_array(if self.sense_max {b"maximize"} else {b"minimize"})?
-                .write_array(c.as_slice())?
-                .write_value(0.0)?
-                ;
-        }
-
-        w.entry(b"con/bound",b"[B[d[d")?
-            .write_array(self.con_elt.iter().map(bounds_to_bbk).collect::<Vec<u8>>().as_slice())?
-            .write_array(self.con_elt.iter().map(|e| e.lb).collect::<Vec<f64>>().as_slice())?
-            .write_array(self.con_elt.iter().map(|e| e.ub).collect::<Vec<f64>>().as_slice())?
-            ;
-
-        {
-            let a_row_len : Vec<u32> = self.a_ptr.permute_by(self.con_a_row.as_slice()).map(|row| row[1] as u32).collect();
-            let _numanz : usize = a_row_len.iter().map(|&v| v as usize).sum();
-            let a_subj : Vec<i32> = self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_subj[row[0]..row[0]+row[1]].iter()).map(|&i| i as i32).collect();
-            let a_cof  : Vec<f64> = self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_cof[row[0]..row[0]+row[1]].iter()).cloned().collect();
-            
-            w.entry(b"data/A",b"[I[i[d")?
-                .write_array(a_row_len.as_slice())?
-                .write_array(a_subj.as_slice())?
-                .write_array(a_cof.as_slice())?
-                ;
-        }
-
-        // names/obj:    [B                      - a single name
-        // names/var:    [B      {numvar    > 0}
-        // names/barvar: [B      {numbarvar > 0}
-        // names/con:    [B      {numcon    > 0}
-        // names/cone:   [B      {numcone   > 0}
-        // names/domain: [B      {numdomain > 0}
-        // names/acc:    [B      {numacc    > 0}
-        // names/djc:    [B      {numdjc    > 0}
-        
-        w.entry(b"names/obj",b"[B")?
-            .write_array(b"obj")?
-            ;
-        if self.var_elt.len() > 0 {
-            let mut e = w.entry(b"names/var",b"[B")?;
-            let mut ew = e.stream_writer::<u8>()?;
-            for n in self.var_names.iter() {
-                if let Some(n) = n {
-                    ew.write(n.as_bytes())?;
-                }
-                else {
-                    ew.write(b"")?;
-                }
-                ew.write(&[0])?;
-            }
-            ew.close()?;
-        }
-        
-        if self.con_elt.len() > 0 {
-            let mut e = w.entry(b"names/con",b"[B")?;
-            let mut ew = e.stream_writer::<u8>()?;
-            for n in self.con_names.iter() {
-                if let Some(n) = n {
-                    ew.write(n.as_bytes())?;
-                }
-                else {
-                    ew.write(b"")?;
-                }
-                ew.write(&[0])?;
-            }
-            ew.close()?;
-        }
-    
-        // parameter/double: [B[d
-        // parameter/integer: [B[i
-        // parameter/symbolic: [B[B # second element is a list of  of '\0'-terminated value strings
-        
-        // Do not send parameters
-
-        Ok(())
-    }
-
-
-
-    /*
-    fn read_one_bsol<'a>(&self, sol : &mut Solution, bs : &mut bio::BAIO<'a>) -> Result<(),String> {
-        let numvar = self.var_elt.len();
-        let numcon = self.con_elt.len();
-        let (prefix,whichsol,psta,dsta) =
-        {
-            let mut entry = bs.expect()?;
-            let name = entry.name();
-            let prefix = name.strip_suffix(b"/status").unwrap();
-            let whichsol = prefix.strip_prefix(b"solution/").unwrap();
-
-            if entry.fmt() != b"[B[B" { return Err("Invalid solution format".to_string()); }
-
-            _ = entry.next()?.unwrap();
-
-            let (psta,dsta) = {
-                let (dt,solsta) = entry.next()?.unwrap();
-                if let DataType::U8 = dt {
-                    match solsta {
-                        b"unknown" =>            (SolutionStatus::Unknown,SolutionStatus::Unknown),
-                        b"optimal" =>            (SolutionStatus::Optimal,SolutionStatus::Optimal),
-                        b"prim_feas" =>          (SolutionStatus::Feasible,SolutionStatus::Unknown),
-                        b"dual_feas" =>          (SolutionStatus::Unknown,SolutionStatus::Feasible),
-                        b"prim_and_dual_feas" => (SolutionStatus::Feasible,SolutionStatus::Feasible),
-                        b"prim_infeas_cer" =>    (SolutionStatus::Undefined,SolutionStatus::CertInfeas),
-                        b"dual_infeas_cer" =>    (SolutionStatus::CertInfeas,SolutionStatus::Undefined),
-                        b"prim_illposed_cer" =>  (SolutionStatus::Undefined,SolutionStatus::CertIllposed),
-                        b"dual_illposed_cer" =>  (SolutionStatus::CertIllposed,SolutionStatus::Undefined),
-                        b"integer_optimal" =>    (SolutionStatus::Optimal,SolutionStatus::Undefined),
-                        _ => return Err("Invalid solution format".to_string())
-                    }
-                } else { 
-                    return Err("Invalid solution format".to_string())
-                }
-            };
-            if let SolutionStatus::Undefined = psta { }
-            else {
-                sol.primal.var.resize(numvar,0.0);
-                sol.primal.con.resize(numcon,0.0);
-            }
-            if let SolutionStatus::Undefined = dsta { }
-            else {
-                sol.dual.var.resize(numvar,0.0);
-                sol.dual.con.resize(numcon,0.0);
-            }
-
-            sol.primal.status = psta;
-            sol.dual.status = dsta;
-
-            (prefix,whichsol,psta,dsta)
-        };
-
-        // expect ".../var"
-        let (xx,sx) = {
-            let mut entry = bs.expect()?;
-            let name  = entry.name();
-            let fmt   = entry.fmt();
-            if !name.starts_with(prefix) || !name.ends_with(b"/var") { return Err("Invalid solution format".to_string()); }
-
-            match fmt {
-                b"[B[D" => { 
-                    // primal solution only
-                    _ = entry.next()?.unwrap(); // stakey
-                    let (_,bxx) = entry.next()?.unwrap();
-                    if bxx.len() != numvar*8 {
-                        return Err("Invalid solution format".to_string());
-                    }
-                    let mut xx = vec![0.0; numvar];
-                    unsafe {
-                        xx.as_mut_slice().align_to_mut::<u8>().1.copy_from_slice(bxx);
-                    }
-                    (xx,None)
-                },
-                b"[B[D[D[D[D" | 
-                b"[B[D[D[D" => {
-                    // primal and linear dual solution
-                    _ = entry.next()?.unwrap(); // stakey
-                    let (_,bxx)  = entry.next()?.unwrap();
-                    let (_,bslx) = entry.next()?.unwrap();
-                    let (_,bsux) = entry.next()?.unwrap();
-                    entry.finalize();
-                    if bxx.len()  != numvar*8 ||
-                       bslx.len() != numvar*8 || 
-                       bsux.len() != numvar*8
-                    {
-                        return Err("Invalid solution format".to_string());
-                    }
-                    let mut xx  = vec![0.0; numvar];
-                    let mut slx = vec![0.0; numvar];
-                    let mut sux = vec![0.0; numvar];
-                    unsafe {
-                        xx.as_mut_slice().align_to_mut().1.copy_from_slice(bxx);
-                        slx.as_mut_slice().align_to_mut().1.copy_from_slice(bslx);
-                        sux.as_mut_slice().align_to_mut().1.copy_from_slice(bsux);
-                    }
-                    let dobjpart : f64 = izip!(slx.iter(),sux.iter(),self.var_elt.iter()).map(|(sl,su,e)| sl*e.lb-su*e.ub).sum(); 
-                    (xx,Some((slx,sux,dobjpart)))
-                },
-                _ => return Err("Invalid solution format".to_string())
-            }
-        };
-
-
-        // expect ".../con"
-        let (xc,sc) = {
-            let mut entry = bs.expect()?;
-            let name = entry.name();
-            let fmt = entry.fmt();
-            if !name.starts_with(prefix) || !name.ends_with(b"/con") { return Err("Invalid solution format".to_string()); }
-
-            match fmt {
-                b"[B[D" => { 
-                    // primal solution only
-                    _ = entry.next()?; // stakey
-                    let (_,bxx) = entry.next()?.unwrap();
-                    if bxx.len() != numvar*8 {
-                        return Err("Invalid solution format".to_string());
-                    }
-                    let mut xx = vec![0.0; numvar];
-                    unsafe {
-                        xx.as_mut_slice().align_to_mut::<u8>().1.copy_from_slice(bxx);
-                    }
-                    (xx,None)
-                },
-                b"[B[D[D[D" |
-                b"[B[D[D[D[D" => {
-                    // primal and linear dual solution
-                    _ = entry.next()?; // stakey
-                    let (_,bxx)  = entry.next()?.unwrap();
-                    let (_,bslx) = entry.next()?.unwrap();
-                    let (_,bsux) = entry.next()?.unwrap();
-                    entry.finalize()?;
-                    if bxx.len()  != numvar*8 ||
-                       bslx.len() != numvar*8 || 
-                       bsux.len() != numvar*8
-                    {
-                        return Err("Invalid solution format".to_string());
-                    }
-                    let mut xx  = vec![0.0; numvar];
-                    let mut slx = vec![0.0; numvar];
-                    let mut sux = vec![0.0; numvar];
-                    unsafe {
-                        xx.as_mut_slice().align_to_mut().1.copy_from_slice(bxx);
-                        slx.as_mut_slice().align_to_mut().1.copy_from_slice(bslx);
-                        sux.as_mut_slice().align_to_mut().1.copy_from_slice(bsux);
-                    }
-                    let dobjpart : f64 = izip!(slx.iter(),sux.iter(),self.con_elt.iter()).map(|(sl,su,e)| sl*e.lb - su*e.ub).sum();
-                    (xx,Some((slx,sux,dobjpart)))
-                },
-                _ => return Err("Invalid solution format".to_string())
-            }
-        };
-       
-        sol.primal.obj = izip!(xx.permute_by(self.c_subj.as_slice()),self.c_cof.iter()).map(|(&x,&cj)| x*cj).sum();
-
-        if let SolutionStatus::Undefined = psta {}
-        else {
-            for (v,x) in izip!(self.vars.iter(),sol.primal.var.iter_mut()) {
-                *x = match v {
-                    Item::Linear { index } => xx[*index],
-                    Item::RangedUpper { index } => xx[*index],
-                    Item::RangedLower { index } => xx[*index]
-                };
-            }
-            for (v,x) in izip!(self.cons.iter(),sol.primal.con.iter_mut()) {
-                *x = match v {
-                    Item::Linear { index } => xc[*index],
-                    Item::RangedUpper { index } => xc[*index],
-                    Item::RangedLower { index } => xc[*index]
-                };
-            }
-        }
-        match (dsta,sx,sc) {
-            (SolutionStatus::Undefined,_,_) => {},
-            (_,Some((slx,sux,dobjpartx)),Some((slc,suc,dobjpartc))) => {
-                sol.dual.obj = dobjpartx+dobjpartc;
-                for (v,x) in izip!(self.vars.iter(),sol.dual.var.iter_mut()) {
-                    *x = match v {
-                        Item::Linear { index }      => slx[*index]-sux[*index],
-                        Item::RangedUpper { index } => -sux[*index],
-                        Item::RangedLower { index } => slx[*index]
-                    };
-                }
-                for (v,x) in izip!(self.cons.iter(),sol.dual.con.iter_mut()) {
-                    *x = match v {
-                        Item::Linear { index }      => slc[*index]-suc[*index],
-                        Item::RangedUpper { index } => -suc[*index],
-                        Item::RangedLower { index } => suc[*index]
-                    };
-                }
-            },
-            _ => return Err("Invalid solution format".to_string()),
-        }
-
-        Ok(())
-    }
-*/
-
     fn copy_solution(&self,
                      psta : SolutionStatus,
                      dsta : SolutionStatus,
@@ -1169,7 +713,10 @@ impl Backend {
     {
         let pdef = if let SolutionStatus::Undefined = psta { false } else { true };
         let ddef = if let SolutionStatus::Undefined = dsta { false } else { true };
-           
+
+        sol.primal.status = psta;
+        sol.dual.status = dsta;
+
         if pdef {
             sol.primal.obj = pobj;
             if let Some(xx) = xx {
@@ -1346,6 +893,14 @@ impl Backend {
             return Err(std::io::Error::other(format!("Unsupported solution format version: {}.{}.{}",version.0,version.1,version.2)));
         }
 
+        sol_bas.primal.status = Undefined;
+        sol_bas.dual.status = Undefined;
+        sol_itr.primal.status = Undefined;
+        sol_itr.dual.status = Undefined;
+        sol_itg.primal.status = Undefined;
+        sol_itg.dual.status = Undefined;
+
+
         let numvar    = r.expect(b"numvar",b"I")?.next_value::<u32>()? as usize;
         let numbarvar = r.expect(b"numbarvar",b"I")?.next_value::<u32>()?;
         let numcon    = r.expect(b"numcon",b"I")?.next_value::<u32>()? as usize;
@@ -1379,7 +934,7 @@ impl Backend {
             let consta = r.expect(b"sol/interior/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
             let xc = if numcon > 0 && pdef { Some(r.expect(b"sol/interior/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             let sc = if numcon > 0 && ddef { Some(r.expect(b"sol/interior/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
-            
+
             self.copy_solution(sta.0,sta.1,
                                numvar, numcon, 
                                pobj,dobj,
@@ -1447,31 +1002,6 @@ impl Backend {
 
         Ok(())
     }
-
-//    fn read_bsolution_(&self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution, data : &[u8]) -> Result<(),String>
-//    {
-//        if ! data.starts_with(b"BASF") { return Err("Invalid solution format".to_string()) }
-//
-//        let mut bs = bio::Des::new(&data[4..])?;
-//
-//
-//        while let Some((name,fmt)) = bs.peek()? {
-//            if let Some(rest) = name.strip_prefix(b"solution/") {
-//                let which = name.strip_suffix(b"/status").ok_or_else(|| "Invalid solution format".to_string())?;
-//                match which {
-//                    b"basic"    => self.read_one_bsol(sol_bas, &mut bs)?,
-//                    b"interior" => self.read_one_bsol(sol_itr, &mut bs)?,
-//                    b"integer"  => self.read_one_bsol(sol_itg, &mut bs)?,
-//                    _ => return Err("Invalid solution format".to_string()),
-//                }
-//            }
-//        }
-//
-//        while bs.next()?.is_some() { }
-//
-//        Ok(())
-//    }
-
 
     /// JSON Task format writer.
     ///
@@ -1577,16 +1107,7 @@ fn subseq_location<T>(src : &[T], seq : &[T]) -> Option<usize> where T : Eq {
     subseq_location_from(0,src, seq)
 }
 
-
-fn bounds_to_bbk(e : & Element) -> u8 {
-    match (e.lb.is_finite(),e.ub.is_finite()) {
-        (false,false) => b'f',
-        (true,false) => b'l',
-        (false,true) => b'u',
-        (true,true) => if e.lb<e.ub||e.lb>e.ub { b'r' } else { b'f' },
-    }
-}
-
+/// Convert a solution status string to primal/dual solution status.
 fn str_to_pdsolsta(solsta : &[u8]) -> std::io::Result<(SolutionStatus,SolutionStatus)> {
     match solsta {
         b"UNKNOWN" =>            Ok((SolutionStatus::Unknown,SolutionStatus::Unknown)),
@@ -1629,7 +1150,6 @@ mod test {
         // Set the objective function to (c^t * x)
         m.objective(Some("obj"), Sense::Maximize, x.dot(c));
 
-        // Solve the problem
         m.write_problem("lo1-nosol.jtask");
 
         m.set_log_handler(|msg| print!("{}",msg));
