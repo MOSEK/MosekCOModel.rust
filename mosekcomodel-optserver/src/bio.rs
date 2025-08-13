@@ -401,8 +401,11 @@ pub struct DesEntry<'a,'b,R> where R : Read {
     fmt : [u8;256],
     /// Current entry name
     name : [u8;256],
+    namelen : usize,
     /// Current opsition in fmt: Index of the format of the next field to be read.
     fmtpos : usize,
+    /// Length of current fmt
+    fmtlen : usize,
     /// Underlying deserializer object
     des : &'b mut Des<'a,R>,
     /// Entry is ready for reading next field.
@@ -455,18 +458,17 @@ impl<'a,R> Des<'a,R> where R : Read {
         if self.end_of_stream { return Ok(None); }
         let mut name = [0u8; 256];
         let mut fmt  = [0u8; 256];
-        self.r.read_exact(&mut name[..1])?;
-        if name[0] > 0 {
-            let len = name[0] as usize;
-            self.r.read_exact(&mut name[1..1+len])?;
-            println!("Des::next_entry() name = '{}'",asciistr(&name[1..len+1]));
+        let mut len = [0;1];
+        self.r.read_exact(&mut len)?;
+        let namelen = len[0] as usize;
+        if namelen > 0 {
+            self.r.read_exact(&mut name[..namelen])?;
         }
-        self.r.read_exact(&mut fmt[..1])?;
-        if fmt[0] > 0 {
-            let len = fmt[0] as usize;
-            self.r.read_exact(&mut fmt[1..1+len])?;
-            println!("Des::next_entry() sig = '{}'",asciistr(&fmt[1..len+1]));
-            if ! validate_signature(&fmt[1..1+fmt[0] as usize]) {
+        self.r.read_exact(&mut len)?;
+        let fmtlen = len[0] as usize;
+        if fmtlen > 0 {
+            self.r.read_exact(&mut fmt[..fmtlen])?;
+            if ! validate_signature(&fmt[..fmtlen]) {
                 
                 return std::str::from_utf8(&fmt[1..1+fmt[0] as usize])
                     .map_err(|_| std::io::Error::other(format!("Invalid signature: {}", std::str::from_utf8(fmt[1..1+fmt[0] as usize].iter().map(|&b| if (32..128).contains(&b) { b } else { b'?' }).collect::<Vec<u8>>().as_slice()).unwrap())))
@@ -474,22 +476,28 @@ impl<'a,R> Des<'a,R> where R : Read {
             }
         }
         
+        println!("Des::next_entry(): {} | {} ",asciistr(&name[..namelen]),asciistr(&fmt[..fmtlen]));
+        
         if name[0] == 0 && fmt[0] == 0 {
             self.end_of_stream = true;
             Ok(None)
         }
         else {
-            Ok(Some(DesEntry{des : self, fmt, name, fmtpos : 1, ready : true }))
+            Ok(Some(DesEntry{des : self, fmt, name, fmtpos : 0, ready : true, fmtlen, namelen }))
         }
     }
 
-    pub fn expect<'b>(&'b mut self, name : &[u8]) -> std::io::Result<DesEntry<'a,'b,R>> {
+    pub fn expect<'b>(&'b mut self, name : &[u8], fmt : &[u8]) -> std::io::Result<DesEntry<'a,'b,R>> {
         match self.next_entry()? {
             None => Err(std::io::Error::other("Expected a entry, got end-of-file")),
-            Some(v) => if v.name() == name { 
+            Some(v) => if v.name() == name && v.fmt() == fmt { 
                 Ok(v) 
             } else {
-                Err(std::io::Error::other(format!("Expected a entry '{}'", std::str::from_utf8(name).unwrap_or("<invalid utf-8>")))) 
+                Err(std::io::Error::other(format!("Expected a entry '{}'/'{}, got '{}'/'{}'", 
+                                                  std::str::from_utf8(name).unwrap_or("<invalid utf-8>"),
+                                                  std::str::from_utf8(fmt).unwrap_or("<invalid utf-8>"),
+                                                  std::str::from_utf8(v.name()).unwrap_or("<invalid utf-8>"),
+                                                  std::str::from_utf8(v.fmt()).unwrap_or("<invalid utf-8>")))) 
             },
         }
     }
@@ -511,10 +519,10 @@ impl<'a,R> Des<'a,R> where R : Read {
 
 impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
     /// Return the entry name
-    pub fn name(&self) -> &[u8] { &self.name[1..1+self.name[0] as usize] }
+    pub fn name(&self) -> &[u8] { &self.name[..self.namelen] }
     /// Return the fmt name
     #[allow(unused)]
-    pub fn fmt(&self)  -> &[u8] { &self.fmt[1..1+self.fmt[0] as usize] }
+    pub fn fmt(&self)  -> &[u8] { &self.fmt[..self.fmtlen] }
     pub fn check_fmt(self, fmt : &[u8]) -> std::io::Result<Self> {
         if self.fmt() != fmt { Err(std::io::Error::other(format!("Expected entry in format '{}', got '{}'",
                                                                std::str::from_utf8(fmt).unwrap_or("<invalid utf-8>"), 
@@ -525,8 +533,9 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
     pub fn skip_field(&mut self) -> std::io::Result<()> { 
         let mut readbuf = [0;4096];
         if !self.ready { return Err(std::io::Error::other("Entry not ready")); }
-        if self.fmt[self.fmtpos+1] == b'[' {
-            if self.fmtpos+1 >= self.fmt[0] as usize  {
+        if self.fmtpos >= self.fmtlen { return Ok(()); }
+        if self.fmt[self.fmtpos] == b'[' {
+            if self.fmtpos >= self.fmtlen {
                 return Err(std::io::Error::other("Invalid format"));
             }
             self.fmtpos += 2;
@@ -555,36 +564,34 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
             }
         }       
         else {
-            let n = FieldElementType::try_from(self.fmt[self.fmtpos+1])?.size_of();
+            let n = FieldElementType::try_from(self.fmt[self.fmtpos])?.size_of();
             self.fmtpos += 1;
-            self.des.r.read(&mut readbuf[..n])?;
+            self.des.r.read_exact(&mut readbuf[..n])?;
         }
         Ok(())
     }
-    pub fn skip_all(&mut self) -> std::io::Result<()> {
-        while self.fmtpos < self.fmt[0] as usize {
+    pub fn skip_all(mut self) -> std::io::Result<()> {
+        while self.fmtpos < self.fmtlen {
             self.skip_field()?;
         }
         Ok(())
     }
 
     /// Get next field as a value of specific type. The type must match the signture.
-    pub fn next_value<E>(&mut self) -> std::io::Result<Option<E>> where E : Serializable+Default+Copy {
+    pub fn next_value<E>(&mut self) -> std::io::Result<E> where E : Serializable+Default+Copy {
         if !self.ready { return Err(std::io::Error::other("Entry not ready")); }
-        if self.fmtpos == self.fmt[0] as usize { return Ok(None); }
-        if E::sig() != self.fmt[1+self.fmtpos] { return Err(std::io::Error::other("Incorrect field type requested")); }
+        if self.fmtpos == self.fmtlen { return Err(std::io::Error::other("Read beyond end of entry"));  }
+        if E::sig() != self.fmt[self.fmtpos] { return Err(std::io::Error::other("Incorrect field type requested")); }
         let mut data = [ E::default() ];
         self.des.r.read_exact(unsafe{ data.align_to_mut().1 })?;
         self.fmtpos += 1;
-        Ok(Some(data[0]))
+        Ok(data[0])
     }
 
     pub fn field_type(&self) -> std::io::Result<Option<(FieldType,FieldElementType)>> {
         if !self.ready { return Err(std::io::Error::other("Entry not ready")); }
-        if self.fmtpos == self.fmt[0] as usize + 1 { return Ok(None); }
+        if self.fmtpos == self.fmtlen { return Ok(None); }
 
-        //println!("DesEntry::field_type() fmt = '{}'",std::str::from_utf8(&self.fmt[self.fmtpos..self.fmt[0] as usize + 1]).unwrap_or("<?>"));
-    
         if self.fmt[self.fmtpos] == b'[' {
             let fet = self.fmt.get(self.fmtpos+1)
                 .ok_or_else(|| std::io::Error::other("Invalid fmt string"))
@@ -598,19 +605,18 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
         
     }
 
-    pub fn read_into<E>(&mut self, res : &mut Vec<E>) -> std::io::Result<usize> 
+    pub fn read_into<E>(&mut self, res : &mut Vec<E>) -> std::io::Result<&mut Self> 
         where 
             E : Serializable+Default+Copy 
     {
         if let Some(mut r) = self.next::<E>()? {
-            let mut initial_length = res.len();
             loop {
                 let base = res.len(); res.resize(res.len()+4096,E::default());
                 let n = r.read(&mut res[base..])?;
                 res.truncate(base+n);
                 if n == 0 { break; }
             }
-            Ok(res.len()-initial_length)
+            Ok(self)
         }
         else {
             Err(std::io::Error::other("Read beyond end of entry"))
@@ -629,13 +635,13 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
     /// which must match the signature.
     pub fn next<'c,E>(&'c mut self) -> std::io::Result<Option<DesEntryReader<'a,'b,'c,R,E>>> where E : Serializable+Default+Copy { 
         if !self.ready { return Err(std::io::Error::other("Entry not ready")); }
-        if self.fmtpos == 1+self.fmt[0] as usize { return Ok(None); }
+        if self.fmtpos == self.fmtlen { return Ok(None); }
         
         let kind = 
             match self.fmt[self.fmtpos] {
                 b'[' => {
                     let b = self.fmt[self.fmtpos+1];
-                    if E::sig() != b { return Err(std::io::Error::other(format!("Incorrect field type requested: {:?}, expected {:?}",E::sig(), b))); }
+                    if E::sig() != b { return Err(std::io::Error::other(format!("Incorrect field type requested: {:?}, expected {:?}",E::sig() as char, b as char))); }
 
                     self.fmtpos += 2;
                     self.ready = false;
@@ -865,12 +871,12 @@ mod test {
             let mut r = std::io::Cursor::new(data);
             let mut d = Des::new(&mut r).unwrap();
             {
-                let mut entry = d.expect(b"INFO").unwrap().check_fmt(b"[B").unwrap();
+                let mut entry = d.expect(b"INFO",b"[B").unwrap();
                 let data = entry.next::<u8>().unwrap().unwrap().read_vec().unwrap();
                 println!(" INFO data = {}",asciistr(data.as_slice()));
             }
             {
-                let mut entry = d.expect(b"SomeData").unwrap().check_fmt(b"[B[i[d").unwrap();
+                let mut entry = d.expect(b"SomeData",b"[B[i[d").unwrap();
 
                 let data1 = entry.next::<u8>().unwrap().unwrap().read_vec().unwrap();
                 let data2 = entry.next::<i32>().unwrap().unwrap().read_vec().unwrap();
@@ -879,18 +885,32 @@ mod test {
             }
 
             {
-                let mut entry = d.expect(b"StreamTest1").unwrap().check_fmt(b"[d").unwrap();
+                let mut entry = d.expect(b"StreamTest1",b"[d").unwrap();
 
                 let data2 = entry.next::<f64>().unwrap().unwrap().read_vec().unwrap();
                 println!(" StreamTest\n\tdata2 = {:?}",data2);
             }
             {
-                let mut entry = d.expect(b"StreamTest2").unwrap().check_fmt(b"[B[d").unwrap();
+                let mut entry = d.expect(b"StreamTest2",b"[B[d").unwrap();
 
                 let data1 = entry.next::<u8>().unwrap().unwrap().read_vec().unwrap();
                 let data2 = entry.next::<f64>().unwrap().unwrap().read_vec().unwrap();
                 println!(" StreamTest\n\tdata1 = {},\n\tdata2 = {:?}",asciistr(data1.as_slice()),data2);
             }
         }
+    }
+    #[test]
+    fn test_ser_des_4() {
+        use FieldElementType::*;
+        let mut f = File::open("tests/lo1-sol.b").unwrap();
+        let mut d = Des::new(&mut f).unwrap();
+
+        while let Some(mut entry) = d.next_entry().unwrap() {
+            println!("Field: {} ({})",
+                     std::str::from_utf8(entry.name()).unwrap(),
+                     std::str::from_utf8(entry.fmt()).unwrap());
+            entry.skip_all().unwrap();    
+        }
+        println!("Deserialization done")
     }
 }
