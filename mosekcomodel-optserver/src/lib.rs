@@ -5,6 +5,7 @@ use mosekcomodel::*;
 use mosekcomodel::model::ModelWithLogCallback;
 use mosekcomodel::utils::iter::{ChunksByIterExt, PermuteByEx, PermuteByMutEx};
 use itertools::izip;
+use reqwest::Url;
 use std::fs::File;
 use std::io::{BufReader,BufRead,Read,Write};
 use std::path::Path;
@@ -430,6 +431,8 @@ impl BaseModelTrait for Backend {
             let mut url = url.clone(); 
             url.set_path("/api/v1/submit+solve");
 
+            let url = Url::parse("http://localhost:9999/api/v1/submit+solve").unwrap();
+
             let (req_r,mut req_w) = std::io::pipe().map_err(|e| e.to_string())?;
             let (mut resp_r,mut resp_w) = std::io::pipe().map_err(|e| e.to_string())?;
 
@@ -437,7 +440,7 @@ impl BaseModelTrait for Backend {
             let t = std::thread::spawn(move || {
                 let client = reqwest::blocking::Client::new();
                 let mut resp = client.post(url)
-                    .header("Content-Type", "application/x-mosek-b")
+                    .header("Content-Type", "application/x-mosek-jtask")
                     .header("Accept", "application/x-mosek-multiplex")
                     .header("X-Mosek-Callback", "values")
                     .header("X-Mosek-Stream", "log")
@@ -450,15 +453,23 @@ impl BaseModelTrait for Backend {
                     return Err(format!("OptServer responded with code {}",resp.status()));
                 }
 
+                let mut content_type = None;
                 for (k,v) in resp.headers().iter() {
-                    if k.as_str().eq_ignore_ascii_case("Content-Type") {
-                        if ! v.as_bytes().eq(b"application/x-mosek-multiplex") {
-                            return Err(format!("Unsupported solution format: {}",std::str::from_utf8(v.as_bytes()).unwrap_or("<invalid utf-8>")));
-                        }
+                    if k == "content-type" {
+                        content_type = Some(v);
                     }
                 }
+                if let Some(ct) = content_type {
+                    if ct != "application/x-mosek-multiplex" {
+                        return Err(format!("Unexpected response format: {:?}",ct));
+                    }
+                }
+                else {
+                    return Err("Unexpected response format: Missing".to_string());
+                }
 
-                resp.copy_to(&mut resp_w).map_err(|e| e.to_string())?;
+
+                let n = resp.copy_to(&mut resp_w).map_err(|e| e.to_string())?;
 
                 Ok(())
             });
@@ -514,7 +525,7 @@ mod msgread {
 
     impl<'a,R> Read for MessageReader<'a,R> where R : Read {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            println!("MessageReader::read(), eof = {}, ",self.eof);
+            //println!("MessageReader::read(), eof = {}, frame remains : {}, final_frame = {}",self.eof,self.frame_remains,self.final_frame);
             if self.eof {
                 Ok(0)
             }
@@ -528,7 +539,7 @@ mod msgread {
 
                     self.final_frame = buf[0] > 127;
                     self.frame_remains = (((buf[0] & 0x7f) as usize) << 8) | (buf[1] as usize);
-                    println!("MessageReader::read() new frame : {}",self.frame_remains);
+                    //println!("MessageReader::read() new frame : {}",self.frame_remains);
                 }
 
                 let n = buf.len().min(self.frame_remains);
@@ -581,14 +592,19 @@ impl Backend {
         let mut head = String::new();
 
         'outer: loop { // loop over messages
-            println!("Backend::parse_multistream(), loop iteration");
             // for each message loop over frames
             head.clear();
             {
                 let mut mr = BufReader::new(MessageReader::new(r));
                 mr.read_line(&mut head).map_err(|e| e.to_string())?;
-                while mr.read_line(&mut head).map_err(|e| e.to_string())? >= 1 { }
-                println!("Backend::parse_multistream(), head = [[[{}]]]",head);
+
+
+                loop {
+                    let n = mr.read_line(&mut head).map_err(|e| e.to_string())?;
+                    //println!("read line: {} bytes", n);
+                    if n <= 1 { break; }
+                }
+                //println!("Backend::parse_multistream(), head = [[[{}]]]",head);
 
                 let head = head.trim_ascii_end();
                 let mut lines = head.as_bytes().chunk_by(|&a,_| a != b'\n');
@@ -1592,6 +1608,8 @@ mod test {
 
         // Solve the problem
         m.write_problem("lo1-nosol.jtask");
+
+        m.set_log_handler(|msg| print!("{}",msg));
         m.solve();
 
         // Get the solution values
