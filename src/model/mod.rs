@@ -265,9 +265,36 @@ pub trait ModelWithLogCallback {
     fn set_log_handler<F>(& mut self, func : F) where F : 'static+Fn(&str);
 }
 
+
+pub struct IntSolutionManager {
+    xx : Vec<f64>,
+}
+
+impl<'a> IntSolutionManager {
+    fn get<const N : usize>(&self, index : &Variable<N>) -> Vec<f64> { self.try_get().unwrap() }
+    fn try_get<const N : usize>(&self, index : &Variable<N>) -> Result<Vec<f64>,()> {
+        let mut res = Vec::new();
+        let sz = index.shape.iter().product();
+        res.resize(sz,0.0);
+
+        if let Some(sp) = index.sparsity() {
+            for (&src,dst) in self.xx.permute_by(index.idxs()).zip(res.permute_by_mut(sp)) {
+                *dst = src;
+            }
+        }
+        else {
+            for (&src,dst) in self.xx.permute_by(index.idxs()).zip(res.iter_mut()) {
+                *dst = src;
+            }
+        }
+
+        Ok(res)
+    }
+}
+
 /// An inner model object must implement this to support integer solution callbacks
 pub trait ModelWithIntSolutionCallback {
-    fn set_solution_callback<F>(&mut self, func : F) where F : 'static+FnMut(f64, &[f64],&[f64]);
+    fn set_solution_callback<F>(&mut self, func : F) where F : 'static+FnMut(f64, &IntSolutionManager);
 }
 
 /// An inner model object must implement this to support control callbacks (callbacks that allow us
@@ -745,10 +772,6 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         self.select_sol(solid)
             .map(|sol| sol.dual.obj)
     }
-
-
-
-
 
     pub(crate) fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
         if let Some(sol) = self.select_sol(solid) {

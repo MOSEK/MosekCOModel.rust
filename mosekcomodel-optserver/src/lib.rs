@@ -2,9 +2,10 @@
 //! [solve.mosek.com:30080](http://solve.mosek.com). 
 //!
 use mosekcomodel::*;
-use mosekcomodel::model::ModelWithLogCallback;
+use mosekcomodel::model::{IntSolutionManager, ModelWithLogCallback};
 use mosekcomodel::utils::iter::{ChunksByIterExt, PermuteByEx};
 use itertools::izip;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader,BufRead,Read};
 use std::path::Path;
@@ -44,7 +45,7 @@ pub struct Backend {
     name : Option<String>,
 
     log_cb        : Option<Box<dyn Fn(&str)>>,
-    sol_cb        : Option<Box<dyn FnMut(f64,&[f64],&[f64])>>,
+    sol_cb        : Option<Box<dyn FnMut(f64,&IntSolutionManager),
 
     var_elt       : Vec<Element>, // Either lb,ub,int or index,coneidx,offset
     var_int       : Vec<bool>,
@@ -66,6 +67,8 @@ pub struct Backend {
     c_cof         : Vec<f64>,
 
     address       : Option<reqwest::Url>,
+    dpar : HashMap<String,f64>,
+    ipar : HashMap<String,i32>,
 }
 
 impl BaseModelTrait for Backend {
@@ -94,6 +97,8 @@ impl BaseModelTrait for Backend {
             c_cof      : Default::default(), 
 
             address    : None,
+            dpar : Default::default(),
+            ipar : Default::default(),
         }
     }
     fn free_variable<const N : usize>
@@ -564,6 +569,20 @@ impl SolverParameterValue<Backend> for SolverAddress {
     }
 }
 
+impl SolverParameterValue<Backend> for f64 {
+    type Key = &'static str;
+    fn set(self,parname : Self::Key, model : & mut Backend) -> Result<(),String> {
+        _ = model.dpar.insert(parname.to_string(), self);
+        Ok(())
+    }
+}
+impl SolverParameterValue<Backend> for i32 {
+    type Key = &'static str;
+    fn set(self,parname : Self::Key, model : & mut Backend) -> Result<(),String> {
+        _ = model.ipar.insert(parname.to_string(), self);
+        Ok(())
+    }
+}
 
 fn bnd_to_bk(lb : f64, ub : f64) -> &'static str {
     match (lb.is_finite(),ub.is_finite()) {
@@ -638,6 +657,7 @@ impl Backend {
                                         Item::Linear { index } => *d = xx[*index],
                                     }                                
                                 }
+
                                 let c : f64 = self.c_cof.iter().zip(solxx.permute_by(self.c_subj.as_slice())).map(|(c,x)| *c * *x).sum();
                                 let mut solxc = Vec::new(); solxc.resize(self.cons.len(),0.0);
                                 for (xc,arow) in solxc.iter_mut().zip(self.a_ptr.permute_by(self.con_a_row.as_slice())) {
@@ -1057,8 +1077,22 @@ impl Backend {
                         d.append("subj",JSON::List(self.a_ptr.permute_by(self.con_a_row.as_slice()).enumerate().flat_map(|(i,row)| std::iter::repeat(i).take(row[1])).map(|i| JSON::Int(i as i64)).collect()));
                         d.append("val", JSON::List(self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_cof[row[0]..row[0]+row[1]].iter()).map(|&d| JSON::Float(d)).collect()));
                 }));
+                         
         }));
-
+        doc.append(
+            "Task/parameters",
+            json::Dict::from(|d| {
+                if ! self.dpar.is_empty() {
+                    d.append(
+                        "dparam",
+                        json::Dict::from(|d| for (k,v) in self.dpar.iter() { d.append(k.as_str(), JSON::Float(*v)); }))
+                }
+                if ! self.ipar.is_empty() {
+                    d.append(
+                        "iparam",
+                        json::Dict::from(|d| for (k,v) in self.ipar.iter() { d.append(k.as_str(), JSON::Int(*v as i64)); }))
+                }
+            }));
         JSON::Dict(doc).write(strm)
     }
 }
