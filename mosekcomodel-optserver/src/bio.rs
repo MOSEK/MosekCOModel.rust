@@ -83,6 +83,24 @@ impl TryFrom<u8> for FieldElementType {
     }
 }
 
+impl FieldElementType {
+    fn size_of(&self) -> usize {
+        use FieldElementType::*;
+        match self {
+            U8 => 1,
+            I8 => 1,
+            U16 => 2,
+            I16 => 2,
+            U32 => 4,
+            I32 => 4,
+            U64 => 8,
+            I64 => 8,
+            F32 => 4,
+            F64 => 8,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum FieldType {
     Value,
@@ -475,6 +493,20 @@ impl<'a,R> Des<'a,R> where R : Read {
             },
         }
     }
+
+    fn read_array_length(&mut self) -> std::io::Result<Option<usize>> {
+        let mut buf = [0;7];
+        self.r.read_exact(&mut buf[..1])?;
+        let nb = (buf[0] >> 5) as usize;
+        if nb == 7 {
+            Ok(None)
+        }
+        else {
+            buf[0] &= 0x1f;
+            self.r.read_exact(&mut buf[1..nb+1])?;
+            Ok(Some(buf[..nb+1].iter().fold(0,|v,&b| (v << 8) | (b as usize))))
+        }
+    }
 }
 
 impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
@@ -489,7 +521,53 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
                                                                std::str::from_utf8(self.fmt()).unwrap_or("<?>")))) }
         else { Ok(self) }
     }
-   
+ 
+    pub fn skip_field(&mut self) -> std::io::Result<()> { 
+        let mut readbuf = [0;4096];
+        if !self.ready { return Err(std::io::Error::other("Entry not ready")); }
+        if self.fmt[self.fmtpos+1] == b'[' {
+            if self.fmtpos+1 >= self.fmt[0] as usize  {
+                return Err(std::io::Error::other("Invalid format"));
+            }
+            self.fmtpos += 2;
+            if let Some(size) = self.des.read_array_length()? {
+                let mut size = size;
+                while size > 0 {
+                    let n = size.min(readbuf.len());
+                    self.des.r.read_exact(&mut readbuf[..n])?;
+                    size -= n;
+                }
+            }
+            else {
+                let mut chunksize = 0;
+                loop {
+                    if chunksize == 0 {
+                        self.des.r.read_exact(&mut readbuf[..2])?;
+                        chunksize = ((readbuf[0] as usize) << 8) + readbuf[1] as usize;
+                        if chunksize == 0 { break; }
+                    }
+                    else {
+                        let n = chunksize.min(readbuf.len());
+                        self.des.r.read_exact(&mut readbuf[..n])?;
+                        chunksize -= n;
+                    }
+                }
+            }
+        }       
+        else {
+            let n = FieldElementType::try_from(self.fmt[self.fmtpos+1])?.size_of();
+            self.fmtpos += 1;
+            self.des.r.read(&mut readbuf[..n])?;
+        }
+        Ok(())
+    }
+    pub fn skip_all(&mut self) -> std::io::Result<()> {
+        while self.fmtpos < self.fmt[0] as usize {
+            self.skip_field()?;
+        }
+        Ok(())
+    }
+
     /// Get next field as a value of specific type. The type must match the signture.
     pub fn next_value<E>(&mut self) -> std::io::Result<Option<E>> where E : Serializable+Default+Copy {
         if !self.ready { return Err(std::io::Error::other("Entry not ready")); }
@@ -561,16 +639,12 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
 
                     self.fmtpos += 2;
                     self.ready = false;
-                    let mut buf = [0;7];
-                    self.des.r.read_exact(&mut buf[..1])?;
-                    let nb = (buf[0] >> 5) as usize;
-                    if nb == 7 {
-                        EntryKind::Stream(0)
+
+                    if let Some(size) = self.des.read_array_length()? {
+                        EntryKind::Array(size)
                     }
                     else {
-                        buf[0] &= 0x1f;
-                        self.des.r.read_exact(&mut buf[1..nb+1])?;
-                        EntryKind::Array(buf[..nb+1].iter().fold(0,|v,&b| (v << 8) | (b as usize)))
+                        EntryKind::Stream(0)
                     }
                 },
                 b => {

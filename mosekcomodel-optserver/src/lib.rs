@@ -12,7 +12,6 @@ use std::path::Path;
 //mod http;
 mod json;
 mod bio;
-mod pipe;
 
 pub type Model = ModelAPI<Backend>;
 
@@ -427,15 +426,17 @@ impl BaseModelTrait for Backend {
 
     fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String>
     {
-        if let Some(address) = self.address.clone() {
-        
+        if let Some(url) = &self.address {
+            let mut url = url.clone(); 
+            url.set_path("/api/v1/submit+solve");
 
-            let (req_r,mut req_w) = pipe::new();
-            let (mut resp_r,mut resp_w) = pipe::new();
+            let (req_r,mut req_w) = std::io::pipe().map_err(|e| e.to_string())?;
+            let (mut resp_r,mut resp_w) = std::io::pipe().map_err(|e| e.to_string())?;
 
+            println!("Send HTTP request");
             let t = std::thread::spawn(move || {
                 let client = reqwest::blocking::Client::new();
-                let mut resp = client.post(address)
+                let mut resp = client.post(url)
                     .header("Content-Type", "application/x-mosek-b")
                     .header("Accept", "application/x-mosek-multiplex")
                     .header("X-Mosek-Callback", "values")
@@ -462,9 +463,12 @@ impl BaseModelTrait for Backend {
                 Ok(())
             });
 
-            self.write_btask(&mut req_w).map_err(|e| e.to_string())?;
-                
+            println!("Write B-task");
+            self.write_jtask(&mut req_w).map_err(|e| e.to_string())?;
+            drop(req_w);
 
+
+            println!("Parse result stream");
             let res = self.parse_multistream(&mut resp_r,sol_bas,sol_itr,sol_itg);
             t.join().unwrap().and_then(|_| res)?;
         }
@@ -510,7 +514,7 @@ mod msgread {
 
     impl<'a,R> Read for MessageReader<'a,R> where R : Read {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            //println!("MessageReader::read(), eof = {}",self.eof);
+            println!("MessageReader::read(), eof = {}, ",self.eof);
             if self.eof {
                 Ok(0)
             }
@@ -524,6 +528,7 @@ mod msgread {
 
                     self.final_frame = buf[0] > 127;
                     self.frame_remains = (((buf[0] & 0x7f) as usize) << 8) | (buf[1] as usize);
+                    println!("MessageReader::read() new frame : {}",self.frame_remains);
                 }
 
                 let n = buf.len().min(self.frame_remains);
@@ -576,12 +581,14 @@ impl Backend {
         let mut head = String::new();
 
         'outer: loop { // loop over messages
+            println!("Backend::parse_multistream(), loop iteration");
             // for each message loop over frames
             head.clear();
             {
                 let mut mr = BufReader::new(MessageReader::new(r));
                 mr.read_line(&mut head).map_err(|e| e.to_string())?;
                 while mr.read_line(&mut head).map_err(|e| e.to_string())? >= 1 { }
+                println!("Backend::parse_multistream(), head = [[[{}]]]",head);
 
                 let head = head.trim_ascii_end();
                 let mut lines = head.as_bytes().chunk_by(|&a,_| a != b'\n');
@@ -797,7 +804,6 @@ impl Backend {
         // INFO/numdjc: L
         // INFO/numsymmat: L
         // INFO/atruncatetol: d
-
         {
             let mut e = w.entry(b"INFO/MOSEKVER",b"III")?;
             e.write_value::<u32>(10)?;
@@ -1121,23 +1127,18 @@ impl Backend {
     }
 */
 
-    /// The b-solution is a solution in the same format as the btask.
+    /// The b-solution format.
     ///
     /// # Info section
     /// The info section is identical to the btask info section. 
     /// ```text
-    /// INFO/MOSEKVER III
-    /// INFO/name [B
-    /// INFO/numvar I
-    /// INFO/numcon I
-    /// INFO/numcone I
-    /// INFO/numbarvar I
-    /// INFO/numdomain L
-    /// INFO/numafe L
-    /// INFO/numacc L
-    /// INFO/numdjc L
-    /// INFO/numsymmat L
-    /// INFO/atruncatetol d 
+    /// MSKSOLN [B
+    /// version III
+    /// numvar I
+    /// numbarvar I
+    /// numcon I
+    /// numcone I
+    /// numacc L
     /// ```
     /// 
     /// # Solution 
@@ -1178,34 +1179,41 @@ impl Backend {
     /// sol/integer/var    [B[D[D[D   {numvar > 0} -- stakey,level
     /// sol/integer/barvar [D[D       {numbarvar > 0} -- barx,bars
     /// sol/integer/con    [B[D[D[D[D {numcon > 0} -- stakey,level
+    /// ``` 
+    ///
+    /// ## Names
+    /// ```text
+    /// name/var       [I[B
+    /// name/barvar    [I[B 
+    /// name/con       [I[B 
+    /// name/cone      [I[B 
+    /// name/acc       [I[B
+    /// name/problem   [B
+    /// name/objective [B
     /// ```
     ///
     /// # Information items
     /// ```text
-    /// inf/f64    [I[B[d
-    /// inf/i32    [I[B[i 
-    /// inf/i64   [I[B[l 
+    /// inf/f64    [B[B[d
+    /// inf/i32    [B[B[i 
+    /// inf/i64    [B[B[l 
     /// ```
     fn read_bsolution<R>(&self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution,r : &mut R) -> std::io::Result<()> where R : Read 
     {
         let mut r = bio::Des::new(r)?;
 
-        {
-            let mut entry = r.expect(b"INFO/MOSEKVER")?.check_fmt(b"III")?;
-            _ = entry.next_value::<u32>()?;
-            _ = entry.next_value::<u32>()?;
-            _ = entry.next_value::<u32>()?;
-        }
-        _ = r.expect(b"INFO/name")?.check_fmt(b"[B")?.read::<u8>()?;
-        let numvar    = r.expect(b"INFO/numvar")?.check_fmt(b"I")?.next_value::<u32>()?.unwrap() as usize;
-        let numcon    = r.expect(b"INFO/numcon")?.check_fmt(b"I")?.next_value::<u32>()?.unwrap() as usize;
-        let _numcone   = r.expect(b"INFO/numcone")?.check_fmt(b"I")?.next_value::<u32>()?;
-        let _numbarvar = r.expect(b"INFO/numbarvar")?.check_fmt(b"I")?.next_value::<u32>()?;
-        let _numdomain = r.expect(b"INFO/numdomain")?.check_fmt(b"I")?.next_value::<u64>()?;
-        let _numafe    = r.expect(b"INFO/numafe")?.check_fmt(b"I")?.next_value::<u32>()?;
-        let _numacc    = r.expect(b"INFO/numacc")?.check_fmt(b"I")?.next_value::<u32>()?;
-        let _numdjc    = r.expect(b"INFO/numdjc")?.check_fmt(b"I")?.next_value::<u32>()?;
-        let _numsymmat = r.expect(b"INFO/numsymmat")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let version = 
+            {
+                let mut entry = r.expect(b"version")?.check_fmt(b"III")?;
+                (entry.next_value::<u32>()?,
+                 entry.next_value::<u32>()?,
+                 entry.next_value::<u32>()?)
+            };
+        let numvar    = r.expect(b"numvar")?.check_fmt(b"I")?.next_value::<u32>()?.unwrap() as usize;
+        let numbarvar = r.expect(b"numbarvar")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let numcon    = r.expect(b"numcon")?.check_fmt(b"I")?.next_value::<u32>()?.unwrap() as usize;
+        let numcone   = r.expect(b"numcone")?.check_fmt(b"I")?.next_value::<u32>()?;
+        let numacc    = r.expect(b"numacc")?.check_fmt(b"I")?.next_value::<u32>()?;
 
         if self.var_elt.len() != numvar { return Err(std::io::Error::other("Invalid solution dimension")); }
         if self.con_elt.len() != numcon { return Err(std::io::Error::other("Invalid solution dimension")); }
@@ -1561,7 +1569,7 @@ mod test {
     use super::*;
     #[test]
     fn test_optserver() {
-        let addr = "solve.mosek.com:30080".to_string();
+        let addr = "http://solve.mosek.com:30080".to_string();
         let mut m = Model::new(Some("SuperModel"));
         m.set_parameter((), SolverAddress(addr));
 
