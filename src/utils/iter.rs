@@ -549,16 +549,15 @@ pub struct Permutation<'a> {
 
 impl<'a> Permutation<'a> {
     pub fn new(perm : &'a[usize]) -> Permutation<'a> { 
-        let (min,max) = if perm.is_empty() { (0,0) } 
-        else { perm.iter().fold((usize::MAX,0),|(min,max),&v| (v.min(min),v.max(max))) }
+        let (min,max) = if perm.is_empty() { (0,0) } else { perm.iter().fold((usize::MAX,0),|(min,max),&v| (v.min(min),v.max(max))) };
         Permutation{ perm,min,max }
     } 
 
-    pub fn permute<'b,T>(&self,data : &'b [T]) -> Result<PermIter<'a,'b>,()> {
+    pub fn permute<'b,T>(&self,data : &'b [T]) -> Result<PermIter<'a,'b,T>,()> {
         if data.len() <= self.max { Err(()) }
         else { Ok(PermIter{data,perm:self.perm,i:0}) }
     }
-    pub fn permute_mut<'b,T>(&self,data : &'b mut[T]) -> Result<PermIter<'a,'b>,()> {
+    pub fn permute_mut<'b,T>(&self,data : &'b mut[T]) -> Result<PermIterMut<'a,'b,T>,()> {
         if data.len() <= self.max { Err(()) }
         else { Ok(PermIterMut::new(data,self.perm)) }
     }
