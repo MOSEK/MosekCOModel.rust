@@ -16,23 +16,6 @@ mod bio;
 
 pub type Model = ModelAPI<Backend>;
 
-#[derive(Clone,Copy)]
-enum Item {
-    Linear{index:usize},
-    RangedUpper{index:usize},
-    RangedLower{index:usize},
-}
-
-impl Item {
-    fn index(&self) -> usize { 
-        match self {
-            Item::Linear { index } => *index,
-            Item::RangedUpper { index } => *index,
-            Item::RangedLower { index } => *index
-        }
-    } 
-}
-
 
 mod msto {
     use itertools::izip;
@@ -134,8 +117,7 @@ mod msto {
             let perm = Permutation::new(self.map.as_slice());
 
             perm.permute(self.ptr.as_slice()).unwrap()
-                .zip(perm.permute(self.len.as_slice()).unwrap())
-                .map(|(p,l)| {
+                .zip(perm.permute(self.len.as_slice()).unwrap()) .map(|(p,l)| {
                     (unsafe{self.subj.get_unchecked(*p..*p+*l)},
                      unsafe{self.cof.get_unchecked(*p..*p+*l)})
                 })
@@ -145,9 +127,48 @@ mod msto {
 
 
 #[derive(Clone,Copy)]
-struct Element {
-    lb:f64,ub:f64
+enum Element {
+    Linear{lb:f64,ub:f64},
+    Conic{conerow:usize}
 }
+
+#[derive(Clone,Copy)]
+enum LinearItem{
+    Linear,
+    RangedUpper,
+    RangedLower,
+}
+#[derive(Clone,Copy)]
+enum Item {
+    Linear{index:usize,kind:LinearItem},
+    Conic{index:usize}
+}
+
+struct ConeElement { index : usize, offset : usize }
+
+enum VecConeType {
+    Quadratic,
+    RotatedQuadratic,
+    PrimalPower,
+    DualPower,
+    PrimalExp,
+    DualExp,
+    PrimalGeometricMean,
+    DualGeometricMean,
+    ScaledVectorizedPSD,
+}
+
+
+impl Item {
+    fn index(&self) -> usize { 
+        use Item::*;
+        match self {
+            Linear { index,.. } => *index,
+            Conic { index,.. } => *index,
+        }
+    } 
+}
+
 
 /// Simple model object that supports input of linear, conic and disjunctive constraints. It only
 /// stores data, it does not support solving or writing problems.
@@ -155,23 +176,40 @@ struct Element {
 pub struct Backend {
     name : Option<String>,
 
+    /// Message callback
     log_cb        : Option<Box<dyn Fn(&str)>>,
+    /// Integer solution callback
     sol_cb        : Option<Box<dyn FnMut(&IntSolutionManager)>>,
 
+    /// List of scalar variable elements. Each element is either a linear variable with bounds or a
+    /// conic variable
     var_elt       : Vec<Element>, // Either lb,ub,int or index,coneidx,offset
+    /// Indicates per scalar variable which are integer constrained. 
     var_int       : Vec<bool>,
-
-    vars          : Vec<Item>,
+    /// Variable names.
     var_names     : Vec<Option<String>>,
+    /// Variable interfaces. Ranged variables produce two interface elements per scalar variable,
+    /// one for upper bound and one for lower bound.
+    vars          : Vec<Item>,
 
+    /// Matrix storage
     mx            : msto::MatrixStore,
-    //a_ptr         : Vec<[usize;2]>,
-    //a_subj        : Vec<usize>,
-    //a_cof         : Vec<f64>,
 
+    /// Scalar constraint elements, each element corresponds to a scalar linear constraint or an
+    /// single element in a conic constraint.
     con_elt       : Vec<Element>,
-    cons          : Vec<Item>,
+    /// Names of scalar constraint elements
     con_names     : Vec<Option<String>>,
+
+    /// Scalar interface constraints.
+    cons          : Vec<Item>,
+
+    /// Cone definitions. Each cone consists of a type and a dimension
+    cones         : Vec<(VecConeType,usize)>,
+    /// Conic scalar elements. Each element corresponds to a single element in a single cone in
+    /// `cones`.
+    cones_elt     : Vec<ConeElement>,
+
 
     sense_max     : bool,
     c_subj        : Vec<usize>,
@@ -186,27 +224,7 @@ impl BaseModelTrait for Backend {
     fn new(name : Option<&str>) -> Self {
         Backend{
             name : name.map(|v| v.to_string()),
-            log_cb     : None,
-            sol_cb     : None,
-            var_elt    : Default::default(), 
-            var_int    : Default::default(), 
-
-            vars       : Default::default(), 
-            var_names  : Default::default(),
-
-            mx         : Default::default(),
-
-            con_elt    : Default::default(), 
-            cons       : Default::default(), 
-            con_names  : Default::default(),
-
-            sense_max  : Default::default(), 
-            c_subj     : Default::default(), 
-            c_cof      : Default::default(), 
-
-            address    : None,
-            dpar : Default::default(),
-            ipar : Default::default(),
+            ..Default::default()
         }
     }
     fn free_variable<const N : usize>
@@ -218,7 +236,7 @@ impl BaseModelTrait for Backend {
         let first = self.var_elt.len();
         let last  = first + n;
 
-        self.var_elt.resize(last,Element{ lb: f64::NEG_INFINITY, ub: f64::INFINITY });
+        self.var_elt.resize(last,Element::Linear { index: ,lb: f64::NEG_INFINITY, ub: f64::INFINITY });
         self.var_int.resize(last,false);
         self.var_names.resize(last,None);
 
@@ -1161,15 +1179,6 @@ impl Backend {
         JSON::Dict(doc).write(strm)
     }
 }
-
-
-
-
-
-
-
-
-
 
 
 
