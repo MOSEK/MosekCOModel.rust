@@ -17,113 +17,6 @@ mod bio;
 pub type Model = ModelAPI<Backend>;
 
 
-mod msto {
-    use itertools::izip;
-    use mosekcomodel::utils::iter::{ChunksByIterExt, Permutation, PermuteByMutEx};
-
-    #[derive(Default)]
-    pub struct MatrixStore {
-        ptr  : Vec<usize>,
-        len  : Vec<usize>,
-        subj : Vec<usize>,
-        cof  : Vec<f64>,
-
-        map  : Vec<usize>
-    }
-
-    impl MatrixStore {
-        pub fn new() -> MatrixStore { Default::default() }
-        pub fn append_row(&mut self, subj : &[usize], cof : &[f64]) -> usize {        
-            assert_eq!(subj.len(),cof.len());
-            self.len.push(subj.len());
-            self.subj.extend_from_slice(subj);
-            self.cof.extend_from_slice(cof);
-            
-            let res = self.map.len();
-            self.map.push(self.ptr.len());
-            self.ptr.push(self.subj.len());
-            res
-        }
-
-        pub fn append_rows(&mut self, ptr : &[usize], subj : &[usize], cof : &[f64]) -> std::ops::Range<usize> {
-            assert_eq!(subj.len(),cof.len());
-            assert!(ptr.iter().zip(ptr[1..].iter()).all(|(a,b)| *a <= *b));
-            assert_eq!(*ptr.last().unwrap(),subj.len());
-            let len0 = self.subj.len();
-            self.subj.extend_from_slice(subj);
-            self.cof.extend_from_slice(cof);
-            
-            let row0 = self.map.len();
-            for i in self.ptr.len()..self.ptr.len()+ptr.len()-1 { self.map.push(i); }
-            let row1 = self.map.len();
-                       
-            for (p,l) in ptr.iter().zip(ptr[1..].iter()).scan(len0,|len,(p0,p1)| { let l = *len; *len = p1-p0; Some((l,p1-p0)) }) {
-                self.ptr.push(p);
-                self.len.push(l);
-            }
-
-            row0..row1
-        }
-
-        pub fn get<'a>(&'a self, i : usize) -> Option<(&'a [usize],&'a [f64])> {
-            self.map.get(i)
-                .map(|&i| {
-                    let p = unsafe{*self.ptr.get_unchecked(i)};
-                    let l = unsafe{*self.len.get_unchecked(i)};
-                    
-                    (unsafe{self.subj.get_unchecked(p..p+l)},
-                     unsafe{self.cof.get_unchecked(p..p+l)})
-                })
-        }
-        pub fn get_mut<'a>(&'a mut self, i : usize) -> Option<(&'a mut[usize],&'a mut [f64])> {
-            self.map.get(i)
-                .map(|&i| {
-                    let p = unsafe{*self.ptr.get_unchecked(i)};
-                    let l = unsafe{*self.len.get_unchecked(i)};
-                    
-                    (unsafe{self.subj.get_unchecked_mut(p..p+l)},
-                     unsafe{self.cof.get_unchecked_mut(p..p+l)})
-                })
-        }
-
-        pub fn replace_rows(&mut self, rows : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) {
-            if !rows.is_empty() {
-                assert_eq!(subj.len(),cof.len());
-                assert_eq!(ptr.len(),rows.len()+1);
-                assert!(ptr.iter().zip(ptr[1..].iter()).all(|(a,b)| *a <= *b));
-                assert_eq!(*ptr.last().unwrap(),subj.len());
-                assert!(*rows.iter().max().unwrap() < self.map.len());
-
-                for (rowi,subj,cof) in izip!(self.map.permute_by_mut(rows),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)) {
-                    let leni = unsafe{self.len.get_unchecked_mut(*rowi)};
-                    let ptri = unsafe{self.ptr.get_unchecked(*rowi)};
-                    if subj.len() <= *leni {
-                        *leni = subj.len();
-                        self.subj[*ptri..*ptri+*leni].copy_from_slice(subj);
-                        self.cof[*ptri..*ptri+*leni].copy_from_slice(cof);
-                    }
-                    else {
-                        *rowi = self.len.len();
-                        self.len.push(subj.len());
-                        self.ptr.push(self.subj.len());
-                        self.subj.extend_from_slice(subj);
-                        self.cof.extend_from_slice(cof);
-                    }
-                }
-            }
-        }
-
-        pub fn row_iter<'a>(&'a self) -> impl Iterator<Item=(&'a [usize],&'a[f64])> {
-            let perm = Permutation::new(self.map.as_slice());
-
-            perm.permute(self.ptr.as_slice()).unwrap()
-                .zip(perm.permute(self.len.as_slice()).unwrap()) .map(|(p,l)| {
-                    (unsafe{self.subj.get_unchecked(*p..*p+*l)},
-                     unsafe{self.cof.get_unchecked(*p..*p+*l)})
-                })
-        }
-    }
-}
 
 
 #[derive(Clone,Copy)]
@@ -236,14 +129,14 @@ impl BaseModelTrait for Backend {
         let first = self.var_elt.len();
         let last  = first + n;
 
-        self.var_elt.resize(last,Element::Linear { index: ,lb: f64::NEG_INFINITY, ub: f64::INFINITY });
+        self.var_elt.resize(last,Element::Linear { lb: f64::NEG_INFINITY, ub: f64::INFINITY });
         self.var_int.resize(last,false);
         self.var_names.resize(last,None);
 
         let firstvari = self.vars.len();
         self.vars.reserve(n);
         for i in first..last {
-            self.vars.push(Item::Linear{index:i});
+            self.vars.push(Item::Linear{index:i,kind:LinearItem::Linear});
         }
 
         if let Some(name) = name {
@@ -274,24 +167,24 @@ impl BaseModelTrait for Backend {
 
         let firstvari = self.vars.len();
         self.vars.reserve(n);
-        for i in first..last { self.vars.push(Item::Linear{index:i}) }
+        for i in first..last { self.vars.push(Item::Linear{index:i,kind:LinearItem::Linear}) }
         match dt {
             LinearDomainType::Zero => {
-                self.var_elt.resize(last,Element{ lb: 0.0, ub: 0.0 });
+                self.var_elt.resize(last,Element::Linear { lb: 0.0, ub: 0.0 });
             },
             LinearDomainType::Free => {
-                self.var_elt.resize(last,Element{ lb: f64::NEG_INFINITY, ub: f64::INFINITY});
+                self.var_elt.resize(last,Element::Linear { lb: f64::NEG_INFINITY, ub: f64::INFINITY});
             },
             LinearDomainType::NonNegative => {
                 self.var_elt.reserve(last);
                 for lb in b {
-                    self.var_elt.push(Element{ lb, ub: f64::INFINITY });
+                    self.var_elt.push(Element::Linear { lb, ub: f64::INFINITY });
                 }
             },
             LinearDomainType::NonPositive => {
                 self.var_elt.reserve(last);
                 for ub in b {
-                    self.var_elt.push(Element{ lb : f64::NEG_INFINITY, ub });
+                    self.var_elt.push(Element::Linear{ lb : f64::NEG_INFINITY, ub });
                 }
             },
         }
@@ -337,12 +230,12 @@ impl BaseModelTrait for Backend {
         let ptr1 = self.vars.len()+n;
         let ptr2 = self.vars.len()+2*n;
         self.vars.reserve(n*2);
-        for i in first..last { self.vars.push(Item::RangedLower{index:i}) }
-        for i in first..last { self.vars.push(Item::RangedUpper{index:i}) }
+        for index in first..last { self.vars.push(Item::Linear{index,kind:LinearItem::RangedLower}) }
+        for index in first..last { self.vars.push(Item::Linear{index,kind:LinearItem::RangedUpper}) }
 
         self.var_elt.reserve(last);
         for (&lb,&ub) in bl.iter().zip(bu.iter()) {
-            self.var_elt.push(Element{ lb, ub })
+            self.var_elt.push(Element::Linear { lb, ub })
         }
         self.var_int.resize(last,is_integer);
         
@@ -392,28 +285,28 @@ impl BaseModelTrait for Backend {
         let rowidxs = self.mx.append_rows(ptr,subj,cof);
 
         let con0 = self.cons.len();
-        self.cons.reserve(n); for i in rowidxs.clone() { self.cons.push(Item::Linear { index: i }) }
+        self.cons.reserve(n); for i in rowidxs.clone() { self.cons.push(Item::Linear { index: i, kind: LinearItem::Linear }) }
         
         match dt {
             LinearDomainType::Zero => {
                 self.con_elt.reserve(rowidxs.end);
                 for b in b {
-                    self.con_elt.push(Element{ lb: b, ub: b });
+                    self.con_elt.push(Element::Linear{ lb: b, ub: b });
                 }
             },
             LinearDomainType::Free => { 
-                self.con_elt.resize(rowidxs.end,Element{ lb: f64::NEG_INFINITY, ub: f64::INFINITY });
+                self.con_elt.resize(rowidxs.end,Element::Linear{ lb: f64::NEG_INFINITY, ub: f64::INFINITY });
             },
             LinearDomainType::NonNegative => {
                 self.con_elt.reserve(rowidxs.end);
                 for lb in b {
-                    self.con_elt.push(Element{ lb, ub: f64::INFINITY });
+                    self.con_elt.push(Element::Linear{ lb, ub: f64::INFINITY });
                 }
             },
             LinearDomainType::NonPositive => {
                 self.con_elt.reserve(rowidxs.end);
                 for ub in b {
-                    self.con_elt.push(Element{ lb : f64::NEG_INFINITY, ub });
+                    self.con_elt.push(Element::Linear{ lb : f64::NEG_INFINITY, ub });
                 }
             },
         }
@@ -455,13 +348,13 @@ impl BaseModelTrait for Backend {
 
         self.con_elt.reserve(rowidxs.end);
         for (&lb,&ub) in bl.iter().zip(bu.iter()) {
-            self.con_elt.push(Element{ lb, ub });
+            self.con_elt.push(Element::Linear{ lb, ub });
         }
 
         let con0 = self.cons.len();
         self.cons.reserve(n*2);
-        for i in rowidxs.clone() { self.cons.push(Item::RangedLower { index: i }); }
-        for i in rowidxs.clone() { self.cons.push(Item::RangedUpper { index: i }); }
+        for index in rowidxs.clone() { self.cons.push(Item::Linear{ index, kind:LinearItem::RangedLower }); }
+        for index in rowidxs.clone() { self.cons.push(Item::Linear{ index, kind:LinearItem::RangedUpper }); }
         
         if let Some(name) = name {
             let mut name_index_buf = [1usize; N];
@@ -739,9 +632,8 @@ impl Backend {
                                 for (v,d) in self.vars.iter().zip(solxx.iter_mut()) {
                                     *d = 
                                         match v {
-                                            Item::RangedLower { index } => xx[*index],
-                                            Item::RangedUpper { index } => xx[*index],
-                                            Item::Linear { index }      => xx[*index],
+                                            Item::Linear{ index,.. } => xx[*index],
+                                            Item::Conic { index } => xx[*index],
                                         };
                                 }
 
@@ -812,6 +704,8 @@ impl Backend {
                      consta : Vec<u8>,
                      xc : Option<Vec<f64>>,
                      sc : Option<(Vec<f64>,Vec<f64>,Vec<f64>)>,
+                     xn : Option<Vec<f64>>,
+                     sn : Option<Vec<f64>>,
                      sol : & mut Solution) -> std::io::Result<()>
     {
         let pdef = if let SolutionStatus::Undefined = psta { false } else { true };
@@ -826,11 +720,11 @@ impl Backend {
                 if xx.len() != numvar { return Err(std::io::Error::other("Incorrect solution dimension in sol/var/primal")); }
                 else {
                     for (solx,e) in sol.primal.var.iter_mut().zip(self.vars.iter()) {
-                       match e {
-                           Item::Linear      { index } => *solx = xx[*index],
-                           Item::RangedUpper { index } => *solx = xx[*index],
-                           Item::RangedLower { index } => *solx = xx[*index],
-                        }
+                        *solx = 
+                           match e {
+                               Item::Linear{ index,.. } => xx[*index],
+                               Item::Conic { index } => xx[*index],
+                            };
                     }
                 }
             }
@@ -838,15 +732,14 @@ impl Backend {
                 return Err(std::io::Error::other("Missing solution section sol/var/primal"));
             }
             
-            if let Some(xc) = xc {
-                if xc.len() != numvar { return Err(std::io::Error::other("Incorrect solution dimension in sol/con/primal")); }
+            if let (Some(xc),Some(xn)) = (xc,xn) {
                 else {
                     for (solx,e) in sol.primal.con.iter_mut().zip(self.cons.iter()) {
-                       match e {
-                           Item::Linear      { index } => *solx = xc[*index],
-                           Item::RangedUpper { index } => *solx = xc[*index],
-                           Item::RangedLower { index } => *solx = xc[*index],
-                        }
+                        *solx = 
+                            match e {
+                               Item::Linear{ index,.. } => *solx = xc[*index],
+                               Item::Conic { index } => *solx = xn[*index],
+                            };
                     }
                 }
             }
@@ -1231,6 +1124,116 @@ fn str_to_pdsolsta(solsta : &[u8]) -> std::io::Result<(SolutionStatus,SolutionSt
         _ => Err(std::io::Error::other(format!("Invalid solution format: {}",std::str::from_utf8(solsta).unwrap_or("<invalid utf-8>"))))
     }
 }
+
+
+mod msto {
+    use itertools::izip;
+    use mosekcomodel::utils::iter::{ChunksByIterExt, Permutation, PermuteByMutEx};
+
+    #[derive(Default)]
+    pub struct MatrixStore {
+        ptr  : Vec<usize>,
+        len  : Vec<usize>,
+        subj : Vec<usize>,
+        cof  : Vec<f64>,
+
+        map  : Vec<usize>
+    }
+
+    impl MatrixStore {
+        pub fn new() -> MatrixStore { Default::default() }
+        pub fn append_row(&mut self, subj : &[usize], cof : &[f64]) -> usize {        
+            assert_eq!(subj.len(),cof.len());
+            self.len.push(subj.len());
+            self.subj.extend_from_slice(subj);
+            self.cof.extend_from_slice(cof);
+            
+            let res = self.map.len();
+            self.map.push(self.ptr.len());
+            self.ptr.push(self.subj.len());
+            res
+        }
+
+        pub fn append_rows(&mut self, ptr : &[usize], subj : &[usize], cof : &[f64]) -> std::ops::Range<usize> {
+            assert_eq!(subj.len(),cof.len());
+            assert!(ptr.iter().zip(ptr[1..].iter()).all(|(a,b)| *a <= *b));
+            assert_eq!(*ptr.last().unwrap(),subj.len());
+            let len0 = self.subj.len();
+            self.subj.extend_from_slice(subj);
+            self.cof.extend_from_slice(cof);
+            
+            let row0 = self.map.len();
+            for i in self.ptr.len()..self.ptr.len()+ptr.len()-1 { self.map.push(i); }
+            let row1 = self.map.len();
+                       
+            for (p,l) in ptr.iter().zip(ptr[1..].iter()).scan(len0,|len,(p0,p1)| { let l = *len; *len = p1-p0; Some((l,p1-p0)) }) {
+                self.ptr.push(p);
+                self.len.push(l);
+            }
+
+            row0..row1
+        }
+
+        pub fn get<'a>(&'a self, i : usize) -> Option<(&'a [usize],&'a [f64])> {
+            self.map.get(i)
+                .map(|&i| {
+                    let p = unsafe{*self.ptr.get_unchecked(i)};
+                    let l = unsafe{*self.len.get_unchecked(i)};
+                    
+                    (unsafe{self.subj.get_unchecked(p..p+l)},
+                     unsafe{self.cof.get_unchecked(p..p+l)})
+                })
+        }
+        pub fn get_mut<'a>(&'a mut self, i : usize) -> Option<(&'a mut[usize],&'a mut [f64])> {
+            self.map.get(i)
+                .map(|&i| {
+                    let p = unsafe{*self.ptr.get_unchecked(i)};
+                    let l = unsafe{*self.len.get_unchecked(i)};
+                    
+                    (unsafe{self.subj.get_unchecked_mut(p..p+l)},
+                     unsafe{self.cof.get_unchecked_mut(p..p+l)})
+                })
+        }
+
+        pub fn replace_rows(&mut self, rows : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) {
+            if !rows.is_empty() {
+                assert_eq!(subj.len(),cof.len());
+                assert_eq!(ptr.len(),rows.len()+1);
+                assert!(ptr.iter().zip(ptr[1..].iter()).all(|(a,b)| *a <= *b));
+                assert_eq!(*ptr.last().unwrap(),subj.len());
+                assert!(*rows.iter().max().unwrap() < self.map.len());
+
+                for (rowi,subj,cof) in izip!(self.map.permute_by_mut(rows),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)) {
+                    let leni = unsafe{self.len.get_unchecked_mut(*rowi)};
+                    let ptri = unsafe{self.ptr.get_unchecked(*rowi)};
+                    if subj.len() <= *leni {
+                        *leni = subj.len();
+                        self.subj[*ptri..*ptri+*leni].copy_from_slice(subj);
+                        self.cof[*ptri..*ptri+*leni].copy_from_slice(cof);
+                    }
+                    else {
+                        *rowi = self.len.len();
+                        self.len.push(subj.len());
+                        self.ptr.push(self.subj.len());
+                        self.subj.extend_from_slice(subj);
+                        self.cof.extend_from_slice(cof);
+                    }
+                }
+            }
+        }
+
+        pub fn row_iter<'a>(&'a self) -> impl Iterator<Item=(&'a [usize],&'a[f64])> {
+            let perm = Permutation::new(self.map.as_slice());
+
+            perm.permute(self.ptr.as_slice()).unwrap()
+                .zip(perm.permute(self.len.as_slice()).unwrap()) .map(|(p,l)| {
+                    (unsafe{self.subj.get_unchecked(*p..*p+*l)},
+                     unsafe{self.cof.get_unchecked(*p..*p+*l)})
+                })
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod test {
