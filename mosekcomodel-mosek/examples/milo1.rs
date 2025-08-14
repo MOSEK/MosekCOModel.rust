@@ -7,7 +7,7 @@
 ///
 extern crate mosekcomodel;
 
-use mosekcomodel::*;
+use mosekcomodel::{model::IntSolutionManager, *};
 use mosekcomodel_mosek::Model;
 
 fn milo1() -> (SolutionStatus,Result<Vec<f64>,String>) {
@@ -35,6 +35,11 @@ fn milo1() -> (SolutionStatus,Result<Vec<f64>,String>) {
 
     // Set the objective function to (c^T * x)
     m.objective(Some("obj"), Sense::Maximize, c.dot(&x));
+
+    {
+        let x = x.clone();
+        m.set_int_solution_callback(move|sol| println!("New integer solution: x = {:?}",sol.get(&x)));
+    }
 
     // Solve the problem
     m.solve();

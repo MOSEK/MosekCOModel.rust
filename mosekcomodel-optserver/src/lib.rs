@@ -45,7 +45,7 @@ pub struct Backend {
     name : Option<String>,
 
     log_cb        : Option<Box<dyn Fn(&str)>>,
-    sol_cb        : Option<Box<dyn FnMut(f64,&IntSolutionManager),
+    sol_cb        : Option<Box<dyn FnMut(&IntSolutionManager)>>,
 
     var_elt       : Vec<Element>, // Either lb,ub,int or index,coneidx,offset
     var_int       : Vec<bool>,
@@ -67,8 +67,8 @@ pub struct Backend {
     c_cof         : Vec<f64>,
 
     address       : Option<reqwest::Url>,
-    dpar : HashMap<String,f64>,
-    ipar : HashMap<String,i32>,
+    dpar          : HashMap<String,f64>,
+    ipar          : HashMap<String,i32>,
 }
 
 impl BaseModelTrait for Backend {
@@ -651,21 +651,18 @@ impl Backend {
 
                                 let mut solxx = Vec::new(); solxx.resize(self.vars.len(),0.0);
                                 for (v,d) in self.vars.iter().zip(solxx.iter_mut()) {
-                                    match v {
-                                        Item::RangedLower { index } => *d = xx[*index],
-                                        Item::RangedUpper { index } => *d = xx[*index],
-                                        Item::Linear { index } => *d = xx[*index],
-                                    }                                
+                                    *d = 
+                                        match v {
+                                            Item::RangedLower { index } => xx[*index],
+                                            Item::RangedUpper { index } => xx[*index],
+                                            Item::Linear { index }      => xx[*index],
+                                        };
                                 }
 
-                                let c : f64 = self.c_cof.iter().zip(solxx.permute_by(self.c_subj.as_slice())).map(|(c,x)| *c * *x).sum();
-                                let mut solxc = Vec::new(); solxc.resize(self.cons.len(),0.0);
-                                for (xc,arow) in solxc.iter_mut().zip(self.a_ptr.permute_by(self.con_a_row.as_slice())) {
-                                    *xc = self.a_cof[arow[0]..arow[0]+arow[1]].iter().zip(solxx.permute_by(&self.a_subj[arow[0]..arow[0]+arow[1]])).map(|(c,x)| *c * *x).sum(); 
-                                }
+                                let obj : f64 = self.c_cof.iter().zip(solxx.permute_by(self.c_subj.as_slice())).map(|(c,x)| *c * *x).sum();
 
                                 if let Some(cb) = & mut self.sol_cb {
-                                    cb(c,solxx.as_slice(),solxc.as_slice());
+                                    cb(&IntSolutionManager::new(obj,solxx));
                                 }
                             }
                         }
@@ -779,9 +776,9 @@ impl Backend {
                 else {
                     for (solx,e) in sol.dual.var.iter_mut().zip(self.vars.iter()) {
                        match e {
-                           Item::Linear      { index } => *solx = sl[*index]-su[*index],
+                           Item::Linear      { index } => *solx =  sl[*index]-su[*index],
                            Item::RangedUpper { index } => *solx = -su[*index],
-                           Item::RangedLower { index } => *solx = sl[*index],
+                           Item::RangedLower { index } => *solx =  sl[*index],
                         }
                     }
                 }
@@ -795,9 +792,9 @@ impl Backend {
                 else {
                     for (solx,e) in sol.dual.con.iter_mut().zip(self.cons.iter()) {
                        match e {
-                           Item::Linear      { index } => *solx = y[*index],
+                           Item::Linear      { index } => *solx =   y[*index],
                            Item::RangedUpper { index } => *solx = -su[*index],
-                           Item::RangedLower { index } => *solx = sl[*index],
+                           Item::RangedLower { index } => *solx =  sl[*index],
                         }
                     }
                 }

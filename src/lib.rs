@@ -337,7 +337,7 @@ pub use model::{Sense,
                 VectorConeModelTrait,
                 PSDModelTrait,
                 ModelAPI,
-                Solution}
+                Solution};
 //pub type Model = ModelAPI<model::mosekmodel::MosekModel>;
 pub use matrix::{Matrix,NDArray,IntoIndexes};
 pub use expr::{ExprTrait,
