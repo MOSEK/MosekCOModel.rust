@@ -46,6 +46,10 @@ struct ConeElement {
 }
 
 enum VecConeType {
+    Zero,
+    NonNegative,
+    NonPositive,
+    Unbounded,
     Quadratic,
     RotatedQuadratic,
     PrimalPower,
@@ -1228,7 +1232,14 @@ impl Backend {
                               .map(|c| {
                                   use VecConeType::*;
                                   match c.0 {
-                                    Quadratic => JSON::List(vec![ JSON::String("qaud")])
+                                    Zero             => JSON::List(vec![ JSON::String("zero".to_string()), JSON::Int(c.1 as i64)]),
+                                    NonNegative      => JSON::List(vec![ JSON::String("rplus".to_string()), JSON::Int(c.1 as i64)]),
+                                    NonPositive      => JSON::List(vec![ JSON::String("rminus".to_string()), JSON::Int(c.1 as i64)]),
+                                    Free             => JSON::List(vec![ JSON::String("r".to_string()), JSON::Int(c.1 as i64)]),
+                                    Quadratic        => JSON::List(vec![ JSON::String("quad".to_string()), JSON::Int(c.1 as i64)]),
+                                    RotatedQuadratic => JSON::List(vec![ JSON::String("rquad".to_string()), JSON::Int(c.1 as i64)]),
+                                    PrimalGeometricMean  => JSON::List(vec![ JSON::String("".to_string()), JSON::Int(c.1 as i64)]),
+                                    DualGeometricMean  => JSON::List(vec![ JSON::String("".to_string()), JSON::Int(c.1 as i64)]),
                                   }}).collect())
                         ));
                 taskdata.append(
