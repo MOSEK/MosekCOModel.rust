@@ -31,13 +31,21 @@ enum LinearItem{
     RangedUpper,
     RangedLower,
 }
+
 #[derive(Clone,Copy)]
 enum Item {
     Linear{index:usize,kind:LinearItem},
     Conic{index:usize}
 }
 
-struct ConeElement { index : usize, offset : usize }
+/// A scalar element in a conic constraint.
+///
+struct ConeElement { 
+    /// Refers to the cone index, i.e. index into `cones` member in the model.
+    index : usize, 
+    /// Offset of the element into the cone.
+    offset : usize 
+}
 
 enum VecConeType {
     Quadratic,
@@ -50,7 +58,6 @@ enum VecConeType {
     DualGeometricMean,
     ScaledVectorizedPSD,
 }
-
 
 impl Item {
     fn index(&self) -> usize { 
@@ -100,8 +107,8 @@ pub struct Backend {
     /// Cone definitions. Each cone consists of a type and a dimension
     cones         : Vec<(VecConeType,usize)>,
     /// Conic scalar elements. Each element corresponds to a single element in a single cone in
-    /// `cones`.
-    cones_elt     : Vec<ConeElement>,
+    /// `cones`. 
+    cone_elt      : Vec<ConeElement>,
 
 
     sense_max     : bool,
@@ -704,7 +711,6 @@ impl Backend {
                      consta : Vec<u8>,
                      xc : Option<Vec<f64>>,
                      sc : Option<(Vec<f64>,Vec<f64>,Vec<f64>)>,
-                     xn : Option<Vec<f64>>,
                      sn : Option<Vec<f64>>,
                      sol : & mut Solution) -> std::io::Result<()>
     {
@@ -718,29 +724,32 @@ impl Backend {
             sol.primal.obj = pobj;
             if let Some(xx) = xx {
                 if xx.len() != numvar { return Err(std::io::Error::other("Incorrect solution dimension in sol/var/primal")); }
-                else {
-                    for (solx,e) in sol.primal.var.iter_mut().zip(self.vars.iter()) {
-                        *solx = 
-                           match e {
-                               Item::Linear{ index,.. } => xx[*index],
-                               Item::Conic { index } => xx[*index],
-                            };
-                    }
+                for (solx,e) in sol.primal.var.iter_mut().zip(self.vars.iter()) {
+                    *solx = 
+                       match e {
+                           Item::Linear{ index,.. } => xx[*index],
+                           Item::Conic { index } => xx[*index],
+                        };
                 }
             }
             else if numvar > 0 {
                 return Err(std::io::Error::other("Missing solution section sol/var/primal"));
             }
-            
-            if let (Some(xc),Some(xn)) = (xc,xn) {
-                else {
-                    for (solx,e) in sol.primal.con.iter_mut().zip(self.cons.iter()) {
-                        *solx = 
-                            match e {
-                               Item::Linear{ index,.. } => *solx = xc[*index],
-                               Item::Conic { index } => *solx = xn[*index],
-                            };
-                    }
+
+
+            if let Some(xc) = xc {
+                if xc.len() != self.con_elt.iter().filter(|e| matches!(e,Element::Linear{..})).count() {
+                    return Err(std::io::Error::other("Incorrect solution dimension in sol/var/primal")); 
+                }
+                for (i,solx,e) in izip!(0..,sol.primal.con.iter_mut(),self.cons.iter()) {
+                    *solx = 
+                        match e {
+                           Item::Linear{ index,.. } => xc[*index],
+                           Item::Conic { index } => {
+                               let (subj,cof) = self.mx.get(i).unwrap();
+                               sol.primal.var.permute_by(subj).zip(cof.iter()).map(|(a,b)| *a * *b).sum()
+                           }
+                        };
                 }
             }
             else if numcon > 0 {
@@ -749,16 +758,24 @@ impl Backend {
         }
         
         if ddef {
+            let numaccelm : usize = self.cones.iter().map(|c| c.1).sum();
+            if let Some(sn) = sn {
+                if numaccelm != sn.len() {
+                    return Err(std::io::Error::other("Incorrect solution dimension in sol/acc/primal"));
+                }
+            }
             sol.dual.obj = dobj;
             if let Some((sl,su)) = sx {
                 if sl.len() != numvar || su.len() != numvar { return Err(std::io::Error::other("Incorrect solution dimension in sol/var/dual")); }
-                else {
+                else { 
                     for (solx,e) in sol.dual.var.iter_mut().zip(self.vars.iter()) {
-                       match e {
-                           Item::Linear      { index } => *solx =  sl[*index]-su[*index],
-                           Item::RangedUpper { index } => *solx = -su[*index],
-                           Item::RangedLower { index } => *solx =  sl[*index],
-                        }
+                        *solx = 
+                            match e {
+                               Item::Linear{ index, kind : LinearItem::Linear }      => sl[*index]-su[*index],
+                               Item::Linear{ index, kind : LinearItem::RangedUpper } => -su[*index],
+                               Item::Linear{ index, kind : LinearItem::RangedLower } =>  sl[*index],
+                               Item::Conic { index } =>  sn.map(|sn| sn[*index]).unwrap_or(0.0),
+                            };
                     }
                 }
             }
@@ -770,11 +787,12 @@ impl Backend {
                 if sl.len() != numvar || su.len() != numvar || y.len() != numvar { return Err(std::io::Error::other("Incorrect solution dimension in sol/con/primal")); }
                 else {
                     for (solx,e) in sol.dual.con.iter_mut().zip(self.cons.iter()) {
-                       match e {
-                           Item::Linear      { index } => *solx =   y[*index],
-                           Item::RangedUpper { index } => *solx = -su[*index],
-                           Item::RangedLower { index } => *solx =  sl[*index],
-                        }
+                        *solx = match e {
+                           Item::Linear{ index, kind : LinearItem::Linear }      =>   y[*index],
+                           Item::Linear{ index, kind : LinearItem::RangedUpper } => -su[*index],
+                           Item::Linear{ index, kind : LinearItem::RangedLower } =>  sl[*index],
+                           Item::Conic { index } => sn.map(|sn| sn[*index]).unwrap_or(0.0),
+                        };
                     }
                 }
             }
@@ -890,11 +908,11 @@ impl Backend {
         }
 
         sol_bas.primal.status = Undefined;
-        sol_bas.dual.status = Undefined;
+        sol_bas.dual.status   = Undefined;
         sol_itr.primal.status = Undefined;
-        sol_itr.dual.status = Undefined;
+        sol_itr.dual.status   = Undefined;
         sol_itg.primal.status = Undefined;
-        sol_itg.dual.status = Undefined;
+        sol_itg.dual.status   = Undefined;
 
 
         let numvar    = r.expect(b"numvar",b"I")?.next_value::<u32>()? as usize;
@@ -906,7 +924,7 @@ impl Backend {
         if self.var_elt.len() != numvar { return Err(std::io::Error::other("Invalid solution dimension")); }
         if self.con_elt.len() != numcon { return Err(std::io::Error::other("Invalid solution dimension")); }
         if 0 != numcone { return Err(std::io::Error::other("Invalid solution dimension")); }
-        if 0 != numacc { return Err(std::io::Error::other("Invalid solution dimension")); }
+        if self.cones.len() != numacc { return Err(std::io::Error::other("Invalid solution dimension")); }
         if 0 != numbarvar { return Err(std::io::Error::other("Invalid solution dimension")); }
 
         let mut entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
@@ -930,12 +948,14 @@ impl Backend {
             let consta = r.expect(b"sol/interior/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
             let xc = if numcon > 0 && pdef { Some(r.expect(b"sol/interior/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             let sc = if numcon > 0 && ddef { Some(r.expect(b"sol/interior/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
+            let sn = if numacc > 0 && ddef { Some(r.expect(b"sol/interior/acc/dual",b"[d").and_then(|mut entry| Ok((entry.read::<f64>()?)))?) } else { None };
 
             self.copy_solution(sta.0,sta.1,
                                numvar, numcon, 
                                pobj,dobj,
                                varsta,xx,sx,
                                consta,xc,sc,
+                               sn,
                                sol_itr)?;
             entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
         }
