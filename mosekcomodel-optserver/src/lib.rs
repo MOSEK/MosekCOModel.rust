@@ -3,7 +3,7 @@
 //!
 use mosekcomodel::*;
 use mosekcomodel::model::{IntSolutionManager, ModelWithLogCallback};
-use mosekcomodel::utils::iter::{ChunksByIterExt, PermuteByEx};
+use mosekcomodel::utils::iter:: PermuteByEx;
 use itertools::izip;
 use std::collections::HashMap;
 use std::fs::File;
@@ -15,8 +15,6 @@ mod json;
 mod bio;
 
 pub type Model = ModelAPI<Backend>;
-
-
 
 
 #[derive(Clone,Copy)]
@@ -69,7 +67,6 @@ impl Item {
     } 
 }
 
-
 /// Simple model object that supports input of linear, conic and disjunctive constraints. It only
 /// stores data, it does not support solving or writing problems.
 #[derive(Default)]
@@ -109,7 +106,6 @@ pub struct Backend {
     /// Conic scalar elements. Each element corresponds to a single element in a single cone in
     /// `cones`. 
     cone_elt      : Vec<ConeElement>,
-
 
     sense_max     : bool,
     c_subj        : Vec<usize>,
@@ -453,7 +449,7 @@ impl BaseModelTrait for Backend {
                 }
 
 
-                let n = resp.copy_to(&mut resp_w).map_err(|e| e.to_string())?;
+                _ = resp.copy_to(&mut resp_w).map_err(|e| e.to_string())?;
 
                 Ok(())
             });
@@ -705,10 +701,10 @@ impl Backend {
                      numcon : usize,
                      pobj : f64,
                      dobj : f64,
-                     varsta : Vec<u8>,
+                     _varsta : Vec<u8>,
                      xx : Option<Vec<f64>>,
                      sx : Option<(Vec<f64>,Vec<f64>)>,
-                     consta : Vec<u8>,
+                     _consta : Vec<u8>,
                      xc : Option<Vec<f64>>,
                      sc : Option<(Vec<f64>,Vec<f64>,Vec<f64>)>,
                      sn : Option<Vec<f64>>,
@@ -759,7 +755,7 @@ impl Backend {
         
         if ddef {
             let numaccelm : usize = self.cones.iter().map(|c| c.1).sum();
-            if let Some(sn) = sn {
+            if let Some(sn) = sn.as_ref() {
                 if numaccelm != sn.len() {
                     return Err(std::io::Error::other("Incorrect solution dimension in sol/acc/primal"));
                 }
@@ -774,7 +770,7 @@ impl Backend {
                                Item::Linear{ index, kind : LinearItem::Linear }      => sl[*index]-su[*index],
                                Item::Linear{ index, kind : LinearItem::RangedUpper } => -su[*index],
                                Item::Linear{ index, kind : LinearItem::RangedLower } =>  sl[*index],
-                               Item::Conic { index } =>  sn.map(|sn| sn[*index]).unwrap_or(0.0),
+                               Item::Conic { index } =>  sn.as_ref().map(|sn| sn[*index]).unwrap_or(0.0),
                             };
                     }
                 }
@@ -791,7 +787,7 @@ impl Backend {
                            Item::Linear{ index, kind : LinearItem::Linear }      =>   y[*index],
                            Item::Linear{ index, kind : LinearItem::RangedUpper } => -su[*index],
                            Item::Linear{ index, kind : LinearItem::RangedLower } =>  sl[*index],
-                           Item::Conic { index } => sn.map(|sn| sn[*index]).unwrap_or(0.0),
+                           Item::Conic { index } => sn.as_ref().map(|sn| sn[*index]).unwrap_or(0.0),
                         };
                     }
                 }
@@ -919,7 +915,7 @@ impl Backend {
         let numbarvar = r.expect(b"numbarvar",b"I")?.next_value::<u32>()?;
         let numcon    = r.expect(b"numcon",b"I")?.next_value::<u32>()? as usize;
         let numcone   = r.expect(b"numcone",b"I")?.next_value::<u32>()?;
-        let numacc    = r.expect(b"numacc",b"L")?.next_value::<u64>()?;
+        let numacc    = r.expect(b"numacc",b"L")?.next_value::<u64>()? as usize;
 
         if self.var_elt.len() != numvar { return Err(std::io::Error::other("Invalid solution dimension")); }
         if self.con_elt.len() != numcon { return Err(std::io::Error::other("Invalid solution dimension")); }
@@ -948,7 +944,7 @@ impl Backend {
             let consta = r.expect(b"sol/interior/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
             let xc = if numcon > 0 && pdef { Some(r.expect(b"sol/interior/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             let sc = if numcon > 0 && ddef { Some(r.expect(b"sol/interior/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
-            let sn = if numacc > 0 && ddef { Some(r.expect(b"sol/interior/acc/dual",b"[d").and_then(|mut entry| Ok((entry.read::<f64>()?)))?) } else { None };
+            let sn = if numacc > 0 && ddef { Some(r.expect(b"sol/interior/acc/dual",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
 
             self.copy_solution(sta.0,sta.1,
                                numvar, numcon, 
@@ -972,12 +968,14 @@ impl Backend {
             let consta = r.expect(b"sol/basic/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
             let xc = if numcon > 0 && pdef { Some(r.expect(b"sol/basic/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             let sc = if numcon > 0 && ddef { Some(r.expect(b"sol/basic/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
+            let sn = if numacc > 0 && ddef { Some(r.expect(b"sol/basic/acc/dual",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
 
             self.copy_solution(sta.0,sta.1,
                                numvar, numcon, 
                                pobj,dobj,
                                varsta,xx,sx,
                                consta,xc,sc,
+                               sn,
                                sol_bas)?;
             entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
         }
@@ -996,6 +994,7 @@ impl Backend {
                                pobj,0.0,
                                varsta,xx,None,
                                consta,xc,None,
+                               None,
                                sol_itg)?;
             entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
         }
@@ -1021,7 +1020,94 @@ impl Backend {
 
     /// JSON Task format writer.
     ///
-    /// See https://docs.mosek.com/latest/capi/json-format.html
+    /// Relevant parts from [https://docs.mosek.com/latest/capi/json-format.html]:
+    /// - `$schema`: JSON schema = "`http://mosek.com/json/schema#`".
+    /// - `Task/name`: The name of the task (string).
+    /// - `Task/INFO`: Information about problem data dimensions and similar. These are treated as hints when reading the file.
+    ///     - `numvar`: number of variables (int32).
+    ///     - `numcon`: number of constraints (int32).
+    ///     - `numcone`: number of cones (int32, deprecated).
+    ///     - `numbarvar`: number of symmetric matrix variables (int32).
+    ///     - `numanz`: number of nonzeros in A (int64).
+    ///     - `numsymmat`: number of matrices in the symmetric matrix storage E (int64).
+    ///     - `numafe`: number of affine expressions in AFE storage (int64).
+    ///     - `numfnz`: number of nonzeros in F (int64).
+    ///     - `numacc`: number of affine conic constraints (ACCs) (int64).
+    ///     - `numdjc`: number of disjunctive constraints (DJCs) (int64).
+    ///     - `numdom`: number of domains (int64).
+    ///     - `mosekver`: MOSEK version (list(int32)).
+    /// - `Task/data`: Numerical and structural data of the problem.
+    ///     - `var`: Information about variables. All fields present must have the same length as bk. All or none of bk, bl, and bu must appear.
+    ///         - `name`: Variable names (list(string)).
+    ///         - `bk`: Bound keys (list(string)).
+    ///         - `bl`: Lower bounds (list(double)).
+    ///         - `bu`: Upper bounds (list(double)).
+    ///         - `type`: Variable types (list(string)).
+    ///     - `con`: Information about linear constraints. All fields present must have the same length as bk. All or none of bk, bl, and bu must appear.
+    ///         - `name`: Constraint names (list(string)).
+    ///         - `bk`: Bound keys (list(string)).
+    ///         - `bl`: Lower bounds (list(double)).
+    ///         - `bu`: Upper bounds (list(double)).
+    ///     - `objective`: Information about the objective.
+    ///         - `name`: Objective name (string).
+    ///         - `sense`: Objective sense (string).
+    ///         - `c`: The linear part of the objective as a sparse vector. Both arrays must have the same length.
+    ///     - `subj`: indices of nonzeros (list(int32)).
+    ///     - `val`: values of nonzeros (list(double)).
+    /// - `cfix`: Constant term in the objective (double).
+    /// - `A`: The linear constraint matrix as a sparse matrix. All arrays must have the same length.
+    ///     - `subi`: row indices of nonzeros (list(int32)).
+    ///     - `subj`: column indices of nonzeros (list(int32)).
+    ///     - `val`: values of nonzeros (list(double)).
+    /// - `AFE`: The affine expression storage.
+    ///     - `numafe`: number of rows in the storage (int64).
+    ///     - `F`: The matrix as a sparse matrix. All arrays must have the same length.
+    ///         - `subi`: row indices of nonzeros (list(int64)).
+    ///         - `subj`: column indices of nonzeros (list(int32)).
+    ///         - `val`: values of nonzeros (list(double)).
+    ///     - `g`: The vector of constant terms as a sparse vector. Both arrays must have the same length.
+    ///         - `subi`: indices of nonzeros (list(int64)).
+    ///         - `val`: values of nonzeros (list(double)).
+    /// - `domains`: Information about domains. All fields present must have the same length as type.
+    ///     - `name`: Domain names (list(string)).
+    ///     - `type`: Description of the type of each domain (list). Each element of the list is a list describing one domain using at least one field:
+    ///         domain type (string).
+    ///         (except pexp, dexp) dimension (int64).
+    ///         (only ppow, dpow) weights (list(double)).
+    /// - `ACC`: Information about affine conic constraints (ACC). All fields present must have the same length as domain.
+    ///     - `name`: ACC names (list(string)).
+    ///     - `domain`: Domains (list(int64)).
+    ///     - `afeidx`: AFE indices, grouped by ACC (list(list(int64))).
+    ///     - `b`: constant vectors 
+    ///     , grouped by ACC (list(list(double))).
+    /// - `DJC`: Information about disjunctive constraints (DJC). All fields present must have the same length as termsize.
+    ///     - `name`: DJC names (list(string)).
+    ///     - `termsize`: Term sizes, grouped by DJC (list(list(int64))).
+    ///     - `domain`: Domains, grouped by DJC (list(list(int64))).
+    ///     - `afeidx`: AFE indices, grouped by DJC (list(list(int64))).
+    ///     - `b`: constant vectors 
+    ///     , grouped by DJC (list(list(double))).
+    /// - `Task/solutions`: Solutions. This section can contain up to three subsections called:
+    ///     - `interior`
+    ///     - `basic`
+    ///     - `integer`
+    ///     corresponding to the three solution types in MOSEK. Each of these sections has the same structure:
+    ///     - `prosta`: problem status (string).
+    ///     - `solsta`: solution status (string).
+    ///     - `xx`, `xc`, `y`, `slc`, `suc`, `slx`, `sux`, `snx`: one for each component of the solution of the same name (list(double)).
+    ///     - `skx`, `skc`, `skn`: status keys (list(string)).
+    ///     - `doty`: the dual solution, grouped by ACC (list(list(double))).
+    /// - `Task/parameters`: Parameters.
+    ///     - `iparam`: Integer parameters (dictionary). A dictionary with entries of the form
+    ///       name:value, where name is a shortened parameter name (without leading MSK_IPAR_) and
+    ///       value is either an integer or string if the parameter takes values from an enum.
+    ///     - `dparam`: Double parameters (dictionary). A dictionary with entries of the form
+    ///       name:value, where name is a shortened parameter name (without leading MSK_DPAR_) and
+    ///       value is a double.
+    ///     - `sparam`: String parameters (dictionary). A dictionary with entries of the form
+    ///       `name:value`, where name is a shortened parameter name (without leading MSK_SPAR_) and
+    ///       value is a string. Note that this section is allowed but MOSEK ignores it both when
+    ///       writing and reading JTASK files.
     fn write_jtask<S>(&self, strm : &mut S) -> std::io::Result<()> 
         where 
             S : std::io::Write 
@@ -1045,17 +1131,41 @@ impl Backend {
         doc.append(
             "Task/data",
             json::Dict::from(|taskdata| {
-                taskdata.append("var",json::Dict::from(|d| {
-                    d.append("bk",  JSON::List(self.var_elt.iter().map(|e| bnd_to_bk(e.lb,e.ub).into()).collect()));
-                    d.append("bl",  JSON::List(self.var_elt.iter().map(|&e| JSON::Float(e.lb)).collect()));
-                    d.append("bu",  JSON::List(self.var_elt.iter().map(|&e| JSON::Float(e.ub)).collect()));
-                    d.append("type",JSON::List(self.var_int.iter().map(|&e| if e { "int".into() } else { "cont".into() }).collect()));
-                }));
-                taskdata.append("con",json::Dict::from(|d| {
-                    d.append("bk",  JSON::List(self.con_elt.iter().map(|e| bnd_to_bk(e.lb,e.ub).into()).collect()));
-                    d.append("bl",  JSON::List(self.con_elt.iter().map(|e| JSON::Float(e.lb)).collect()));
-                    d.append("bu",  JSON::List(self.con_elt.iter().map(|e| JSON::Float(e.ub)).collect()));
-                }));
+                {
+                    let mut bl = Vec::with_capacity(self.var_elt.len());
+                    let mut bu = Vec::with_capacity(self.var_elt.len());
+                    let mut bk = Vec::with_capacity(self.var_elt.len());
+
+                    self.var_elt.iter().map(|e|
+                        match e {
+                            Element::Linear { lb, ub } => (bnd_to_bk(*lb, *ub), *lb,*ub),
+                            Element::Conic { .. } => ("fr",f64::NEG_INFINITY, f64::INFINITY),
+                        }).for_each(|v| { bk.push(v.0.into()); bl.push(v.1); bu.push(v.2); });
+
+                    taskdata.append("var",json::Dict::from(|d| {
+                        d.append("bk",  JSON::StringArray(bk));
+                        d.append("bl",  JSON::FloatArray(bl));
+                        d.append("bu",  JSON::FloatArray(bu));
+                        d.append("type",JSON::StringArray(self.var_int.iter().map(|&e| if e { "int".into() } else { "cont".into() }).collect()));
+                    }));
+                }
+                {
+                    let mut bl = Vec::with_capacity(self.con_elt.len());
+                    let mut bu = Vec::with_capacity(self.con_elt.len());
+                    let mut bk = Vec::with_capacity(self.con_elt.len());
+
+                    self.con_elt.iter().map(|e|
+                        match e {
+                            Element::Linear { lb, ub } => (bnd_to_bk(*lb, *ub), *lb,*ub),
+                            Element::Conic { .. } => ("fr",f64::NEG_INFINITY, f64::INFINITY),
+                        }).for_each(|v| { bk.push(v.0.into()); bl.push(v.1); bu.push(v.2); });
+
+                    taskdata.append("con",json::Dict::from(|d| {
+                        d.append("bk",  JSON::StringArray(bk));
+                        d.append("bl",  JSON::FloatArray(bl));
+                        d.append("bu",  JSON::FloatArray(bu));
+                    }));
+                }
                 taskdata.append(
                     "objective",
                     json::Dict::from(|d| {
@@ -1069,10 +1179,61 @@ impl Backend {
                 taskdata.append(
                     "A", 
                     json::Dict::from(|d| {
-                        d.append("subi",JSON::List(self.mx.row_iter().enumerate().flat_map(|(i,(subj,_))| std::iter::repeat_n(i,subj.len()).map(|i| JSON::Int(i as i64))).collect()));
-                        d.append("subj",JSON::List(self.mx.row_iter().flat_map(|(subj,_)| subj.iter().map(|i| JSON::Int(*i as i64))).collect()));
-                        d.append("val", JSON::List(self.mx.row_iter().flat_map(|(_,cof)| cof.iter().map(|v| JSON::Float(*v))).collect()));
+                        let mut subi = Vec::new();
+                        let mut subj = Vec::new();
+                        let mut val  = Vec::new();
+
+                        self.mx.row_iter().zip(self.con_elt.iter())
+                            .filter_map(|(item,e)| if matches!(e,Element::Linear {..}) { Some(item) } else { None })
+                            .enumerate()
+                            .for_each(|(i,(jj,cc))| {
+                                let base = subi.len();
+                                let n = jj.len();
+                                subi.resize(base+n, i as i64);
+                                subj.resize(base+n,0); subj[base..].iter_mut().zip(jj.iter()).for_each(|(dst,src)| *dst = *src as i64);
+                                val.extend_from_slice(cc);
+                            });
+                        d.append("subi",JSON::IntArray(subi));
+                        d.append("subj",JSON::IntArray(subj));
+                        d.append("val", JSON::FloatArray(val));
                 }));
+                taskdata.append(
+                    "AFE",
+                    json::Dict::from(|d| {
+                        let mut subi = Vec::new();
+                        let mut subj = Vec::new();
+                        let mut val  = Vec::new();
+
+                        self.mx.row_iter().zip(self.con_elt.iter())
+                            .filter_map(|(item,e)| if matches!(e,Element::Conic {..}) { Some(item) } else { None })
+                            .enumerate()
+                            .for_each(|(i,(jj,cc))| {
+                                let base = subi.len();
+                                let n = jj.len();
+                                subi.resize(base+n, i as i64);
+                                subj.resize(base+n,0); subj[base..].iter_mut().zip(jj.iter()).for_each(|(dst,src)| *dst = *src as i64);
+                                val.extend_from_slice(cc);
+                            });
+                        d.append("numafe", JSON::Int( self.cone_elt.len() as i64));
+
+                        d.append("F", json::Dict::from(|d| {
+                            d.append("subi",JSON::IntArray(subi));
+                            d.append("subj",JSON::IntArray(subj));
+                            d.append("val", JSON::FloatArray(val));
+                        }));
+                    }));
+                taskdata.append(
+                    "domains",
+                    json.List(self.cones.iter()
+                              .map(|c| {
+                                  use VecConeType::*;
+                                  match c.0 {
+                                    Quadratic => JSON::List(vec![ JSON::String("qaud")])
+                                  }}).collect())
+                        ));
+                taskdata.append(
+                    "ACC",
+                    json::Dict::from(|d| {}));
                          
         }));
         doc.append(
