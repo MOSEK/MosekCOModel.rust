@@ -17,34 +17,9 @@ mod bio;
 pub type Model = ModelAPI<Backend>;
 
 
-struct ConEntry {
-    row_index  : usize,
+struct ConItem {
     cone_index : usize,
     offset     : usize,
-}
-
-struct ConeEntry {
-    ct : VecConeType,
-    dim : usize
-}
-
-#[derive(Clone,Copy)]
-enum Element {
-    Linear{lb:f64,ub:f64},
-    Conic{conerow:usize}
-}
-
-#[derive(Clone,Copy)]
-enum LinearItem{
-    Linear,
-    RangedUpper,
-    RangedLower,
-}
-
-#[derive(Clone,Copy)]
-enum Item {
-    Linear{index:usize,kind:LinearItem},
-    Conic{index:usize}
 }
 
 /// A scalar element in a conic constraint.
@@ -93,27 +68,23 @@ pub struct Backend {
     /// Integer solution callback
     sol_cb        : Option<Box<dyn FnMut(&IntSolutionManager)>>,
 
-    /// List of scalar variable elements. Each element is either a linear variable with bounds or a
-    /// conic variable
-    var_elt       : Vec<Element>, // Either lb,ub,int or index,coneidx,offset
     /// Indicates per scalar variable which are integer constrained. 
     var_int       : Vec<bool>,
     /// Variable names.
     var_names     : Vec<Option<String>>,
-    /// Variable interfaces. Ranged variables produce two interface elements per scalar variable,
-    /// one for upper bound and one for lower bound.
-    vars          : Vec<Item>,
+    /// Variables. Each value is the index of the corresponding scalar constraint defining the
+    /// domain.
+    vars          : Vec<usize>,
 
     /// Matrix storage
     mx            : msto::MatrixStore,
 
     /// Scalar constraint elements, each element corresponds to a scalar linear constraint or an
     /// single element in a conic constraint.
-    cons          : Vec<ConEntry>,
+    cons          : Vec<ConItem>,
+    con_mx_row    : Vec<usize>,
     con_rhs       : Vec<f64>,
-
-    /// Cone definitions. 
-    cones         : Vec<VecCone>,
+    con_dom       : Vec<VecCone>,
 
     sense_max     : bool,
     c_subj        : Vec<usize>,
@@ -131,33 +102,17 @@ impl BaseModelTrait for Backend {
             ..Default::default()
         }
     }
+
     fn free_variable<const N : usize>
         (&mut self,
          name  : Option<&str>,
          shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized 
     {
         let n = shape.iter().product::<usize>();
-        let first = self.var_elt.len();
-        let last  = first + n;
-
-        self.var_elt.resize(last,Element::Linear { lb: f64::NEG_INFINITY, ub: f64::INFINITY });
-        self.var_int.resize(last,false);
-        self.var_names.resize(last,None);
-
-        let firstvari = self.vars.len();
-        self.vars.reserve(n);
-        for i in first..last {
-            self.vars.push(Item::Linear{index:i,kind:LinearItem::Linear});
-        }
+        let (first,last) = self.linear_variable(n,vec![0.0;n].as_slice(),false,LinearDomainType::Free);
 
         if let Some(name) = name {
-            (0..n).scan([0usize;N],|i,_| { 
-                let r = format!("{}{:?}",name,i); 
-                i.iter_mut().zip(shape.iter()).rev().fold(1,|c,(v,&d)| { *v += c; if *v >= d { *v = 0; 1 } else { 0 }}); 
-                Some(r)
-            })
-                .zip(self.var_names[first..last].iter_mut())
-                .for_each(|(n,vn)| *vn = Some(n));
+            self.linear_names(shape, None, name);
         }
 
         Ok(Variable::new((firstvari..firstvari+n).collect::<Vec<usize>>(), None, shape))
@@ -172,51 +127,11 @@ impl BaseModelTrait for Backend {
     {
         let (dt,b,sp,shape,is_integer) = dom.dissolve();
         let n = sp.as_ref().map(|v| v.len()).unwrap_or(shape.iter().product::<usize>());
-        let first = self.var_int.len();
-        let last  = first + n;
 
-
-        let firstvari = self.vars.len();
-        self.vars.reserve(n);
-        for i in first..last { self.vars.push(Item::Linear{index:i,kind:LinearItem::Linear}) }
-        match dt {
-            LinearDomainType::Zero => {
-                self.var_elt.resize(last,Element::Linear { lb: 0.0, ub: 0.0 });
-            },
-            LinearDomainType::Free => {
-                self.var_elt.resize(last,Element::Linear { lb: f64::NEG_INFINITY, ub: f64::INFINITY});
-            },
-            LinearDomainType::NonNegative => {
-                self.var_elt.reserve(last);
-                for lb in b {
-                    self.var_elt.push(Element::Linear { lb, ub: f64::INFINITY });
-                }
-            },
-            LinearDomainType::NonPositive => {
-                self.var_elt.reserve(last);
-                for ub in b {
-                    self.var_elt.push(Element::Linear{ lb : f64::NEG_INFINITY, ub });
-                }
-            },
-        }
-        self.var_int.resize(last,is_integer);
-
+        let (first,last) = self.linear_variable(n, b.as_slice(),is_integer);
+        
         if let Some(name) = name {
-            let mut name_index_buf = [1usize; N];
-            let mut strides = [0;N];
-            strides.iter_mut().zip(shape.iter()).rev().fold(1,|s,(st,&d)| { *st = s; d * s });
-            if let Some(sp) = &sp {
-                for &i in sp.iter() {
-                    name_index_buf.iter_mut().zip(strides.iter()).fold(i,|i,(ni,&st)| { *ni = i/st; i%st });
-                    self.var_names.push(Some(format!("{}{:?}", name, name_index_buf)));
-                }
-            }
-            else {
-                for _ in 0..n {
-                    name_index_buf.iter_mut().zip(shape.iter()).rev().fold(1,|c,(i,&d)| { *i += c; if *i > d { *i = 1; 1 } else { 0 } });
-                    self.var_names.push(Some(format!("{}{:?}", name, name_index_buf)));
-                }
-            }
+            self.linear_names(shape, sp, name);
         }
         else {
             for _ in 0..n {
@@ -1293,6 +1208,51 @@ impl Backend {
                 }
             }));
         JSON::Dict(doc).write(strm)
+    }
+
+
+    fn linear_names<const N : usize>(&mut self, first : usize, last : usize, shape : &[usize;N], sp : Option<&[usize]> name : &str) {
+        let mut name_index_buf = [1usize; N];
+        let mut strides = [0;N];
+        strides.iter_mut().zip(shape.iter()).rev().fold(1,|s,(st,&d)| { *st = s; d * s });
+        if let Some(sp) = &sp {
+            for (&i,name) in sp.iter().zip(self.var_names.iter_mut()) {
+                name_index_buf.iter_mut().zip(strides.iter()).fold(i,|i,(ni,&st)| { *ni = i/st; i%st });
+                *name = Some(format!("{}{:?}", name, name_index_buf));
+            }
+        }
+        else {
+            for name in self.var_names.iter_mut() {
+                name_index_buf.iter_mut().zip(shape.iter()).rev().fold(1,|c,(i,&d)| { *i += c; if *i > d { *i = 1; 1 } else { 0 } });
+                *name = Some(format!("{}{:?}", name, name_index_buf));
+            }
+        }
+    }
+
+
+    fn linear_variable(&mut self,n : usize, rhs : &[f64], is_int : bool, dt : LinearDomainType) -> (usize,usize) {
+        let first = self.vars.len();
+        let last  = first + n;
+
+        let matrix_rows = self.mx.append_rows((0..n+1).collect().as_slice(), (first..last).collcet(), vec![1.0; n].as_slice(), vec![0.0;n].as_slice());
+        let conidx   = self.cons.len();
+        let blockidx = self.con_dom.len();
+        self.con_dom.push(
+            match dt {
+                LinearDomainType::Zero        => VecCone::Zero { dim: 1 },
+                LinearDomainType::Free        => VecCone::Unbounded { dim: 1 },
+                LinearDomainType::NonNegative => VecCone::NonNegative { dim: 1 },
+                LinearDomainType::NonPositive => VecCone::NonPositive { dim: 1 },
+            });
+        self.con_mx_row.reserve(n); for i in matrix_rows { self.con_mx_row.push(i); }
+        self.con_rhs.extend_from_slice(rhs);
+        self.cons.resize(self.cons.len()+n,ConeElement{index:coneidx,offset : 0});
+
+        self.vars.reserve(n); for i in  conidx..conidx+n { self.vars.append(i); }
+        self.var_int.resize(last,is_int);
+        self.var_names.resize(last,None);
+
+        (first,last)
     }
 }
 
