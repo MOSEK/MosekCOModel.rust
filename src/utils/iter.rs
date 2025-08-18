@@ -564,6 +564,50 @@ impl<'a> Permutation<'a> {
 }
 
 
+
+pub struct ChunkationIter<'a,'b,T> {
+    c : Chunkation<'a>,
+    data : &'b[T],
+    i : usize
+}
+impl<'a,'b,T> Iterator for ChunkationIter<'a,'b,T> {
+    type Item = &'b[T];
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i >= self.c.ptr.len() { None }
+        else {
+            let i = self.i; self.i += 1;
+            Some(unsafe{self.data.get_unchecked(*self.c.ptr.get_unchecked(i)..*self.c.ptr.get_unchecked(i+1))})
+        }
+    }
+}
+
+
+pub struct Chunkation<'a> {
+    ptr : & 'a[usize],
+    max : usize
+}
+
+impl<'a> Chunkation<'a> {
+    pub fn new(ptr : &'a[usize]) -> Option<Self> {
+        if let Some(max) = ptr.last() {
+            if ptr.iter().zip(ptr[1..].iter()).all(|item| *item.0 <= *item.1) { None }
+            else {
+                Some(Chunkation { ptr, max:*max })
+            }
+        } 
+        else {
+            None
+        }
+    }
+    pub fn chunks<'b,T>(&'a self, data : &'b [T]) -> Option<ChunkByIter<'b,'a,'a,T,>>{
+        if self.max > data.len() { None } 
+        else {
+        }
+    }
+}
+
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

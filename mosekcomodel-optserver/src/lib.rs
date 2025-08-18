@@ -3,7 +3,7 @@
 //!
 use mosekcomodel::*;
 use mosekcomodel::model::{IntSolutionManager, ModelWithLogCallback};
-use mosekcomodel::utils::iter:: PermuteByEx;
+use mosekcomodel::utils::iter::{Chunkation, ChunksByIterExt, PermuteByEx};
 use itertools::izip;
 use std::collections::HashMap;
 use std::fs::File;
@@ -16,6 +16,17 @@ mod bio;
 
 pub type Model = ModelAPI<Backend>;
 
+
+struct ConEntry {
+    row_index  : usize,
+    cone_index : usize,
+    offset     : usize,
+}
+
+struct ConeEntry {
+    ct : VecConeType,
+    dim : usize
+}
 
 #[derive(Clone,Copy)]
 enum Element {
@@ -45,20 +56,20 @@ struct ConeElement {
     offset : usize 
 }
 
-enum VecConeType {
-    Zero,
-    NonNegative,
-    NonPositive,
-    Unbounded,
-    Quadratic,
-    RotatedQuadratic,
-    PrimalPower,
-    DualPower,
+enum VecCone {
+    Zero{dim : usize},
+    NonNegative{dim : usize},
+    NonPositive{dim : usize},
+    Unbounded{dim : usize},
+    Quadratic{dim : usize},
+    RotatedQuadratic{dim : usize},
+    PrimalPower{dim : usize, alpha : Vec<f64>},
+    DualPower{dim : usize, alpha : Vec<f64>},
     PrimalExp,
     DualExp,
-    PrimalGeometricMean,
-    DualGeometricMean,
-    ScaledVectorizedPSD,
+    PrimalGeometricMean{dim : usize},
+    DualGeometricMean{dim : usize},
+    ScaledVectorizedPSD{dim : usize},
 }
 
 impl Item {
@@ -98,18 +109,11 @@ pub struct Backend {
 
     /// Scalar constraint elements, each element corresponds to a scalar linear constraint or an
     /// single element in a conic constraint.
-    con_elt       : Vec<Element>,
-    /// Names of scalar constraint elements
-    con_names     : Vec<Option<String>>,
+    cons          : Vec<ConEntry>,
+    con_rhs       : Vec<f64>,
 
-    /// Scalar interface constraints.
-    cons          : Vec<Item>,
-
-    /// Cone definitions. Each cone consists of a type and a dimension
-    cones         : Vec<(VecConeType,usize)>,
-    /// Conic scalar elements. Each element corresponds to a single element in a single cone in
-    /// `cones`. 
-    cone_elt      : Vec<ConeElement>,
+    /// Cone definitions. 
+    cones         : Vec<VecCone>,
 
     sense_max     : bool,
     c_subj        : Vec<usize>,
@@ -282,20 +286,47 @@ impl BaseModelTrait for Backend {
          subj  : &[usize], 
          cof   : &[f64]) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String>  
     {
-        let (dt,b,sp,shape,_is_integer) = dom.dissolve();
+        let (dt,rhs,sp,shape,_is_integer) = dom.dissolve();
 
         if sp.is_some() { return Err("Sparse domain on costraint not allowd".to_string()); }
-        assert_eq!(b.len(),ptr.len()-1); 
+        assert_eq!(rhs.len(),ptr.len()-1); 
         assert_eq!(ptr.len(),shape.iter().product::<usize>()+1);
-        let n = b.len();
+        let n = rhs.len();
 
-        let rowidxs = self.mx.append_rows(ptr,subj,cof);
+        let ptrchunks = Chunkation::new(ptr).unwrap();
 
+        let rowidxs = izip!(ptrchunks.chunks(subj), ptrchunks.chunks(cof))
+            .map(|(subj,cof)| {
+                if let (Some(j),Some(c)) = (subj.first(),cof.first()) {
+                    if j == 0 {
+                        self.mx.append_row(&subj[1..], &cof[1..], c)
+                    }
+                    else {
+                        self.mx.append_row(subj, cof, 0.0)
+                    }
+                }
+                else {
+                    self.mx.append_row(subj, cof, 0.0)
+                }
+            })
+            .collect();
+
+        self.cons.reserve(n);
+        self.con_rhs.reserve(n);
         let con0 = self.cons.len();
-        self.cons.reserve(n); for i in rowidxs.clone() { self.cons.push(Item::Linear { index: i, kind: LinearItem::Linear }) }
-        
-        match dt {
-            LinearDomainType::Zero => {
+
+        self.con_rhs.extend_from_slice(rhs);
+
+        self.cons.reserve(n); for i in rowidxs.iter() { self.cons.push(Item::Linear { index: i, kind: LinearItem::Linear }) }
+        let coneidx = self.cones.len();
+        self.cones.push(
+            match dt {
+                LinearDomainType::Zero => VecCone::Zero { dim: n },
+                LinearDomainType::Free => VecCone::Unbounded { dim: n },
+                LinearDomainType::NonNegative => VecCone::NonNegative { dim: n },
+                LinearDomainType::NonPositive => VecCone::NonPositive { dim: n }
+
+
                 self.con_elt.reserve(rowidxs.end);
                 for b in b {
                     self.con_elt.push(Element::Linear{ lb: b, ub: b });
@@ -1328,17 +1359,19 @@ mod msto {
         len  : Vec<usize>,
         subj : Vec<usize>,
         cof  : Vec<f64>,
+        b    : Vec<f64>,
 
         map  : Vec<usize>
     }
 
     impl MatrixStore {
         pub fn new() -> MatrixStore { Default::default() }
-        pub fn append_row(&mut self, subj : &[usize], cof : &[f64]) -> usize {        
+        pub fn append_row(&mut self, subj : &[usize], cof : &[f64], b : f64) -> usize {        
             assert_eq!(subj.len(),cof.len());
             self.len.push(subj.len());
             self.subj.extend_from_slice(subj);
             self.cof.extend_from_slice(cof);
+            self.b.append(b);
             
             let res = self.map.len();
             self.map.push(self.ptr.len());
@@ -1346,13 +1379,15 @@ mod msto {
             res
         }
 
-        pub fn append_rows(&mut self, ptr : &[usize], subj : &[usize], cof : &[f64]) -> std::ops::Range<usize> {
+        pub fn append_rows(&mut self, ptr : &[usize], subj : &[usize], cof : &[f64], b : &[f64]) -> std::ops::Range<usize> {
             assert_eq!(subj.len(),cof.len());
             assert!(ptr.iter().zip(ptr[1..].iter()).all(|(a,b)| *a <= *b));
             assert_eq!(*ptr.last().unwrap(),subj.len());
+            assert_eq!(ptr.len(),b.len()+1);
             let len0 = self.subj.len();
             self.subj.extend_from_slice(subj);
             self.cof.extend_from_slice(cof);
+            self.b.extend_from_slice(b);
             
             let row0 = self.map.len();
             for i in self.ptr.len()..self.ptr.len()+ptr.len()-1 { self.map.push(i); }
@@ -1366,7 +1401,7 @@ mod msto {
             row0..row1
         }
 
-        pub fn get<'a>(&'a self, i : usize) -> Option<(&'a [usize],&'a [f64])> {
+        pub fn get<'a>(&'a self, i : usize) -> Option<(&'a [usize],&'a [f64],f64)> {
             self.map.get(i)
                 .map(|&i| {
                     let p = unsafe{*self.ptr.get_unchecked(i)};
@@ -1383,19 +1418,21 @@ mod msto {
                     let l = unsafe{*self.len.get_unchecked(i)};
                     
                     (unsafe{self.subj.get_unchecked_mut(p..p+l)},
-                     unsafe{self.cof.get_unchecked_mut(p..p+l)})
+                     unsafe{self.cof.get_unchecked_mut(p..p+l)},
+                     unsafe{self.b.get_unchecked(i)})
                 })
         }
 
-        pub fn replace_rows(&mut self, rows : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) {
+        pub fn replace_rows(&mut self, rows : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64], b : &[f64]) {
             if !rows.is_empty() {
                 assert_eq!(subj.len(),cof.len());
                 assert_eq!(ptr.len(),rows.len()+1);
+                assert_eq!(b.len(),rows.len());
                 assert!(ptr.iter().zip(ptr[1..].iter()).all(|(a,b)| *a <= *b));
                 assert_eq!(*ptr.last().unwrap(),subj.len());
                 assert!(*rows.iter().max().unwrap() < self.map.len());
 
-                for (rowi,subj,cof) in izip!(self.map.permute_by_mut(rows),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)) {
+                for (rowi,subj,cof,b) in izip!(self.map.permute_by_mut(rows),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr),b.iter()) {
                     let leni = unsafe{self.len.get_unchecked_mut(*rowi)};
                     let ptri = unsafe{self.ptr.get_unchecked(*rowi)};
                     if subj.len() <= *leni {
@@ -1410,17 +1447,21 @@ mod msto {
                         self.subj.extend_from_slice(subj);
                         self.cof.extend_from_slice(cof);
                     }
+                    self.b[*rowi] = *b;
                 }
             }
         }
 
-        pub fn row_iter<'a>(&'a self) -> impl Iterator<Item=(&'a [usize],&'a[f64])> {
+        pub fn row_iter<'a>(&'a self) -> impl Iterator<Item=(&'a [usize],&'a[f64],f64)> {
             let perm = Permutation::new(self.map.as_slice());
 
-            perm.permute(self.ptr.as_slice()).unwrap()
-                .zip(perm.permute(self.len.as_slice()).unwrap()) .map(|(p,l)| {
+            izip!(perm.permute(self.ptr.as_slice()).unwrap(),
+                  perm.permute(self.len.as_slice()).unwrap(),
+                  perm.permute(self.b.as_slice()))
+                .map(|(p,l,b)| {
                     (unsafe{self.subj.get_unchecked(*p..*p+*l)},
-                     unsafe{self.cof.get_unchecked(*p..*p+*l)})
+                     unsafe{self.cof.get_unchecked(*p..*p+*l)},
+                     *b)
                 })
         }
     }
