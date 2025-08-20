@@ -22,14 +22,20 @@ struct ConItem {
     offset     : usize,
 }
 
-/// A scalar element in a conic constraint.
-///
-struct ConeElement { 
-    /// Refers to the cone index, i.e. index into `cones` member in the model.
-    index : usize, 
-    /// Offset of the element into the cone.
-    offset : usize 
+#[derive(Clone,Copy)]
+enum VarItem {
+    /// Variable element corresponds to underlying variable `index`
+    Linear,
+    /// Variable element corresponds to underlying variable `index`, and the dual corresponds to
+    /// the lower bound on the variable.
+    LinearLowerBound,
+    /// Variable element corresponds to underlying variable `index`, and the dual corresponds to
+    /// the upper bound on the variable.
+    LinearUpperBound,
+    /// Variable element corresponds to underlying variable `index` and 
+    Conic{conidx : usize}
 }
+
 
 enum VecCone {
     Zero{dim : usize},
@@ -45,6 +51,26 @@ enum VecCone {
     PrimalGeometricMean{dim : usize},
     DualGeometricMean{dim : usize},
     ScaledVectorizedPSD{dim : usize},
+}
+impl VecCone {
+    pub fn dim(&self) -> usize {
+        use VecCone::*;
+        match self {
+            Zero{dim} => dim,
+            NonNegative{dim} => dim,
+            NonPositive{dim} => dim,
+            Unbounded{dim} => dim,
+            Quadratic{dim} => dim,
+            RotatedQuadratic{dim} => dim,
+            PrimalPower{dim, alpha} => dim,
+            DualPower{dim, alpha} => dim,
+            PrimalExp => 3,
+            DualExp => 3,
+            PrimalGeometricMean{dim} => dim,
+            DualGeometricMean{dim} => dim,
+            ScaledVectorizedPSD{dim} => dim,
+        }
+    }
 }
 
 impl Item {
@@ -62,19 +88,26 @@ impl Item {
 #[derive(Default)]
 pub struct Backend {
     name : Option<String>,
-
+    
     /// Message callback
     log_cb        : Option<Box<dyn Fn(&str)>>,
     /// Integer solution callback
     sol_cb        : Option<Box<dyn FnMut(&IntSolutionManager)>>,
 
+    /// Lower bounds of underlying variables
+    var_lb : Vec<f64>,
+    /// Upper bounds of underlying variables
+    var_ub : Vec<f64>,
+
     /// Indicates per scalar variable which are integer constrained. 
     var_int       : Vec<bool>,
     /// Variable names.
     var_names     : Vec<Option<String>>,
+    /// Corresponding native indexes
+    var_idx : Vec<usize>,
     /// Variables. Each value is the index of the corresponding scalar constraint defining the
     /// domain.
-    vars          : Vec<usize>,
+    vars          : Vec<VarItem>,
 
     /// Matrix storage
     mx            : msto::MatrixStore,
@@ -109,13 +142,16 @@ impl BaseModelTrait for Backend {
          shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized 
     {
         let n = shape.iter().product::<usize>();
-        let (first,last) = self.linear_variable(n,vec![0.0;n].as_slice(),false,LinearDomainType::Free);
+
+        let lb = vec![f64::NEG_INFINITY;n];
+        let ub = vec![f64::INFINITY;n];
+        let idxs = self.native_linear_variable(b.as_slice(),b.as_slice(),false,VarItem::Linear);
 
         if let Some(name) = name {
-            self.linear_names(shape, None, name);
+            self.linear_names(idxs.start,idxs.end, shape, None, name);
         }
 
-        Ok(Variable::new((firstvari..firstvari+n).collect::<Vec<usize>>(), None, shape))
+        Ok(Variable::new((first..last).collect::<Vec<usize>>(), None, shape))
     }
 
     fn linear_variable<const N : usize,R>
@@ -128,18 +164,23 @@ impl BaseModelTrait for Backend {
         let (dt,b,sp,shape,is_integer) = dom.dissolve();
         let n = sp.as_ref().map(|v| v.len()).unwrap_or(shape.iter().product::<usize>());
 
-        let (first,last) = self.linear_variable(n, b.as_slice(),is_integer);
+        let (idxs,vit) =
+            match dt {
+                LinearDomainType::Free        => { (self.native_linear_variable(vec![f64::NEG_INFINITY;n].as_slice(), vec![f64::INFINITY; n].as_slice(), is_int),VarItem::Linear) },
+                LinearDomainType::Zero        => { (self.native_linear_variable(b.as_slice(),b.as_slice(), is_int), VarItem::Linear) },
+                LinearDomainType::NonNegative => { (self.native_linear_variable(b.as_slice(), vec![f64::INFINITY; n].as_slice(), is_int),VarItem::LinearLowerBound) },
+                LinearDomainType::NonPositive => { (self.native_linear_variable(vec![f64::NEG_INFINITY;n].as_slice(), is_int) VarItem::LinearUpperBound) },
+            };
+        let (first,last) = (self.var_idx.len(),first + n);
+
+        self.var_idx.reserve(n); for i in idxs.clone().iter() { self.var_idx.push(i); }
+        self.vars.resize(last, vit);
         
         if let Some(name) = name {
-            self.linear_names(shape, sp, name);
-        }
-        else {
-            for _ in 0..n {
-                self.var_names.push(None);
-            }
+            self.linear_names(idxs.start, idxs.end, shape, sp, name);
         }
 
-        Ok(Variable::new((firstvari..firstvari+n).collect::<Vec<usize>>(), sp, &shape))
+        Ok(Variable::new((first..last).collect::<Vec<usize>>(), sp, &shape))
     }
     
     fn ranged_variable<const N : usize,R>(&mut self, name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> 
@@ -147,49 +188,26 @@ impl BaseModelTrait for Backend {
             Self : Sized 
     {
         let (shape,bl,bu,sp,is_integer) = dom.dissolve();
-
         let n = sp.as_ref().map(|v| v.len()).unwrap_or(shape.iter().product::<usize>());
-        let first = self.var_int.len();
-        let last  = first + n;
 
-        let ptr0 = self.vars.len();
-        let ptr1 = self.vars.len()+n;
-        let ptr2 = self.vars.len()+2*n;
+        let idxs = self.native_linear_variable(bl.as_slice(),ub.as_slice(), is_integer);
+        let first = self.var_idx.len();
+        self.var_idx.reserve(n*2);
+        for i in idxs.clone().iter() { self.var_idx.push(i); }
+        for i in idxs.clone().iter() { self.var_idx.push(i); }
         self.vars.reserve(n*2);
-        for index in first..last { self.vars.push(Item::Linear{index,kind:LinearItem::RangedLower}) }
-        for index in first..last { self.vars.push(Item::Linear{index,kind:LinearItem::RangedUpper}) }
+        self.vars.resize(first+n,   VarItem::LinearLowerBound);
+        self.vars.resize(first+n*2, VarItem::LinearUpperBound);
 
-        self.var_elt.reserve(last);
-        for (&lb,&ub) in bl.iter().zip(bu.iter()) {
-            self.var_elt.push(Element::Linear { lb, ub })
-        }
-        self.var_int.resize(last,is_integer);
-        
+        Ok((Variable::new((first..first+n).collect(),sp.clone(),&shape),
+            Variable::new((first+n..first+n*2).collect(),sp.clone(),&shape)))
+
         if let Some(name) = name {
-            let mut name_index_buf = [1usize; N];
-            let mut strides = [0;N];
-            strides.iter_mut().zip(shape.iter()).rev().fold(1,|s,(st,&d)| { *st = s; d * s });
-            if let Some(sp) = &sp {
-                for &i in sp.iter() {
-                    name_index_buf.iter_mut().zip(strides.iter()).fold(i,|i,(ni,&st)| { *ni = i/st; i%st });
-                    self.var_names.push(Some(format!("{}{:?}", name, name_index_buf)));
-                }
-            }
-            else {
-                for _ in 0..n {
-                    name_index_buf.iter_mut().zip(shape.iter()).rev().fold(1,|c,(i,&d)| { *i += c; if *i > d { *i = 1; 1 } else { 0 } });
-                    self.var_names.push(Some(format!("{}{:?}", name, name_index_buf)));
-                }
-            }
-        }
-        else {
-            for _ in 0..n {
-                self.var_names.push(None);
-            }
+            self.linear_names(shape, idxs.start, idxs.end, sp, name);
         }
 
-        Ok((Variable::new((ptr0..ptr1).collect::<Vec<usize>>(), sp.clone(), &shape),
-            Variable::new((ptr1..ptr2).collect::<Vec<usize>>(), sp, &shape)))
+        Ok((Variable::new((first..first+n).collect::<Vec<usize>>(), sp.clone(), &shape),
+            Variable::new((first+n..first+2*n).collect::<Vec<usize>>(), sp, &shape)))
     }
 
     fn linear_constraint<const N : usize>
@@ -207,9 +225,8 @@ impl BaseModelTrait for Backend {
         assert_eq!(rhs.len(),ptr.len()-1); 
         assert_eq!(ptr.len(),shape.iter().product::<usize>()+1);
         let n = rhs.len();
-
+        
         let ptrchunks = Chunkation::new(ptr).unwrap();
-
         let rowidxs = izip!(ptrchunks.chunks(subj), ptrchunks.chunks(cof))
             .map(|(subj,cof)| {
                 if let (Some(j),Some(c)) = (subj.first(),cof.first()) {
@@ -226,42 +243,21 @@ impl BaseModelTrait for Backend {
             })
             .collect();
 
+        let first = self.con_mx.len();
+
+        self.con_mx_row.reserve(n);
+        for i in rowidxs.clone() { self.con_mx_row.push(i); }
+        self.con_rhs.extend_from_slice(rhs.as_slice());
+
+        let domi = self.con_dom.len();
+
         self.cons.reserve(n);
-        self.con_rhs.reserve(n);
-        let con0 = self.cons.len();
-
-        self.con_rhs.extend_from_slice(rhs);
-
-        self.cons.reserve(n); for i in rowidxs.iter() { self.cons.push(Item::Linear { index: i, kind: LinearItem::Linear }) }
-        let coneidx = self.cones.len();
-        self.cones.push(
-            match dt {
-                LinearDomainType::Zero => VecCone::Zero { dim: n },
-                LinearDomainType::Free => VecCone::Unbounded { dim: n },
-                LinearDomainType::NonNegative => VecCone::NonNegative { dim: n },
-                LinearDomainType::NonPositive => VecCone::NonPositive { dim: n }
-
-
-                self.con_elt.reserve(rowidxs.end);
-                for b in b {
-                    self.con_elt.push(Element::Linear{ lb: b, ub: b });
-                }
-            },
-            LinearDomainType::Free => { 
-                self.con_elt.resize(rowidxs.end,Element::Linear{ lb: f64::NEG_INFINITY, ub: f64::INFINITY });
-            },
-            LinearDomainType::NonNegative => {
-                self.con_elt.reserve(rowidxs.end);
-                for lb in b {
-                    self.con_elt.push(Element::Linear{ lb, ub: f64::INFINITY });
-                }
-            },
-            LinearDomainType::NonPositive => {
-                self.con_elt.reserve(rowidxs.end);
-                for ub in b {
-                    self.con_elt.push(Element::Linear{ lb : f64::NEG_INFINITY, ub });
-                }
-            },
+        for _ in 0..n { self.cons.push(ConItem { cone_index: dimi, offset: 0 }); }
+        match dt {
+            LinearDomainType::Free        => self.con_dom.push(VecCone::Unbounded { dim: 1 }),
+            LinearDomainType::Zero        => self.con_dom.push(VecCone::Zero { dim: 1 }),
+            LinearDomainType::NonNegative => self.con_dom.push(VecCone::NonNegative { dim: 1 }),
+            LinearDomainType::NonPositive => self.con_dom.push(VecCone::NonPositive { dim: 1 }),
         }
 
         if let Some(name) = name {
@@ -272,13 +268,10 @@ impl BaseModelTrait for Backend {
             }
         }
         else {
-            for _ in 0..n {
-                self.con_names.push(None);
-            }
+            self.con_names.resize(self.con_names.len()+n,None);
         }
 
-
-        Ok(Constraint::new((con0..con0+n).collect::<Vec<usize>>(), &shape))
+        Ok(Constraint::new((first..first+n).collect::<Vec<usize>>(), &shape))
     }
 
     fn ranged_constraint<const N : usize>
@@ -296,19 +289,41 @@ impl BaseModelTrait for Backend {
         assert_eq!(bu.len(),ptr.len()-1); 
         assert_eq!(ptr.len(),shape.iter().product::<usize>()+1);
 
-        let rowidxs = self.mx.append_rows(ptr,subj,cof);
-        let n = rowidxs.len();
+        let ptrchunks = Chunkation::new(ptr).unwrap();
+        let rowidxs = izip!(ptrchunks.chunks(subj), ptrchunks.chunks(cof))
+            .map(|(subj,cof)| {
+                if let (Some(j),Some(c)) = (subj.first(),cof.first()) {
+                    if j == 0 {
+                        self.mx.append_row(&subj[1..], &cof[1..], c)
+                    }
+                    else {
+                        self.mx.append_row(subj, cof, 0.0)
+                    }
+                }
+                else {
+                    self.mx.append_row(subj, cof, 0.0)
+                }
+            })
+            .collect();
 
-        self.con_elt.reserve(rowidxs.end);
-        for (&lb,&ub) in bl.iter().zip(bu.iter()) {
-            self.con_elt.push(Element::Linear{ lb, ub });
-        }
+        let first = self.con_mx.len();
+
+        self.con_mx_row.reserve(n*2);
+        for i in rowidxs.clone() { self.con_mx_row.push(i); }
+        for i in rowidxs.clone() { self.con_mx_row.push(i); }
+        self.con_rhs.extend_from_slice(bl.as_slice());
+        self.con_rhs.extend_from_slice(bu.as_slice());
+
+        let domi = self.con_dom.len();
 
         let con0 = self.cons.len();
         self.cons.reserve(n*2);
-        for index in rowidxs.clone() { self.cons.push(Item::Linear{ index, kind:LinearItem::RangedLower }); }
-        for index in rowidxs.clone() { self.cons.push(Item::Linear{ index, kind:LinearItem::RangedUpper }); }
-        
+        for _ in 0..n { self.cons.push(ConItem { cone_index: dimi,   offset: 0 }); }
+        for _ in 0..n { self.cons.push(ConItem { cone_index: dimi+1, offset: 0 }); }
+
+        self.con_dom.push(VecCone::NonNegative { dim: 1 });
+        self.con_dom.push(VecCone::NonPositive { dim: 1 });
+
         if let Some(name) = name {
             let mut name_index_buf = [1usize; N];
             for _ in 0..n {
@@ -656,8 +671,7 @@ impl Backend {
                      sx : Option<(Vec<f64>,Vec<f64>)>,
                      _consta : Vec<u8>,
                      xc : Option<Vec<f64>>,
-                     sc : Option<(Vec<f64>,Vec<f64>,Vec<f64>)>,
-                     sn : Option<Vec<f64>>,
+                     sc : Option<Vec<f64>>,
                      sol : & mut Solution) -> std::io::Result<()>
     {
         let pdef = if let SolutionStatus::Undefined = psta { false } else { true };
@@ -669,80 +683,53 @@ impl Backend {
         if pdef {
             sol.primal.obj = pobj;
             if let Some(xx) = xx {
-                if xx.len() != numvar { return Err(std::io::Error::other("Incorrect solution dimension in sol/var/primal")); }
-                for (solx,e) in sol.primal.var.iter_mut().zip(self.vars.iter()) {
-                    *solx = 
-                       match e {
-                           Item::Linear{ index,.. } => xx[*index],
-                           Item::Conic { index } => xx[*index],
-                        };
-                }
+                xx.permute_by(self.var_idx.as_slice())
+                    .zip(sol.primal.var.iter_mut())
+                    .for_each(|(&src,dst)| *dst = src);
             }
-            else if numvar > 0 {
+            else if ! self.vars.is_empty() {
                 return Err(std::io::Error::other("Missing solution section sol/var/primal"));
             }
 
 
             if let Some(xc) = xc {
-                if xc.len() != self.con_elt.iter().filter(|e| matches!(e,Element::Linear{..})).count() {
+                if xc.len() != self.cons.len() {
                     return Err(std::io::Error::other("Incorrect solution dimension in sol/var/primal")); 
                 }
-                for (i,solx,e) in izip!(0..,sol.primal.con.iter_mut(),self.cons.iter()) {
-                    *solx = 
-                        match e {
-                           Item::Linear{ index,.. } => xc[*index],
-                           Item::Conic { index } => {
-                               let (subj,cof) = self.mx.get(i).unwrap();
-                               sol.primal.var.permute_by(subj).zip(cof.iter()).map(|(a,b)| *a * *b).sum()
-                           }
-                        };
-                }
+                sol.primal.con.copy_from_slice(xc.as_slice());
             }
-            else if numcon > 0 {
+            else if ! self.cons.is_empty() {
                 return Err(std::io::Error::other("Missing solution section sol/var/primal"));
             }
         }
         
         if ddef {
-            let numaccelm : usize = self.cones.iter().map(|c| c.1).sum();
-            if let Some(sn) = sn.as_ref() {
+            if let Some(sc) = sn.as_ref() {
                 if numaccelm != sn.len() {
                     return Err(std::io::Error::other("Incorrect solution dimension in sol/acc/primal"));
                 }
             }
             sol.dual.obj = dobj;
-            if let Some((sl,su)) = sx {
+            if let (Some((sl,su)),Some(sc)) = (sx,sc) {
                 if sl.len() != numvar || su.len() != numvar { return Err(std::io::Error::other("Incorrect solution dimension in sol/var/dual")); }
-                else { 
-                    for (solx,e) in sol.dual.var.iter_mut().zip(self.vars.iter()) {
-                        *solx = 
-                            match e {
-                               Item::Linear{ index, kind : LinearItem::Linear }      => sl[*index]-su[*index],
-                               Item::Linear{ index, kind : LinearItem::RangedUpper } => -su[*index],
-                               Item::Linear{ index, kind : LinearItem::RangedLower } =>  sl[*index],
-                               Item::Conic { index } =>  sn.as_ref().map(|sn| sn[*index]).unwrap_or(0.0),
-                            };
-                    }
+                for (solx,index,e) in izip!(sol.dual.var.iter_mut(),self.var_idx.iter(),self.vars.iter()) {
+                    *solx = 
+                        match e {
+                           VarItem::Linear           =>  sl[*index]-su[*index],
+                           VarItem::LinearLowerBound => -su[*index],
+                           VarItem::LinearUpperBound =>  sl[*index],
+                           VarItem::Conic { conidx } =>  sc[*conidx],
+                        };
                 }
             }
-            else if numvar > 0 {
+            else if ! self.vars.is_empty() {
                 return Err(std::io::Error::other("Missing solution section sol/var/primal"));
             }
             
-            if let Some((sl,su,y)) = sc {
-                if sl.len() != numvar || su.len() != numvar || y.len() != numvar { return Err(std::io::Error::other("Incorrect solution dimension in sol/con/primal")); }
-                else {
-                    for (solx,e) in sol.dual.con.iter_mut().zip(self.cons.iter()) {
-                        *solx = match e {
-                           Item::Linear{ index, kind : LinearItem::Linear }      =>   y[*index],
-                           Item::Linear{ index, kind : LinearItem::RangedUpper } => -su[*index],
-                           Item::Linear{ index, kind : LinearItem::RangedLower } =>  sl[*index],
-                           Item::Conic { index } => sn.as_ref().map(|sn| sn[*index]).unwrap_or(0.0),
-                        };
-                    }
-                }
+            if let Some(sc) = sc {
+                sol.dual.con.copy_from_slice(sc.as_slice());
             }
-            else if numcon > 0 {
+            else if ! self.cons.is_empty() {
                 return Err(std::io::Error::other("Missing solution section sol/var/primal"));
             }
         }
@@ -883,68 +870,65 @@ impl Backend {
             sol_itr.primal.con.resize(self.cons.len(),0.0);
             sol_itr.dual.con.resize(self.cons.len(),0.0);
 
-            let sta       = entry.check_fmt(b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
-            let pdef = !matches!(sta.0,Undefined);
-            let ddef = !matches!(sta.1,Undefined);
-            let pobj = if pdef { r.expect(b"sol/interior/pobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
-            let dobj = if ddef { r.expect(b"sol/interior/dobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
+            let sta    = entry.check_fmt(b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
+            let pdef   = !matches!(sta.0,Undefined);
+            let ddef   = !matches!(sta.1,Undefined);
+            let pobj   = if pdef { r.expect(b"sol/interior/pobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
+            let dobj   = if ddef { r.expect(b"sol/interior/dobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
             let varsta = r.expect(b"sol/interior/var/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
-            let xx = if pdef { Some(r.expect(b"sol/interior/var/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
-            let sx = if ddef { Some(r.expect(b"sol/interior/var/dual",b"[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
+            let xx     = if pdef { Some(r.expect(b"sol/interior/var/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
+            let sx     = if ddef { Some(r.expect(b"sol/interior/var/dual",b"[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
             let consta = r.expect(b"sol/interior/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
-            let xc = if numcon > 0 && pdef { Some(r.expect(b"sol/interior/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
-            let sc = if numcon > 0 && ddef { Some(r.expect(b"sol/interior/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
-            let sn = if numacc > 0 && ddef { Some(r.expect(b"sol/interior/acc/dual",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
+            let xc     = if numcon > 0 && pdef { Some(r.expect(b"sol/interior/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
+            let sc     = if numcon > 0 && ddef { Some(r.expect(b"sol/interior/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
+            let sn     = if numacc > 0 && ddef { Some(r.expect(b"sol/interior/acc/dual",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
 
             self.copy_solution(sta.0,sta.1,
                                numvar, numcon, 
                                pobj,dobj,
                                varsta,xx,sx,
-                               consta,xc,sc,
-                               sn,
+                               consta,xc,sn,
                                sol_itr)?;
             entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
         }
 
         if entry.name() == b"sol/basic" {
             let sta       = entry.check_fmt(b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
-            let pdef = !matches!(sta.0,Undefined);
-            let ddef = !matches!(sta.1,Undefined);
-            let pobj : f64 = if pdef { r.expect(b"sol/basic/pobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
-            let dobj : f64 = if ddef { r.expect(b"sol/basic/dobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
+            let pdef   = !matches!(sta.0,Undefined);
+            let ddef   = !matches!(sta.1,Undefined);
+            let pobj   = if pdef { r.expect(b"sol/basic/pobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
+            let dobj   = if ddef { r.expect(b"sol/basic/dobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
             let varsta = r.expect(b"sol/basic/var/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
-            let xx = if pdef { Some(r.expect(b"sol/basic/var/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
-            let sx = if ddef { Some(r.expect(b"sol/basic/var/dual",b"[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
+            let xx     = if pdef { Some(r.expect(b"sol/basic/var/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
+            let sx     = if ddef { Some(r.expect(b"sol/basic/var/dual",b"[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
             let consta = r.expect(b"sol/basic/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
-            let xc = if numcon > 0 && pdef { Some(r.expect(b"sol/basic/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
-            let sc = if numcon > 0 && ddef { Some(r.expect(b"sol/basic/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
-            let sn = if numacc > 0 && ddef { Some(r.expect(b"sol/basic/acc/dual",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
+            let xc     = if numcon > 0 && pdef { Some(r.expect(b"sol/basic/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
+            let sc     = if numcon > 0 && ddef { Some(r.expect(b"sol/basic/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
+            let sn     = if numacc > 0 && ddef { Some(r.expect(b"sol/basic/acc/dual",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
 
             self.copy_solution(sta.0,sta.1,
                                numvar, numcon, 
                                pobj,dobj,
                                varsta,xx,sx,
-                               consta,xc,sc,
-                               sn,
+                               consta,xc,sn,
                                sol_bas)?;
             entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
         }
 
         if entry.name() == b"sol/integer" {
-            let sta       = entry.check_fmt(b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
-            let pdef = !matches!(sta.0,Undefined);
-            let pobj = if pdef { r.expect(b"sol/integer/pobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
+            let sta    = entry.check_fmt(b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
+            let pdef   = !matches!(sta.0,Undefined);
+            let pobj   = if pdef { r.expect(b"sol/integer/pobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
             let varsta = r.expect(b"sol/integer/var/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
-            let xx = if pdef { Some(r.expect(b"sol/integer/var/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
+            let xx     = if pdef { Some(r.expect(b"sol/integer/var/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             let consta = r.expect(b"sol/integer/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
-            let xc = if numcon > 0 && pdef { Some(r.expect(b"sol/integer/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
+            let xc     = if numcon > 0 && pdef { Some(r.expect(b"sol/integer/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             
             self.copy_solution(sta.0,sta.1,
                                numvar, numcon, 
                                pobj,0.0,
                                varsta,xx,None,
                                consta,xc,None,
-                               None,
                                sol_itg)?;
             entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
         }
@@ -1147,6 +1131,7 @@ impl Backend {
                         d.append("subj",JSON::IntArray(subj));
                         d.append("val", JSON::FloatArray(val));
                 }));
+
                 taskdata.append(
                     "AFE",
                     json::Dict::from(|d| {
@@ -1155,9 +1140,8 @@ impl Backend {
                         let mut val  = Vec::new();
 
                         self.mx.row_iter().zip(self.con_elt.iter())
-                            .filter_map(|(item,e)| if matches!(e,Element::Conic {..}) { Some(item) } else { None })
                             .enumerate()
-                            .for_each(|(i,(jj,cc))| {
+                            .for_each(|(i,(jj,cc,_))| {
                                 let base = subi.len();
                                 let n = jj.len();
                                 subi.resize(base+n, i as i64);
@@ -1171,27 +1155,39 @@ impl Backend {
                             d.append("subj",JSON::IntArray(subj));
                             d.append("val", JSON::FloatArray(val));
                         }));
+                        d.append("g",json::FloatArray(self.mx.row_iter().map(|(_,_,g)| g).collect()))
                     }));
+
                 taskdata.append(
                     "domains",
-                    json.List(self.cones.iter()
+                    json.List(self.con_dom.iter()
                               .map(|c| {
-                                  use VecConeType::*;
+                                  use VecCone::*;
                                   match c.0 {
-                                    Zero             => JSON::List(vec![ JSON::String("zero".to_string()), JSON::Int(c.1 as i64)]),
-                                    NonNegative      => JSON::List(vec![ JSON::String("rplus".to_string()), JSON::Int(c.1 as i64)]),
-                                    NonPositive      => JSON::List(vec![ JSON::String("rminus".to_string()), JSON::Int(c.1 as i64)]),
-                                    Free             => JSON::List(vec![ JSON::String("r".to_string()), JSON::Int(c.1 as i64)]),
-                                    Quadratic        => JSON::List(vec![ JSON::String("quad".to_string()), JSON::Int(c.1 as i64)]),
-                                    RotatedQuadratic => JSON::List(vec![ JSON::String("rquad".to_string()), JSON::Int(c.1 as i64)]),
-                                    PrimalGeometricMean  => JSON::List(vec![ JSON::String("".to_string()), JSON::Int(c.1 as i64)]),
-                                    DualGeometricMean  => JSON::List(vec![ JSON::String("".to_string()), JSON::Int(c.1 as i64)]),
-                                  }}).collect())
-                        ));
+                                    Zero{dim}                  => JSON::List(vec![ JSON::String("rzero".to_string()), JSON::Int(dim as i64)]),
+                                    NonNegative{dim}           => JSON::List(vec![ JSON::String("rplus".to_string()), JSON::Int(dim as i64)]),
+                                    NonPositive{dim}           => JSON::List(vec![ JSON::String("rminus".to_string()), JSON::Int(dim as i64)]),
+                                    Unbounded{dim}             => JSON::List(vec![ JSON::String("r".to_string()), JSON::Int(dim as i64)]),
+                                    Quadratic{dim}             => JSON::List(vec![ JSON::String("quad".to_string()), JSON::Int(dim as i64)]),
+                                    RotatedQuadratic{dim}      => JSON::List(vec![ JSON::String("rquad".to_string()), JSON::Int(dim as i64)]),
+                                    PrimalGeometricMean{dim}   => JSON::List(vec![ JSON::String("pgmean".to_string()), JSON::Int(dim as i64)]),
+                                    DualGeometricMean{dim}     => JSON::List(vec![ JSON::String("dgmean".to_string()), JSON::Int(dim as i64)]),
+                                    PrimalExp                  => JSON::List(vec![ JSON::String("pexp".to_string())]),
+                                    DualExp                    => JSON::List(vec![ JSON::String("dexp".to_string())]),
+                                    PrimalPower { dim, alpha } => JSON::List(vec![ JSON::String("ppow".to_string()), JSON::Int(dim as i64), JSON::FloatArray(alpha.clone())]), 
+                                    DualPower { dim, alpha }   => JSON::List(vec![ JSON::String("dpow".to_string()), JSON::Int(dim as i64), JSON::FloatArray(alpha.clone())]), 
+                                    ScaledVectorizedPSD { dim } => JSON::List(vec![ JSON::String("svecpsd".to_string()), JSON::Int(dim as i64)]), 
+                                  }}).collect()));
                 taskdata.append(
                     "ACC",
-                    json::Dict::from(|d| {}));
-                         
+                    json::Dict::from(|d| {
+                        d.append("name", JSON::StringArray(self.con_dom.iter().map(|_| String::new()).collect()));
+                        d.append("domain",JSON::IntArray((0..con_dim.len().map(|i| i as i64).collect())));
+                        let acc_afe_idxs = self.con_dom.iter().map(|d| vec[0i64; d.dim()]).collect();
+                        acc_afe_idxs.iter_mut().flat_map(|r| r.iter_mut()).zip(self.con_mx_row.iter()).for_each(|(d,&s)| *d = s as i64);
+                        d.append("afeidx",JSON::List( acc_afe_idxs.into_iter().map(|row| JSON::IntArray(row)).collect()));
+                        d.append("b", JSON::FloatArray(self.con_rhs.clone()));
+                    }));
         }));
         doc.append(
             "Task/parameters",
@@ -1211,7 +1207,7 @@ impl Backend {
     }
 
 
-    fn linear_names<const N : usize>(&mut self, first : usize, last : usize, shape : &[usize;N], sp : Option<&[usize]> name : &str) {
+    fn linear_names<const N : usize>(&mut self, first : usize, last : usize, shape : &[usize;N], sp : Option<&[usize]>, name : &str) {
         let mut name_index_buf = [1usize; N];
         let mut strides = [0;N];
         strides.iter_mut().zip(shape.iter()).rev().fold(1,|s,(st,&d)| { *st = s; d * s });
@@ -1230,29 +1226,25 @@ impl Backend {
     }
 
 
-    fn linear_variable(&mut self,n : usize, rhs : &[f64], is_int : bool, dt : LinearDomainType) -> (usize,usize) {
-        let first = self.vars.len();
+    /// Appends a range of native linear variables with upper and lower boundsm returns the range
+    /// of the new variables.
+    fn native_linear_variable(&mut self, lb : &[f64], ub : &[f64], is_int : bool) -> std::ops::Range<usize> {
+        let n = rhs.len();
+        let first = self.var_lb.len();
         let last  = first + n;
+        
+        let first_nvar = self.var_lb.len();
+        let last_nvar  = first_nvar+n;
 
-        let matrix_rows = self.mx.append_rows((0..n+1).collect().as_slice(), (first..last).collcet(), vec![1.0; n].as_slice(), vec![0.0;n].as_slice());
-        let conidx   = self.cons.len();
-        let blockidx = self.con_dom.len();
-        self.con_dom.push(
-            match dt {
-                LinearDomainType::Zero        => VecCone::Zero { dim: 1 },
-                LinearDomainType::Free        => VecCone::Unbounded { dim: 1 },
-                LinearDomainType::NonNegative => VecCone::NonNegative { dim: 1 },
-                LinearDomainType::NonPositive => VecCone::NonPositive { dim: 1 },
-            });
-        self.con_mx_row.reserve(n); for i in matrix_rows { self.con_mx_row.push(i); }
-        self.con_rhs.extend_from_slice(rhs);
-        self.cons.resize(self.cons.len()+n,ConeElement{index:coneidx,offset : 0});
+        self.var_lb.resize(last_nvar, f64::NEG_INFINITY);
+        self.var_ub.resize(last_nvar, f64::INFINITY);
+        self.var_int.resize(last_nvar, is_int);
+        self.var_names.resize(last_nvar, None);
 
-        self.vars.reserve(n); for i in  conidx..conidx+n { self.vars.append(i); }
-        self.var_int.resize(last,is_int);
-        self.var_names.resize(last,None);
-
-        (first,last)
+        //self.var_idx.reserve(n); for i in first_nvar..last_nvar { self.var_idx.push(i); }
+        //self.vars.resize(last_nvar, vt);
+    
+        first..last
     }
 }
 

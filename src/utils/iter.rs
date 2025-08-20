@@ -1,5 +1,7 @@
 use std::{cmp::Ordering, iter::Peekable, marker::PhantomData, ptr::NonNull};
 
+use itertools::Chunk;
+
 
 
 /// Trait that provides a function that copies from an iterator into a slice.
@@ -248,10 +250,7 @@ where
     type Item = &'a[T];
     fn next(& mut self) -> Option<Self::Item> {
         if let Some((&p0,&p1)) = self.ptr.next() {
-            // Note: The constructor of the ChunksByIter object MUST ensure that all slices are
-            // valid!
             Some(unsafe{ self.data.get_unchecked(p0..p1)})
-            //Some(&self.data[p0..p1])
         }
         else {
             None
@@ -565,12 +564,12 @@ impl<'a> Permutation<'a> {
 
 
 
-pub struct ChunkationIter<'a,'b,T> {
-    c : Chunkation<'a>,
+pub struct ChunkationIter<'a,'b,'c,T> {
+    c : &'c Chunkation<'a>,
     data : &'b[T],
     i : usize
 }
-impl<'a,'b,T> Iterator for ChunkationIter<'a,'b,T> {
+impl<'a,'b,'c,T> Iterator for ChunkationIter<'a,'b,'c,T> {
     type Item = &'b[T];
     fn next(&mut self) -> Option<Self::Item> {
         if self.i >= self.c.ptr.len() { None }
@@ -580,6 +579,38 @@ impl<'a,'b,T> Iterator for ChunkationIter<'a,'b,T> {
         }
     }
 }
+
+
+pub struct ChunksByIter2<'a,'b,T>
+{
+    data : &'a [T],
+    ptr : &'b [usize],
+    index : usize,
+}
+
+pub struct ChunksByIter3<'a,'b,T> 
+{
+    data : &'a[T],
+    len  : &'b[usize],
+    index : usize,
+}
+
+impl<'a,'b,T> Iterator for ChunksByIter2<'a,'b,T>
+{
+    type Item = &'a[T];
+    fn next(& mut self) -> Option<Self::Item> {
+        if self.index+1 < self.ptr.len() {
+            let i = self.index;
+            self.index += 1;
+            Some(unsafe{ self.data.get_unchecked(*self.ptr.get_unchecked(i)..*self.ptr.get_unchecked(i+1))})
+        }
+        else {
+            None
+        }
+    }
+}
+
+
 
 
 pub struct Chunkation<'a> {
@@ -599,10 +630,9 @@ impl<'a> Chunkation<'a> {
             None
         }
     }
-    pub fn chunks<'b,T>(&'a self, data : &'b [T]) -> Option<ChunkByIter<'b,'a,'a,T,>>{
+    pub fn chunks<'b,'c,T>(&'a self, data : &'b [T]) -> Option<ChunkationIter<'a,'b,'c,T>> {
         if self.max > data.len() { None } 
-        else {
-        }
+        else { Some(ChunkationIter{ c : self, data, i : 0 }) }
     }
 }
 
