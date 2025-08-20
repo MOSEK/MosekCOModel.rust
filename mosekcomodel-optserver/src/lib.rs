@@ -17,6 +17,7 @@ mod bio;
 pub type Model = ModelAPI<Backend>;
 
 
+#[derive(Clone,Copy)]
 struct ConItem {
     cone_index : usize,
     offset     : usize,
@@ -56,31 +57,21 @@ impl VecCone {
     pub fn dim(&self) -> usize {
         use VecCone::*;
         match self {
-            Zero{dim} => dim,
-            NonNegative{dim} => dim,
-            NonPositive{dim} => dim,
-            Unbounded{dim} => dim,
-            Quadratic{dim} => dim,
-            RotatedQuadratic{dim} => dim,
-            PrimalPower{dim, alpha} => dim,
-            DualPower{dim, alpha} => dim,
+            Zero{dim} => *dim,
+            NonNegative{dim} => *dim,
+            NonPositive{dim} => *dim,
+            Unbounded{dim} => *dim,
+            Quadratic{dim} => *dim,
+            RotatedQuadratic{dim} => *dim,
+            PrimalPower{dim, ..} => *dim,
+            DualPower{dim, ..} => *dim,
             PrimalExp => 3,
             DualExp => 3,
-            PrimalGeometricMean{dim} => dim,
-            DualGeometricMean{dim} => dim,
-            ScaledVectorizedPSD{dim} => dim,
+            PrimalGeometricMean{dim} => *dim,
+            DualGeometricMean{dim} => *dim,
+            ScaledVectorizedPSD{dim} => *dim,
         }
     }
-}
-
-impl Item {
-    fn index(&self) -> usize { 
-        use Item::*;
-        match self {
-            Linear { index,.. } => *index,
-            Conic { index,.. } => *index,
-        }
-    } 
 }
 
 /// Simple model object that supports input of linear, conic and disjunctive constraints. It only
@@ -117,7 +108,10 @@ pub struct Backend {
     cons          : Vec<ConItem>,
     con_mx_row    : Vec<usize>,
     con_rhs       : Vec<f64>,
+    con_block_ptr : Vec<usize>,
+    con_block_dom_idx : Vec<usize>,
     con_dom       : Vec<VecCone>,
+    con_names     : Vec<Option<String>>,
 
     sense_max     : bool,
     c_subj        : Vec<usize>,
@@ -145,7 +139,10 @@ impl BaseModelTrait for Backend {
 
         let lb = vec![f64::NEG_INFINITY;n];
         let ub = vec![f64::INFINITY;n];
-        let idxs = self.native_linear_variable(b.as_slice(),b.as_slice(),false,VarItem::Linear);
+        let idxs = self.native_linear_variable(lb.as_slice(),ub.as_slice(),false);
+
+        let first = self.vars.len();
+        let last = first + n;
 
         if let Some(name) = name {
             self.linear_names(idxs.start,idxs.end, shape, None, name);
@@ -166,18 +163,18 @@ impl BaseModelTrait for Backend {
 
         let (idxs,vit) =
             match dt {
-                LinearDomainType::Free        => { (self.native_linear_variable(vec![f64::NEG_INFINITY;n].as_slice(), vec![f64::INFINITY; n].as_slice(), is_int),VarItem::Linear) },
-                LinearDomainType::Zero        => { (self.native_linear_variable(b.as_slice(),b.as_slice(), is_int), VarItem::Linear) },
-                LinearDomainType::NonNegative => { (self.native_linear_variable(b.as_slice(), vec![f64::INFINITY; n].as_slice(), is_int),VarItem::LinearLowerBound) },
-                LinearDomainType::NonPositive => { (self.native_linear_variable(vec![f64::NEG_INFINITY;n].as_slice(), is_int) VarItem::LinearUpperBound) },
+                LinearDomainType::Free        => { (self.native_linear_variable(vec![f64::NEG_INFINITY;n].as_slice(), vec![f64::INFINITY; n].as_slice(), is_integer),VarItem::Linear) },
+                LinearDomainType::Zero        => { (self.native_linear_variable(b.as_slice(),b.as_slice(), is_integer), VarItem::Linear) },
+                LinearDomainType::NonNegative => { (self.native_linear_variable(b.as_slice(), vec![f64::INFINITY; n].as_slice(), is_integer),VarItem::LinearLowerBound) },
+                LinearDomainType::NonPositive => { (self.native_linear_variable(vec![f64::NEG_INFINITY;n].as_slice(), b.as_slice(), is_integer),VarItem::LinearUpperBound) },
             };
-        let (first,last) = (self.var_idx.len(),first + n);
+        let (first,last) = (self.var_idx.len(),self.vars.len() + n);
 
-        self.var_idx.reserve(n); for i in idxs.clone().iter() { self.var_idx.push(i); }
+        self.var_idx.reserve(n); for i in idxs.clone() { self.var_idx.push(i); }
         self.vars.resize(last, vit);
         
         if let Some(name) = name {
-            self.linear_names(idxs.start, idxs.end, shape, sp, name);
+            self.linear_names(idxs.start, idxs.end, &shape, sp.as_deref(), name);
         }
 
         Ok(Variable::new((first..last).collect::<Vec<usize>>(), sp, &shape))
@@ -190,20 +187,17 @@ impl BaseModelTrait for Backend {
         let (shape,bl,bu,sp,is_integer) = dom.dissolve();
         let n = sp.as_ref().map(|v| v.len()).unwrap_or(shape.iter().product::<usize>());
 
-        let idxs = self.native_linear_variable(bl.as_slice(),ub.as_slice(), is_integer);
+        let idxs = self.native_linear_variable(bl.as_slice(),bu.as_slice(), is_integer);
         let first = self.var_idx.len();
         self.var_idx.reserve(n*2);
-        for i in idxs.clone().iter() { self.var_idx.push(i); }
-        for i in idxs.clone().iter() { self.var_idx.push(i); }
+        for i in idxs.clone() { self.var_idx.push(i); }
+        for i in idxs.clone() { self.var_idx.push(i); }
         self.vars.reserve(n*2);
         self.vars.resize(first+n,   VarItem::LinearLowerBound);
         self.vars.resize(first+n*2, VarItem::LinearUpperBound);
 
-        Ok((Variable::new((first..first+n).collect(),sp.clone(),&shape),
-            Variable::new((first+n..first+n*2).collect(),sp.clone(),&shape)))
-
         if let Some(name) = name {
-            self.linear_names(shape, idxs.start, idxs.end, sp, name);
+            self.linear_names(idxs.start, idxs.end, &shape, sp.as_deref(), name);
         }
 
         Ok((Variable::new((first..first+n).collect::<Vec<usize>>(), sp.clone(), &shape),
@@ -226,12 +220,16 @@ impl BaseModelTrait for Backend {
         assert_eq!(ptr.len(),shape.iter().product::<usize>()+1);
         let n = rhs.len();
         
+        let first = self.con_rhs.len();
+        let last  = first+n;
+
+
         let ptrchunks = Chunkation::new(ptr).unwrap();
-        let rowidxs = izip!(ptrchunks.chunks(subj), ptrchunks.chunks(cof))
+        let rowidxs = izip!(ptrchunks.chunks(subj).unwrap(), ptrchunks.chunks(cof).unwrap())
             .map(|(subj,cof)| {
-                if let (Some(j),Some(c)) = (subj.first(),cof.first()) {
-                    if j == 0 {
-                        self.mx.append_row(&subj[1..], &cof[1..], c)
+                if let (Some(j),Some(c)) = (subj.get(0),cof.get(0)) {
+                    if *j == 0 {
+                        self.mx.append_row(&subj[1..], &cof[1..], *c)
                     }
                     else {
                         self.mx.append_row(subj, cof, 0.0)
@@ -240,25 +238,23 @@ impl BaseModelTrait for Backend {
                 else {
                     self.mx.append_row(subj, cof, 0.0)
                 }
-            })
-            .collect();
-
-        let first = self.con_mx.len();
-
-        self.con_mx_row.reserve(n);
-        for i in rowidxs.clone() { self.con_mx_row.push(i); }
-        self.con_rhs.extend_from_slice(rhs.as_slice());
-
+            });
         let domi = self.con_dom.len();
 
-        self.cons.reserve(n);
-        for _ in 0..n { self.cons.push(ConItem { cone_index: dimi, offset: 0 }); }
+        self.con_block_ptr.extend(first..last);
+        self.con_block_dom_idx.resize(self.con_block_dom_idx.len()+n,domi);
+
         match dt {
             LinearDomainType::Free        => self.con_dom.push(VecCone::Unbounded { dim: 1 }),
             LinearDomainType::Zero        => self.con_dom.push(VecCone::Zero { dim: 1 }),
             LinearDomainType::NonNegative => self.con_dom.push(VecCone::NonNegative { dim: 1 }),
             LinearDomainType::NonPositive => self.con_dom.push(VecCone::NonPositive { dim: 1 }),
         }
+        self.con_mx_row.extend(rowidxs);
+        self.con_rhs.extend_from_slice(rhs.as_slice());
+
+        self.cons.resize(self.cons.len(), ConItem{ cone_index : domi, offset : 0 });
+
 
         if let Some(name) = name {
             let mut name_index_buf = [1usize; N];
@@ -1059,22 +1055,16 @@ impl Backend {
             "Task/info",
             json::Dict::from(|taskinfo| {
                 taskinfo.append("numvar",self.vars.len() as i64);
-                taskinfo.append("numcon",self.con_elt.len() as i64);
+                taskinfo.append("numcon",0);
+                taskinfo.append("numafe",self.mx.num_row() as i64);
+                taskinfo.append("numacc",self.con_dom.len() as i64);
             }));
             
         doc.append(
             "Task/data",
             json::Dict::from(|taskdata| {
                 {
-                    let mut bl = Vec::with_capacity(self.var_elt.len());
-                    let mut bu = Vec::with_capacity(self.var_elt.len());
-                    let mut bk = Vec::with_capacity(self.var_elt.len());
-
-                    self.var_elt.iter().map(|e|
-                        match e {
-                            Element::Linear { lb, ub } => (bnd_to_bk(*lb, *ub), *lb,*ub),
-                            Element::Conic { .. } => ("fr",f64::NEG_INFINITY, f64::INFINITY),
-                        }).for_each(|v| { bk.push(v.0.into()); bl.push(v.1); bu.push(v.2); });
+                    let bk = self.var_lb.iter().zip(self.var_ub.iter()).map(|(lb,ub)| bnd_to_bk(*lb, *ub).to_string()).collect();
 
                     taskdata.append("var",json::Dict::from(|d| {
                         d.append("bk",  JSON::StringArray(bk));
@@ -1084,20 +1074,10 @@ impl Backend {
                     }));
                 }
                 {
-                    let mut bl = Vec::with_capacity(self.con_elt.len());
-                    let mut bu = Vec::with_capacity(self.con_elt.len());
-                    let mut bk = Vec::with_capacity(self.con_elt.len());
-
-                    self.con_elt.iter().map(|e|
-                        match e {
-                            Element::Linear { lb, ub } => (bnd_to_bk(*lb, *ub), *lb,*ub),
-                            Element::Conic { .. } => ("fr",f64::NEG_INFINITY, f64::INFINITY),
-                        }).for_each(|v| { bk.push(v.0.into()); bl.push(v.1); bu.push(v.2); });
-
                     taskdata.append("con",json::Dict::from(|d| {
-                        d.append("bk",  JSON::StringArray(bk));
-                        d.append("bl",  JSON::FloatArray(bl));
-                        d.append("bu",  JSON::FloatArray(bu));
+                        d.append("bk",  JSON::StringArray(Vec::new()));
+                        d.append("bl",  JSON::FloatArray(Vec::new()));
+                        d.append("bu",  JSON::FloatArray(Vec::new()));
                     }));
                 }
                 taskdata.append(
@@ -1113,42 +1093,31 @@ impl Backend {
                 taskdata.append(
                     "A", 
                     json::Dict::from(|d| {
-                        let mut subi = Vec::new();
-                        let mut subj = Vec::new();
-                        let mut val  = Vec::new();
-
-                        self.mx.row_iter().zip(self.con_elt.iter())
-                            .filter_map(|(item,e)| if matches!(e,Element::Linear {..}) { Some(item) } else { None })
-                            .enumerate()
-                            .for_each(|(i,(jj,cc))| {
-                                let base = subi.len();
-                                let n = jj.len();
-                                subi.resize(base+n, i as i64);
-                                subj.resize(base+n,0); subj[base..].iter_mut().zip(jj.iter()).for_each(|(dst,src)| *dst = *src as i64);
-                                val.extend_from_slice(cc);
-                            });
-                        d.append("subi",JSON::IntArray(subi));
-                        d.append("subj",JSON::IntArray(subj));
-                        d.append("val", JSON::FloatArray(val));
+                        d.append("subi",JSON::IntArray(Vec::new()));
+                        d.append("subj",JSON::IntArray(Vec::new()));
+                        d.append("val", JSON::FloatArray(Vec::new()));
                 }));
 
                 taskdata.append(
                     "AFE",
                     json::Dict::from(|d| {
-                        let mut subi = Vec::new();
-                        let mut subj = Vec::new();
-                        let mut val  = Vec::new();
+                        let nnz = self.mx.num_nonzeros();
+                        let mut subi = Vec::with_capacity(nnz);
+                        let mut subj = Vec::with_capacity(nnz);
+                        let mut val  = Vec::with_capacity(nnz);
+                        let mut gs   = Vec::with_capacity(self.mx.num_row());
 
-                        self.mx.row_iter().zip(self.con_elt.iter())
+                        self.mx.row_iter()
                             .enumerate()
-                            .for_each(|(i,(jj,cc,_))| {
+                            .for_each(|(i,(jj,cc,g))| {
                                 let base = subi.len();
                                 let n = jj.len();
                                 subi.resize(base+n, i as i64);
                                 subj.resize(base+n,0); subj[base..].iter_mut().zip(jj.iter()).for_each(|(dst,src)| *dst = *src as i64);
                                 val.extend_from_slice(cc);
+                                gs.push(g);
                             });
-                        d.append("numafe", JSON::Int( self.cone_elt.len() as i64));
+                        d.append("numafe", JSON::Int( self.mx.num_row() as i64));
 
                         d.append("F", json::Dict::from(|d| {
                             d.append("subi",JSON::IntArray(subi));
@@ -1163,27 +1132,27 @@ impl Backend {
                     json.List(self.con_dom.iter()
                               .map(|c| {
                                   use VecCone::*;
-                                  match c.0 {
-                                    Zero{dim}                  => JSON::List(vec![ JSON::String("rzero".to_string()), JSON::Int(dim as i64)]),
-                                    NonNegative{dim}           => JSON::List(vec![ JSON::String("rplus".to_string()), JSON::Int(dim as i64)]),
-                                    NonPositive{dim}           => JSON::List(vec![ JSON::String("rminus".to_string()), JSON::Int(dim as i64)]),
-                                    Unbounded{dim}             => JSON::List(vec![ JSON::String("r".to_string()), JSON::Int(dim as i64)]),
-                                    Quadratic{dim}             => JSON::List(vec![ JSON::String("quad".to_string()), JSON::Int(dim as i64)]),
-                                    RotatedQuadratic{dim}      => JSON::List(vec![ JSON::String("rquad".to_string()), JSON::Int(dim as i64)]),
-                                    PrimalGeometricMean{dim}   => JSON::List(vec![ JSON::String("pgmean".to_string()), JSON::Int(dim as i64)]),
-                                    DualGeometricMean{dim}     => JSON::List(vec![ JSON::String("dgmean".to_string()), JSON::Int(dim as i64)]),
+                                  match c {
+                                    Zero{dim}                  => JSON::List(vec![ JSON::String("rzero".to_string()), JSON::Int(*dim as i64)]),
+                                    NonNegative{dim}           => JSON::List(vec![ JSON::String("rplus".to_string()), JSON::Int(*dim as i64)]),
+                                    NonPositive{dim}           => JSON::List(vec![ JSON::String("rminus".to_string()), JSON::Int(*dim as i64)]),
+                                    Unbounded{dim}             => JSON::List(vec![ JSON::String("r".to_string()), JSON::Int(*dim as i64)]),
+                                    Quadratic{dim}             => JSON::List(vec![ JSON::String("quad".to_string()), JSON::Int(*dim as i64)]),
+                                    RotatedQuadratic{dim}      => JSON::List(vec![ JSON::String("rquad".to_string()), JSON::Int(*dim as i64)]),
+                                    PrimalGeometricMean{dim}   => JSON::List(vec![ JSON::String("pgmean".to_string()), JSON::Int(*dim as i64)]),
+                                    DualGeometricMean{dim}     => JSON::List(vec![ JSON::String("dgmean".to_string()), JSON::Int(*dim as i64)]),
                                     PrimalExp                  => JSON::List(vec![ JSON::String("pexp".to_string())]),
                                     DualExp                    => JSON::List(vec![ JSON::String("dexp".to_string())]),
-                                    PrimalPower { dim, alpha } => JSON::List(vec![ JSON::String("ppow".to_string()), JSON::Int(dim as i64), JSON::FloatArray(alpha.clone())]), 
-                                    DualPower { dim, alpha }   => JSON::List(vec![ JSON::String("dpow".to_string()), JSON::Int(dim as i64), JSON::FloatArray(alpha.clone())]), 
-                                    ScaledVectorizedPSD { dim } => JSON::List(vec![ JSON::String("svecpsd".to_string()), JSON::Int(dim as i64)]), 
+                                    PrimalPower { dim, alpha } => JSON::List(vec![ JSON::String("ppow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
+                                    DualPower { dim, alpha }   => JSON::List(vec![ JSON::String("dpow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
+                                    ScaledVectorizedPSD { dim } => JSON::List(vec![ JSON::String("svecpsd".to_string()), JSON::Int(*dim as i64)]), 
                                   }}).collect()));
                 taskdata.append(
                     "ACC",
                     json::Dict::from(|d| {
                         d.append("name", JSON::StringArray(self.con_dom.iter().map(|_| String::new()).collect()));
-                        d.append("domain",JSON::IntArray((0..con_dim.len().map(|i| i as i64).collect())));
-                        let acc_afe_idxs = self.con_dom.iter().map(|d| vec[0i64; d.dim()]).collect();
+                        d.append("domain",JSON::IntArray((0..con_dim.len()).map(|i| i as i64).collect()));
+                        let acc_afe_idxs = self.con_dom.iter().map(|d| vec![0i64; d.dim()]).collect();
                         acc_afe_idxs.iter_mut().flat_map(|r| r.iter_mut()).zip(self.con_mx_row.iter()).for_each(|(d,&s)| *d = s as i64);
                         d.append("afeidx",JSON::List( acc_afe_idxs.into_iter().map(|row| JSON::IntArray(row)).collect()));
                         d.append("b", JSON::FloatArray(self.con_rhs.clone()));
@@ -1303,7 +1272,7 @@ fn str_to_pdsolsta(solsta : &[u8]) -> std::io::Result<(SolutionStatus,SolutionSt
 
 mod msto {
     use itertools::izip;
-    use mosekcomodel::utils::iter::{ChunksByIterExt, Permutation, PermuteByMutEx};
+    use mosekcomodel::utils::iter::{ChunksByIterExt, Permutation, PermuteByEx, PermuteByMutEx};
 
     #[derive(Default)]
     pub struct MatrixStore {
@@ -1353,6 +1322,8 @@ mod msto {
             row0..row1
         }
 
+        pub fn num_row(&self) -> usize { self.map.len() }
+
         pub fn get<'a>(&'a self, i : usize) -> Option<(&'a [usize],&'a [f64],f64)> {
             self.map.get(i)
                 .map(|&i| {
@@ -1373,6 +1344,11 @@ mod msto {
                      unsafe{self.cof.get_unchecked_mut(p..p+l)},
                      unsafe{self.b.get_unchecked(i)})
                 })
+        }
+
+
+        pub fn num_nonzeros(&self) -> usize {
+            self.len.permute_by(self.map.as_slice()).sum()
         }
 
         pub fn replace_rows(&mut self, rows : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64], b : &[f64]) {

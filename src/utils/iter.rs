@@ -564,21 +564,12 @@ impl<'a> Permutation<'a> {
 
 
 
-pub struct ChunkationIter<'a,'b,'c,T> {
-    c : &'c Chunkation<'a>,
-    data : &'b[T],
-    i : usize
-}
-impl<'a,'b,'c,T> Iterator for ChunkationIter<'a,'b,'c,T> {
-    type Item = &'b[T];
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.i >= self.c.ptr.len() { None }
-        else {
-            let i = self.i; self.i += 1;
-            Some(unsafe{self.data.get_unchecked(*self.c.ptr.get_unchecked(i)..*self.c.ptr.get_unchecked(i+1))})
-        }
-    }
-}
+
+
+
+
+
+
 
 
 pub struct ChunksByIter2<'a,'b,T>
@@ -611,6 +602,21 @@ impl<'a,'b,T> Iterator for ChunksByIter2<'a,'b,T>
 }
 
 
+pub struct ChunkationIter<'a,'b,'c,T> {
+    c : &'c Chunkation<'a>,
+    data : &'b[T],
+    i : usize
+}
+impl<'a,'b,'c,T> Iterator for ChunkationIter<'a,'b,'c,T> {
+    type Item = &'b[T];
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i >= self.c.ptr.len() { None }
+        else {
+            let i = self.i; self.i += 1;
+            Some(unsafe{self.data.get_unchecked(*self.c.ptr.get_unchecked(i)..*self.c.ptr.get_unchecked(i+1))})
+        }
+    }
+}
 
 
 pub struct Chunkation<'a> {
