@@ -455,6 +455,7 @@ impl<'a,R> Des<'a,R> where R : Read {
     }
 
     pub fn peek<'b>(&'b mut self) -> std::io::Result<Option<(&'b [u8],&'b [u8])>> {
+        println!("Des::peek() loaded: {:?}, active: {:?}, eos = {:?}",self.loaded, self.entry_active,self.end_of_stream);
         if ! self.loaded {
             if self.entry_active { return Err(std::io::Error::other("Previous entry not finished")) }
             if self.end_of_stream { return Ok(None); }
@@ -498,6 +499,7 @@ impl<'a,R> Des<'a,R> where R : Read {
     /// # Returns
     /// At the end of stream, return `None`, otherwise return an entry reader.
     pub fn next_entry<'b>(&'b mut self) -> std::io::Result<Option<DesEntry<'a,'b,R>>> {
+        println!("Des::expect() loaded: {:?}, active: {:?}, eos = {:?}",self.loaded, self.entry_active,self.end_of_stream);
         _ = self.peek()?;
 
         if self.loaded {
@@ -521,6 +523,7 @@ impl<'a,R> Des<'a,R> where R : Read {
     }
 
     pub fn expect<'b>(&'b mut self, name : &[u8], fmt : &[u8]) -> std::io::Result<DesEntry<'a,'b,R>> {
+        println!("Des::expect() loaded: {:?}, active: {:?}, eos = {:?}",self.loaded, self.entry_active,self.end_of_stream);
         {
             if let Some((nextname,nextfmt)) = self.peek()? {
                 if nextname != name || nextfmt != fmt { 
@@ -654,11 +657,11 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
                 res.truncate(base+n);
                 if n == 0 { break; }
             }
-            Ok(self)
         }
         else {
-            Err(std::io::Error::other("Read beyond end of entry"))
+            return Err(std::io::Error::other("Read beyond end of entry"))
         }
+        Ok(self)
     }
     pub fn read<E>(&mut self) -> std::io::Result<Vec<E>>
         where 
@@ -786,6 +789,28 @@ impl<'a,'b,'c,R,E> DesEntryReader<'a,'b,'c,R,E> where R : Read, E : Serializable
             if n == 0 { break; }
         }
         Ok(buf.len()-len0)
+    }
+}
+
+impl<'a,'b,R> Drop for DesEntry<'a,'b,R> where R : Read {
+    fn drop(&mut self) {
+        if self.ready && self.fmtpos == self.fmtlen {
+            self.des.entry_active = false;
+        }
+        else {
+            panic!("Unfinished deserializer entry")
+        }
+    }
+}
+
+impl<'a,'b,'c,R,E> Drop for DesEntryReader<'a,'b,'c,R,E> where R : Read, E : Serializable {
+    fn drop(&mut self) {
+        if let EntryKind::Empty = self.kind {
+            self.entry.ready = true;
+        }
+        else {
+            panic!("Unfinished deserializer entry field");
+        }
     }
 }
 

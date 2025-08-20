@@ -562,16 +562,6 @@ impl<'a> Permutation<'a> {
     }
 }
 
-
-
-
-
-
-
-
-
-
-
 pub struct ChunksByIter2<'a,'b,T>
 {
     data : &'a [T],
@@ -602,22 +592,32 @@ impl<'a,'b,T> Iterator for ChunksByIter2<'a,'b,T>
 }
 
 
+
+
+
+
+
+
 pub struct ChunkationIter<'a,'b,'c,T> {
-    c : &'c Chunkation<'a>,
+    c    : &'c Chunkation<'a>,
     data : &'b[T],
-    i : usize
+    i    : usize
 }
+
 impl<'a,'b,'c,T> Iterator for ChunkationIter<'a,'b,'c,T> {
     type Item = &'b[T];
     fn next(&mut self) -> Option<Self::Item> {
-        if self.i >= self.c.ptr.len() { None }
-        else {
-            let i = self.i; self.i += 1;
+        if self.i+1 < self.c.ptr.len() {
+            let i = self.i; 
+            self.i += 1;
+            println!(" i = {}, len = {}",i,self.c.ptr.len());
             Some(unsafe{self.data.get_unchecked(*self.c.ptr.get_unchecked(i)..*self.c.ptr.get_unchecked(i+1))})
+        }
+        else {
+            None
         }
     }
 }
-
 
 pub struct Chunkation<'a> {
     ptr : & 'a[usize],
@@ -627,7 +627,7 @@ pub struct Chunkation<'a> {
 impl<'a> Chunkation<'a> {
     pub fn new(ptr : &'a[usize]) -> Option<Self> {
         if let Some(max) = ptr.last() {
-            if ptr.iter().zip(ptr[1..].iter()).all(|item| *item.0 <= *item.1) { None }
+            if ptr.iter().zip(ptr[1..].iter()).any(|item| *item.0 > *item.1) { None }
             else {
                 Some(Chunkation { ptr, max:*max })
             }
@@ -641,6 +641,8 @@ impl<'a> Chunkation<'a> {
         else { Some(ChunkationIter{ c : self, data, i : 0 }) }
     }
 }
+
+
 
 
 

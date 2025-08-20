@@ -13,6 +13,7 @@ use std::path::Path;
 //mod http;
 mod json;
 mod bio;
+mod msto;
 
 pub type Model = ModelAPI<Backend>;
 
@@ -224,7 +225,8 @@ impl BaseModelTrait for Backend {
         let last  = first+n;
 
         let ptrchunks = Chunkation::new(ptr).unwrap();
-        let rowidxs = izip!(ptrchunks.chunks(subj).unwrap(), ptrchunks.chunks(cof).unwrap())
+        let rowidxs = izip!(ptrchunks.chunks(subj).unwrap(), 
+                            ptrchunks.chunks(cof).unwrap())
             .map(|(subj,cof)| {
                 if let (Some(j),Some(c)) = (subj.get(0),cof.get(0)) {
                     if *j == 0 {
@@ -399,45 +401,45 @@ impl BaseModelTrait for Backend {
 
             let t = std::thread::spawn(move || {
                 let client = reqwest::blocking::Client::new();
-                let mut resp = client.post(url)
+                client.post(url)
                     .header("Content-Type", "application/x-mosek-jtask")
                     .header("Accept", "application/x-mosek-multiplex")
                     .header("X-Mosek-Callback", "values")
                     .header("X-Mosek-Stream", "log")
                     .body(reqwest::blocking::Body::new(req_r))
                     .send()
-                    .map_err(|e| e.to_string())?
-                    ;
-
-                if ! resp.status().is_success() {
-                    return Err(format!("OptServer responded with code {}",resp.status()));
-                }
-
-                let mut content_type = None;
-                for (k,v) in resp.headers().iter() {
-                    if k == "content-type" {
-                        content_type = Some(v);
-                    }
-                }
-                if let Some(ct) = content_type {
-                    if ct != "application/x-mosek-multiplex" {
-                        return Err(format!("Unexpected response format: {:?}",ct));
-                    }
-                }
-                else {
-                    return Err("Unexpected response format: Missing".to_string());
-                }
-
-
-                _ = resp.copy_to(&mut resp_w).map_err(|e| e.to_string())?;
-
-                Ok(())
+                    .map_err(|e| e.to_string())
             });
 
             self.write_jtask(&mut req_w).map_err(|e| e.to_string())?;
             drop(req_w);
 
+            let mut resp = t.join().unwrap()?;
 
+            if ! resp.status().is_success() {
+                return Err(format!("OptServer responded with code {}",resp.status()));
+            }
+
+            let mut content_type = None;
+            for (k,v) in resp.headers().iter() {
+                if k == "content-type" {
+                    content_type = Some(v);
+                }
+            }
+            if let Some(ct) = content_type {
+                if ct != "application/x-mosek-multiplex" {
+                    return Err(format!("Unexpected response format: {:?}",ct));
+                }
+            }
+            else {
+                return Err("Unexpected response format: Missing".to_string());
+            }
+
+            let t = std::thread::spawn(move || {
+                resp.copy_to(&mut resp_w).map_err(|e| e.to_string())
+            });
+
+            println!("----- Backend::solve(), read solution");
             let res = self.parse_multistream(&mut resp_r,sol_bas,sol_itr,sol_itg);
             t.join().unwrap().and_then(|_| res)?;
         }
@@ -483,7 +485,7 @@ mod msgread {
 
     impl<'a,R> Read for MessageReader<'a,R> where R : Read {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            //println!("MessageReader::read(), eof = {}, frame remains : {}, final_frame = {}",self.eof,self.frame_remains,self.final_frame);
+            println!("MessageReader::read(), eof = {}, frame remains : {}, final_frame = {}",self.eof,self.frame_remains,self.final_frame);
             if self.eof {
                 Ok(0)
             }
@@ -493,14 +495,16 @@ mod msgread {
                         return Ok(0);
                     }
                     let mut buf = [0;2];
-                    self.s.read_exact(&mut buf)?;
+                    println!("MessageReader::read(), read frame header...");
+                    self.s.read_exact(&mut buf).map_err(|e| std::io::Error::other("Message stream error: Failed to read message header"))?;
 
                     self.final_frame = buf[0] > 127;
                     self.frame_remains = (((buf[0] & 0x7f) as usize) << 8) | (buf[1] as usize);
-                    //println!("MessageReader::read() new frame : {}",self.frame_remains);
+                    println!("MessageReader::read(), new frame : {}",self.frame_remains);
                 }
 
                 let n = buf.len().min(self.frame_remains);
+                println!("MessageReader::read(), new frame : {}",self.frame_remains);
                 let nr = self.s.read(&mut buf[..n])?;
                 self.frame_remains -= nr;
                 Ok(nr)
@@ -556,24 +560,25 @@ fn bnd_to_bk(lb : f64, ub : f64) -> &'static str {
 }
 impl Backend {
     fn parse_multistream<R>(&mut self, r : &mut R, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String> where R : Read {
+        println!("----- Backend::parse_multistream()");
         // We should now receive an application/x-mosek-multiplex stream ending with either a
         // fail or a result.
         // parse incoming stream 
         let mut buf = Vec::new();
-
         let mut head = String::new();
 
         'outer: loop { // loop over messages
+            println!("----- Backend::parse_multistream(), outer loop");
             // for each message loop over frames
             head.clear();
             {
                 let mut mr = BufReader::new(MessageReader::new(r));
                 mr.read_line(&mut head).map_err(|e| e.to_string())?;
 
+                println!("----- Backend::parse_multistream(), message = {}",head);
 
                 loop {
                     let n = mr.read_line(&mut head).map_err(|e| e.to_string())?;
-                    //println!("read line: {} bytes", n);
                     if n <= 1 { break; }
                 }
                 //println!("Backend::parse_multistream(), head = [[[{}]]]",head);
@@ -1138,29 +1143,42 @@ impl Backend {
                             d.append("subj",JSON::IntArray(subj));
                             d.append("val", JSON::FloatArray(val));
                         }));
-                        d.append("g",JSON::FloatArray(self.mx.row_iter().map(|(_,_,g)| g).collect()));
+                        //d.append("g",JSON::FloatArray(self.mx.row_iter().map(|(_,_,g)| g).collect()));
+                        d.append(
+                            "g",
+                            json::Dict::from(|d| {
+                                d.append("subi",JSON::IntArray((0..self.mx.num_row() as i64).collect()));
+                                d.append("val", JSON::FloatArray(self.mx.row_iter().map(|(_,_,g)| g).collect()));
+                                }));
                     }));
 
                 taskdata.append(
                     "domains",
-                    JSON::List(self.con_dom.iter()
-                              .map(|c| {
-                                  use VecCone::*;
-                                  match c {
-                                    Zero{dim}                  => JSON::List(vec![ JSON::String("rzero".to_string()), JSON::Int(*dim as i64)]),
-                                    NonNegative{dim}           => JSON::List(vec![ JSON::String("rplus".to_string()), JSON::Int(*dim as i64)]),
-                                    NonPositive{dim}           => JSON::List(vec![ JSON::String("rminus".to_string()), JSON::Int(*dim as i64)]),
-                                    Unbounded{dim}             => JSON::List(vec![ JSON::String("r".to_string()), JSON::Int(*dim as i64)]),
-                                    Quadratic{dim}             => JSON::List(vec![ JSON::String("quad".to_string()), JSON::Int(*dim as i64)]),
-                                    RotatedQuadratic{dim}      => JSON::List(vec![ JSON::String("rquad".to_string()), JSON::Int(*dim as i64)]),
-                                    PrimalGeometricMean{dim}   => JSON::List(vec![ JSON::String("pgmean".to_string()), JSON::Int(*dim as i64)]),
-                                    DualGeometricMean{dim}     => JSON::List(vec![ JSON::String("dgmean".to_string()), JSON::Int(*dim as i64)]),
-                                    PrimalExp                  => JSON::List(vec![ JSON::String("pexp".to_string())]),
-                                    DualExp                    => JSON::List(vec![ JSON::String("dexp".to_string())]),
-                                    PrimalPower { dim, alpha } => JSON::List(vec![ JSON::String("ppow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
-                                    DualPower { dim, alpha }   => JSON::List(vec![ JSON::String("dpow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
-                                    ScaledVectorizedPSD { dim } => JSON::List(vec![ JSON::String("svecpsd".to_string()), JSON::Int(*dim as i64)]), 
-                                  }}).collect()));
+                    JSON::List(
+                        self.con_dom.iter()
+                            .map(|c| 
+                                
+                                  json::Dict::from(|d| {
+                                      use VecCone::*;                                  
+                                      d.append("name", "");
+                                      d.append(
+                                          "type",
+                                          match c {
+                                            Zero{dim}                  => JSON::List(vec![ JSON::String("rzero".to_string()), JSON::Int(*dim as i64)]),
+                                            NonNegative{dim}           => JSON::List(vec![ JSON::String("rplus".to_string()), JSON::Int(*dim as i64)]),
+                                            NonPositive{dim}           => JSON::List(vec![ JSON::String("rminus".to_string()), JSON::Int(*dim as i64)]),
+                                            Unbounded{dim}             => JSON::List(vec![ JSON::String("r".to_string()), JSON::Int(*dim as i64)]),
+                                            Quadratic{dim}             => JSON::List(vec![ JSON::String("quad".to_string()), JSON::Int(*dim as i64)]),
+                                            RotatedQuadratic{dim}      => JSON::List(vec![ JSON::String("rquad".to_string()), JSON::Int(*dim as i64)]),
+                                            PrimalGeometricMean{dim}   => JSON::List(vec![ JSON::String("pgmean".to_string()), JSON::Int(*dim as i64)]),
+                                            DualGeometricMean{dim}     => JSON::List(vec![ JSON::String("dgmean".to_string()), JSON::Int(*dim as i64)]),
+                                            PrimalExp                  => JSON::List(vec![ JSON::String("pexp".to_string())]),
+                                            DualExp                    => JSON::List(vec![ JSON::String("dexp".to_string())]),
+                                            PrimalPower { dim, alpha } => JSON::List(vec![ JSON::String("ppow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
+                                            DualPower { dim, alpha }   => JSON::List(vec![ JSON::String("dpow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
+                                            ScaledVectorizedPSD { dim } => JSON::List(vec![ JSON::String("svecpsd".to_string()), JSON::Int(*dim as i64)]), 
+                                          });
+                                      })).collect::<Vec<JSON>>()));
                 taskdata.append(
                     "ACC",
                     json::Dict::from(|d| {
@@ -1168,8 +1186,10 @@ impl Backend {
                         d.append("domain",JSON::IntArray((0..self.con_dom.len()).map(|i| i as i64).collect()));
                         let mut acc_afe_idxs : Vec<Vec<i64>> = self.con_dom.iter().map(|d| vec![0i64; d.dim()]).collect();
                         acc_afe_idxs.iter_mut().flat_map(|r| r.iter_mut()).zip(self.con_mx_row.iter()).for_each(|(d,&s)| *d = s as i64);
-                        d.append("afeidx",JSON::List( acc_afe_idxs.into_iter().map(|row| JSON::IntArray(row)).collect()));
-                        d.append("b",     JSON::FloatArray(self.con_rhs.clone()));
+                        let mut acc_b : Vec<Vec<f64>> = self.con_dom.permute_by(self.con_block_dom_idx.as_slice()).map(|dom| vec![0f64; dom.dim()]).collect();
+                        acc_b.iter_mut().flat_map(|row| row.iter_mut()).zip(self.con_rhs.iter()).for_each(|(d,&s)| *d = s);
+                        d.append("afeidx",JSON::List( acc_afe_idxs.into_iter().map(|row| JSON::IntArray(row)).collect() ));
+                        d.append("b",     JSON::List( acc_b.into_iter().map(|row| JSON::FloatArray(row)).collect() ));
                     }));
         }));
         doc.append(
@@ -1282,161 +1302,38 @@ fn str_to_pdsolsta(solsta : &[u8]) -> std::io::Result<(SolutionStatus,SolutionSt
 }
 
 
-mod msto {
-    use itertools::izip;
-    use mosekcomodel::utils::iter::{ChunksByIterExt, Permutation, PermuteByEx, PermuteByMutEx};
-
-    #[derive(Default)]
-    pub struct MatrixStore {
-        ptr  : Vec<usize>,
-        len  : Vec<usize>,
-        subj : Vec<usize>,
-        cof  : Vec<f64>,
-        b    : Vec<f64>,
-
-        map  : Vec<usize>
-    }
-
-    impl MatrixStore {
-        pub fn new() -> MatrixStore { Default::default() }
-        pub fn append_row(&mut self, subj : &[usize], cof : &[f64], b : f64) -> usize {        
-            assert_eq!(subj.len(),cof.len());
-            self.len.push(subj.len());
-            self.subj.extend_from_slice(subj);
-            self.cof.extend_from_slice(cof);
-            self.b.push(b);
-            
-            let res = self.map.len();
-            self.map.push(self.ptr.len());
-            self.ptr.push(self.subj.len());
-            res
-        }
-
-        pub fn append_rows(&mut self, ptr : &[usize], subj : &[usize], cof : &[f64], b : &[f64]) -> std::ops::Range<usize> {
-            assert_eq!(subj.len(),cof.len());
-            assert!(ptr.iter().zip(ptr[1..].iter()).all(|(a,b)| *a <= *b));
-            assert_eq!(*ptr.last().unwrap(),subj.len());
-            assert_eq!(ptr.len(),b.len()+1);
-            let len0 = self.subj.len();
-            self.subj.extend_from_slice(subj);
-            self.cof.extend_from_slice(cof);
-            self.b.extend_from_slice(b);
-            
-            let row0 = self.map.len();
-            for i in self.ptr.len()..self.ptr.len()+ptr.len()-1 { self.map.push(i); }
-            let row1 = self.map.len();
-                       
-            for (p,l) in ptr.iter().zip(ptr[1..].iter()).scan(len0,|len,(p0,p1)| { let l = *len; *len = p1-p0; Some((l,p1-p0)) }) {
-                self.ptr.push(p);
-                self.len.push(l);
-            }
-
-            row0..row1
-        }
-
-        pub fn num_row(&self) -> usize { self.map.len() }
-
-        pub fn get<'a>(&'a self, i : usize) -> Option<(&'a[usize],&'a[f64],f64)> {
-            self.map.get(i)
-                .map(|&i| {
-                    let p = unsafe{*self.ptr.get_unchecked(i)};
-                    let l = unsafe{*self.len.get_unchecked(i)};
-                    
-                    (unsafe{self.subj.get_unchecked(p..p+l)},
-                     unsafe{self.cof.get_unchecked(p..p+l)},
-                     unsafe{*self.b.get_unchecked(i)})
-                })
-        }
-        pub fn get_mut<'a>(&'a mut self, i : usize) -> Option<(&'a mut[usize],&'a mut [f64],&mut f64)> {
-            self.map.get(i)
-                .map(|&i| {
-                    let p = unsafe{*self.ptr.get_unchecked(i)};
-                    let l = unsafe{*self.len.get_unchecked(i)};
-                    
-                    (unsafe{self.subj.get_unchecked_mut(p..p+l)},
-                     unsafe{self.cof.get_unchecked_mut(p..p+l)},
-                     unsafe{self.b.get_unchecked_mut(i)})
-                })
-        }
-
-
-        pub fn num_nonzeros(&self) -> usize {
-            self.len.permute_by(self.map.as_slice()).sum()
-        }
-
-        
-        pub fn replace_row(&mut self, i : usize, subj: &[usize], cof : &[f64],b : f64) {
-            assert_eq!(subj.len(),cof.len());
-            assert!(i < self.map.len());
-
-            let rowi = unsafe{self.map.get_unchecked_mut(i)};
-            let leni = unsafe{self.len.get_unchecked_mut(*rowi)};
-            let ptri = unsafe{self.ptr.get_unchecked(*rowi)};
-            if subj.len() <= *leni {
-                *leni = subj.len();
-                self.subj[*ptri..*ptri+*leni].copy_from_slice(subj);
-                self.cof[*ptri..*ptri+*leni].copy_from_slice(cof);
-            }
-            else {
-                *rowi = self.len.len();
-                self.len.push(subj.len());
-                self.ptr.push(self.subj.len());
-                self.subj.extend_from_slice(subj);
-                self.cof.extend_from_slice(cof);
-            }
-            self.b[*rowi] = b;
-        }
-        pub fn replace_rows(&mut self, rows : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64], b : &[f64]) {
-            if !rows.is_empty() {
-                assert_eq!(subj.len(),cof.len());
-                assert_eq!(ptr.len(),rows.len()+1);
-                assert_eq!(b.len(),rows.len());
-                assert!(ptr.iter().zip(ptr[1..].iter()).all(|(a,b)| *a <= *b));
-                assert_eq!(*ptr.last().unwrap(),subj.len());
-                assert!(*rows.iter().max().unwrap() < self.map.len());
-
-                for (rowi,subj,cof,b) in izip!(self.map.permute_by_mut(rows),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr),b.iter()) {
-                    let leni = unsafe{self.len.get_unchecked_mut(*rowi)};
-                    let ptri = unsafe{self.ptr.get_unchecked(*rowi)};
-                    if subj.len() <= *leni {
-                        *leni = subj.len();
-                        self.subj[*ptri..*ptri+*leni].copy_from_slice(subj);
-                        self.cof[*ptri..*ptri+*leni].copy_from_slice(cof);
-                    }
-                    else {
-                        *rowi = self.len.len();
-                        self.len.push(subj.len());
-                        self.ptr.push(self.subj.len());
-                        self.subj.extend_from_slice(subj);
-                        self.cof.extend_from_slice(cof);
-                    }
-                    self.b[*rowi] = *b;
-                }
-            }
-        }
-
-        pub fn row_iter<'a>(&'a self) -> impl Iterator<Item=(&'a [usize],&'a[f64],f64)> {
-            let perm = Permutation::new(self.map.as_slice());
-
-            izip!(perm.permute(self.ptr.as_slice()).unwrap(),
-                  perm.permute(self.len.as_slice()).unwrap(),
-                  perm.permute(self.b.as_slice()).unwrap())
-                .map(|(p,l,b)| {
-                    (unsafe{self.subj.get_unchecked(*p..*p+*l)},
-                     unsafe{self.cof.get_unchecked(*p..*p+*l)},
-                     *b)
-                })
-        }
-    }
+fn dom2json(c : &VecCone) -> json::JSON {    
+    use json::{JSON,Dict};
+    Dict::from(|d| {
+        use VecCone::*;
+        d.append("name", JSON::String(String::new()));
+        d.append(
+            "type",
+            match c {
+              Zero{dim}                  => JSON::List(vec![ JSON::String("rzero".to_string()), JSON::Int(*dim as i64)]),
+              NonNegative{dim}           => JSON::List(vec![ JSON::String("rplus".to_string()), JSON::Int(*dim as i64)]),
+              NonPositive{dim}           => JSON::List(vec![ JSON::String("rminus".to_string()), JSON::Int(*dim as i64)]),
+              Unbounded{dim}             => JSON::List(vec![ JSON::String("r".to_string()), JSON::Int(*dim as i64)]),
+              Quadratic{dim}             => JSON::List(vec![ JSON::String("quad".to_string()), JSON::Int(*dim as i64)]),
+              RotatedQuadratic{dim}      => JSON::List(vec![ JSON::String("rquad".to_string()), JSON::Int(*dim as i64)]),
+              PrimalGeometricMean{dim}   => JSON::List(vec![ JSON::String("pgmean".to_string()), JSON::Int(*dim as i64)]),
+              DualGeometricMean{dim}     => JSON::List(vec![ JSON::String("dgmean".to_string()), JSON::Int(*dim as i64)]),
+              PrimalExp                  => JSON::List(vec![ JSON::String("pexp".to_string())]),
+              DualExp                    => JSON::List(vec![ JSON::String("dexp".to_string())]),
+              PrimalPower { dim, alpha } => JSON::List(vec![ JSON::String("ppow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
+              DualPower { dim, alpha }   => JSON::List(vec![ JSON::String("dpow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
+              ScaledVectorizedPSD { dim } => JSON::List(vec![ JSON::String("svecpsd".to_string()), JSON::Int(*dim as i64)]), 
+            });
+        })
 }
-
 
 #[cfg(test)]
 mod test {
     use super::*;
     #[test]
     fn test_optserver() {
-        let addr = "http://solve.mosek.com:30080".to_string();
+        //let addr = "http://solve.mosek.com:30080".to_string();
+        let addr = "http://localhost:9999".to_string();
         let mut m = Model::new(Some("SuperModel"));
         m.set_parameter((), SolverAddress(addr));
 
