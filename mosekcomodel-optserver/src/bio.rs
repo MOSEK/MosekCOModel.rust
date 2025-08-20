@@ -47,7 +47,6 @@ use std::marker::PhantomData;
 const BBOM     : u32 = 0x424b534d;
 const REV_BBOM : u32 = 0x4d534b42;
 
-
 #[derive(Debug)]
 pub enum FieldElementType {
     U8,I8,
@@ -63,6 +62,7 @@ impl TryFrom<&u8> for FieldElementType {
         FieldElementType::try_from(*value)
     }
 }
+
 impl TryFrom<u8> for FieldElementType {
     type Error = std::io::Error;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
@@ -454,36 +454,42 @@ impl<'a,R> Des<'a,R> where R : Read {
         Ok(Des{ r, entry_active : false, byte_swap, end_of_stream : false ,fmt : [0;256], name : [0;256], loaded : false })
     }
 
-    pub fn peek(&'a mut self) -> std::io::Result<Option<(&'a [u8],&'a [u8])>> {
+    pub fn peek<'b>(&'b mut self) -> std::io::Result<Option<(&'b [u8],&'b [u8])>> {
         if ! self.loaded {
             if self.entry_active { return Err(std::io::Error::other("Previous entry not finished")) }
             if self.end_of_stream { return Ok(None); }
             self.r.read_exact(&mut self.name[..1])?;
-            let namelen = name[0] as usize;
+            let namelen = self.name[0] as usize;
             if namelen > 0 {
-                self.r.read_exact(&mut name[1..namelen+1])?;
+                self.r.read_exact(&mut self.name[1..namelen+1])?;
             }
             self.r.read_exact(&mut self.fmt[..1])?;
-            let fmtlen = len[0] as usize;
+            let fmtlen = self.fmt[0] as usize;
             if fmtlen > 0 {
-                self.r.read_exact(&mut fmt[1..fmtlen+1])?;
-                if ! validate_signature(&fmt[1..fmtlen+1]) {
+                self.r.read_exact(&mut self.fmt[1..fmtlen+1])?;
+                if ! validate_signature(&self.fmt[1..fmtlen+1]) {
                     
-                    return std::str::from_utf8(&fmt[1..1+fmtlen])
-                        .map_err(|_| std::io::Error::other(format!("Invalid signature: {}", std::str::from_utf8(fmt[1..1+fmt[0] as usize].iter().map(|&b| if (32..128).contains(&b) { b } else { b'?' }).collect::<Vec<u8>>().as_slice()).unwrap())))
-                        .and_then(|s| Err(std::io::Error::other(format!("Invalid signature: {}",std::str::from_utf8(&fmt[1..1+fmt[0] as usize]).unwrap_or("<?>")))));
+                    return std::str::from_utf8(&self.fmt[1..1+fmtlen])
+                        .map_err(|_| std::io::Error::other(format!("Invalid signature: {}", std::str::from_utf8(self.fmt[1..1+fmtlen].iter().map(|&b| if (32..128).contains(&b) { b } else { b'?' }).collect::<Vec<u8>>().as_slice()).unwrap())))
+                        .and_then(|s| Err(std::io::Error::other(format!("Invalid signature: {}",std::str::from_utf8(&self.fmt[1..1+fmtlen]).unwrap_or("<?>")))));
                 }
             }
             
             if self.name[0] == 0 && self.fmt[0] == 0 {
                 self.end_of_stream = true;
-                Ok(None)
             }
             else {
-                self.entry_active = 1;
+                self.loaded = true;
+                self.entry_active = true;
             }
         }
-        Ok(Some((&self.name[1..namelen+1],&self.fmt[1..fmtlen+1])))
+        
+        if self.end_of_stream {
+            Ok(None)
+        }
+        else {
+            Ok(Some((&self.name[1..self.name[0] as usize+1],&self.fmt[1..self.fmt[0] as usize+1])))
+        }
     }
 
 
@@ -492,21 +498,22 @@ impl<'a,R> Des<'a,R> where R : Read {
     /// # Returns
     /// At the end of stream, return `None`, otherwise return an entry reader.
     pub fn next_entry<'b>(&'b mut self) -> std::io::Result<Option<DesEntry<'a,'b,R>>> {
-        _ = self.peek?;
+        _ = self.peek()?;
 
         if self.loaded {
             self.loaded = false;
-            let mut e = DesEntry{
+            let fmtlen = self.fmt[0] as usize;
+            let namelen = self.name[0] as usize;
+            let mut fmt = [0;256]; fmt[..fmtlen].copy_from_slice(&self.fmt[1..fmtlen+1]);
+            let mut name = [0;256];name[..namelen].copy_from_slice(&self.name[1..namelen+1]);
+            Ok(Some(DesEntry{
                 des : self, 
-                fmt : [0;256], 
-                name : [0;256],
+                fmt,
+                name,
                 fmtpos : 0, 
                 ready : true, 
-                fmtlen : self.fmt[0] as usize, 
-                namelen : self.name[0] as usize};
-            e.name[..e.namelen].copy_from_slice(&self.name[1..e.namelen+1]);
-            e.fmt[..e.fmtlen].copy_from_slice(&self.fmt[1..e.fmtlen+1]);
-            Ok(Some(e))
+                fmtlen, 
+                namelen}))
         }
         else {
             Ok(None)

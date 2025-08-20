@@ -223,7 +223,6 @@ impl BaseModelTrait for Backend {
         let first = self.con_rhs.len();
         let last  = first+n;
 
-
         let ptrchunks = Chunkation::new(ptr).unwrap();
         let rowidxs = izip!(ptrchunks.chunks(subj).unwrap(), ptrchunks.chunks(cof).unwrap())
             .map(|(subj,cof)| {
@@ -285,12 +284,19 @@ impl BaseModelTrait for Backend {
         assert_eq!(bu.len(),ptr.len()-1); 
         assert_eq!(ptr.len(),shape.iter().product::<usize>()+1);
 
+        let n = bl.len();
+        
+        let first0 = self.con_rhs.len();
+        let last0  = first0+n;
+        let first1 = last0;
+        let last1  = first1+n*2;
+
         let ptrchunks = Chunkation::new(ptr).unwrap();
-        let rowidxs = izip!(ptrchunks.chunks(subj), ptrchunks.chunks(cof))
+        let rowidxs : Vec<usize> = izip!(ptrchunks.chunks(subj).unwrap(), ptrchunks.chunks(cof).unwrap())
             .map(|(subj,cof)| {
-                if let (Some(j),Some(c)) = (subj.first(),cof.first()) {
-                    if j == 0 {
-                        self.mx.append_row(&subj[1..], &cof[1..], c)
+                if let (Some(j),Some(c)) = (subj.get(0),cof.get(0)) {
+                    if *j == 0 {
+                        self.mx.append_row(&subj[1..], &cof[1..], *c)
                     }
                     else {
                         self.mx.append_row(subj, cof, 0.0)
@@ -301,24 +307,22 @@ impl BaseModelTrait for Backend {
                 }
             })
             .collect();
-
-        let first = self.con_mx.len();
-
-        self.con_mx_row.reserve(n*2);
-        for i in rowidxs.clone() { self.con_mx_row.push(i); }
-        for i in rowidxs.clone() { self.con_mx_row.push(i); }
-        self.con_rhs.extend_from_slice(bl.as_slice());
-        self.con_rhs.extend_from_slice(bu.as_slice());
-
         let domi = self.con_dom.len();
 
-        let con0 = self.cons.len();
-        self.cons.reserve(n*2);
-        for _ in 0..n { self.cons.push(ConItem { cone_index: dimi,   offset: 0 }); }
-        for _ in 0..n { self.cons.push(ConItem { cone_index: dimi+1, offset: 0 }); }
+        self.con_block_ptr.extend(first0..last1);
+        self.con_block_dom_idx.resize(self.con_block_dom_idx.len()+n,domi);
+        self.con_block_dom_idx.resize(self.con_block_dom_idx.len()+n,domi+1);
 
         self.con_dom.push(VecCone::NonNegative { dim: 1 });
         self.con_dom.push(VecCone::NonPositive { dim: 1 });
+
+        self.con_mx_row.extend_from_slice(rowidxs.as_slice());
+        self.con_mx_row.extend_from_slice(rowidxs.as_slice());
+        self.con_rhs.extend_from_slice(bl.as_slice());
+        self.con_rhs.extend_from_slice(bu.as_slice());
+
+        self.cons.resize(self.cons.len()+n, ConItem{ cone_index : domi,   offset : 0 });
+        self.cons.resize(self.cons.len()+n, ConItem{ cone_index : domi+1, offset : 0 });
 
         if let Some(name) = name {
             let mut name_index_buf = [1usize; N];
@@ -332,8 +336,8 @@ impl BaseModelTrait for Backend {
                 self.con_names.push(None);
             }
         }
-        Ok((Constraint::new((con0..con0+n).collect::<Vec<usize>>(), &shape),
-            Constraint::new((con0+n..con0+2*n).collect::<Vec<usize>>(), &shape)))
+        Ok((Constraint::new((first0..last0).collect::<Vec<usize>>(), &shape),
+            Constraint::new((first1..last1).collect::<Vec<usize>>(), &shape)))
     }
 
     fn update(& mut self, rowidxs : &[usize], shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<(),String>
@@ -346,7 +350,22 @@ impl BaseModelTrait for Backend {
             }
         }
 
-        self.mx.replace_rows(rowidxs,ptr,subj,cof);
+        let ptrchunker = Chunkation::new(ptr).unwrap();
+        for (i,subj,cof) in izip!(rowidxs.iter(),
+                                  ptrchunker.chunks(subj).unwrap(),
+                                  ptrchunker.chunks(cof).unwrap()) {
+            if let Some((j,c)) = subj.first().zip(cof.first()) {
+                if *j == 0 {
+                    self.mx.replace_row(*i, &subj[1..], &cof[1..], *c);
+                }
+                else {
+                    self.mx.replace_row(*i, subj, cof, 0.0);
+                }
+            }
+            else {
+                self.mx.replace_row(*i, subj, cof, 0.0);
+            }
+        }
 
         Ok(())
     }
@@ -588,19 +607,14 @@ impl Backend {
                             let mut xxbytes = Vec::new();
                             mr.read_to_end(&mut xxbytes).map_err(|e| e.to_string())?;
                             let n = xxbytes.len()/size_of::<f64>();
-                            if n == self.var_elt.len() {
+                            if n == self.var_lb.len() {
                                 let mut xx : Vec<f64> = Vec::new(); xx.resize(n,0.0);
                                 unsafe{xx.align_to_mut().1}.copy_from_slice(&xxbytes[..n*size_of::<f64>()]);
 
                                 let mut solxx = Vec::new(); solxx.resize(self.vars.len(),0.0);
-                                for (v,d) in self.vars.iter().zip(solxx.iter_mut()) {
-                                    *d = 
-                                        match v {
-                                            Item::Linear{ index,.. } => xx[*index],
-                                            Item::Conic { index } => xx[*index],
-                                        };
-                                }
 
+                                for (d,v) in solxx.iter_mut().zip( xx.permute_by(self.var_idx.as_slice())) { *d = *v; }
+                                    
                                 let obj : f64 = self.c_cof.iter().zip(solxx.permute_by(self.c_subj.as_slice())).map(|(c,x)| *c * *x).sum();
 
                                 if let Some(cb) = & mut self.sol_cb {
@@ -659,7 +673,7 @@ impl Backend {
                      psta : SolutionStatus,
                      dsta : SolutionStatus,
                      numvar : usize,
-                     numcon : usize,
+                     //numcon : usize,
                      pobj : f64,
                      dobj : f64,
                      _varsta : Vec<u8>,
@@ -700,13 +714,13 @@ impl Backend {
         }
         
         if ddef {
-            if let Some(sc) = sn.as_ref() {
-                if numaccelm != sn.len() {
+            if let Some(sc) = sc.as_ref() {
+                if self.con_mx_row.len() != sc.len() {
                     return Err(std::io::Error::other("Incorrect solution dimension in sol/acc/primal"));
                 }
             }
             sol.dual.obj = dobj;
-            if let (Some((sl,su)),Some(sc)) = (sx,sc) {
+            if let Some(((sl,su),sc)) = sx.as_ref().zip(sc.as_ref()) {
                 if sl.len() != numvar || su.len() != numvar { return Err(std::io::Error::other("Incorrect solution dimension in sol/var/dual")); }
                 for (solx,index,e) in izip!(sol.dual.var.iter_mut(),self.var_idx.iter(),self.vars.iter()) {
                     *solx = 
@@ -722,7 +736,7 @@ impl Backend {
                 return Err(std::io::Error::other("Missing solution section sol/var/primal"));
             }
             
-            if let Some(sc) = sc {
+            if let Some(sc) = sc.as_ref() {
                 sol.dual.con.copy_from_slice(sc.as_slice());
             }
             else if ! self.cons.is_empty() {
@@ -850,10 +864,10 @@ impl Backend {
         let numcone   = r.expect(b"numcone",b"I")?.next_value::<u32>()?;
         let numacc    = r.expect(b"numacc",b"L")?.next_value::<u64>()? as usize;
 
-        if self.var_elt.len() != numvar { return Err(std::io::Error::other("Invalid solution dimension")); }
-        if self.con_elt.len() != numcon { return Err(std::io::Error::other("Invalid solution dimension")); }
+        if self.var_lb.len() != numvar { return Err(std::io::Error::other("Invalid solution dimension")); }
+        if self.var_ub.len() != numvar { return Err(std::io::Error::other("Invalid solution dimension")); }
         if 0 != numcone { return Err(std::io::Error::other("Invalid solution dimension")); }
-        if self.cones.len() != numacc { return Err(std::io::Error::other("Invalid solution dimension")); }
+        if self.con_block_ptr.len() != numacc { return Err(std::io::Error::other("Invalid solution dimension")); }
         if 0 != numbarvar { return Err(std::io::Error::other("Invalid solution dimension")); }
 
         let mut entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
@@ -880,7 +894,7 @@ impl Backend {
             let sn     = if numacc > 0 && ddef { Some(r.expect(b"sol/interior/acc/dual",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
 
             self.copy_solution(sta.0,sta.1,
-                               numvar, numcon, 
+                               numvar, 
                                pobj,dobj,
                                varsta,xx,sx,
                                consta,xc,sn,
@@ -903,7 +917,7 @@ impl Backend {
             let sn     = if numacc > 0 && ddef { Some(r.expect(b"sol/basic/acc/dual",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
 
             self.copy_solution(sta.0,sta.1,
-                               numvar, numcon, 
+                               numvar,
                                pobj,dobj,
                                varsta,xx,sx,
                                consta,xc,sn,
@@ -921,7 +935,7 @@ impl Backend {
             let xc     = if numcon > 0 && pdef { Some(r.expect(b"sol/integer/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             
             self.copy_solution(sta.0,sta.1,
-                               numvar, numcon, 
+                               numvar,
                                pobj,0.0,
                                varsta,xx,None,
                                consta,xc,None,
@@ -1068,8 +1082,8 @@ impl Backend {
 
                     taskdata.append("var",json::Dict::from(|d| {
                         d.append("bk",  JSON::StringArray(bk));
-                        d.append("bl",  JSON::FloatArray(bl));
-                        d.append("bu",  JSON::FloatArray(bu));
+                        d.append("bl",  JSON::FloatArray(self.var_lb.clone()));
+                        d.append("bu",  JSON::FloatArray(self.var_ub.clone()));
                         d.append("type",JSON::StringArray(self.var_int.iter().map(|&e| if e { "int".into() } else { "cont".into() }).collect()));
                     }));
                 }
@@ -1124,12 +1138,12 @@ impl Backend {
                             d.append("subj",JSON::IntArray(subj));
                             d.append("val", JSON::FloatArray(val));
                         }));
-                        d.append("g",json::FloatArray(self.mx.row_iter().map(|(_,_,g)| g).collect()))
+                        d.append("g",JSON::FloatArray(self.mx.row_iter().map(|(_,_,g)| g).collect()));
                     }));
 
                 taskdata.append(
                     "domains",
-                    json.List(self.con_dom.iter()
+                    JSON::List(self.con_dom.iter()
                               .map(|c| {
                                   use VecCone::*;
                                   match c {
@@ -1150,12 +1164,12 @@ impl Backend {
                 taskdata.append(
                     "ACC",
                     json::Dict::from(|d| {
-                        d.append("name", JSON::StringArray(self.con_dom.iter().map(|_| String::new()).collect()));
-                        d.append("domain",JSON::IntArray((0..con_dim.len()).map(|i| i as i64).collect()));
-                        let acc_afe_idxs = self.con_dom.iter().map(|d| vec![0i64; d.dim()]).collect();
+                        d.append("name",  JSON::StringArray(self.con_dom.iter().map(|_| String::new()).collect()));
+                        d.append("domain",JSON::IntArray((0..self.con_dom.len()).map(|i| i as i64).collect()));
+                        let mut acc_afe_idxs : Vec<Vec<i64>> = self.con_dom.iter().map(|d| vec![0i64; d.dim()]).collect();
                         acc_afe_idxs.iter_mut().flat_map(|r| r.iter_mut()).zip(self.con_mx_row.iter()).for_each(|(d,&s)| *d = s as i64);
                         d.append("afeidx",JSON::List( acc_afe_idxs.into_iter().map(|row| JSON::IntArray(row)).collect()));
-                        d.append("b", JSON::FloatArray(self.con_rhs.clone()));
+                        d.append("b",     JSON::FloatArray(self.con_rhs.clone()));
                     }));
         }));
         doc.append(
@@ -1181,15 +1195,15 @@ impl Backend {
         let mut strides = [0;N];
         strides.iter_mut().zip(shape.iter()).rev().fold(1,|s,(st,&d)| { *st = s; d * s });
         if let Some(sp) = &sp {
-            for (&i,name) in sp.iter().zip(self.var_names.iter_mut()) {
+            for (&i,n) in sp.iter().zip(self.var_names.iter_mut()) {
                 name_index_buf.iter_mut().zip(strides.iter()).fold(i,|i,(ni,&st)| { *ni = i/st; i%st });
-                *name = Some(format!("{}{:?}", name, name_index_buf));
+                *n= Some(format!("{}{:?}", name, name_index_buf));
             }
         }
         else {
-            for name in self.var_names.iter_mut() {
+            for n in self.var_names.iter_mut() {
                 name_index_buf.iter_mut().zip(shape.iter()).rev().fold(1,|c,(i,&d)| { *i += c; if *i > d { *i = 1; 1 } else { 0 } });
-                *name = Some(format!("{}{:?}", name, name_index_buf));
+                *n = Some(format!("{}{:?}", name, name_index_buf));
             }
         }
     }
@@ -1198,7 +1212,8 @@ impl Backend {
     /// Appends a range of native linear variables with upper and lower boundsm returns the range
     /// of the new variables.
     fn native_linear_variable(&mut self, lb : &[f64], ub : &[f64], is_int : bool) -> std::ops::Range<usize> {
-        let n = rhs.len();
+        assert_eq!(lb.len(),ub.len());
+        let n = lb.len();
         let first = self.var_lb.len();
         let last  = first + n;
         
@@ -1209,9 +1224,6 @@ impl Backend {
         self.var_ub.resize(last_nvar, f64::INFINITY);
         self.var_int.resize(last_nvar, is_int);
         self.var_names.resize(last_nvar, None);
-
-        //self.var_idx.reserve(n); for i in first_nvar..last_nvar { self.var_idx.push(i); }
-        //self.vars.resize(last_nvar, vt);
     
         first..last
     }
@@ -1292,7 +1304,7 @@ mod msto {
             self.len.push(subj.len());
             self.subj.extend_from_slice(subj);
             self.cof.extend_from_slice(cof);
-            self.b.append(b);
+            self.b.push(b);
             
             let res = self.map.len();
             self.map.push(self.ptr.len());
@@ -1324,17 +1336,18 @@ mod msto {
 
         pub fn num_row(&self) -> usize { self.map.len() }
 
-        pub fn get<'a>(&'a self, i : usize) -> Option<(&'a [usize],&'a [f64],f64)> {
+        pub fn get<'a>(&'a self, i : usize) -> Option<(&'a[usize],&'a[f64],f64)> {
             self.map.get(i)
                 .map(|&i| {
                     let p = unsafe{*self.ptr.get_unchecked(i)};
                     let l = unsafe{*self.len.get_unchecked(i)};
                     
                     (unsafe{self.subj.get_unchecked(p..p+l)},
-                     unsafe{self.cof.get_unchecked(p..p+l)})
+                     unsafe{self.cof.get_unchecked(p..p+l)},
+                     unsafe{*self.b.get_unchecked(i)})
                 })
         }
-        pub fn get_mut<'a>(&'a mut self, i : usize) -> Option<(&'a mut[usize],&'a mut [f64])> {
+        pub fn get_mut<'a>(&'a mut self, i : usize) -> Option<(&'a mut[usize],&'a mut [f64],&mut f64)> {
             self.map.get(i)
                 .map(|&i| {
                     let p = unsafe{*self.ptr.get_unchecked(i)};
@@ -1342,7 +1355,7 @@ mod msto {
                     
                     (unsafe{self.subj.get_unchecked_mut(p..p+l)},
                      unsafe{self.cof.get_unchecked_mut(p..p+l)},
-                     unsafe{self.b.get_unchecked(i)})
+                     unsafe{self.b.get_unchecked_mut(i)})
                 })
         }
 
@@ -1351,6 +1364,28 @@ mod msto {
             self.len.permute_by(self.map.as_slice()).sum()
         }
 
+        
+        pub fn replace_row(&mut self, i : usize, subj: &[usize], cof : &[f64],b : f64) {
+            assert_eq!(subj.len(),cof.len());
+            assert!(i < self.map.len());
+
+            let rowi = unsafe{self.map.get_unchecked_mut(i)};
+            let leni = unsafe{self.len.get_unchecked_mut(*rowi)};
+            let ptri = unsafe{self.ptr.get_unchecked(*rowi)};
+            if subj.len() <= *leni {
+                *leni = subj.len();
+                self.subj[*ptri..*ptri+*leni].copy_from_slice(subj);
+                self.cof[*ptri..*ptri+*leni].copy_from_slice(cof);
+            }
+            else {
+                *rowi = self.len.len();
+                self.len.push(subj.len());
+                self.ptr.push(self.subj.len());
+                self.subj.extend_from_slice(subj);
+                self.cof.extend_from_slice(cof);
+            }
+            self.b[*rowi] = b;
+        }
         pub fn replace_rows(&mut self, rows : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64], b : &[f64]) {
             if !rows.is_empty() {
                 assert_eq!(subj.len(),cof.len());
@@ -1385,7 +1420,7 @@ mod msto {
 
             izip!(perm.permute(self.ptr.as_slice()).unwrap(),
                   perm.permute(self.len.as_slice()).unwrap(),
-                  perm.permute(self.b.as_slice()))
+                  perm.permute(self.b.as_slice()).unwrap())
                 .map(|(p,l,b)| {
                     (unsafe{self.subj.get_unchecked(*p..*p+*l)},
                      unsafe{self.cof.get_unchecked(*p..*p+*l)},
