@@ -455,7 +455,6 @@ impl<'a,R> Des<'a,R> where R : Read {
     }
 
     pub fn peek<'b>(&'b mut self) -> std::io::Result<Option<(&'b [u8],&'b [u8])>> {
-        //println!("Des::peek() loaded: {:?}, active: {:?}, eos = {:?}",self.loaded, self.entry_active,self.end_of_stream);
         if ! self.loaded {
             if self.entry_active { return Err(std::io::Error::other("Previous entry not finished")) }
             if self.end_of_stream { return Ok(None); }
@@ -468,6 +467,7 @@ impl<'a,R> Des<'a,R> where R : Read {
             let fmtlen = self.fmt[0] as usize;
             if fmtlen > 0 {
                 self.r.read_exact(&mut self.fmt[1..fmtlen+1])?;
+                println!("Des::peek() Entry = '{}' {}",std::str::from_utf8(&self.name[1..namelen+1]).unwrap(), std::str::from_utf8(&self.fmt[1..fmtlen+1]).unwrap());
                 if ! validate_signature(&self.fmt[1..fmtlen+1]) {
                     
                     return std::str::from_utf8(&self.fmt[1..1+fmtlen])

@@ -150,4 +150,16 @@ impl MatrixStore {
                 // *b)
             })
     }
+
+    pub fn eval_into(&self, x : &[f64], res : &mut Vec<f64>) -> Result<(),()> {        
+        let perm = Permutation::new(self.map.as_slice());
+        for (&p,&l,&b) in izip!(perm.permute(self.ptr.as_slice()).unwrap(),perm.permute(self.len.as_slice()).unwrap(),perm.permute(self.b.as_slice()).unwrap()) {
+            let subj = unsafe{ self.subj.get_unchecked(p..p+l) };
+            let cof  = unsafe{ self.cof.get_unchecked(p..p+l) };
+            if subj.iter().max().map(|&v| v >= x.len()).unwrap_or(false) { return Err(()); }
+            res.push(x.permute_by(subj).zip(cof.iter()).map(|(&a,&b)| a*b).sum::<f64>()+b);
+        }
+        Ok(())
+    }
+    
 }

@@ -680,11 +680,11 @@ impl Backend {
                      //numcon : usize,
                      pobj : f64,
                      dobj : f64,
-                     _varsta : Vec<u8>,
+                     //_varsta : Vec<u8>,
                      xx : Option<Vec<f64>>,
                      sx : Option<(Vec<f64>,Vec<f64>)>,
-                     _consta : Vec<u8>,
-                     xc : Option<Vec<f64>>,
+                     //_consta : Vec<u8>,
+                     //xc : Option<Vec<f64>>,
                      sc : Option<Vec<f64>>,
                      sol : & mut Solution) -> std::io::Result<()>
     {
@@ -696,24 +696,19 @@ impl Backend {
 
         if pdef {
             sol.primal.obj = pobj;
+            sol.primal.con.clear();
             if let Some(xx) = xx {
                 xx.permute_by(self.var_idx.as_slice())
                     .zip(sol.primal.var.iter_mut())
                     .for_each(|(&src,dst)| *dst = src);
+
+                self.mx.eval_into(sol.primal.var.as_slice(),&mut sol.primal.con).unwrap();
             }
             else if ! self.vars.is_empty() {
                 return Err(std::io::Error::other("Missing solution section sol/var/primal"));
             }
-
-
-            if let Some(xc) = xc {
-                if xc.len() != self.cons.len() {
-                    return Err(std::io::Error::other("Incorrect solution dimension in sol/var/primal")); 
-                }
-                sol.primal.con.copy_from_slice(xc.as_slice());
-            }
-            else if ! self.cons.is_empty() {
-                return Err(std::io::Error::other("Missing solution section sol/var/primal"));
+            else {
+                sol.primal.con.resize(self.con_rhs.len(),0.0);
             }
         }
         
@@ -874,47 +869,46 @@ impl Backend {
         if self.con_block_ptr.len() != numacc { return Err(std::io::Error::other("Invalid solution dimension")); }
         if 0 != numbarvar { return Err(std::io::Error::other("Invalid solution dimension")); }
     
-
-        let mut acc_pattern = Vec::new();
-        if let Some((b"acc/pattern",fmt)) = r.peek()? {
-            r.next_entry().unwrap();
+        let mut acc_pattern : Vec<u64> = Vec::new();
+        if let Some((b"acc/pattern",b"[L")) = r.peek()? {
+            r.next_entry()?.unwrap().read_into(&mut acc_pattern)?;
         }
-        let mut entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
+        //let mut entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
  
         use SolutionStatus::*;
 
-        if entry.
-
-        if entry.name() == b"sol/interior" {
+        if let Some((b"sol/interior",b"[B[B")) = r.peek()? {            
             sol_itr.primal.var.resize(self.vars.len(),0.0);
             sol_itr.dual.var.resize(self.vars.len(),0.0);
             sol_itr.primal.con.resize(self.cons.len(),0.0);
             sol_itr.dual.con.resize(self.cons.len(),0.0);
 
-            let sta    = entry.check_fmt(b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
+            let sta    = r.expect(b"sol/interior",b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
             let pdef   = !matches!(sta.0,Undefined);
             let ddef   = !matches!(sta.1,Undefined);
             let pobj   = if pdef { r.expect(b"sol/interior/pobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
             let dobj   = if ddef { r.expect(b"sol/interior/dobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
-            let varsta = r.expect(b"sol/interior/var/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
+            let _varsta = r.expect(b"sol/interior/var/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
             let xx     = if pdef { Some(r.expect(b"sol/interior/var/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             let sx     = if ddef { Some(r.expect(b"sol/interior/var/dual",b"[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
-            let consta = r.expect(b"sol/interior/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
-            let xc     = if numcon > 0 && pdef { Some(r.expect(b"sol/interior/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
+            //let consta = r.expect(b"sol/interior/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
+            //let xc     = if numcon > 0 && pdef { Some(r.expect(b"sol/interior/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             let sc     = if numcon > 0 && ddef { Some(r.expect(b"sol/interior/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
             let sn     = if numacc > 0 && ddef { Some(r.expect(b"sol/interior/acc/dual",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
 
             self.copy_solution(sta.0,sta.1,
                                numvar, 
                                pobj,dobj,
-                               varsta,xx,sx,
-                               consta,xc,sn,
+                               //varsta,
+                               xx,sx,
+                               //consta,
+                               //xc,
+                               sn,
                                sol_itr)?;
-            entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
         }
 
-        if entry.name() == b"sol/basic" {
-            let sta       = entry.check_fmt(b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
+        if let Some((b"sol/basic",b"[B[B")) = r.peek()? {
+            let sta    = r.expect(b"sol/basic",b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
             let pdef   = !matches!(sta.0,Undefined);
             let ddef   = !matches!(sta.1,Undefined);
             let pobj   = if pdef { r.expect(b"sol/basic/pobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
@@ -922,43 +916,43 @@ impl Backend {
             let varsta = r.expect(b"sol/basic/var/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
             let xx     = if pdef { Some(r.expect(b"sol/basic/var/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             let sx     = if ddef { Some(r.expect(b"sol/basic/var/dual",b"[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
-            let consta = r.expect(b"sol/basic/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
-            let xc     = if numcon > 0 && pdef { Some(r.expect(b"sol/basic/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
+            //let consta = r.expect(b"sol/basic/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
+            let _xc     = if numcon > 0 && pdef { Some(r.expect(b"sol/basic/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             let sc     = if numcon > 0 && ddef { Some(r.expect(b"sol/basic/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
             let sn     = if numacc > 0 && ddef { Some(r.expect(b"sol/basic/acc/dual",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
 
             self.copy_solution(sta.0,sta.1,
                                numvar,
                                pobj,dobj,
-                               varsta,xx,sx,
-                               consta,xc,sn,
+                               //varsta,
+                               xx,sx,
+                               //consta,
+                               //xc,
+                               sn,
                                sol_bas)?;
-            entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
         }
 
-        if entry.name() == b"sol/integer" {
-            let sta    = entry.check_fmt(b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
+        if let Some((b"sol/integer",b"[B[B")) = r.peek()? {
+            let sta    = r.expect(b"sol/intger",b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
             let pdef   = !matches!(sta.0,Undefined);
             let pobj   = if pdef { r.expect(b"sol/integer/pobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
             let varsta = r.expect(b"sol/integer/var/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
             let xx     = if pdef { Some(r.expect(b"sol/integer/var/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
-            let consta = r.expect(b"sol/integer/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
-            let xc     = if numcon > 0 && pdef { Some(r.expect(b"sol/integer/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
+            //let consta = r.expect(b"sol/integer/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
+            let _xc     = if numcon > 0 && pdef { Some(r.expect(b"sol/integer/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             
             self.copy_solution(sta.0,sta.1,
                                numvar,
                                pobj,0.0,
-                               varsta,xx,None,
-                               consta,xc,None,
+                               //varsta,
+                               xx,None,
+                               //consta,
+                               //xc,
+                               None,
                                sol_itg)?;
-            entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
         }
 
-        if entry.name() != b"name/var" || entry.fmt() != b"[I[B" { 
-            return Err(std::io::Error::other(format!("Expected section 'name/var'/'[I[B', got '{}'/'{}'",
-                                                     std::str::from_utf8(entry.name()).unwrap_or("<invalid utf-8>"),
-                                                     std::str::from_utf8(entry.fmt()).unwrap_or("<invalid utf-8>")))); }
-        entry.skip_all()?;
+        r.expect(b"name/var",b"[I[B")?.skip_all()?;
         r.expect(b"name/barvar",    b"[I[B")?.skip_all()?;
         r.expect(b"name/con",       b"[I[B")?.skip_all()?;
         r.expect(b"name/cone",      b"[I[B")?.skip_all()?;
