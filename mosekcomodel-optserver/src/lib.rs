@@ -2,7 +2,7 @@
 //! [solve.mosek.com:30080](http://solve.mosek.com). 
 //!
 use mosekcomodel::*;
-use mosekcomodel::model::{IntSolutionManager, ModelWithLogCallback};
+use mosekcomodel::model::{IntSolutionManager, ModelWithIntSolutionCallback, ModelWithLogCallback};
 use mosekcomodel::utils::iter::{Chunkation, ChunksByIterExt, PermuteByEx};
 use itertools::izip;
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ pub type Model = ModelAPI<Backend>;
 
 #[derive(Clone,Copy)]
 struct ConItem {
-    cone_index : usize,
+    block_index : usize,
     offset     : usize,
 }
 
@@ -110,8 +110,7 @@ pub struct Backend {
     con_mx_row    : Vec<usize>,
     con_rhs       : Vec<f64>,
     con_block_ptr : Vec<usize>,
-    con_block_dom_idx : Vec<usize>,
-    con_dom       : Vec<VecCone>,
+    con_block_dom       : Vec<VecCone>,
     con_names     : Vec<Option<String>>,
 
     sense_max     : bool,
@@ -141,6 +140,7 @@ impl BaseModelTrait for Backend {
         let lb = vec![f64::NEG_INFINITY;n];
         let ub = vec![f64::INFINITY;n];
         let idxs = self.native_linear_variable(lb.as_slice(),ub.as_slice(),false);
+
 
         let first = self.vars.len();
         let last = first + n;
@@ -222,13 +222,12 @@ impl BaseModelTrait for Backend {
         let n = rhs.len();
         
         let first = self.con_rhs.len();
-        let last  = first+n;
 
         let ptrchunks = Chunkation::new(ptr).unwrap();
         let rowidxs = izip!(ptrchunks.chunks(subj).unwrap(), 
                             ptrchunks.chunks(cof).unwrap())
             .map(|(subj,cof)| {
-                if let (Some(j),Some(c)) = (subj.get(0),cof.get(0)) {
+                if let (Some(j),Some(c)) = (subj.first(),cof.first()) {
                     if *j == 0 {
                         self.mx.append_row(&subj[1..], &cof[1..], *c)
                     }
@@ -240,22 +239,20 @@ impl BaseModelTrait for Backend {
                     self.mx.append_row(subj, cof, 0.0)
                 }
             });
-        let domi = self.con_dom.len();
 
-        self.con_block_ptr.extend(first..last);
-        self.con_block_dom_idx.resize(self.con_block_dom_idx.len()+n,domi);
+        let block_index = self.con_block_ptr.len();
+        self.con_block_ptr.push(first);
 
         match dt {
-            LinearDomainType::Free        => self.con_dom.push(VecCone::Unbounded { dim: 1 }),
-            LinearDomainType::Zero        => self.con_dom.push(VecCone::Zero { dim: 1 }),
-            LinearDomainType::NonNegative => self.con_dom.push(VecCone::NonNegative { dim: 1 }),
-            LinearDomainType::NonPositive => self.con_dom.push(VecCone::NonPositive { dim: 1 }),
+            LinearDomainType::Free        => self.con_block_dom.push(VecCone::Unbounded   { dim: n }),
+            LinearDomainType::Zero        => self.con_block_dom.push(VecCone::Zero        { dim: n }),
+            LinearDomainType::NonNegative => self.con_block_dom.push(VecCone::NonNegative { dim: n }),
+            LinearDomainType::NonPositive => self.con_block_dom.push(VecCone::NonPositive { dim: n }),
         }
         self.con_mx_row.extend(rowidxs);
         self.con_rhs.extend_from_slice(rhs.as_slice());
 
-        self.cons.resize(self.cons.len(), ConItem{ cone_index : domi, offset : 0 });
-
+        self.cons.extend((0..n).map(|offset| ConItem{block_index, offset}));
 
         if let Some(name) = name {
             let mut name_index_buf = [1usize; N];
@@ -309,22 +306,21 @@ impl BaseModelTrait for Backend {
                 }
             })
             .collect();
-        let domi = self.con_dom.len();
+        let block_index = self.con_block_ptr.len();
 
-        self.con_block_ptr.extend(first0..last1);
-        self.con_block_dom_idx.resize(self.con_block_dom_idx.len()+n,domi);
-        self.con_block_dom_idx.resize(self.con_block_dom_idx.len()+n,domi+1);
+        self.con_block_ptr.push(self.con_rhs.len());
+        self.con_block_ptr.push(self.con_rhs.len()+n);
 
-        self.con_dom.push(VecCone::NonNegative { dim: 1 });
-        self.con_dom.push(VecCone::NonPositive { dim: 1 });
+        self.con_block_dom.push(VecCone::NonNegative { dim: n });
+        self.con_block_dom.push(VecCone::NonPositive { dim: n });
 
         self.con_mx_row.extend_from_slice(rowidxs.as_slice());
         self.con_mx_row.extend_from_slice(rowidxs.as_slice());
         self.con_rhs.extend_from_slice(bl.as_slice());
         self.con_rhs.extend_from_slice(bu.as_slice());
 
-        self.cons.resize(self.cons.len()+n, ConItem{ cone_index : domi,   offset : 0 });
-        self.cons.resize(self.cons.len()+n, ConItem{ cone_index : domi+1, offset : 0 });
+        self.cons.extend((0..n).map(|offset| ConItem{block_index, offset} ));
+        self.cons.extend((0..n).map(|offset| ConItem{block_index : block_index+1, offset} ));
 
         if let Some(name) = name {
             let mut name_index_buf = [1usize; N];
@@ -439,7 +435,6 @@ impl BaseModelTrait for Backend {
                 resp.copy_to(&mut resp_w).map_err(|e| e.to_string())
             });
 
-            println!("----- Backend::solve(), read solution");
             let res = self.parse_multistream(&mut resp_r,sol_bas,sol_itr,sol_itg);
             t.join().unwrap().and_then(|_| res)?;
         }
@@ -457,6 +452,12 @@ impl BaseModelTrait for Backend {
         self.c_subj.resize(subj.len(),0); self.c_subj.copy_from_slice(subj);
         self.c_cof.resize(cof.len(),0.0); self.c_cof.copy_from_slice(cof);
         Ok(())
+    }
+}
+
+impl ModelWithIntSolutionCallback for Backend {
+    fn set_solution_callback<F>(&mut self, func : F) where F : 'static+FnMut(&IntSolutionManager) {
+        self.sol_cb = Some(Box::new(func))
     }
 }
 
@@ -485,7 +486,7 @@ mod msgread {
 
     impl<'a,R> Read for MessageReader<'a,R> where R : Read {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            println!("MessageReader::read(), eof = {}, frame remains : {}, final_frame = {}",self.eof,self.frame_remains,self.final_frame);
+            //println!("MessageReader::read(), eof = {}, frame remains : {}, final_frame = {}",self.eof,self.frame_remains,self.final_frame);
             if self.eof {
                 Ok(0)
             }
@@ -495,16 +496,16 @@ mod msgread {
                         return Ok(0);
                     }
                     let mut buf = [0;2];
-                    println!("MessageReader::read(), read frame header...");
+                    //println!("MessageReader::read(), read frame header...");
                     self.s.read_exact(&mut buf).map_err(|e| std::io::Error::other("Message stream error: Failed to read message header"))?;
 
                     self.final_frame = buf[0] > 127;
                     self.frame_remains = (((buf[0] & 0x7f) as usize) << 8) | (buf[1] as usize);
-                    println!("MessageReader::read(), new frame : {}",self.frame_remains);
+                    //println!("MessageReader::read(), new frame : {}",self.frame_remains);
                 }
 
                 let n = buf.len().min(self.frame_remains);
-                println!("MessageReader::read(), new frame : {}",self.frame_remains);
+                //println!("MessageReader::read(), new frame : {}",self.frame_remains);
                 let nr = self.s.read(&mut buf[..n])?;
                 self.frame_remains -= nr;
                 Ok(nr)
@@ -560,7 +561,7 @@ fn bnd_to_bk(lb : f64, ub : f64) -> &'static str {
 }
 impl Backend {
     fn parse_multistream<R>(&mut self, r : &mut R, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String> where R : Read {
-        println!("----- Backend::parse_multistream()");
+        //println!("----- Backend::parse_multistream()");
         // We should now receive an application/x-mosek-multiplex stream ending with either a
         // fail or a result.
         // parse incoming stream 
@@ -568,14 +569,12 @@ impl Backend {
         let mut head = String::new();
 
         'outer: loop { // loop over messages
-            println!("----- Backend::parse_multistream(), outer loop");
             // for each message loop over frames
             head.clear();
             {
                 let mut mr = BufReader::new(MessageReader::new(r));
                 mr.read_line(&mut head).map_err(|e| e.to_string())?;
 
-                println!("----- Backend::parse_multistream(), message = {}",head);
 
                 loop {
                     let n = mr.read_line(&mut head).map_err(|e| e.to_string())?;
@@ -874,10 +873,17 @@ impl Backend {
         if 0 != numcone { return Err(std::io::Error::other("Invalid solution dimension")); }
         if self.con_block_ptr.len() != numacc { return Err(std::io::Error::other("Invalid solution dimension")); }
         if 0 != numbarvar { return Err(std::io::Error::other("Invalid solution dimension")); }
+    
 
+        let mut acc_pattern = Vec::new();
+        if let Some((b"acc/pattern",fmt)) = r.peek()? {
+            r.next_entry().unwrap();
+        }
         let mut entry = r.next_entry()?.ok_or_else(|| std::io::Error::other("Missing solution entries"))?;
  
         use SolutionStatus::*;
+
+        if entry.
 
         if entry.name() == b"sol/interior" {
             sol_itr.primal.var.resize(self.vars.len(),0.0);
@@ -1076,7 +1082,7 @@ impl Backend {
                 taskinfo.append("numvar",self.vars.len() as i64);
                 taskinfo.append("numcon",0);
                 taskinfo.append("numafe",self.mx.num_row() as i64);
-                taskinfo.append("numacc",self.con_dom.len() as i64);
+                taskinfo.append("numacc",self.con_block_dom.len() as i64);
             }));
             
         doc.append(
@@ -1154,39 +1160,18 @@ impl Backend {
 
                 taskdata.append(
                     "domains",
-                    JSON::List(
-                        self.con_dom.iter()
-                            .map(|c| 
-                                
-                                  json::Dict::from(|d| {
-                                      use VecCone::*;                                  
-                                      d.append("name", "");
-                                      d.append(
-                                          "type",
-                                          match c {
-                                            Zero{dim}                  => JSON::List(vec![ JSON::String("rzero".to_string()), JSON::Int(*dim as i64)]),
-                                            NonNegative{dim}           => JSON::List(vec![ JSON::String("rplus".to_string()), JSON::Int(*dim as i64)]),
-                                            NonPositive{dim}           => JSON::List(vec![ JSON::String("rminus".to_string()), JSON::Int(*dim as i64)]),
-                                            Unbounded{dim}             => JSON::List(vec![ JSON::String("r".to_string()), JSON::Int(*dim as i64)]),
-                                            Quadratic{dim}             => JSON::List(vec![ JSON::String("quad".to_string()), JSON::Int(*dim as i64)]),
-                                            RotatedQuadratic{dim}      => JSON::List(vec![ JSON::String("rquad".to_string()), JSON::Int(*dim as i64)]),
-                                            PrimalGeometricMean{dim}   => JSON::List(vec![ JSON::String("pgmean".to_string()), JSON::Int(*dim as i64)]),
-                                            DualGeometricMean{dim}     => JSON::List(vec![ JSON::String("dgmean".to_string()), JSON::Int(*dim as i64)]),
-                                            PrimalExp                  => JSON::List(vec![ JSON::String("pexp".to_string())]),
-                                            DualExp                    => JSON::List(vec![ JSON::String("dexp".to_string())]),
-                                            PrimalPower { dim, alpha } => JSON::List(vec![ JSON::String("ppow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
-                                            DualPower { dim, alpha }   => JSON::List(vec![ JSON::String("dpow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
-                                            ScaledVectorizedPSD { dim } => JSON::List(vec![ JSON::String("svecpsd".to_string()), JSON::Int(*dim as i64)]), 
-                                          });
-                                      })).collect::<Vec<JSON>>()));
+                    JSON::Dict(
+                        json::Dict::from(|d| 
+                            d.append(
+                                "type",
+                                JSON::List(self.con_block_dom.iter().map(|c| dom2json(c)).collect::<Vec<JSON>>())))));
                 taskdata.append(
                     "ACC",
                     json::Dict::from(|d| {
-                        d.append("name",  JSON::StringArray(self.con_dom.iter().map(|_| String::new()).collect()));
-                        d.append("domain",JSON::IntArray((0..self.con_dom.len()).map(|i| i as i64).collect()));
-                        let mut acc_afe_idxs : Vec<Vec<i64>> = self.con_dom.iter().map(|d| vec![0i64; d.dim()]).collect();
+                        d.append("domain",JSON::IntArray((0..self.con_block_dom.len()).map(|i| i as i64).collect()));
+                        let mut acc_afe_idxs : Vec<Vec<i64>> = self.con_block_dom.iter().map(|d| vec![0i64; d.dim()]).collect();
                         acc_afe_idxs.iter_mut().flat_map(|r| r.iter_mut()).zip(self.con_mx_row.iter()).for_each(|(d,&s)| *d = s as i64);
-                        let mut acc_b : Vec<Vec<f64>> = self.con_dom.permute_by(self.con_block_dom_idx.as_slice()).map(|dom| vec![0f64; dom.dim()]).collect();
+                        let mut acc_b : Vec<Vec<f64>> = self.con_block_dom.iter().map(|dom| vec![0f64; dom.dim()]).collect();
                         acc_b.iter_mut().flat_map(|row| row.iter_mut()).zip(self.con_rhs.iter()).for_each(|(d,&s)| *d = s);
                         d.append("afeidx",JSON::List( acc_afe_idxs.into_iter().map(|row| JSON::IntArray(row)).collect() ));
                         d.append("b",     JSON::List( acc_b.into_iter().map(|row| JSON::FloatArray(row)).collect() ));
@@ -1240,11 +1225,11 @@ impl Backend {
         let first_nvar = self.var_lb.len();
         let last_nvar  = first_nvar+n;
 
-        self.var_lb.resize(last_nvar, f64::NEG_INFINITY);
-        self.var_ub.resize(last_nvar, f64::INFINITY);
+        self.var_lb.extend_from_slice(lb);
+        self.var_ub.extend_from_slice(ub);
         self.var_int.resize(last_nvar, is_int);
         self.var_names.resize(last_nvar, None);
-    
+
         first..last
     }
 }
@@ -1303,28 +1288,23 @@ fn str_to_pdsolsta(solsta : &[u8]) -> std::io::Result<(SolutionStatus,SolutionSt
 
 
 fn dom2json(c : &VecCone) -> json::JSON {    
-    use json::{JSON,Dict};
-    Dict::from(|d| {
-        use VecCone::*;
-        d.append("name", JSON::String(String::new()));
-        d.append(
-            "type",
-            match c {
-              Zero{dim}                  => JSON::List(vec![ JSON::String("rzero".to_string()), JSON::Int(*dim as i64)]),
-              NonNegative{dim}           => JSON::List(vec![ JSON::String("rplus".to_string()), JSON::Int(*dim as i64)]),
-              NonPositive{dim}           => JSON::List(vec![ JSON::String("rminus".to_string()), JSON::Int(*dim as i64)]),
-              Unbounded{dim}             => JSON::List(vec![ JSON::String("r".to_string()), JSON::Int(*dim as i64)]),
-              Quadratic{dim}             => JSON::List(vec![ JSON::String("quad".to_string()), JSON::Int(*dim as i64)]),
-              RotatedQuadratic{dim}      => JSON::List(vec![ JSON::String("rquad".to_string()), JSON::Int(*dim as i64)]),
-              PrimalGeometricMean{dim}   => JSON::List(vec![ JSON::String("pgmean".to_string()), JSON::Int(*dim as i64)]),
-              DualGeometricMean{dim}     => JSON::List(vec![ JSON::String("dgmean".to_string()), JSON::Int(*dim as i64)]),
-              PrimalExp                  => JSON::List(vec![ JSON::String("pexp".to_string())]),
-              DualExp                    => JSON::List(vec![ JSON::String("dexp".to_string())]),
-              PrimalPower { dim, alpha } => JSON::List(vec![ JSON::String("ppow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
-              DualPower { dim, alpha }   => JSON::List(vec![ JSON::String("dpow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
-              ScaledVectorizedPSD { dim } => JSON::List(vec![ JSON::String("svecpsd".to_string()), JSON::Int(*dim as i64)]), 
-            });
-        })
+    use json::JSON;
+    use VecCone::*;
+    match c {
+      Zero{dim}                  => JSON::List(vec![ JSON::String("rzero".to_string()), JSON::Int(*dim as i64)]),
+      NonNegative{dim}           => JSON::List(vec![ JSON::String("rplus".to_string()), JSON::Int(*dim as i64)]),
+      NonPositive{dim}           => JSON::List(vec![ JSON::String("rminus".to_string()), JSON::Int(*dim as i64)]),
+      Unbounded{dim}             => JSON::List(vec![ JSON::String("r".to_string()), JSON::Int(*dim as i64)]),
+      Quadratic{dim}             => JSON::List(vec![ JSON::String("quad".to_string()), JSON::Int(*dim as i64)]),
+      RotatedQuadratic{dim}      => JSON::List(vec![ JSON::String("rquad".to_string()), JSON::Int(*dim as i64)]),
+      PrimalGeometricMean{dim}   => JSON::List(vec![ JSON::String("pgmean".to_string()), JSON::Int(*dim as i64)]),
+      DualGeometricMean{dim}     => JSON::List(vec![ JSON::String("dgmean".to_string()), JSON::Int(*dim as i64)]),
+      PrimalExp                  => JSON::List(vec![ JSON::String("pexp".to_string())]),
+      DualExp                    => JSON::List(vec![ JSON::String("dexp".to_string())]),
+      PrimalPower { dim, alpha } => JSON::List(vec![ JSON::String("ppow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
+      DualPower { dim, alpha }   => JSON::List(vec![ JSON::String("dpow".to_string()), JSON::Int(*dim as i64), JSON::FloatArray(alpha.clone())]), 
+      ScaledVectorizedPSD { dim } => JSON::List(vec![ JSON::String("svecpsd".to_string()), JSON::Int(*dim as i64)]), 
+    }
 }
 
 #[cfg(test)]

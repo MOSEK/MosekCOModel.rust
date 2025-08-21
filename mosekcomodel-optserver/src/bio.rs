@@ -343,7 +343,7 @@ impl<'a,'b,'c,T,E> SerEntryChunkWriter<'a,'b,'c,T,E> where T : Write, E : Serial
             let n = bdata.len().min(0x7ff8);
             self.ent.ser.w.write_all(&[(n >> 8) as u8, (n & 0xff) as u8])?;
             self.ent.ser.w.write_all(&bdata[..n])?;
-            println!("Write chunk size: {} ({}) ",n,E::sig() as char);
+            //println!("Write chunk size: {} ({}) ",n,E::sig() as char);
             bdata = &bdata[n..];
         }
         Ok(())
@@ -455,7 +455,7 @@ impl<'a,R> Des<'a,R> where R : Read {
     }
 
     pub fn peek<'b>(&'b mut self) -> std::io::Result<Option<(&'b [u8],&'b [u8])>> {
-        println!("Des::peek() loaded: {:?}, active: {:?}, eos = {:?}",self.loaded, self.entry_active,self.end_of_stream);
+        //println!("Des::peek() loaded: {:?}, active: {:?}, eos = {:?}",self.loaded, self.entry_active,self.end_of_stream);
         if ! self.loaded {
             if self.entry_active { return Err(std::io::Error::other("Previous entry not finished")) }
             if self.end_of_stream { return Ok(None); }
@@ -499,7 +499,7 @@ impl<'a,R> Des<'a,R> where R : Read {
     /// # Returns
     /// At the end of stream, return `None`, otherwise return an entry reader.
     pub fn next_entry<'b>(&'b mut self) -> std::io::Result<Option<DesEntry<'a,'b,R>>> {
-        println!("Des::expect() loaded: {:?}, active: {:?}, eos = {:?}",self.loaded, self.entry_active,self.end_of_stream);
+        //println!("Des::expect() loaded: {:?}, active: {:?}, eos = {:?}",self.loaded, self.entry_active,self.end_of_stream);
         _ = self.peek()?;
 
         if self.loaded {
@@ -523,7 +523,7 @@ impl<'a,R> Des<'a,R> where R : Read {
     }
 
     pub fn expect<'b>(&'b mut self, name : &[u8], fmt : &[u8]) -> std::io::Result<DesEntry<'a,'b,R>> {
-        println!("Des::expect() loaded: {:?}, active: {:?}, eos = {:?}",self.loaded, self.entry_active,self.end_of_stream);
+        //println!("Des::expect() loaded: {:?}, active: {:?}, eos = {:?}",self.loaded, self.entry_active,self.end_of_stream);
         {
             if let Some((nextname,nextfmt)) = self.peek()? {
                 if nextname != name || nextfmt != fmt { 
@@ -745,7 +745,7 @@ impl<'a,'b,'c,R,E> DesEntryReader<'a,'b,'c,R,E> where R : Read, E : Serializable
                 Ok(n)
             },
             EntryKind::Stream(nleft) => {
-                println!("DesEntryReader::read() stream, cur chunk : {}",nleft);
+                //println!("DesEntryReader::read() stream, cur chunk : {}",nleft);
                 let mut buf = buf;
                 let mut chunk_left = nleft;
                 let mut nread = 0;
@@ -759,7 +759,7 @@ impl<'a,'b,'c,R,E> DesEntryReader<'a,'b,'c,R,E> where R : Read, E : Serializable
                             self.entry.ready = true;
                             break;
                         }
-                        println!("DesEntryReader::read() stream loop: next chunk : {}",chunk_left);
+                        //println!("DesEntryReader::read() stream loop: next chunk : {}",chunk_left);
                     }
                     let n = (chunk_left / size_of::<E>()).min(buf.len());
                     assert!(n > 0);
@@ -798,7 +798,7 @@ impl<'a,'b,R> Drop for DesEntry<'a,'b,R> where R : Read {
             self.des.entry_active = false;
         }
         else {
-            panic!("Unfinished deserializer entry")
+            panic!("Unfinished deserializer entry: {}",std::str::from_utf8(self.name()).unwrap_or("<invalid utf-8>"))
         }
     }
 }
