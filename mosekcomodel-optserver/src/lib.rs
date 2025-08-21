@@ -1,10 +1,12 @@
 //! This module implements a backend that uses a MOSEK OptServer instance for solving, for example
 //! [solve.mosek.com:30080](http://solve.mosek.com). 
 //!
+use mosekcomodel::domain::{QuadraticCone, VectorDomainType};
+use mosekcomodel::utils::Permutation;
 use mosekcomodel::*;
 use mosekcomodel::model::{IntSolutionManager, ModelWithIntSolutionCallback, ModelWithLogCallback};
-use mosekcomodel::utils::iter::{Chunkation, ChunksByIterExt, PermuteByEx};
-use itertools::izip;
+use mosekcomodel::utils::iter::{Chunkation, ChunksByIterExt, PermuteByEx, PermuteByMutEx};
+use itertools::{iproduct, izip, Permutations};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader,BufRead,Read};
@@ -38,7 +40,7 @@ enum VarItem {
     Conic{conidx : usize}
 }
 
-
+#[derive(Clone)]
 enum VecCone {
     Zero{dim : usize},
     NonNegative{dim : usize},
@@ -458,6 +460,26 @@ impl BaseModelTrait for Backend {
         Ok(())
     }
 }
+
+
+pub trait OptserverDomainTrait : VectorDomainTrait {
+
+}
+
+impl<D> VectorConeModelTrait<D> for Backend where D : VectorDomainTrait+'static {
+    fn conic_variable<const N : usize>(&mut self, name : Option<&str>,dom : VectorDomain<N,D>) -> Result<Variable<N>,String> {
+        let (dt,rhs,shape,conedim,is_int) = dom.dissolve();
+        self.conic_variable(name,shape,conedim,dt.to_conic_domain_type(),rhs.as_slice(),is_int)
+
+    }
+    fn conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : VectorDomain<N,D>, _shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String> {
+        let (dt,rhs,shape,conedim,is_int) = dom.dissolve();
+
+        self.conic_constraint(name, ptr, subj, cof, shape, conedim, dt.to_conic_domain_type(), rhs.as_slice())
+        
+    }
+}
+
 
 impl ModelWithIntSolutionCallback for Backend {
     fn set_solution_callback<F>(&mut self, func : F) where F : 'static+FnMut(&IntSolutionManager) {
@@ -1230,6 +1252,173 @@ impl Backend {
         self.var_names.resize(last_nvar, None);
 
         first..last
+    }
+
+
+
+    fn conic_variable<const N : usize>(
+        &mut self, 
+        name  : Option<&str>,
+        // domain
+        shape   : [usize;N],
+        conedim : usize,
+        dt      : VectorDomainType,
+        offset  : &[f64],
+        is_int  : bool) -> Result<Variable<N>,String> 
+    {
+        use VecCone::*;
+
+        let n = shape.iter().product();
+        let dim = shape[conedim];
+        let numcone = n/dim;
+
+        assert_eq!(offset.len(),n);
+
+
+        let ct = 
+            match dt {
+                VectorDomainType::QuadraticCone          => Quadratic{dim},
+                VectorDomainType::RotatedQuadraticCone   => RotatedQuadratic{dim},
+                VectorDomainType::SVecPSDCone            => ScaledVectorizedPSD{dim},
+                VectorDomainType::GeometricMeanCone      => PrimalGeometricMean {dim},
+                VectorDomainType::DualGeometricMeanCone  => DualGeometricMean{dim},
+                VectorDomainType::ExponentialCone        => PrimalExp,
+                VectorDomainType::DualExponentialCone    => DualExp,
+                VectorDomainType::PrimalPowerCone(alpha) => PrimalPower{dim,alpha},
+                VectorDomainType::DualPowerCone(alpha)   => DualPower{dim,alpha},
+                // linear types                                                   
+                VectorDomainType::NonNegative            => NonNegative{dim},
+                VectorDomainType::NonPositive            => NonPositive{dim},
+                VectorDomainType::Zero                   => Zero{dim},
+                VectorDomainType::Free                   => Unbounded {dim},
+            };
+
+        let base = self.var_lb.len();
+        self.var_lb.resize(base+n,f64::NEG_INFINITY);
+        self.var_ub.resize(base+n,f64::INFINITY);
+        self.var_int.resize(base+n,is_int);
+        self.var_names.resize(base+n,None);
+
+        let firstvar = self.var_idx.len();
+        let lastvar = firstvar + n;
+     
+        let con_base = self.con_rhs.len();
+        self.con_rhs.extend_from_slice(offset);
+        self.con_names.resize(con_base+n, None);
+
+        self.con_mx_row.extend( (firstvar..lastvar).map(|i| self.mx.append_row(&[i], &[1.0], 0.0)) );
+        self.con_block_dom.extend((0..numcone).map(|_| ct.clone()));
+        self.con_block_ptr.extend((0..numcone).map(|i| base+i*dim ));
+
+        self.var_idx.extend(base..base+n);
+        self.vars.extend((con_base..con_base+dim).map(|conidx| VarItem::Conic { conidx }));
+
+
+        let shape3 = [ shape[..conedim].iter().product(),dim,shape[conedim+1..].iter().product()];
+        let strides3 = [ shape3[1]*shape[2], 1, shape3[2]];
+        
+        let perm : Vec::<usize> = iproduct!(0..shape3[0],0..shape3[1],0..shape3[2]).map(|(i0,i1,i2)| strides3[0]*i0 + strides3[1]*i1 + strides3[2]*i2).collect();
+       
+        let varidxs = perm.iter().map(|i| firstvar + i).collect();
+
+        self.var_names.resize(base+n,None);
+
+        if let Some(name) = name {
+            let mut idx = [1; N];
+
+            self.var_names[base..].permute_by_mut(perm.as_slice())
+                .for_each(|n| {
+                    *n = Some(format!("{}{:?}",name,idx));
+                    _ = idx.iter_mut().zip(shape.iter()).rev().fold(1,|c,(i,&d)| { *i += c; if *i > d { *i = 1; 1 } else { 0 } });
+                });
+        }
+
+        Ok(Variable::new(varidxs, None, &shape))
+    }
+   
+    fn conic_constraint<const N : usize>(
+        &mut self, 
+        name    : Option<&str>,
+        // expr
+        ptr     : &[usize], 
+        subj    : &[usize], 
+        cof     : &[f64],
+        // domain
+        shape   : [usize;N],
+        conedim : usize,
+        dt      : VectorDomainType,
+        offset  : &[f64]) -> Result<Constraint<N>,String>
+    {
+        use VecCone::*;
+        let n = shape.iter().product();
+        let dim = shape[conedim];
+        let numcone = n/dim;
+
+        assert_eq!(offset.len(),n);
+
+
+        let ct = 
+            match dt {
+                VectorDomainType::QuadraticCone          => Quadratic{dim},
+                VectorDomainType::RotatedQuadraticCone   => RotatedQuadratic{dim},
+                VectorDomainType::SVecPSDCone            => ScaledVectorizedPSD{dim},
+                VectorDomainType::GeometricMeanCone      => PrimalGeometricMean {dim},
+                VectorDomainType::DualGeometricMeanCone  => DualGeometricMean{dim},
+                VectorDomainType::ExponentialCone        => PrimalExp,
+                VectorDomainType::DualExponentialCone    => DualExp,
+                VectorDomainType::PrimalPowerCone(alpha) => PrimalPower{dim,alpha},
+                VectorDomainType::DualPowerCone(alpha)   => DualPower{dim,alpha},
+                // linear types                                                   
+                VectorDomainType::NonNegative            => NonNegative{dim},
+                VectorDomainType::NonPositive            => NonPositive{dim},
+                VectorDomainType::Zero                   => Zero{dim},
+                VectorDomainType::Free                   => Unbounded {dim},
+            };
+
+        let firstcon = self.con_rhs.len();
+
+        let ptr_perm = Chunkation::new(ptr).unwrap();
+        self.con_mx_row.extend(
+            izip!(ptr_perm.chunks(subj).unwrap(),
+                  ptr_perm.chunks(cof).unwrap())
+                .map(|(subj,cof)|
+                    if let Some((&j,&c)) = subj.first().zip(cof.first()) {
+                        if j == 0 {
+                            self.mx.append_row(&subj[1..], &cof[1..], c)
+                        }
+                        else {
+                            self.mx.append_row(subj,cof,0.0)
+                        }
+                    } 
+                    else {
+                        self.mx.append_row(subj,cof,0.0)
+                    }));
+        self.con_rhs.extend_from_slice(offset);
+        self.con_names.resize(firstcon+n,None);
+        let firstblock = self.con_block_dom.len();
+        self.con_block_ptr.extend( (firstcon..firstcon+n).step_by(dim) );
+        self.con_block_dom.extend( (0..numcone).map(|i| ct.clone() ));
+
+        let shape3 = [ shape[..conedim].iter().product(),dim,shape[conedim+1..].iter().product()];
+        let strides3 = [ shape3[1]*shape[2], 1, shape3[2]];
+        
+        let perm : Vec::<usize> = iproduct!(0..shape3[0],0..shape3[1],0..shape3[2]).map(|(i0,i1,i2)| strides3[0]*i0 + strides3[1]*i1 + strides3[2]*i2).collect();
+        let rescon0 = self.cons.len();
+
+        self.cons.extend( iproduct!(0..numcone,0..dim).map(|(block_index,offset)| ConItem{ block_index, offset}));
+
+        if let Some(name) = name {
+            let mut idx = [1; N];
+
+            self.con_names[firstcon..]
+                .permute_by_mut(perm.as_slice())
+                .for_each(|n| {
+                    *n = Some(format!("{}{:?}",name,idx));
+                    _ = idx.iter_mut().zip(shape.iter()).rev().fold(1,|c,(i,&d)| { *i += c; if *i > d { *i = 1; 1 } else { 0 } });
+                });
+        }
+
+        Ok(Constraint::new(perm.iter().map(|&i| rescon0+i).collect(), &shape))
     }
 }
 
