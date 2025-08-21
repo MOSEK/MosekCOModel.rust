@@ -126,6 +126,10 @@ impl BaseModelTrait for Backend {
     fn new(name : Option<&str>) -> Self {
         Backend{
             name : name.map(|v| v.to_string()),
+            var_lb : vec![1.0],
+            var_ub : vec![1.0],
+            var_int : vec![false],
+            var_names : vec![None],
             ..Default::default()
         }
     }
@@ -698,6 +702,7 @@ impl Backend {
             sol.primal.obj = pobj;
             sol.primal.con.clear();
             if let Some(xx) = xx {
+                sol.primal.var.resize(self.var_idx.len(),0.0);
                 xx.permute_by(self.var_idx.as_slice())
                     .zip(sol.primal.var.iter_mut())
                     .for_each(|(&src,dst)| *dst = src);
@@ -933,7 +938,7 @@ impl Backend {
         }
 
         if let Some((b"sol/integer",b"[B[B")) = r.peek()? {
-            let sta    = r.expect(b"sol/intger",b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
+            let sta    = r.expect(b"sol/integer",b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
             let pdef   = !matches!(sta.0,Undefined);
             let pobj   = if pdef { r.expect(b"sol/integer/pobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
             let varsta = r.expect(b"sol/integer/var/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;

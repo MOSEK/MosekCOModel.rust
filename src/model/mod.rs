@@ -332,8 +332,9 @@ pub struct ModelAPI<T : BaseModelTrait> {
 
 impl<T : BaseModelTrait+Default> Default for ModelAPI<T> {
     fn default() -> Self {
+        let inner = T::default();
         ModelAPI{
-            inner : Default::default(),
+            inner,
             rs : WorkStack::new(1024),
             ws : WorkStack::new(1024),
             xs : WorkStack::new(1024),
@@ -356,10 +357,10 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
             sol_bas : Default::default(),
             sol_itr : Default::default(),
             sol_itg : Default::default(),
-        }
+        }        
     }
 
-    pub fn from(inner : T) -> ModelAPI<T> { 
+    fn from(inner : T) -> ModelAPI<T> { 
         ModelAPI {
             inner,
             rs : WorkStack::new(1024),

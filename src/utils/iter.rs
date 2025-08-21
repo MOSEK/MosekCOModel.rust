@@ -610,7 +610,6 @@ impl<'a,'b,'c,T> Iterator for ChunkationIter<'a,'b,'c,T> {
         if self.i+1 < self.c.ptr.len() {
             let i = self.i; 
             self.i += 1;
-            println!(" i = {}, len = {}",i,self.c.ptr.len());
             Some(unsafe{self.data.get_unchecked(*self.c.ptr.get_unchecked(i)..*self.c.ptr.get_unchecked(i+1))})
         }
         else {

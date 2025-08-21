@@ -113,6 +113,9 @@ impl BaseModelTrait for ModelHighs {
     fn new(name : Option<&str>) -> Self {
         ModelHighs {
             name         : name.map(|v| v.to_string()),
+            var_range_lb : vec![1.0],
+            var_range_ub : vec![1.0],
+            var_range_int : vec![false],
             .. Default::default()
         }
     }

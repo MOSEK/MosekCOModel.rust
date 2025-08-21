@@ -467,7 +467,7 @@ impl<'a,R> Des<'a,R> where R : Read {
             let fmtlen = self.fmt[0] as usize;
             if fmtlen > 0 {
                 self.r.read_exact(&mut self.fmt[1..fmtlen+1])?;
-                println!("Des::peek() Entry = '{}' {}",std::str::from_utf8(&self.name[1..namelen+1]).unwrap(), std::str::from_utf8(&self.fmt[1..fmtlen+1]).unwrap());
+                //println!("Des::peek() Entry = '{}' {}",std::str::from_utf8(&self.name[1..namelen+1]).unwrap(), std::str::from_utf8(&self.fmt[1..fmtlen+1]).unwrap());
                 if ! validate_signature(&self.fmt[1..fmtlen+1]) {
                     
                     return std::str::from_utf8(&self.fmt[1..1+fmtlen])
