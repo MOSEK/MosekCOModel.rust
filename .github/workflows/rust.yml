@@ -21,4 +21,4 @@ jobs:
     - name: Build
       run: MOSEK_BINDIR_110=mosek/11.0/tools/platform/linux64x86/bin cargo build --all --verbose
     - name: Run tests
-      run: echo "${{secrets.LICENSE}}" > mosek.lic && MOSEKLM_LICENSE_FILE=mosek.lic LD_LIBRARY_PATH=mosek/11.0/tools/platform/linux64x86/bin cargo test --all --verbose
+      run: mkdir -p ~/mosek && echo "${{secrets.LICENSE}}" > ~/mosek/mosek.lic && LD_LIBRARY_PATH=mosek/11.0/tools/platform/linux64x86/bin cargo test --all --verbose
