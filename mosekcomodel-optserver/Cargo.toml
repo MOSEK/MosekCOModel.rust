@@ -14,5 +14,5 @@ readme = "README.md"
 [dependencies]
 zstd = "0.13.3"
 itertools = "0.14.0"
-mosekcomodel = { version = "0.4.0", path = ".." }
+mosekcomodel = { version = "0.4.3", path = ".." }
 reqwest = { version = "0.12.22", features = [ "blocking" ] }
