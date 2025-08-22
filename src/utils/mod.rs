@@ -1,4 +1,5 @@
-#[allow(dead_code)]
+#![allow(unused)]
+#![allow(dead_code)]
 pub mod iter;
 
 use itertools::izip;
@@ -37,7 +38,7 @@ impl<const N : usize> Strides<N> {
         }
     }
 
-    pub fn iter(&self) -> std::slice::Iter<usize> { self.strides.iter() }
+    pub fn iter<'a>(&'a self) -> std::slice::Iter<'a,usize> { self.strides.iter() }
 }
 
 

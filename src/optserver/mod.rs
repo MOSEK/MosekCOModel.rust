@@ -195,7 +195,7 @@ impl BaseModelTrait for Backend {
 
     fn linear_constraint<const N : usize>
         (& mut self, 
-         name  : Option<&str>,
+         _name  : Option<&str>,
          dom   : LinearDomain<N>,
          _eshape : &[usize], 
          ptr   : &[usize], 
@@ -258,7 +258,7 @@ impl BaseModelTrait for Backend {
 
     fn ranged_constraint<const N : usize>
         (& mut self, 
-         name : Option<&str>, 
+         _name : Option<&str>, 
          dom  : LinearRangeDomain<N>,
          _eshape : &[usize], 
          ptr : &[usize], 
@@ -367,7 +367,7 @@ impl BaseModelTrait for Backend {
             return Err(format!("OptServer responded with code {}: {}",resp.code(),resp.reason()))
         }
 
-        let mut rescode = None;
+        let mut _rescode = None;
 
         for (k,v) in resp.headers() {
             if k.eq_ignore_ascii_case(b"Content-Type") {
@@ -380,7 +380,7 @@ impl BaseModelTrait for Backend {
             }
             else if k.eq_ignore_ascii_case(b"X-Mosek-Res") {
                 if let Ok(r) = std::str::from_utf8(v) {
-                    rescode = Some(r.to_string());
+                    _rescode = Some(r.to_string());
                 }
             }
         }
@@ -388,7 +388,7 @@ impl BaseModelTrait for Backend {
         resp.finalize().map_err(|e| e.to_string())?;
 
         if let JSON::Dict(d) = data {
-            if let Some((k,JSON::Dict(d))) = d.0.iter().find(|kv| kv.0.as_str() == "Task/solutions") {
+            if let Some((_,JSON::Dict(d))) = d.0.iter().find(|kv| kv.0.as_str() == "Task/solutions") {
                 for (k,v) in d.0.iter() {
 
                     if let JSON::Dict(d) = v {

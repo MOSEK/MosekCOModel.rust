@@ -360,20 +360,6 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         }        
     }
 
-    fn from(inner : T) -> ModelAPI<T> { 
-        ModelAPI {
-            inner,
-            rs : WorkStack::new(1024),
-            ws : WorkStack::new(1024),
-            xs : WorkStack::new(1024),
-            
-            sol_bas : Default::default(),
-            sol_itr : Default::default(),
-            sol_itg : Default::default(),
-        }
-    }
-
-
     /// Attach a log printer callback to the model. This will receive messages from the solver
     /// while solving and during a few other calls like file reading/writing. 
     ///
@@ -387,7 +373,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
 
     /// Attach a solution callback function. This is called for each new integer solution. The new
     /// solution can be accessed though the [ModelAPI]
-    pub fn set_int_solution_callback<F>(&mut self, mut func : F) where F : 'static+FnMut(&IntSolutionManager), T : 'static+ModelWithIntSolutionCallback {
+    pub fn set_int_solution_callback<F>(&mut self, func : F) where F : 'static+FnMut(&IntSolutionManager), T : 'static+ModelWithIntSolutionCallback {
         self.inner.set_solution_callback(func)
     }
 

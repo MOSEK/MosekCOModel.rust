@@ -78,7 +78,7 @@ enum Item {
 impl Item {
     fn index(&self) -> usize { 
         match self {
-            Item::Linear { index } => *index,
+            Item::Linear { index }      => *index,
             Item::RangedUpper { index } => *index,
             Item::RangedLower { index } => *index
         }
@@ -86,6 +86,7 @@ impl Item {
 }
 /// Simple model object.
 #[derive(Default)]
+#[allow(unused)]
 pub struct ModelHighs {
     name : Option<String>,
 
@@ -116,6 +117,7 @@ impl BaseModelTrait for ModelHighs {
             var_range_lb : vec![1.0],
             var_range_ub : vec![1.0],
             var_range_int : vec![false],
+            vars : vec![Item::Linear { index: 0 }],
             .. Default::default()
         }
     }
@@ -211,14 +213,14 @@ impl BaseModelTrait for ModelHighs {
 
     fn linear_constraint<const N : usize>
         (& mut self, 
-         name  : Option<&str>,
+         _name  : Option<&str>,
          dom   : LinearDomain<N>,
          _eshape : &[usize], 
          ptr   : &[usize], 
          subj  : &[usize], 
          cof   : &[f64]) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
     {
-        let (dt,b,sp,shape,_is_integer) = dom.dissolve();
+        let (dt,b,_sp,shape,_is_integer) = dom.dissolve();
 
         assert_eq!(b.len(),ptr.len()-1); 
         let nrow = b.len();
@@ -264,7 +266,7 @@ impl BaseModelTrait for ModelHighs {
 
     fn ranged_constraint<const N : usize>
         (& mut self, 
-         name : Option<&str>, 
+         _name : Option<&str>, 
          dom  : LinearRangeDomain<N>,
          _eshape : &[usize], 
          ptr : &[usize], 
@@ -353,13 +355,14 @@ impl BaseModelTrait for ModelHighs {
             
         let cols : Vec<highs::Col> = 
             izip!(c.iter(), self.var_range_lb.iter(), self.var_range_ub.iter(),self.var_range_int.iter())
-                .map(|(&cj,&bl,&bu,&isint)|
+                .map(|(&cj,&bl,&bu,&isint)| {
+                    //println!("Variable: c_j = {}, bl = {}, bu = {}",cj,bl,bu);
                     match (bl > f64::NEG_INFINITY,bu < f64::INFINITY) {
                         (true,true)   => if ! isint { p.add_column(cj, bl..bu) } else { p.add_integer_column(cj, bl..bu) },
                         (true,false)  => if ! isint { p.add_column(cj, bl..) }   else { p.add_integer_column(cj, bl..bu) },
                         (false,true)  => if ! isint { p.add_column(cj, ..bu) }   else { p.add_integer_column(cj, bl..bu) },
                         (false,false) => if ! isint { p.add_column::<f64,std::ops::RangeFull>(cj, ..) } else { p.add_integer_column(cj, bl..bu) },
-                    })
+                    }})
                 .collect();
         
         let ptrb : Vec<usize> = self.a_ptr.iter().map(|v| v[0]).collect();
@@ -371,6 +374,7 @@ impl BaseModelTrait for ModelHighs {
             .for_each(|(&bl,&bu,subj,cof)|
                 { 
                     let expr : Vec<(highs::Col,f64)> = cols.permute_by(subj).cloned().zip(cof.iter().cloned()).collect();
+                    //println!("Constraint: bl = {}, bu = {}, expr = {:?}",bl,bu,expr);
                     match (bl > f64::NEG_INFINITY,bu < f64::INFINITY) {
                         (true,true)   => p.add_row(bl..bu, expr),
                         (true,false)  => p.add_row(bl..,   expr),
@@ -476,7 +480,7 @@ impl BaseModelTrait for ModelHighs {
         Ok(())
     }
 
-    fn set_parameter<V>(&mut self, parname : V::Key, parval : V) -> Result<(),String> where V : SolverParameterValue<Self>,Self: Sized
+    fn set_parameter<V>(&mut self, _parname : V::Key, _parval : V) -> Result<(),String> where V : SolverParameterValue<Self>,Self: Sized
     {
         Err("Parameters not supported".to_string())
     }

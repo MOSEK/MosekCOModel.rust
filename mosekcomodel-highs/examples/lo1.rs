@@ -17,9 +17,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
-use mosekcomodel_highs::*;
-
-type HModel = ModelAPI<mosekcomodel_highs::ModelHighs>;
+use mosekcomodel_highs::Model;
 
 fn lo1() -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>) {
     let a0 : &[f64] = &[ 3.0, 1.0, 2.0, 0.0 ];
@@ -28,7 +26,7 @@ fn lo1() -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>) {
     let c  : &[f64] = &[ 3.0, 1.0, 5.0, 1.0 ];
 
     // Create a model with the name 'lo1'
-    let mut m = HModel::new(Some("lo1"));
+    let mut m = Model::new(Some("lo1"));
     // Create variable 'x' of length 4
     let x = m.variable(Some("x0"), nonnegative().with_shape(&[4]));
 
@@ -69,6 +67,10 @@ fn test() {
 
     let (_psta,_dsta,xx) = lo1();
     let xx = xx.unwrap();
+
+    println!("xx : {:?}", xx);
+    println!("tol : {}", (a0.iter().zip(xx.iter()).map(|(&a,&b)| a*b).sum::<f64>()-30.0).abs());
+
     assert!((a0.iter().zip(xx.iter()).map(|(&a,&b)| a*b).sum::<f64>()-30.0).abs() < 1e-7);
     assert!(a1.iter().zip(xx.iter()).map(|(&a,&b)| a*b).sum::<f64>() >= 15.0);
     assert!(a2.iter().zip(xx.iter()).map(|(&a,&b)| a*b).sum::<f64>() <= 25.0);

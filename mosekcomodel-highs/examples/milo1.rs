@@ -15,7 +15,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
-type HModel = ModelAPI<mosekcomodel_highs::ModelHighs>;
+use mosekcomodel_highs::Model;
 
 fn milo1() -> (SolutionStatus,Result<Vec<f64>,String>) {
     let a0 : &[f64] = &[ 50.0, 31.0 ];
@@ -23,7 +23,7 @@ fn milo1() -> (SolutionStatus,Result<Vec<f64>,String>) {
 
     let c : &[f64] = &[ 1.0, 0.64 ];
    
-    let mut m = HModel::new(Some("milo1"));
+    let mut m = Model::new(Some("milo1"));
     
     let x = m.variable(Some("x"), greater_than(0.0).with_shape(&[2]).integer());
 
@@ -47,7 +47,16 @@ fn milo1() -> (SolutionStatus,Result<Vec<f64>,String>) {
 
 fn main() {
     let (psta,xx) = milo1();
+    let xx = xx.unwrap();
     println!("Status = {:?}",psta);
-    println!("x = {:?}", xx.unwrap());
+    println!("x = {:?}", xx);
+    let x = xx;
+
+    assert!(50.0 * x[0] + 32.0 * x[1] < 250.0 + 1e-7);
+    assert!( 3.0 * x[0] -  2.0 * x[1] > -4.0 - 1e-7);
 }
+
+#[test]
+#[cfg(test)]
+fn test() { main() }
 
