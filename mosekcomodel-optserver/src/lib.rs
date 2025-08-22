@@ -231,9 +231,10 @@ impl BaseModelTrait for Backend {
         let rowidxs = izip!(ptrchunks.chunks(subj).unwrap(), 
                             ptrchunks.chunks(cof).unwrap())
             .map(|(subj,cof)| {
-                if let (Some(j),Some(c)) = (subj.last(),cof.last()) {
-                    if *j == usize::MAX {
-                        self.mx.append_row(&subj[..subj.len()-1], &cof[..cof.len()-1], *c)
+                //println!("{}:{}: linear_constraint(), subj = {:?}",file!(),line!(),subj);
+                if let (Some(j),Some(c)) = (subj.first(),cof.first()) {
+                    if *j == 0 {
+                        self.mx.append_row(&subj[1..], &cof[..cof.len()-1], *c)
                     }
                     else {
                         self.mx.append_row(subj, cof, 0.0)
@@ -297,9 +298,10 @@ impl BaseModelTrait for Backend {
         let ptrchunks = Chunkation::new(ptr).unwrap();
         let rowidxs : Vec<usize> = izip!(ptrchunks.chunks(subj).unwrap(), ptrchunks.chunks(cof).unwrap())
             .map(|(subj,cof)| {
-                if let (Some(j),Some(c)) = (subj.last(),cof.last()) {
-                    if *j == usize::MAX {
-                        self.mx.append_row(&subj[..subj.len()-1], &cof[..cof.len()-1], *c)
+                if let (Some(j),Some(c)) = (subj.first(),cof.first()) {
+                    //println!("{}:{}: ranged_constraint(), subj = {:?}",file!(),line!(),subj);
+                    if *j == 0 {
+                        self.mx.append_row(&subj[1..], &cof[..cof.len()-1], *c)
                     }
                     else {
                         self.mx.append_row(subj, cof, 0.0)
@@ -876,7 +878,7 @@ impl Backend {
         }
 
         sol_bas.primal.status = Undefined;
-        sol_bas.dual.status   = Undefined;
+        sol_bas.dual.status   = Undefined;  
         sol_itr.primal.status = Undefined;
         sol_itr.dual.status   = Undefined;
         sol_itg.primal.status = Undefined;
@@ -902,7 +904,7 @@ impl Backend {
  
         use SolutionStatus::*;
 
-        if let Some((b"sol/interior",b"[B[B")) = r.peek()? {            
+        if let Some((b"sol/interior",b"[B[B")) = r.peek()? {
             sol_itr.primal.var.resize(self.vars.len(),0.0);
             sol_itr.dual.var.resize(self.vars.len(),0.0);
             sol_itr.primal.con.resize(self.cons.len(),0.0);
@@ -1354,7 +1356,6 @@ impl Backend {
 
         assert_eq!(offset.len(),n);
 
-
         let ct = 
             match dt {
                 VectorDomainType::QuadraticCone          => Quadratic{dim},
@@ -1379,10 +1380,11 @@ impl Backend {
         self.con_mx_row.extend(
             izip!(ptr_perm.chunks(subj).unwrap(),
                   ptr_perm.chunks(cof).unwrap())
-                .map(|(subj,cof)|
-                    if let (Some(j),Some(c)) = (subj.last(),cof.last()) {
-                        if *j == usize::MAX {
-                            self.mx.append_row(&subj[..subj.len()-1], &cof[..cof.len()-1], *c)
+                .map(|(subj,cof)| {
+                    //println!("{}:{}: conic_constraint(), subj = {:?}",file!(),line!(),subj);
+                    if let (Some(j),Some(c)) = (subj.first(),cof.first()) {
+                        if *j == 0 {
+                            self.mx.append_row(&subj[1..], &cof[..cof.len()-1], *c)
                         }
                         else {
                             self.mx.append_row(subj, cof, 0.0)
@@ -1390,20 +1392,20 @@ impl Backend {
                     }
                     else {
                         self.mx.append_row(subj, cof, 0.0)
-                    }));
+                    }}));
         self.con_rhs.extend_from_slice(offset);
         self.con_names.resize(firstcon+n,None);
         let firstblock = self.con_block_dom.len();
         self.con_block_ptr.extend( (firstcon..firstcon+n).step_by(dim) );
         self.con_block_dom.extend( (0..numcone).map(|i| ct.clone() ));
 
-        let shape3 = [ shape[..conedim].iter().product(),dim,shape[conedim+1..].iter().product()];
-        let strides3 = [ shape3[1]*shape[2], 1, shape3[2]];
+        let shape3   = [ shape[..conedim].iter().product(),dim,shape[conedim+1..].iter().product()];
+        let strides3 = [ shape3[1]*shape3[2], 1, shape3[2]];
         
         let perm : Vec::<usize> = iproduct!(0..shape3[0],0..shape3[1],0..shape3[2]).map(|(i0,i1,i2)| strides3[0]*i0 + strides3[1]*i1 + strides3[2]*i2).collect();
         let rescon0 = self.cons.len();
 
-        self.cons.extend( iproduct!(0..numcone,0..dim).map(|(block_index,offset)| ConItem{ block_index, offset}));
+        self.cons.extend( iproduct!(firstblock..firstblock+numcone,0..dim).map(|(block_index,offset)| ConItem{ block_index, offset}));
 
         if let Some(name) = name {
             let mut idx = [1; N];

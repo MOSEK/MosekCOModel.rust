@@ -1,7 +1,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
-use mosekcomodel_mosek::Model;
+use mosekcomodel_optserver::{Model,SolverAddress};
 
 /// Computes the optimal portfolio for a given risk
 ///
@@ -12,13 +12,15 @@ use mosekcomodel_mosek::Model;
 /// * `x0` Initial holdings
 /// * `w`  Initial cash holding
 /// * `gamma` Maximum risk (=std. dev) accepted
-fn basic_markowitz( n : usize,
+fn basic_markowitz( address : &str,
+                    n : usize,
                     mu : &[f64],
                     gt : &NDArray<2>,
                     x0 : &[f64],
                     w  : f64,
                     gamma : f64) -> f64 {
     let mut model = Model::new(Some("Basic Markowitz"));
+    model.set_parameter((), SolverAddress(address.to_string()));
     // Redirect log output from the solver to stdout for debugging.
     // if uncommented.
     model.set_log_handler(|msg| print!("{}",msg));
@@ -36,6 +38,7 @@ fn basic_markowitz( n : usize,
     model.constraint(Some("risk"), 
                      vstack![Expr::from(gamma).reshape(&[1]), 
                              gt.mul(&x)], in_quadratic_cone());
+    model.write_problem("portfolio_basic.jtask");
     // Solves the model.
     model.solve();
 
@@ -62,7 +65,10 @@ fn main() {
         0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.22514, 0.03327,
         0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.2202 ]);
 
-    let expret : Vec<(f64,f64)> = gammas.iter().map(|&gamma| (gamma,basic_markowitz( n, &mu, &GT, &x0, w, gamma))).collect();
+    let mut args = std::env::args(); args.next();
+    let address = args.next().unwrap_or("http://solve.mosek.com:30080".to_string());
+
+    let expret : Vec<(f64,f64)> = gammas.iter().map(|&gamma| (gamma,basic_markowitz( address.as_str(), n, &mu, &GT, &x0, w, gamma))).collect();
     println!("-----------------------------------------------------------------------------------");
     println!("Basic Markowitz portfolio optimization");
     println!("-----------------------------------------------------------------------------------");

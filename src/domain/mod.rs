@@ -127,7 +127,7 @@ impl VectorDomainTrait for GeometricMeanCone {
     }
 }
 impl VectorDomainTrait for ExponentialCone {
-    fn check_conesize(&self, d : usize) -> Result<(),String> { if d != 3 { Ok(()) } else { Err("Invalid dimension for exponential code".to_string()) } }
+    fn check_conesize(&self, d : usize) -> Result<(),String> { if d == 3 { Ok(()) } else { Err("Invalid dimension for exponential code".to_string()) } }
     fn to_conic_domain_type(&self) -> VectorDomainType {
         match self.0 {
             AsymmetricConeType::Primal => VectorDomainType::ExponentialCone,
@@ -258,6 +258,7 @@ impl<D> IntoDomain for ScalableVectorDomain<D> where D : VectorDomainTrait+'stat
 impl<const N : usize,D> IntoShapedDomain<N> for ScalableVectorDomain<D> where D : VectorDomainTrait+'static {
     type Result = VectorDomain<N,D>;
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
+       // println!("{}:{}: IntoDomain::try_into_domain() shape = {:?}, conedim = {:?}",file!(),line!(),&shape,self.cone_dim);
         let cd = 
             if shape.len() == 0 {
                 1
@@ -269,6 +270,7 @@ impl<const N : usize,D> IntoShapedDomain<N> for ScalableVectorDomain<D> where D 
                 shape[N-1]
             };
 
+        //println!("{}:{}: IntoDomain::try_into_domain() cd = {}",file!(),line!(),cd);
         self.domain_type.check_conesize(cd)?;
 
         Ok(VectorDomain{
@@ -304,6 +306,8 @@ impl<const N : usize,D> VectorProtoDomain<N,D> where D : VectorDomainTrait {
 impl<const N : usize,D> IntoDomain for VectorProtoDomain<N,D> where D : VectorDomainTrait+'static {
     type Result = VectorDomain<N,D>;
     fn try_into_domain(self) -> Result<Self::Result,String> {
+        //println!("{}:{}: VectorProtoDomain::try_into_domain() shape = {:?}, conedim = {:?}",file!(),line!(),&self.shape,self.cone_dim);
+
         if self.offset.len() != self.shape.iter().product::<usize>() {
             return Err(format!("Domain offset length does not match shape"));
         }
@@ -311,6 +315,7 @@ impl<const N : usize,D> IntoDomain for VectorProtoDomain<N,D> where D : VectorDo
             return Err(format!("Domain has invalid cone dimension, expected 0..{}, got {}",N-1,self.cone_dim));
         }
         let cd = self.shape[self.cone_dim];
+        //println!("{}:{}: VectorProtoDomain::try_into_domain() cd = {}",file!(),line!(),cd);
         self.domain_type.check_conesize(cd)?;
 
 
@@ -323,6 +328,7 @@ impl<const N : usize,D> IntoDomain for VectorProtoDomain<N,D> where D : VectorDo
         })
     }
 }
+
 impl<const N : usize,D> IntoShapedDomain<N> for VectorProtoDomain<N,D> where D : VectorDomainTrait+'static {
     type Result = VectorDomain<N,D>;
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {

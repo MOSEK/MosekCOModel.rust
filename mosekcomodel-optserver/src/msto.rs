@@ -17,6 +17,7 @@ impl MatrixStore {
     pub fn new() -> MatrixStore { Default::default() }
     pub fn append_row(&mut self, subj : &[usize], cof : &[f64], b : f64) -> usize {        
         assert_eq!(subj.len(),cof.len());
+        //println!("{}:{}: MatrixStore::append_row(), subj = {:?}",file!(),line!(),subj);
         self.len.push(subj.len());
 
         let res = self.map.len();
@@ -30,28 +31,28 @@ impl MatrixStore {
         res
     }
 
-    pub fn append_rows(&mut self, ptr : &[usize], subj : &[usize], cof : &[f64], b : &[f64]) -> std::ops::Range<usize> {
-        assert_eq!(subj.len(),cof.len());
-        assert!(ptr.iter().zip(ptr[1..].iter()).all(|(a,b)| *a <= *b));
-        assert_eq!(*ptr.last().unwrap(),subj.len());
-        assert_eq!(ptr.len(),b.len()+1);
-        let len0 = self.subj.len();
-        self.subj.extend_from_slice(subj);
-        self.cof.extend_from_slice(cof);
-        self.b.extend_from_slice(b);
-        
-        let row0 = self.map.len();
-        for i in self.ptr.len()..self.ptr.len()+ptr.len()-1 { self.map.push(i); }
-        let row1 = self.map.len();
-                   
-        for (p,l) in ptr.iter().zip(ptr[1..].iter()).scan(len0,|len,(p0,p1)| { let l = *len; *len = p1-p0; Some((l,p1-p0)) }) {
-            self.ptr.push(p);
-            self.len.push(l);
-        }
-
-        row0..row1
-    }
-
+//    pub fn append_rows(&mut self, ptr : &[usize], subj : &[usize], cof : &[f64], b : &[f64]) -> std::ops::Range<usize> {
+//        assert_eq!(subj.len(),cof.len());
+//        assert!(ptr.iter().zip(ptr[1..].iter()).all(|(a,b)| *a <= *b));
+//        assert_eq!(*ptr.last().unwrap(),subj.len());
+//        assert_eq!(ptr.len(),b.len()+1);
+//        let len0 = self.subj.len();
+//        self.subj.extend_from_slice(subj);
+//        self.cof.extend_from_slice(cof);
+//        self.b.extend_from_slice(b);
+//        
+//        let row0 = self.map.len();
+//        for i in self.ptr.len()..self.ptr.len()+ptr.len()-1 { self.map.push(i); }
+//        let row1 = self.map.len();
+//                   
+//        for (p,l) in ptr.iter().zip(ptr[1..].iter()).scan(len0,|len,(p0,p1)| { let l = *len; *len = p1-p0; Some((l,p1-p0)) }) {
+//            self.ptr.push(p);
+//            self.len.push(l);
+//        }
+//
+//        row0..row1
+//    }
+//
     pub fn num_row(&self) -> usize { self.map.len() }
 
     pub fn get<'a>(&'a self, i : usize) -> Option<(&'a[usize],&'a[f64],f64)> {

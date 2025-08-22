@@ -14,7 +14,7 @@ use itertools::Itertools;
 use mosekcomodel::*;
 use mosekcomodel_optserver::{Model,SolverAddress};
 
-fn ceo1(address : &str) -> (SolutionStatus,SolutionStatus,Result<(Vec<f64>,Vec<f64>),String>) 
+fn ceo1(address : &str) -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>) 
 {
     let mut m = Model::new(Some("ceo1"));
     m.set_parameter((), SolverAddress(address.to_string()));
@@ -31,10 +31,11 @@ fn ceo1(address : &str) -> (SolutionStatus,SolutionStatus,Result<(Vec<f64>,Vec<f
     // Set the objective function to (x[0] + x[1])
     m.objective(Some("obj"), Sense::Minimize, x.index(0..2).sum());
 
+    m.write_problem("ceo1.jtask");
     // Solve the problem
     m.solve();
 
-    let (psta,dsta) = m.solution_status(SolutionType::Integer);
+    let (psta,dsta) = m.solution_status(SolutionType::Default);
 
     // Get the linear solution values
     let solx = m.primal_solution(SolutionType::Default, &x).unwrap();
@@ -48,7 +49,7 @@ fn ceo1(address : &str) -> (SolutionStatus,SolutionStatus,Result<(Vec<f64>,Vec<f
 
     println!("expc dual conic var levels = {:?}", expcsn);
 
-    (psta,dsta,Ok((expclvl,expcsn)))
+    (psta,dsta,Ok(solx))
 }
 //TAG:end-ceo1
 
@@ -63,6 +64,10 @@ fn main() {
 
 #[test]
 fn test() { 
-    let (_,_,sol) = ceo1("http://solve.mosek.com:30080"); 
-    _ = sol.unwrap();
+    let (psta,dsta,sol) = ceo1("http://solve.mosek.com:30080"); 
+    let xx = sol.unwrap();
+    assert!(matches!(psta, SolutionStatus::Optimal));
+    assert!(matches!(dsta, SolutionStatus::Optimal));
+    assert!((xx[0]+xx[1]+xx[2]-1.0).abs() < 1e-7);
+
 }

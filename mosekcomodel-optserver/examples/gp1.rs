@@ -12,7 +12,7 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::*;
-use mosekcomodel_mosek::Model;
+use mosekcomodel_optserver::{Model,SolverAddress};
 use mosekcomodel::expr::ones;
 
 /// Models log(sum(exp(Ax+b))) <= 0.
@@ -47,7 +47,8 @@ fn logsumexp(model : & mut Model,
 ///              log( alpha ) <= x-y <= log( beta )
 ///              log( gamma ) <= z-y <= log( delta )
 #[allow(non_snake_case)]
-fn max_volume_box(Aw    : f64, 
+fn max_volume_box(address : &str,
+                  Aw    : f64, 
                   Af    : f64, 
                   alpha : f64, 
                   beta  : f64,  
@@ -55,6 +56,7 @@ fn max_volume_box(Aw    : f64,
                   delta : f64) -> Vec<f64>
 {
     let mut model = Model::new(Some("max_vol_box"));
+    model.set_parameter((), SolverAddress(address.to_string()));
 
     let xyz = model.variable(None, 3);
     model.objective(Some("Objective"), Sense::Maximize, xyz.sum());
@@ -71,6 +73,7 @@ fn max_volume_box(Aw    : f64,
     model.constraint(None,xyz.dot(vec![0.0,-1.0,1.0]), less_than(delta.ln()));
   
     //model.setLogHandler(new java.io.PrintWriter(System.out));
+    model.write_problem("gp1.jtask");
     model.solve();
   
     let xyz_val = model.primal_solution(SolutionType::Default,&xyz).unwrap();
@@ -81,6 +84,9 @@ fn max_volume_box(Aw    : f64,
 
 #[allow(non_snake_case)]
 fn main() {
+        let mut args = std::env::args(); args.next();
+    let address = args.next().unwrap_or("http://solve.mosek.com:30080".to_string());
+
     let Aw    = 200.0;
     let Af    = 50.0;
     let alpha = 2.0;
@@ -88,7 +94,7 @@ fn main() {
     let gamma = 2.0;
     let delta = 10.0;
     
-    let hwd = max_volume_box(Aw, Af, alpha, beta, gamma, delta);
+    let hwd = max_volume_box(address.as_str(), Aw, Af, alpha, beta, gamma, delta);
 
     println!("h={:.4} w={:.4} d={:.4}\n", hwd[0], hwd[1], hwd[2]);
 }

@@ -22,10 +22,12 @@
 
 extern crate mosekcomodel;
 use mosekcomodel::*;
-use mosekcomodel_mosek::Model;
+use mosekcomodel_optserver::{Model,SolverAddress};
 
-fn main() {
+fn cqo1(address : &str) -> (SolutionStatus,SolutionStatus,Result<Vec<f64>,String>, Result<Vec<f64>,String>) 
+{
     let mut m = Model::new(Some("cqo1"));
+    m.set_parameter((), SolverAddress(address.to_string()));
     let x = m.variable(Some("x"), greater_than(vec![0.0;3]));
     let y = m.variable(Some("y"), 3);
 
@@ -56,11 +58,12 @@ fn main() {
     m.objective(Some("obj"), Sense::Minimize, y.sum());
 
     // Solve the problem
-    m.write_problem("cqo1.task");
+    m.write_problem("cqo1.jtask");
     m.solve();
 
     // Get the linear solution values
 
+    let (psta,dsta) = m.solution_status(SolutionType::Default);
     let solx = m.primal_solution(SolutionType::Default,&x);
     let soly = m.primal_solution(SolutionType::Default,&y);
     println!("x = {:?}", solx);
@@ -72,7 +75,28 @@ fn main() {
 
     println!("qc1 levels = {:?}", qc1lvl);
     println!("qc1 dual conic var levels = {:?}", qc1sn);
+
+    (psta,dsta,solx,soly)
+}
+
+fn main() {
+    let mut args = std::env::args(); _ = args.next();
+    let address = args.next().unwrap_or("http://solve.mosek.com:30080".to_string());
+
+    
+    let (psta,dsta,x,y) = cqo1(address.as_str());
+    println!("Status = {:?}/{:?}",psta,dsta);
+    println!("x = {:?}", x);
+    println!("y = {:?}", y);
 }
 
 #[test]
-fn test() { main() }
+fn test() { 
+    let (psta,dsta,x,y) = cqo1("http://solve.mosek.com:30080"); 
+    assert!(matches!(psta, SolutionStatus::Optimal));
+    assert!(matches!(dsta, SolutionStatus::Optimal));
+    let x = x.unwrap();
+    let y = y.unwrap();
+    assert!((x[0]+x[1]+2.0*x[2]-1.0).abs() < 1e-7);
+
+}
