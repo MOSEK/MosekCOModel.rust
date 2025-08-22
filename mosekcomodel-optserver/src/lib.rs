@@ -1,12 +1,11 @@
 //! This module implements a backend that uses a MOSEK OptServer instance for solving, for example
 //! [solve.mosek.com:30080](http://solve.mosek.com). 
 //!
-use mosekcomodel::domain::{QuadraticCone, VectorDomainType};
-use mosekcomodel::utils::Permutation;
+use mosekcomodel::domain::VectorDomainType;
 use mosekcomodel::*;
 use mosekcomodel::model::{IntSolutionManager, ModelWithIntSolutionCallback, ModelWithLogCallback};
-use mosekcomodel::utils::iter::{Chunkation, ChunksByIterExt, PermuteByEx, PermuteByMutEx};
-use itertools::{iproduct, izip, Permutations};
+use mosekcomodel::utils::iter::{Chunkation, PermuteByEx, PermuteByMutEx};
+use itertools::{iproduct, izip};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader,BufRead,Read};
@@ -21,9 +20,10 @@ pub type Model = ModelAPI<Backend>;
 
 
 #[derive(Clone,Copy)]
+#[allow(unused)]
 struct ConItem {
     block_index : usize,
-    offset     : usize,
+    offset      : usize,
 }
 
 #[derive(Clone,Copy)]
@@ -522,7 +522,7 @@ mod msgread {
                     }
                     let mut buf = [0;2];
                     //println!("MessageReader::read(), read frame header...");
-                    self.s.read_exact(&mut buf).map_err(|e| std::io::Error::other("Message stream error: Failed to read message header"))?;
+                    self.s.read_exact(&mut buf).map_err(|_| std::io::Error::other("Message stream error: Failed to read message header"))?;
 
                     self.final_frame = buf[0] > 127;
                     self.frame_remains = (((buf[0] & 0x7f) as usize) << 8) | (buf[1] as usize);
@@ -920,7 +920,7 @@ impl Backend {
             let sx     = if ddef { Some(r.expect(b"sol/interior/var/dual",b"[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
             //let consta = r.expect(b"sol/interior/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
             //let xc     = if numcon > 0 && pdef { Some(r.expect(b"sol/interior/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
-            let sc     = if numcon > 0 && ddef { Some(r.expect(b"sol/interior/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
+            let _sc    = if numcon > 0 && ddef { Some(r.expect(b"sol/interior/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
             let sn     = if numacc > 0 && ddef { Some(r.expect(b"sol/interior/acc/dual",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
 
             self.copy_solution(sta.0,sta.1,
@@ -940,12 +940,12 @@ impl Backend {
             let ddef   = !matches!(sta.1,Undefined);
             let pobj   = if pdef { r.expect(b"sol/basic/pobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
             let dobj   = if ddef { r.expect(b"sol/basic/dobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
-            let varsta = r.expect(b"sol/basic/var/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
+            let _varsta = r.expect(b"sol/basic/var/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
             let xx     = if pdef { Some(r.expect(b"sol/basic/var/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             let sx     = if ddef { Some(r.expect(b"sol/basic/var/dual",b"[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
             //let consta = r.expect(b"sol/basic/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
-            let _xc     = if numcon > 0 && pdef { Some(r.expect(b"sol/basic/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
-            let sc     = if numcon > 0 && ddef { Some(r.expect(b"sol/basic/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
+            let _xc    = if numcon > 0 && pdef { Some(r.expect(b"sol/basic/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
+            let _sc    = if numcon > 0 && ddef { Some(r.expect(b"sol/basic/con/dual",b"[d[d[d").and_then(|mut entry| Ok((entry.read::<f64>()?,entry.read::<f64>()?,entry.read::<f64>()?)))?) } else { None };
             let sn     = if numacc > 0 && ddef { Some(r.expect(b"sol/basic/acc/dual",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
 
             self.copy_solution(sta.0,sta.1,
@@ -963,7 +963,7 @@ impl Backend {
             let sta    = r.expect(b"sol/integer",b"[B[B").and_then(|mut entry| { entry.skip_field()?; Ok(str_to_pdsolsta(entry.read::<u8>()?.as_slice())?) })?;
             let pdef   = !matches!(sta.0,Undefined);
             let pobj   = if pdef { r.expect(b"sol/integer/pobj",b"d").and_then(|mut entry| entry.next_value::<f64>())? } else { 0.0 };
-            let varsta = r.expect(b"sol/integer/var/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
+            let _varsta = r.expect(b"sol/integer/var/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
             let xx     = if pdef { Some(r.expect(b"sol/integer/var/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
             //let consta = r.expect(b"sol/integer/con/sta",b"[B").and_then(|mut entry| Ok(entry.read::<u8>()?))?;
             let _xc     = if numcon > 0 && pdef { Some(r.expect(b"sol/integer/con/primal",b"[d").and_then(|mut entry| Ok(entry.read::<f64>()?))?) } else { None };
@@ -1216,18 +1216,20 @@ impl Backend {
     }
 
 
-    fn linear_names<const N : usize>(&mut self, first : usize, last : usize, shape : &[usize;N], sp : Option<&[usize]>, name : &str) {
+    fn linear_names<const N : usize>(&mut self, first : usize, _last : usize, shape : &[usize;N], sp : Option<&[usize]>, name : &str) {
         let mut name_index_buf = [1usize; N];
         let mut strides = [0;N];
         strides.iter_mut().zip(shape.iter()).rev().fold(1,|s,(st,&d)| { *st = s; d * s });
         if let Some(sp) = &sp {
-            for (&i,n) in sp.iter().zip(self.var_names.iter_mut()) {
+            let num = sp.len();
+            for (&i,n) in sp.iter().zip(self.var_names[first..first+num].iter_mut()) {
                 name_index_buf.iter_mut().zip(strides.iter()).fold(i,|i,(ni,&st)| { *ni = i/st; i%st });
                 *n= Some(format!("{}{:?}", name, name_index_buf));
             }
         }
         else {
-            for n in self.var_names.iter_mut() {
+            let num : usize = shape.iter().product();
+            for n in self.var_names[first..first+num].iter_mut() {
                 name_index_buf.iter_mut().zip(shape.iter()).rev().fold(1,|c,(i,&d)| { *i += c; if *i > d { *i = 1; 1 } else { 0 } });
                 *n = Some(format!("{}{:?}", name, name_index_buf));
             }
@@ -1397,7 +1399,7 @@ impl Backend {
         self.con_names.resize(firstcon+n,None);
         let firstblock = self.con_block_dom.len();
         self.con_block_ptr.extend( (firstcon..firstcon+n).step_by(dim) );
-        self.con_block_dom.extend( (0..numcone).map(|i| ct.clone() ));
+        self.con_block_dom.extend( (0..numcone).map(|_| ct.clone() ));
 
         let shape3   = [ shape[..conedim].iter().product(),dim,shape[conedim+1..].iter().product()];
         let strides3 = [ shape3[1]*shape3[2], 1, shape3[2]];

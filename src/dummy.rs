@@ -1,3 +1,4 @@
+#![allow(unused)]
 //! This module implements a dummy backend that allows inputting data, but has no support for
 //! solving or writing data.
 //!

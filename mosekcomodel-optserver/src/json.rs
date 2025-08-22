@@ -172,7 +172,7 @@ impl JSON {
                     Self::write_float(*value, s)?;
                     for value in it {
                         s.write_all(b",")?;
-                        Self::write_float(*value, s);
+                        Self::write_float(*value, s)?;
                     }
                 }
                 s.write_all(b"]")?;
@@ -196,7 +196,7 @@ impl JSON {
                     Self::write_str(s,value.as_str())?;
                     for value in it {
                         s.write_all(b",")?;
-                        Self::write_str(s,value.as_str());
+                        Self::write_str(s,value.as_str())?;
                     }
                 }
                 s.write_all(b"]")?;

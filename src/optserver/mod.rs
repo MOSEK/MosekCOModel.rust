@@ -2,12 +2,11 @@
 //! [solve.mosek.com:30080](http://solve.mosek.com). 
 //!
 use crate::*;
-use crate::model::{DJCDomainTrait, DJCModelTrait, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, VectorConeModelTrait};
 use crate::domain::*;
-use crate::utils::iter::{ChunksByIterExt, PermuteByEx, PermuteByMutEx};
-use itertools::{iproduct, izip};
+use crate::utils::iter::{ChunksByIterExt, PermuteByEx};
+use itertools::izip;
 use json::JSON;
-use std::fs::{write, File};
+use std::fs::File;
 use std::net::TcpStream;
 use std::path::Path;
 
@@ -41,6 +40,7 @@ struct Element {
 /// Simple model object that supports input of linear, conic and disjunctive constraints. It only
 /// stores data, it does not support solving or writing problems.
 #[derive(Default)]
+#[allow(unused)]
 pub struct Backend {
     name : Option<String>,
 

@@ -39,8 +39,7 @@
 //! LASTENTRY: 0u16 
 //! ```
 
-use std::default;
-use std::fmt::Pointer;
+#![allow(unused)]
 use std::io::{self, Read, Write};
 use std::marker::PhantomData;
 

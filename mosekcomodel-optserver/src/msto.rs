@@ -1,6 +1,8 @@
+#![allow(unused)]
 
 use itertools::izip;
 use mosekcomodel::utils::iter::{ChunksByIterExt, Permutation, PermuteByEx, PermuteByMutEx};
+
 
 #[derive(Default)]
 pub struct MatrixStore {
@@ -17,7 +19,6 @@ impl MatrixStore {
     pub fn new() -> MatrixStore { Default::default() }
     pub fn append_row(&mut self, subj : &[usize], cof : &[f64], b : f64) -> usize {        
         assert_eq!(subj.len(),cof.len());
-        //println!("{}:{}: MatrixStore::append_row(), subj = {:?}",file!(),line!(),subj);
         self.len.push(subj.len());
 
         let res = self.map.len();

@@ -1,3 +1,4 @@
+#![allow(unused)]
 //! A very minimalistic http module, only implements just enough for simple communication with an
 //! optserver.
 
@@ -47,7 +48,7 @@ impl<'a,T> MsgWriter<'a,T> where T : std::io::Write {
     }
     pub fn write(&mut self, data : &[u8]) -> std::io::Result<()> {
         if !self.chunked && data.len() > self.remains {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "Write beyond Content-Length".to_string()));
+            return Err(std::io::Error::other("Write beyond Content-Length"));
         }
 
         if self.pos+data.len() < self.buffer.len() {

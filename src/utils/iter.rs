@@ -1,3 +1,4 @@
+#![allow(unused)]
 use std::{cmp::Ordering, iter::Peekable, marker::PhantomData, ptr::NonNull};
 
 use itertools::Chunk;
