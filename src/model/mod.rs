@@ -265,9 +265,39 @@ pub trait ModelWithLogCallback {
     fn set_log_handler<F>(& mut self, func : F) where F : 'static+Fn(&str);
 }
 
+
+pub struct IntSolutionManager {
+    obj : f64,
+    xx  : Vec<f64>,
+}
+
+impl<'a> IntSolutionManager {
+    pub fn new(obj : f64, xx : Vec<f64>) -> Self { IntSolutionManager{obj,xx} }
+    pub fn obj(&self) -> f64 { self.obj }
+    pub fn get<const N : usize>(&self, index : &Variable<N>) -> Vec<f64> { self.try_get(index).unwrap() }
+    pub fn try_get<const N : usize>(&self, index : &Variable<N>) -> Result<Vec<f64>,()> {
+        let mut res = Vec::new();
+        let sz = index.shape.iter().product();
+        res.resize(sz,0.0);
+
+        if let Some(sp) = index.sparsity() {
+            for (&src,dst) in self.xx.permute_by(index.idxs()).zip(res.permute_by_mut(sp)) {
+                *dst = src;
+            }
+        }
+        else {
+            for (&src,dst) in self.xx.permute_by(index.idxs()).zip(res.iter_mut()) {
+                *dst = src;
+            }
+        }
+
+        Ok(res)
+    }
+}
+
 /// An inner model object must implement this to support integer solution callbacks
 pub trait ModelWithIntSolutionCallback {
-    fn set_solution_callback<F>(&mut self, func : F) where F : 'static+FnMut(f64, &[f64],&[f64]);
+    fn set_solution_callback<F>(&mut self, func : F) where F : 'static+FnMut(&IntSolutionManager);
 }
 
 /// An inner model object must implement this to support control callbacks (callbacks that allow us
@@ -302,8 +332,9 @@ pub struct ModelAPI<T : BaseModelTrait> {
 
 impl<T : BaseModelTrait+Default> Default for ModelAPI<T> {
     fn default() -> Self {
+        let inner = T::default();
         ModelAPI{
-            inner : Default::default(),
+            inner,
             rs : WorkStack::new(1024),
             ws : WorkStack::new(1024),
             xs : WorkStack::new(1024),
@@ -326,10 +357,10 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
             sol_bas : Default::default(),
             sol_itr : Default::default(),
             sol_itg : Default::default(),
-        }
+        }        
     }
 
-    pub fn from(inner : T) -> ModelAPI<T> { 
+    fn from(inner : T) -> ModelAPI<T> { 
         ModelAPI {
             inner,
             rs : WorkStack::new(1024),
@@ -356,36 +387,8 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
 
     /// Attach a solution callback function. This is called for each new integer solution. The new
     /// solution can be accessed though the [ModelAPI]
-    pub fn set_int_solution_callback<F>(&mut self, mut func : F) where F : 'static+FnMut(&mut Self), T : 'static+ModelWithIntSolutionCallback {
-        // NOTE: We cheat here. 
-        // 1. We pass self as a pointer to bypass the whole lifetime issue. This
-        // is acceptable because we KNOW self will outlive the underlying Task.
-        // 2. The constuction is acceptable because we know that the callback is called from inside
-        //    the `.solve()` call, which holds a mutable reference to model.
-        let modelp :  *const ModelAPI<T> = self;
-
-        self.inner.set_solution_callback(move |pobj,xx,xc| {
-            let model : & mut Self = unsafe { & mut (* (modelp as * mut Self)) };
-
-            model.sol_itg.primal.status = SolutionStatus::Feasible;
-            model.sol_itg.dual.status = SolutionStatus::Undefined;
-            if model.sol_itg.primal.var.len() != xx.len() {
-                model.sol_itg.primal.var = xx.to_vec();
-            }
-            else {
-                model.sol_itg.primal.var.copy_from_slice(xx);
-            }
-            if model.sol_itg.primal.con.len() != xc.len() {
-                model.sol_itg.primal.con = xc.to_vec();
-            }
-            else {
-                model.sol_itg.primal.con.copy_from_slice(xc);
-            }
-
-            model.sol_itg.primal.obj = pobj;
-
-            func(model);
-        });
+    pub fn set_int_solution_callback<F>(&mut self, mut func : F) where F : 'static+FnMut(&IntSolutionManager), T : 'static+ModelWithIntSolutionCallback {
+        self.inner.set_solution_callback(func)
     }
 
     /// Set the control callback function. The control callback is called regularly while the
@@ -745,10 +748,6 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         self.select_sol(solid)
             .map(|sol| sol.dual.obj)
     }
-
-
-
-
 
     pub(crate) fn primal_var_solution(&self, solid : SolutionType, idxs : &[usize], res : & mut [f64]) -> Result<(),String> {
         if let Some(sol) = self.select_sol(solid) {

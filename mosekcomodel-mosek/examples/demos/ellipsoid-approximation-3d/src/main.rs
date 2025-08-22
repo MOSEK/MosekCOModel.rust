@@ -4,20 +4,19 @@ extern crate mosek;
 extern crate ellipsoids;
 extern crate rand;
 
-use rand::SeedableRng;
+use std::f64::consts::PI;
+use std::ops::Range;
 
-use bevy::{prelude::*, math::{DMat3, DVec3,DQuat}};
+use bevy::prelude::*;
+use bevy::ecs::component::Component;
+use bevy::math::{DMat3, DQuat, DVec3,Quat,Vec3,Mat3};
 use linalg::symsqrt3;
 
 use ellipsoids::Ellipsoid;
-use mosekcomodel::{unbounded};
+use mosekcomodel::unbounded;
 use mosekcomodel_mosek::Model;
 use rand::Rng;
 
-use bevy::render::view::screenshot::ScreenshotManager;
-use bevy::window::PrimaryWindow;
-
-use std::{f32::consts::PI, ops::Range};
 
 const N : usize = 10;
 
@@ -221,7 +220,7 @@ fn setup(
 fn update_camera(time: Res<Time>, mut query: Query<(&mut Transform,&CameraTransform)>) {
     let t = time.elapsed_seconds();
     for (mut transform, c) in &mut query {
-        let camloc = Quat::from_rotation_y(2.0*PI*c.rps*t).mul_vec3(Vec3::new(-2.5, 4.5, 9.0)) ;
+        let camloc = Quat::from_rotation_y(2.0*std::f32::consts::PI*c.rps*t).mul_vec3(Vec3::new(-2.5, 4.5, 9.0)) ;
         let tf = Transform::from_xyz(camloc.x,camloc.y,camloc.z).looking_at(Vec3::ZERO, Vec3::Y);
         transform.clone_from(&tf);
     }
@@ -239,7 +238,7 @@ fn update(time       : Res<Time>,
     //for (mut transform, e) in &mut query {
         transform.scale = e.radii;
         transform.rotation = Quat::from_axis_angle(e.local_axis, e.local_speed * t);
-        transform.translation = Quat::from_axis_angle(e.global_axis, (e.global_speed*t) % (2.0*PI)).mul_vec3(e.center);
+        transform.translation = Quat::from_axis_angle(e.global_axis, (e.global_speed*t) % (2.0*std::f32::consts::PI)).mul_vec3(e.center);
         //transform.translation = Vec3::ZERO;
 
         let D = Mat3::from_diagonal(e.radii);
@@ -352,10 +351,11 @@ mod linalg {
 
 #[cfg(test)]
 mod test {
-    use bevy::math::{Quat, Mat3, DVec3, DMat3, Vec3};
-    use rand::{self, SeedableRng, Rng};
+    use bevy::math::{Quat,Mat3,DVec3,DMat3,Vec3};
+    use rand::{self, SeedableRng};
     use ellipsoids::Ellipsoid;
-    use mosekcomodel::{Model,unbounded,Variable};
+    use mosekcomodel::{unbounded,Variable};
+    use mosekcomodel_mosek::Model;
     use super::{linalg,RandVec3};
     use std::f32::consts::PI;
 

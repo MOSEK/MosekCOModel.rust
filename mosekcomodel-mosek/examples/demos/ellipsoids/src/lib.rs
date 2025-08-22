@@ -296,7 +296,8 @@ pub fn det_rootn(name : Option<&str>, M : &mut Model, t : Variable<0>, n : usize
 
 #[cfg(test)]
 mod test {
-    use mosekcomodel::{unbounded, Model, SolutionType};
+    use mosekcomodel::{unbounded, SolutionType};
+    use mosekcomodel_mosek::Model;
     use itertools::izip;
 
     #[allow(non_snake_case)]

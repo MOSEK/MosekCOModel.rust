@@ -137,7 +137,7 @@ use mosekcomodel::utils::{NameAppender, ShapeToStridesEx};
 use mosekcomodel::utils::iter::*;
 use mosekcomodel::*;
 
-use mosekcomodel::model::{BaseModelTrait, DJCDomainTrait, DJCModelTrait, Disjunction, ModelWithControlCallback, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, Sense, Solution, VectorConeModelTrait, WhichLinearBound};
+use mosekcomodel::model::{BaseModelTrait, DJCDomainTrait, DJCModelTrait, Disjunction, IntSolutionManager, ModelWithControlCallback, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, Sense, Solution, VectorConeModelTrait, WhichLinearBound};
 
 
 pub enum MosekConeType {
@@ -1196,23 +1196,23 @@ impl ModelWithLogCallback for MosekModel {
 
 impl ModelWithIntSolutionCallback for MosekModel {
     /// Attach a solution callback function. This is called for each new integer solution 
-    fn set_solution_callback<F>(&mut self, mut func : F) where F : 'static+FnMut(f64,&[f64],&[f64]) {
+    fn set_solution_callback<F>(&mut self, mut func : F) where F : 'static+FnMut(&IntSolutionManager) {
         // NOTE: We cheat here. We pass self as a pointer to bypass the whole lifetime issue. This
         // is acceptable because we KNOW self will outlive the underlying Task.
         let modelp : * const Self = self;
             
-        let mut xxvec = vec![0.0; self.vars.len()];
-        let xcvec = vec![0.0; self.cons.len()];
 
         self.task.put_intsolcallback(move |xx| {
             let model = unsafe{ & mut (* (modelp as * mut Self)) };
+            let obj = model.task.get_dou_inf(mosek::Dinfitem::SOL_ITG_PRIMAL_OBJ).unwrap_or(0.0);
+            let mut xxvec = vec![0.0; model.vars.len()];
             for (s,v) in xxvec.iter_mut().zip(model.vars.iter()) {
                 match v {
                     VarAtom::Linear(i,_) => if (*i as usize) < xx.len() { unsafe{ *s = *xx.get_unchecked(*i as usize) } },
                     _ => {}
                 }
             }
-            func(0.0,xxvec.as_slice(),xcvec.as_slice());
+            func(&IntSolutionManager::new(obj,xxvec));
         }).unwrap();
     }
 }

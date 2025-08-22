@@ -16,6 +16,5 @@ members = [ "ellipsoid-approximation",
             "trigpoly",
             "total-variation", 
             "tsp", 
-            "optserver", 
             ]
 

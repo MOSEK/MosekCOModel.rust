@@ -1,5 +1,7 @@
 use std::{cmp::Ordering, iter::Peekable, marker::PhantomData, ptr::NonNull};
 
+use itertools::Chunk;
+
 
 
 /// Trait that provides a function that copies from an iterator into a slice.
@@ -248,10 +250,7 @@ where
     type Item = &'a[T];
     fn next(& mut self) -> Option<Self::Item> {
         if let Some((&p0,&p1)) = self.ptr.next() {
-            // Note: The constructor of the ChunksByIter object MUST ensure that all slices are
-            // valid!
             Some(unsafe{ self.data.get_unchecked(p0..p1)})
-            //Some(&self.data[p0..p1])
         }
         else {
             None
@@ -537,6 +536,112 @@ impl<'a, I> Iterator for InterleaveN<'a,I> where I : Iterator {
 //}
 //
 ////////////////////////////////////////////////////////////
+
+
+
+/// Permutation of an array. Really, it is a mutation, since it may contain duplicate indexes.
+pub struct Permutation<'a> {
+    perm : &'a[usize],
+    min  : usize,
+    max  : usize
+}
+
+impl<'a> Permutation<'a> {
+    pub fn new(perm : &'a[usize]) -> Permutation<'a> { 
+        let (min,max) = if perm.is_empty() { (0,0) } else { perm.iter().fold((usize::MAX,0),|(min,max),&v| (v.min(min),v.max(max))) };
+        Permutation{ perm,min,max }
+    } 
+
+    pub fn permute<'b,T>(&self,data : &'b [T]) -> Result<PermIter<'a,'b,T>,()> {
+        if data.len() <= self.max { Err(()) }
+        else { Ok(PermIter{data,perm:self.perm,i:0}) }
+    }
+    pub fn permute_mut<'b,T>(&self,data : &'b mut[T]) -> Result<PermIterMut<'a,'b,T>,()> {
+        if data.len() <= self.max { Err(()) }
+        else { Ok(PermIterMut::new(data,self.perm)) }
+    }
+}
+
+pub struct ChunksByIter2<'a,'b,T>
+{
+    data : &'a [T],
+    ptr : &'b [usize],
+    index : usize,
+}
+
+pub struct ChunksByIter3<'a,'b,T> 
+{
+    data : &'a[T],
+    len  : &'b[usize],
+    index : usize,
+}
+
+impl<'a,'b,T> Iterator for ChunksByIter2<'a,'b,T>
+{
+    type Item = &'a[T];
+    fn next(& mut self) -> Option<Self::Item> {
+        if self.index+1 < self.ptr.len() {
+            let i = self.index;
+            self.index += 1;
+            Some(unsafe{ self.data.get_unchecked(*self.ptr.get_unchecked(i)..*self.ptr.get_unchecked(i+1))})
+        }
+        else {
+            None
+        }
+    }
+}
+
+
+
+
+
+
+
+
+pub struct ChunkationIter<'a,'b,'c,T> {
+    c    : &'c Chunkation<'a>,
+    data : &'b[T],
+    i    : usize
+}
+
+impl<'a,'b,'c,T> Iterator for ChunkationIter<'a,'b,'c,T> {
+    type Item = &'b[T];
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i+1 < self.c.ptr.len() {
+            let i = self.i; 
+            self.i += 1;
+            Some(unsafe{self.data.get_unchecked(*self.c.ptr.get_unchecked(i)..*self.c.ptr.get_unchecked(i+1))})
+        }
+        else {
+            None
+        }
+    }
+}
+
+pub struct Chunkation<'a> {
+    ptr : & 'a[usize],
+    max : usize
+}
+
+impl<'a> Chunkation<'a> {
+    pub fn new(ptr : &'a[usize]) -> Option<Self> {
+        if let Some(max) = ptr.last() {
+            if ptr.iter().zip(ptr[1..].iter()).any(|item| *item.0 > *item.1) { None }
+            else {
+                Some(Chunkation { ptr, max:*max })
+            }
+        } 
+        else {
+            None
+        }
+    }
+    pub fn chunks<'b,'c,T>(&'a self, data : &'b [T]) -> Option<ChunkationIter<'a,'b,'c,T>> {
+        if self.max > data.len() { None } 
+        else { Some(ChunkationIter{ c : self, data, i : 0 }) }
+    }
+}
+
+
 
 
 

@@ -2,7 +2,7 @@
 //! solving or writing data.
 //!
 use crate::*;
-use crate::model::{DJCDomainTrait, DJCModelTrait, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, VectorConeModelTrait};
+use crate::model::{DJCDomainTrait, DJCModelTrait, IntSolutionManager, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, VectorConeModelTrait};
 use crate::domain::*;
 use crate::utils::iter::{ChunksByIterExt, PermuteByMutEx};
 use std::f64;
@@ -361,7 +361,7 @@ impl ModelWithLogCallback for Backend {
 
 impl ModelWithIntSolutionCallback for Backend {
     /// Attach a solution callback function. This is called for each new integer solution 
-    fn set_solution_callback<F>(&mut self, mut _func : F) where F : 'static+FnMut(f64,&[f64],&[f64]) {
+    fn set_solution_callback<F>(&mut self, mut _func : F) where F : 'static+FnMut(&IntSolutionManager) {
         // do nothing
     }
 }

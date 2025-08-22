@@ -8,9 +8,9 @@
 extern crate mosekcomodel;
 
 use mosekcomodel::{model::IntSolutionManager, *};
-use mosekcomodel_mosek::Model;
+use mosekcomodel_optserver::{Model, SolverAddress};
 
-fn milo1() -> (SolutionStatus,Result<Vec<f64>,String>) {
+fn milo1(address : &str) -> (SolutionStatus,Result<Vec<f64>,String>) {
     let a0 : &[f64] = &[ 50.0, 31.0 ];
     let a1 : &[f64] = &[ 3.0,  -2.0 ];
 
@@ -40,6 +40,10 @@ fn milo1() -> (SolutionStatus,Result<Vec<f64>,String>) {
         let x = x.clone();
         m.set_int_solution_callback(move|sol| println!("New integer solution: x = {:?}",sol.get(&x)));
     }
+    
+    m.set_parameter((), SolverAddress(address.to_string()));
+
+    m.write_problem("milo1.jtask");
 
     // Solve the problem
     m.solve();
@@ -52,8 +56,24 @@ fn milo1() -> (SolutionStatus,Result<Vec<f64>,String>) {
 
 
 fn main() {
-    let (psta,xx) = milo1();
+    let mut args = std::env::args();
+    _ = args.next();
+    let address = args.next().unwrap_or("http://solve.mosek.com:30080".to_string());
+
+    let (psta,xx) = milo1(address.as_str());
     println!("Status = {:?}",psta);
     println!("x = {:?}", xx.unwrap());
 }
 
+#[cfg(test)]
+mod test {
+    #[test] 
+    fn milo1() {
+        let (psta,xx) = super::milo1("http://solve.mosek.com:30080");
+        let xx = xx.unwrap();
+        println!("Status = {:?}",psta);
+        println!("x = {:?}", xx);
+        assert!(50.0*xx[0]+31.0*xx[1] <= 250.0+1e-4);
+        assert!(3.0 * xx[0] - 2.0*xx[1] >= -4.0 - 1e-4);
+    }
+}

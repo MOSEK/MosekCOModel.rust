@@ -48,6 +48,12 @@ fn djc1() -> (SolutionStatus,Result<Vec<f64>,String>) {
 
     // Useful for debugging
     model.set_log_handler(|msg| print!("{}",msg));
+    
+    // Set a callback receiving new integer solutions found
+    {
+        let x = x.clone();
+        model.set_int_solution_callback(move |sol| println!("New integer solution: x = {:?}",sol.get(&x)));
+    }
 
     // Solve the problem
     model.solve();

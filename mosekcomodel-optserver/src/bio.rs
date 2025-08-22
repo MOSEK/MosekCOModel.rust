@@ -47,7 +47,6 @@ use std::marker::PhantomData;
 const BBOM     : u32 = 0x424b534d;
 const REV_BBOM : u32 = 0x4d534b42;
 
-
 #[derive(Debug)]
 pub enum FieldElementType {
     U8,I8,
@@ -63,6 +62,7 @@ impl TryFrom<&u8> for FieldElementType {
         FieldElementType::try_from(*value)
     }
 }
+
 impl TryFrom<u8> for FieldElementType {
     type Error = std::io::Error;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
@@ -343,7 +343,7 @@ impl<'a,'b,'c,T,E> SerEntryChunkWriter<'a,'b,'c,T,E> where T : Write, E : Serial
             let n = bdata.len().min(0x7ff8);
             self.ent.ser.w.write_all(&[(n >> 8) as u8, (n & 0xff) as u8])?;
             self.ent.ser.w.write_all(&bdata[..n])?;
-            println!("Write chunk size: {} ({}) ",n,E::sig() as char);
+            //println!("Write chunk size: {} ({}) ",n,E::sig() as char);
             bdata = &bdata[n..];
         }
         Ok(())
@@ -382,7 +382,12 @@ impl Serializable for f64  { fn sig() -> u8 { b'd' } }
 pub struct Des<'a,R> where R : Read {
     /// Underlying stream reader
     r : &'a mut R,
-   
+
+    /// Indicates if name/fmt have been loaded from next entry
+    loaded : bool,
+    fmt : [u8;256],
+    name : [u8;256],
+
     /// Indicates if data entries are in native endian or should be byte-swapped. We currently
     /// ignore it and hope everyone are using little-endian.
     #[allow(unused)]
@@ -446,60 +451,96 @@ impl<'a,R> Des<'a,R> where R : Read {
             _ => return Err(std::io::Error::other(format!("Invalid BOM 0x{:08x}",bom[0])))
         };
 
-        Ok(Des{ r, entry_active : false, byte_swap, end_of_stream : false })
+        Ok(Des{ r, entry_active : false, byte_swap, end_of_stream : false ,fmt : [0;256], name : [0;256], loaded : false })
     }
+
+    pub fn peek<'b>(&'b mut self) -> std::io::Result<Option<(&'b [u8],&'b [u8])>> {
+        if ! self.loaded {
+            if self.entry_active { return Err(std::io::Error::other("Previous entry not finished")) }
+            if self.end_of_stream { return Ok(None); }
+            self.r.read_exact(&mut self.name[..1])?;
+            let namelen = self.name[0] as usize;
+            if namelen > 0 {
+                self.r.read_exact(&mut self.name[1..namelen+1])?;
+            }
+            self.r.read_exact(&mut self.fmt[..1])?;
+            let fmtlen = self.fmt[0] as usize;
+            if fmtlen > 0 {
+                self.r.read_exact(&mut self.fmt[1..fmtlen+1])?;
+                //println!("Des::peek() Entry = '{}' {}",std::str::from_utf8(&self.name[1..namelen+1]).unwrap(), std::str::from_utf8(&self.fmt[1..fmtlen+1]).unwrap());
+                if ! validate_signature(&self.fmt[1..fmtlen+1]) {
+                    
+                    return std::str::from_utf8(&self.fmt[1..1+fmtlen])
+                        .map_err(|_| std::io::Error::other(format!("Invalid signature: {}", std::str::from_utf8(self.fmt[1..1+fmtlen].iter().map(|&b| if (32..128).contains(&b) { b } else { b'?' }).collect::<Vec<u8>>().as_slice()).unwrap())))
+                        .and_then(|s| Err(std::io::Error::other(format!("Invalid signature: {}",std::str::from_utf8(&self.fmt[1..1+fmtlen]).unwrap_or("<?>")))));
+                }
+            }
+            
+            if self.name[0] == 0 && self.fmt[0] == 0 {
+                self.end_of_stream = true;
+            }
+            else {
+                self.loaded = true;
+                self.entry_active = true;
+            }
+        }
+        
+        if self.end_of_stream {
+            Ok(None)
+        }
+        else {
+            Ok(Some((&self.name[1..self.name[0] as usize+1],&self.fmt[1..self.fmt[0] as usize+1])))
+        }
+    }
+
 
     /// Get the next entry.
     ///
     /// # Returns
     /// At the end of stream, return `None`, otherwise return an entry reader.
     pub fn next_entry<'b>(&'b mut self) -> std::io::Result<Option<DesEntry<'a,'b,R>>> {
-        if self.entry_active { return Err(std::io::Error::other("Previous entry not finished")) }
-        if self.end_of_stream { return Ok(None); }
-        let mut name = [0u8; 256];
-        let mut fmt  = [0u8; 256];
-        let mut len = [0;1];
-        self.r.read_exact(&mut len)?;
-        let namelen = len[0] as usize;
-        if namelen > 0 {
-            self.r.read_exact(&mut name[..namelen])?;
-        }
-        self.r.read_exact(&mut len)?;
-        let fmtlen = len[0] as usize;
-        if fmtlen > 0 {
-            self.r.read_exact(&mut fmt[..fmtlen])?;
-            if ! validate_signature(&fmt[..fmtlen]) {
-                
-                return std::str::from_utf8(&fmt[1..1+fmt[0] as usize])
-                    .map_err(|_| std::io::Error::other(format!("Invalid signature: {}", std::str::from_utf8(fmt[1..1+fmt[0] as usize].iter().map(|&b| if (32..128).contains(&b) { b } else { b'?' }).collect::<Vec<u8>>().as_slice()).unwrap())))
-                    .and_then(|s| Err(std::io::Error::other(format!("Invalid signature: {}",std::str::from_utf8(&fmt[1..1+fmt[0] as usize]).unwrap_or("<?>")))));
-            }
-        }
-        
-        //println!("Des::next_entry(): {} | {} ",asciistr(&name[..namelen]),asciistr(&fmt[..fmtlen]));
-        
-        if name[0] == 0 && fmt[0] == 0 {
-            self.end_of_stream = true;
-            Ok(None)
+        //println!("Des::expect() loaded: {:?}, active: {:?}, eos = {:?}",self.loaded, self.entry_active,self.end_of_stream);
+        _ = self.peek()?;
+
+        if self.loaded {
+            self.loaded = false;
+            let fmtlen = self.fmt[0] as usize;
+            let namelen = self.name[0] as usize;
+            let mut fmt = [0;256]; fmt[..fmtlen].copy_from_slice(&self.fmt[1..fmtlen+1]);
+            let mut name = [0;256];name[..namelen].copy_from_slice(&self.name[1..namelen+1]);
+            Ok(Some(DesEntry{
+                des : self, 
+                fmt,
+                name,
+                fmtpos : 0, 
+                ready : true, 
+                fmtlen, 
+                namelen}))
         }
         else {
-            Ok(Some(DesEntry{des : self, fmt, name, fmtpos : 0, ready : true, fmtlen, namelen }))
+            Ok(None)
         }
     }
 
     pub fn expect<'b>(&'b mut self, name : &[u8], fmt : &[u8]) -> std::io::Result<DesEntry<'a,'b,R>> {
-        match self.next_entry()? {
-            None => Err(std::io::Error::other("Expected a entry, got end-of-file")),
-            Some(v) => if v.name() == name && v.fmt() == fmt { 
-                Ok(v) 
-            } else {
-                Err(std::io::Error::other(format!("Expected a entry '{}'/'{}, got '{}'/'{}'", 
-                                                  std::str::from_utf8(name).unwrap_or("<invalid utf-8>"),
-                                                  std::str::from_utf8(fmt).unwrap_or("<invalid utf-8>"),
-                                                  std::str::from_utf8(v.name()).unwrap_or("<invalid utf-8>"),
-                                                  std::str::from_utf8(v.fmt()).unwrap_or("<invalid utf-8>")))) 
-            },
+        //println!("Des::expect() loaded: {:?}, active: {:?}, eos = {:?}",self.loaded, self.entry_active,self.end_of_stream);
+        {
+            if let Some((nextname,nextfmt)) = self.peek()? {
+                if nextname != name || nextfmt != fmt { 
+                    return Err(std::io::Error::other(format!("Expected a entry '{}'/'{}, got '{}'/'{}'", 
+                                                      std::str::from_utf8(name).unwrap_or("<invalid utf-8>"),
+                                                      std::str::from_utf8(fmt).unwrap_or("<invalid utf-8>"),
+                                                      std::str::from_utf8(nextname).unwrap_or("<invalid utf-8>"),
+                                                      std::str::from_utf8(nextfmt).unwrap_or("<invalid utf-8>")))) 
+                }
+            }
+            else {
+                return Err(std::io::Error::other("Expected a entry, got end-of-file"))
+            }
         }
+
+        self.next_entry().map(|e| e.unwrap())
+
     }
 
     fn read_array_length(&mut self) -> std::io::Result<Option<usize>> {
@@ -616,11 +657,11 @@ impl<'a,'b,R> DesEntry<'a,'b,R> where R : Read {
                 res.truncate(base+n);
                 if n == 0 { break; }
             }
-            Ok(self)
         }
         else {
-            Err(std::io::Error::other("Read beyond end of entry"))
+            return Err(std::io::Error::other("Read beyond end of entry"))
         }
+        Ok(self)
     }
     pub fn read<E>(&mut self) -> std::io::Result<Vec<E>>
         where 
@@ -704,7 +745,7 @@ impl<'a,'b,'c,R,E> DesEntryReader<'a,'b,'c,R,E> where R : Read, E : Serializable
                 Ok(n)
             },
             EntryKind::Stream(nleft) => {
-                println!("DesEntryReader::read() stream, cur chunk : {}",nleft);
+                //println!("DesEntryReader::read() stream, cur chunk : {}",nleft);
                 let mut buf = buf;
                 let mut chunk_left = nleft;
                 let mut nread = 0;
@@ -718,7 +759,7 @@ impl<'a,'b,'c,R,E> DesEntryReader<'a,'b,'c,R,E> where R : Read, E : Serializable
                             self.entry.ready = true;
                             break;
                         }
-                        println!("DesEntryReader::read() stream loop: next chunk : {}",chunk_left);
+                        //println!("DesEntryReader::read() stream loop: next chunk : {}",chunk_left);
                     }
                     let n = (chunk_left / size_of::<E>()).min(buf.len());
                     assert!(n > 0);
@@ -748,6 +789,28 @@ impl<'a,'b,'c,R,E> DesEntryReader<'a,'b,'c,R,E> where R : Read, E : Serializable
             if n == 0 { break; }
         }
         Ok(buf.len()-len0)
+    }
+}
+
+impl<'a,'b,R> Drop for DesEntry<'a,'b,R> where R : Read {
+    fn drop(&mut self) {
+        if self.ready && self.fmtpos == self.fmtlen {
+            self.des.entry_active = false;
+        }
+        else {
+            panic!("Unfinished deserializer entry: {}",std::str::from_utf8(self.name()).unwrap_or("<invalid utf-8>"))
+        }
+    }
+}
+
+impl<'a,'b,'c,R,E> Drop for DesEntryReader<'a,'b,'c,R,E> where R : Read, E : Serializable {
+    fn drop(&mut self) {
+        if let EntryKind::Empty = self.kind {
+            self.entry.ready = true;
+        }
+        else {
+            panic!("Unfinished deserializer entry field");
+        }
     }
 }
 

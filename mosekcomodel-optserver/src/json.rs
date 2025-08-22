@@ -29,6 +29,9 @@ pub enum JSON {
     Int(i64),
     Float(f64),
     List(Vec<JSON>),
+    IntArray(Vec<i64>),
+    FloatArray(Vec<f64>),
+    StringArray(Vec<String>), 
     Dict(Dict),
     Null
 }
@@ -142,6 +145,17 @@ impl JSON {
     }
 
 
+
+    fn write_float<T>(value : f64, s : &mut T) -> std::io::Result<()> where T : Write {
+        if value.is_infinite() {
+            if value < 0.0 { s.write_all(b"-1e500")?; }
+            else { s.write_all(b"1e500")?; } 
+        }
+        else {
+            write!(s,"{}",value)?;
+        }
+        Ok(())
+    }
     /// Format JSON value to a writer stream.
     ///
     /// #Arguments
@@ -150,14 +164,42 @@ impl JSON {
         match self {
             JSON::String(value) => Self::write_str(s,value.as_str())?,
             JSON::Int(value)    => write!(s,"{}",value)?,
-            JSON::Float(value)  => {
-                if value.is_infinite() {
-                    if *value < 0.0 { s.write_all(b"-1e500")?; }
-                    else { s.write_all(b"1e500")?; } 
+            JSON::Float(value)  => Self::write_float(*value,s)?,
+            JSON::FloatArray(l) => {
+                s.write_all(b"[")?;
+                let mut it = l.iter();
+                if let Some(value) = it.next() {
+                    Self::write_float(*value, s)?;
+                    for value in it {
+                        s.write_all(b",")?;
+                        Self::write_float(*value, s);
+                    }
                 }
-                else {
+                s.write_all(b"]")?;
+            },
+            JSON::IntArray(l) => {
+                s.write_all(b"[")?;
+                let mut it = l.iter();
+                if let Some(value) = it.next() {
                     write!(s,"{}",value)?;
+                    for value in it {
+                        s.write_all(b",")?;
+                        write!(s,"{}",value)?;
+                    }
                 }
+                s.write_all(b"]")?;            
+            },
+            JSON::StringArray(l) => {
+                s.write_all(b"[")?;
+                let mut it = l.iter();
+                if let Some(value) = it.next() {
+                    Self::write_str(s,value.as_str())?;
+                    for value in it {
+                        s.write_all(b",")?;
+                        Self::write_str(s,value.as_str());
+                    }
+                }
+                s.write_all(b"]")?;
             },
             JSON::List(l)   => {
                 s.write_all(b"[")?;
@@ -188,7 +230,7 @@ impl JSON {
                 }
                 s.write_all(b"}")?;
             },
-            JSON::Null => write!(s,"null")?
+            JSON::Null => write!(s,"null")?,
         }
         Ok(())
     }
