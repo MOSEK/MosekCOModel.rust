@@ -70,7 +70,10 @@ mod test {
     #[test] 
     fn milo1() {
         let (psta,xx) = super::milo1("http://solve.mosek.com:30080");
+        let xx = xx.unwrap();
         println!("Status = {:?}",psta);
-        println!("x = {:?}", xx.unwrap());
+        println!("x = {:?}", xx);
+        assert!(50.0*xx[0]+31.0*xx[1] <= 250.0+1e-4);
+        assert!(3.0 * xx[0] - 2.0*xx[1] >= -4.0 - 1e-4);
     }
 }

@@ -471,7 +471,7 @@ impl<D> VectorConeModelTrait<D> for Backend where D : VectorDomainTrait+'static 
 
     }
     fn conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : VectorDomain<N,D>, _shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String> {
-        let (dt,rhs,shape,conedim,is_int) = dom.dissolve();
+        let (dt,rhs,shape,conedim,_is_int) = dom.dissolve();
 
         self.conic_constraint(name, ptr, subj, cof, shape, conedim, dt.to_conic_domain_type(), rhs.as_slice())        
     }
@@ -722,8 +722,9 @@ impl Backend {
             sol.primal.con.clear();
             if let Some(xx) = xx {
                 sol.primal.var.resize(self.var_idx.len(),0.0);
-                xx.permute_by(self.var_idx.as_slice())
-                    .zip(sol.primal.var.iter_mut())
+                sol.primal.var[0] = 1.0;
+                xx.permute_by(&self.var_idx[1..])
+                    .zip(&mut sol.primal.var[1..])
                     .for_each(|(&src,dst)| *dst = src);
 
                 self.mx.eval_into(sol.primal.var.as_slice(),&mut sol.primal.con).unwrap();
@@ -745,7 +746,8 @@ impl Backend {
             sol.dual.obj = dobj;
             if let Some(((sl,su),sc)) = sx.as_ref().zip(sc.as_ref()) {
                 if sl.len() != numvar || su.len() != numvar { return Err(std::io::Error::other("Incorrect solution dimension in sol/var/dual")); }
-                for (solx,index,e) in izip!(sol.dual.var.iter_mut(),self.var_idx.iter(),self.vars.iter()) {
+                sol.dual.var.resize(self.var_idx.len(),0.0);
+                for (solx,index,e) in izip!(sol.dual.var[1..].iter_mut(),self.var_idx[1..].iter(),self.vars.iter()) {
                     *solx = 
                         match e {
                            VarItem::Linear           =>  sl[*index]-su[*index],
@@ -879,7 +881,6 @@ impl Backend {
         sol_itr.dual.status   = Undefined;
         sol_itg.primal.status = Undefined;
         sol_itg.dual.status   = Undefined;
-
 
         let numvar    = r.expect(b"numvar",b"I")?.next_value::<u32>()? as usize;
         let numbarvar = r.expect(b"numbarvar",b"I")?.next_value::<u32>()?;
@@ -1129,7 +1130,7 @@ impl Backend {
                         d.append("sense", if self.sense_max { "max" } else { "min" });
                         d.append("cfix",0.0f64);
                         d.append("c", json::Dict::from(|d2| {
-                            d2.append("subj",JSON::List(self.c_subj.iter().map(|&i| JSON::Int(i as i64)).collect()));
+                            d2.append("subj",JSON::IntArray(self.var_idx.permute_by(self.c_subj.as_slice()).map(|&i| i as i64).collect()));
                             d2.append("val", self.c_cof.as_slice());
                     }));
                 }));
@@ -1156,7 +1157,7 @@ impl Backend {
                                 let base = subi.len();
                                 let n = jj.len();
                                 subi.resize(base+n, i as i64);
-                                subj.resize(base+n,0); subj[base..].iter_mut().zip(jj.iter()).for_each(|(dst,src)| *dst = *src as i64);
+                                subj.extend(self.var_idx.permute_by(jj).map(|&i| i as i64));
                                 val.extend_from_slice(cc);
                                 gs.push(g);
                             });
