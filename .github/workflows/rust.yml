@@ -16,7 +16,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Get MOSEK
+      run: curl -o mosektoolslinux64x86.tar.bz2 https://download.mosek.com/stable/11.0.27/mosektoolslinux64x86.tar.bz2 && tar xf mosektoolslinux64x86.tar.bz2
     - name: Build
-      run: cargo build --all --verbose
+      run: MOSEK_BINDIR_110=mosek/11.0/tools/platform/linux64x86/bin cargo build --all --verbose
     - name: Run tests
-      run: cargo test --all --verbose
+      run: LD_LIBRARY_PATH=mosek/11.0/tools/platform/linux64x86/bincargo test --all --verbose
