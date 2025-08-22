@@ -17,8 +17,15 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Get MOSEK
-      run: curl -o mosektoolslinux64x86.tar.bz2 https://download.mosek.com/stable/11.0.27/mosektoolslinux64x86.tar.bz2 && tar xf mosektoolslinux64x86.tar.bz2
+      env: 
+        LICDATA: ${{ secrets.LICENSE }}
+        TEST: ${{ secrets.TEST }}
+      run: |
+        curl -o mosektoolslinux64x86.tar.bz2 https://download.mosek.com/stable/11.0.27/mosektoolslinux64x86.tar.bz2 
+        tar xf mosektoolslinux64x86.tar.bz2 -C ~/
+        mkdir -p ~/mosek
+        echo "$LICDATA" > ~/mosek/mosek.lic        
     - name: Build
-      run: MOSEK_BINDIR_110=mosek/11.0/tools/platform/linux64x86/bin cargo build --all --verbose
+      run: MOSEK_BINDIR_110=$HOME/mosek/11.0/tools/platform/linux64x86/bin cargo build --all --verbose
     - name: Run tests
-      run: mkdir -p ~/mosek && echo "${{secrets.LICENSE}}" > ~/mosek/mosek.lic && LD_LIBRARY_PATH=mosek/11.0/tools/platform/linux64x86/bin cargo test --all --verbose
+      run: LD_LIBRARY_PATH=$HOME/mosek/11.0/tools/platform/linux64x86/bin cargo test --all --verbose
