@@ -21,4 +21,4 @@ jobs:
     - name: Build
       run: MOSEK_BINDIR_110=mosek/11.0/tools/platform/linux64x86/bin cargo build --verbose
     - name: Run tests
-      run: LD_LIBRARY_PATH=mosek/11.0/tools/platform/linux64x86/bincargo test --verbose
+      run: LD_LIBRARY_PATH=mosek/11.0/tools/platform/linux64x86/bin cargo test --verbose
