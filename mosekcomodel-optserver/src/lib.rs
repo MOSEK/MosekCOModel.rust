@@ -128,10 +128,8 @@ impl BaseModelTrait for Backend {
     fn new(name : Option<&str>) -> Self {
         Backend{
             name : name.map(|v| v.to_string()),
-            var_lb : vec![1.0],
-            var_ub : vec![1.0],
-            var_int : vec![false],
-            var_names : vec![None],
+            vars : vec![VarItem::Linear],
+            var_idx : vec![usize::MAX],
             ..Default::default()
         }
     }
@@ -233,9 +231,9 @@ impl BaseModelTrait for Backend {
         let rowidxs = izip!(ptrchunks.chunks(subj).unwrap(), 
                             ptrchunks.chunks(cof).unwrap())
             .map(|(subj,cof)| {
-                if let (Some(j),Some(c)) = (subj.first(),cof.first()) {
-                    if *j == 0 {
-                        self.mx.append_row(&subj[1..], &cof[1..], *c)
+                if let (Some(j),Some(c)) = (subj.last(),cof.last()) {
+                    if *j == usize::MAX {
+                        self.mx.append_row(&subj[..subj.len()-1], &cof[..cof.len()-1], *c)
                     }
                     else {
                         self.mx.append_row(subj, cof, 0.0)
@@ -299,9 +297,9 @@ impl BaseModelTrait for Backend {
         let ptrchunks = Chunkation::new(ptr).unwrap();
         let rowidxs : Vec<usize> = izip!(ptrchunks.chunks(subj).unwrap(), ptrchunks.chunks(cof).unwrap())
             .map(|(subj,cof)| {
-                if let (Some(j),Some(c)) = (subj.get(0),cof.get(0)) {
-                    if *j == 0 {
-                        self.mx.append_row(&subj[1..], &cof[1..], *c)
+                if let (Some(j),Some(c)) = (subj.last(),cof.last()) {
+                    if *j == usize::MAX {
+                        self.mx.append_row(&subj[..subj.len()-1], &cof[..cof.len()-1], *c)
                     }
                     else {
                         self.mx.append_row(subj, cof, 0.0)
@@ -475,8 +473,7 @@ impl<D> VectorConeModelTrait<D> for Backend where D : VectorDomainTrait+'static 
     fn conic_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : VectorDomain<N,D>, _shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<Constraint<N>,String> {
         let (dt,rhs,shape,conedim,is_int) = dom.dissolve();
 
-        self.conic_constraint(name, ptr, subj, cof, shape, conedim, dt.to_conic_domain_type(), rhs.as_slice())
-        
+        self.conic_constraint(name, ptr, subj, cof, shape, conedim, dt.to_conic_domain_type(), rhs.as_slice())        
     }
 }
 
@@ -1382,16 +1379,16 @@ impl Backend {
             izip!(ptr_perm.chunks(subj).unwrap(),
                   ptr_perm.chunks(cof).unwrap())
                 .map(|(subj,cof)|
-                    if let Some((&j,&c)) = subj.first().zip(cof.first()) {
-                        if j == 0 {
-                            self.mx.append_row(&subj[1..], &cof[1..], c)
+                    if let (Some(j),Some(c)) = (subj.last(),cof.last()) {
+                        if *j == usize::MAX {
+                            self.mx.append_row(&subj[..subj.len()-1], &cof[..cof.len()-1], *c)
                         }
                         else {
-                            self.mx.append_row(subj,cof,0.0)
+                            self.mx.append_row(subj, cof, 0.0)
                         }
-                    } 
+                    }
                     else {
-                        self.mx.append_row(subj,cof,0.0)
+                        self.mx.append_row(subj, cof, 0.0)
                     }));
         self.con_rhs.extend_from_slice(offset);
         self.con_names.resize(firstcon+n,None);
