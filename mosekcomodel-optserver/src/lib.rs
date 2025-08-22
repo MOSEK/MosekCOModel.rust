@@ -1500,8 +1500,7 @@ mod test {
     use super::*;
     #[test]
     fn test_optserver() {
-        //let addr = "http://solve.mosek.com:30080".to_string();
-        let addr = "http://localhost:9999".to_string();
+        let addr = "http://solve.mosek.com:30080".to_string();
         let mut m = Model::new(Some("SuperModel"));
         m.set_parameter((), SolverAddress(addr));
 
