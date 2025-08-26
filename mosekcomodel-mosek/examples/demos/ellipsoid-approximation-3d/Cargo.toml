@@ -7,8 +7,8 @@ edition = "2021"
 #bevy = { version = "0.13.2", default_features = false, features = ["bevy_core_pipeline","bevy_render","x11","bevy_ui","bevy_scene", "bevy_gizmos","bevy_pbr"]  }
 itertools = "0.13.0"
 mosek = "*"
-mosekcomodel = { path = "../../../../", version = "0.4.3" }
-mosekcomodel_mosek = { path = "../../../", version = "0.4.1" }
+mosekcomodel = "0.4.3"
+mosekcomodel_mosek = "0.4.0"
 mosekcomodel_ellipsoids = { path = "../../../../mosekcomodel-ellipsoids", version = "0.1.0" }
 rand = "0.8.5"
 

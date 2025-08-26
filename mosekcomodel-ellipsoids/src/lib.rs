@@ -308,7 +308,6 @@ pub fn det_rootn<M>(name : Option<&str>, M : &mut ModelAPI<M>, t : Variable<0>, 
     X
 }
 
-
 #[cfg(test)]
 mod test {
     use mosekcomodel::{unbounded, SolutionType};
