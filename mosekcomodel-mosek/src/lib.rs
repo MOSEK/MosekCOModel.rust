@@ -1202,17 +1202,25 @@ impl ModelWithIntSolutionCallback for MosekModel {
         let modelp : * const Self = self;
             
 
-        self.task.put_intsolcallback(move |xx| {
-            let model = unsafe{ & mut (* (modelp as * mut Self)) };
-            let obj = model.task.get_dou_inf(mosek::Dinfitem::SOL_ITG_PRIMAL_OBJ).unwrap_or(0.0);
-            let mut xxvec = vec![0.0; model.vars.len()];
-            for (s,v) in xxvec.iter_mut().zip(model.vars.iter()) {
-                match v {
-                    VarAtom::Linear(i,_) => if (*i as usize) < xx.len() { unsafe{ *s = *xx.get_unchecked(*i as usize) } },
-                    _ => {}
+        self.task.put_callback(move |code,_,_,_| {
+            if code == mosek::Callbackcode::NEW_INT_MIO {
+                let model = unsafe{ & mut (* (modelp as * mut Self)) };
+                if let Ok(numvar) = model.task.get_num_var() {
+                    let mut xx = vec![0.0; numvar as usize];
+                    if let Ok(pobj) = model.task.get_xx(mosek::Soltype::ITG, xx.as_mut_slice())
+                                          .and_then(|_| model.task.get_primal_obj(mosek::Soltype::ITG)) {
+                        let mut xxvec = vec![0.0; model.vars.len()];
+                        for (s,v) in xxvec.iter_mut().zip(model.vars.iter()) {
+                            match v {
+                                VarAtom::Linear(i,_) => if (*i as usize) < xx.len() { unsafe{ *s = *xx.get_unchecked(*i as usize) } },
+                                _ => {}
+                            }
+                        }
+                        func(&IntSolutionManager::new(pobj,xxvec));
+                    }
                 }
             }
-            func(&IntSolutionManager::new(obj,xxvec));
+            true 
         }).unwrap();
     }
 }

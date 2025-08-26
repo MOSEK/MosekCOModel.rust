@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 itertools = "0.13.0"
-mosekcomodel = { path = "..", version = "0.4.3" }
+mosekcomodel = "0.4.3"
 
 [dev-dependencies]
-mosekcomodel_mosek = { path = "../mosekcomodel-mosek", version = "0.4.1"  }
+mosekcomodel_mosek = "0.4.1"

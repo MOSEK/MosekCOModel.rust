@@ -5,8 +5,7 @@ extern crate mosekcomodel;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, SystemTime};
-use mosekcomodel_ellipsoids::Ellipsoid;
-use mosekcomodel_ellipsoids as ellipsoids;
+use mosekcomodel_ellipsoids::{Ellipsoid,det_rootn,ellipsoid_contains,ellipsoid_contained};
 use glam::{DMat2,DVec2};
 use gtk::glib::ControlFlow;
 use gtk::prelude::*;
@@ -117,7 +116,7 @@ fn build_ui(app   : &Application,
                     // outer ellipsoid
                     let mut m = Model::new(None);
                     let t = m.variable(None, unbounded());
-                    let p = ellipsoids::det_rootn(None, & mut m, t.clone(), 2);
+                    let p = det_rootn(None, & mut m, t.clone(), 2);
                     let q = m.variable(None, unbounded().with_shape(&[2]));
   
                     m.objective(None, mosekcomodel::Sense::Maximize, &t);
@@ -126,9 +125,9 @@ fn build_ui(app   : &Application,
                         let A = DMat2::from_cols_array(A).inverse();
                         let b = A.mul_vec2(DVec2{x:b[0], y:b[1]}).to_array();
 
-                        let e : Ellipsoid<2> = ellipsoids::Ellipsoid::from_arrays(&A.to_cols_array(), &[-b[0],-b[1]]);
+                        let e : Ellipsoid<2> = Ellipsoid::from_arrays(&A.to_cols_array(), &[-b[0],-b[1]]);
 
-                        ellipsoids::ellipsoid_contains(&mut m,&p,&q,&e);
+                        ellipsoid_contains(&mut m,&p,&q,&e);
                     }
 
                     m.solve();
@@ -156,7 +155,7 @@ fn build_ui(app   : &Application,
                     let mut m = Model::new(None);
 
                     let t = m.variable(None, unbounded());
-                    let p = ellipsoids::det_rootn(None, & mut m, t.clone(), 2);
+                    let p = det_rootn(None, & mut m, t.clone(), 2);
                     let q = m.variable(None, unbounded().with_shape(&[2]));
 
                     m.objective(None, mosekcomodel::Sense::Maximize, &t);
@@ -165,9 +164,9 @@ fn build_ui(app   : &Application,
                         let A = DMat2::from_cols_array(A).inverse();
                         let b = A.mul_vec2(DVec2{x:b[0], y:b[1]}).to_array();
 
-                        let e : Ellipsoid<2> = ellipsoids::Ellipsoid::from_arrays(&A.to_cols_array(), &[-b[0],-b[1]]);
+                        let e : Ellipsoid<2> = Ellipsoid::from_arrays(&A.to_cols_array(), &[-b[0],-b[1]]);
 
-                        ellipsoids::ellipsoid_contained(&mut m,&p,&q,&e);
+                        ellipsoid_contained(&mut m,&p,&q,&e);
                     }
 
                     m.solve();

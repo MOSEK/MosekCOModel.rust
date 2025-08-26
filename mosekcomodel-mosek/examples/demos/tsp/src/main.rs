@@ -26,6 +26,7 @@ const APP_ID : &str = "com.mosek.example.tsp";
 /// Structure encapsulating the data used to draw the graphical window.
 struct DrawData {
     points : Vec<[f64;2]>,
+    pobj : f64,
     sol : Vec<(usize,usize)>,
     done : bool,
     iteration : usize
@@ -38,7 +39,7 @@ enum Command {
 
 /// Responses send from the solver to the GUI
 enum Response {
-    Solution(Vec<(usize,usize)>),
+    Solution(f64,Vec<(usize,usize)>),
     Iteration(usize),
     Done,
 }
@@ -98,6 +99,7 @@ fn main() {
 fn build_ui(app : &Application, conf : Config,points : &Vec<[f64;2]>, threads : Rc<RefCell<Vec<JoinHandle<()>>>>) {
     let drawdata = Rc::new(RefCell::new(DrawData{ 
         points : points.clone(),
+        pobj : 9999999.999,
         sol    : Vec::new(),
         iteration : 0,
         done : false,
@@ -153,10 +155,11 @@ fn build_ui(app : &Application, conf : Config,points : &Vec<[f64;2]>, threads : 
                             drawdata.borrow_mut().iteration = i;
                             darea.queue_draw();
                         },
-                        Ok(Response::Solution(data)) => {
+                        Ok(Response::Solution(pobj,data)) => {
                             let mut dd = drawdata.borrow_mut();
                             dd.sol.clear();
                             dd.sol.extend_from_slice(data.as_slice());
+                            dd.pobj = pobj;
                             darea.queue_draw();
                         },
                         Err(mpsc::TryRecvError::Empty) => return ControlFlow::Continue,
@@ -182,10 +185,10 @@ fn redraw_window(_widget : &DrawingArea, context : &Context, w : i32, h : i32, d
     context.set_source_rgb(0.0, 0.0, 0.0);
     context.move_to(20.0,20.0);
     if ! data.done {
-        context.text_path(format!("[{}]",data.iteration).as_str());
+        context.text_path(format!("[{} | {}]",data.iteration,data.pobj).as_str());
     }
     else {
-        context.text_path(format!("[{}] : DONE",data.iteration).as_str());
+        context.text_path(format!("[{} | {}] : DONE",data.iteration,data.pobj).as_str());
     }
     _ = context.stroke();
 
@@ -240,23 +243,21 @@ fn optimize(conf   : &Config,
         let x = x.clone();
         let tx = tx.clone();
         let stop = stop.clone();
-        model.set_int_solution_callback(move |model| 
-            if let Ok(xx) = model.primal_solution(SolutionType::Integer, &x) {
-                _ = tx.send(Response::Solution(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
+        model.set_int_solution_callback(move |sol| 
+            if let Ok(xx) = sol.try_get(&x) {
+                _ = tx.send(Response::Solution(sol.obj(),iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
             });
         model.set_control_callback(move || {
-            loop {                
-                match rx.try_recv() {
-                    Ok(Command::Terminate) => { 
-                        *stop.borrow_mut() = true;
-                        return std::ops::ControlFlow::Break(());
-                    },
-                    Err(mpsc::TryRecvError::Empty) => return std::ops::ControlFlow::Continue(()),
-                    Err(mpsc::TryRecvError::Disconnected) => {
-                        *stop.borrow_mut() = true;
-                        return std::ops::ControlFlow::Break(()); 
-                    },
-                }
+            match rx.try_recv() {
+                Ok(Command::Terminate) => { 
+                    *stop.borrow_mut() = true;
+                    return std::ops::ControlFlow::Break(());
+                },
+                Err(mpsc::TryRecvError::Empty) => return std::ops::ControlFlow::Continue(()),
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    *stop.borrow_mut() = true;
+                    return std::ops::ControlFlow::Break(()); 
+                },
             }
         });
     }
@@ -285,7 +286,8 @@ fn optimize(conf   : &Config,
 
         if cycles.len() == 1 {
             if let Ok(xx) = model.primal_solution(SolutionType::Integer, &x) {
-                _ = tx.send(Response::Solution(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
+                let pobj = model.primal_objective(SolutionType::Integer).unwrap_or(9999999.999);
+                _ = tx.send(Response::Solution(pobj,iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
             }
             break;
         }
@@ -299,7 +301,8 @@ fn optimize(conf   : &Config,
         }
     }
     if let Ok(xx) = model.primal_solution(SolutionType::Integer, &x) {
-        _ = tx.send(Response::Solution(iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
+        let pobj = model.primal_objective(SolutionType::Integer).unwrap_or(9999999.999);
+        _ = tx.send(Response::Solution(pobj,iproduct!(0..n,0..n).zip(xx.iter()).filter_map(|((i,j),&x)| if x > 0.5 { Some((i,j)) } else { None } ).collect::<Vec<(usize,usize)>>()));
     }
     _ = tx.send(Response::Done);
 }

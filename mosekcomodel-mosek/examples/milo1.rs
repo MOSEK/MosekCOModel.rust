@@ -38,16 +38,18 @@ fn milo1() -> (SolutionStatus,Result<Vec<f64>,String>) {
 
     {
         let x = x.clone();
-        m.set_int_solution_callback(move|sol| println!("New integer solution: x = {:?}",sol.get(&x)));
+        m.set_int_solution_callback(move|sol| println!("New integer solution ({}): x = {:?}",sol.obj(), sol.get(&x)));
     }
 
+    m.set_log_handler(|msg| print!("{}",msg));
+    m.write_problem("milo1.ptf");
     // Solve the problem
     m.solve();
 
     // Get the solution values
-    let (psta,_) = m.solution_status(SolutionType::Integer);
+    let (psta,_) = m.solution_status(SolutionType::Default);
 
-    (psta,m.primal_solution(SolutionType::Integer, &x))
+    (psta,m.primal_solution(SolutionType::Default, &x))
 }
 
 
