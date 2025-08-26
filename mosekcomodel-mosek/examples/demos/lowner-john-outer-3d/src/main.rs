@@ -1,8 +1,8 @@
 extern crate glam;
-extern crate mosekcomodel;
 extern crate bevy;
 extern crate rand;
-extern crate ellipsoids;
+extern crate mosekcomodel;
+extern crate mosekcomodel_ellipsoids;
 
 use bevy::math::{DMat3, DVec3};
 use bevy::prelude::*;
@@ -13,11 +13,12 @@ use bevy::render::render_asset::RenderAssetUsages;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, SystemTime};
-use ellipsoids::Ellipsoid;
+use mosekcomodel_ellipsoids::Ellipsoid;
 use glam::{DMat2,DVec2};
 use itertools::izip;
 use mosekcomodel::unbounded;
 use mosekcomodel_mosek::Model;
+use mosekcomodel_ellipsoids as ellipsoids;
 
 use std::f32::consts::PI;
 

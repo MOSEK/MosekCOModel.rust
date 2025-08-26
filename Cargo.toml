@@ -19,7 +19,8 @@ resolver = "3"
 members = [ "mosekcomodel-mosek", 
             "mosekcomodel-highs", 
             "mosekcomodel-optserver",
-            "mosekcomodel-ellipsoids"]
+            "mosekcomodel-ellipsoids",
+            ]
 
 #[lib]
 #crate-type = ["dylib"]

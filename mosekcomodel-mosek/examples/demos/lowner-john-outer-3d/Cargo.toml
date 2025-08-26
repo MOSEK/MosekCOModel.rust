@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ellipsoids = { version = "0.1.0", path = "../ellipsoids" }
 glam = "0.28.0"
 itertools = "0.13.0"
 mosek = "*"
 rand = "0.8.5"
-mosekcomodel = "0.4.1"
-mosekcomodel_mosek = "0.4.0"
+mosekcomodel = { path = "../../../..", version = "0.4.3" }
+mosekcomodel_mosek = { path = "../../..", version = "0.4.1" }
+mosekcomodel_ellipsoids = { path = "../../../../mosekcomodel-ellipsoids", version = "0.1.0"  }
 
 [profile.dev.package."*"]
 opt-level = 3

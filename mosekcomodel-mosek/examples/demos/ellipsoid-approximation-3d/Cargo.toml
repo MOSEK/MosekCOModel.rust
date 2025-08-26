@@ -5,11 +5,11 @@ edition = "2021"
 
 [dependencies]
 #bevy = { version = "0.13.2", default_features = false, features = ["bevy_core_pipeline","bevy_render","x11","bevy_ui","bevy_scene", "bevy_gizmos","bevy_pbr"]  }
-ellipsoids = { version = "0.1.0", path = "../ellipsoids" }
 itertools = "0.13.0"
 mosek = "*"
-mosekcomodel = "0.4"
-mosekcomodel_mosek = "0.4"
+mosekcomodel = { path = "../../../../", version = "0.4.3" }
+mosekcomodel_mosek = { path = "../../../", version = "0.4.1" }
+mosekcomodel_ellipsoids = { path = "../../../../mosekcomodel-ellipsoids", version = "0.1.0" }
 rand = "0.8.5"
 
 [profile.dev.package."*"]

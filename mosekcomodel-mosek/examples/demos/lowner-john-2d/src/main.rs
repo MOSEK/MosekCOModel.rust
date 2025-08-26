@@ -14,6 +14,7 @@ use cairo::Context;
 use gtk::{glib,Application, DrawingArea, ApplicationWindow};
 use mosekcomodel::*;
 use mosekcomodel_mosek::Model;
+use mosekcomodel_ellipsoids as ellipsoids;
 
 const APP_ID : &str = "com.mosek.lowner-john";
 

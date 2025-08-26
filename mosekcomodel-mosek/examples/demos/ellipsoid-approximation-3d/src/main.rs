@@ -1,7 +1,7 @@
 extern crate mosekcomodel;
 extern crate bevy;
 extern crate mosek;
-extern crate ellipsoids;
+extern crate mosekcomodel_ellipsoids;
 extern crate rand;
 
 use std::f64::consts::PI;
@@ -12,7 +12,8 @@ use bevy::ecs::component::Component;
 use bevy::math::{DMat3, DQuat, DVec3,Quat,Vec3,Mat3};
 use linalg::symsqrt3;
 
-use ellipsoids::Ellipsoid;
+use mosekcomodel_ellipsoids::Ellipsoid;
+use mosekcomodel_ellipsoids as ellipsoids;
 use mosekcomodel::unbounded;
 use mosekcomodel_mosek::Model;
 use rand::Rng;
