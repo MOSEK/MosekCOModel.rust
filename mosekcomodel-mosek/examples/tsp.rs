@@ -45,13 +45,13 @@ fn tsp(n : usize, A : & NDArray<2>, C : &NDArray<2>, remove_selfloops: bool, rem
         println!("--------------------\nIteration {}",it);
         M.solve();
 
-        println!("\nsolution cost: {}", M.primal_objective(SolutionType::Default).unwrap());
+        println!("\nsolution cost: {}", M.primal_objective(SolutionType::Integer).unwrap());
         println!("\nsolution:");
 
         let mut cycles : Vec<Vec<[usize;2]>> = Vec::new();
 
         for i in 0..n {
-            let xi = M.primal_solution(SolutionType::Default, &(&x).index([i..i+1, 0..n])).unwrap();
+            let xi = M.primal_solution(SolutionType::Integer, &(&x).index([i..i+1, 0..n])).unwrap();
             println!("x[{{}},:] = {:?}",xi);
 
             for (j,_xij) in xi.iter().enumerate().filter(|(_,&v)| v > 0.5) {
@@ -68,7 +68,7 @@ fn tsp(n : usize, A : & NDArray<2>, C : &NDArray<2>, remove_selfloops: bool, rem
         println!("\ncycles: {:?}",cycles);
 
         if cycles.len() == 1 {
-            return (M.primal_solution(SolutionType::Default, &x).unwrap(), cycles[0].clone())
+            return (M.primal_solution(SolutionType::Integer, &x).unwrap(), cycles[0].clone())
         }
 
         for c in cycles.iter_mut() {
