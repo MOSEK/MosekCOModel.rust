@@ -36,6 +36,7 @@ pub fn traffic_network_model(
 
     let basetime = NDArray::from_iter([n,n],arcs.iter().map(|arc| ([arc.i,arc.j],arc.base_travel_time))).unwrap();
     let sparsity : Vec<[usize;2]> = arcs.iter().map(|arc| [arc.i,arc.j]).collect();
+    println!("sparsity : {:?}", sparsity);
     let cs_inv = NDArray::from_iter([n,n],arcs.iter().map(|arc| ([arc.i,arc.j],1.0 / (arc.traffic_sensitivity * arc.capacity)))).unwrap();
     let s_inv  = NDArray::from_iter([n,n],arcs.iter().map(|arc| ([arc.i,arc.j],1.0/arc.traffic_sensitivity))).unwrap();
 

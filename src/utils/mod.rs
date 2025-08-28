@@ -145,6 +145,8 @@ impl<'b> Permutation<'b> {
         if data.len() < self.max { None }
         else { Some(AppliedPermutation{ data, perm : *self }) }
     }
+
+    pub fn len(&self) -> usize { self.perm.len() }
 }
 
 impl<'a,'b,T> std::ops::Index<usize> for AppliedPermutation<'a,'b,T> {
@@ -154,6 +156,38 @@ impl<'a,'b,T> std::ops::Index<usize> for AppliedPermutation<'a,'b,T> {
             self.data.get_unchecked(self.perm.perm[i])
         }
     }
+}
+
+pub struct AppliedPermutationIterator<'a,'b,T> {
+    perm : &'a [usize],
+    data : &'b [T],
+    index : usize
+}
+
+impl<'a,'b,T> Iterator for AppliedPermutationIterator<'a,'b,T> {
+    type Item = &'b T;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.perm.len() {
+            let res = unsafe{self.data.get_unchecked(*self.perm.get_unchecked(self.index))};
+            self.index += 1;
+
+            Some(res)
+        }
+        else {
+            None
+        }
+    }
+}
+
+impl<'a,'b,T> AppliedPermutation<'a,'b,T> {
+    pub fn iter(&self) -> AppliedPermutationIterator<'b,'a,T> {
+        AppliedPermutationIterator{
+            perm : self.perm.perm,
+            data : self.data,
+            index : 0
+        }
+    }
+    pub fn len(&self) -> usize { self.perm.len() }
 }
 
 

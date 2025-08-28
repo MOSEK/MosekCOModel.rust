@@ -1,3 +1,5 @@
+use crate::utils::iter::PermuteByEx;
+
 use super::*;
 
 #[derive(Clone,Copy)]
@@ -54,12 +56,15 @@ impl ScalableLinearDomain {
     pub fn with_offset(self,offset : f64) -> ScalableLinearDomain { ScalableLinearDomain{ offset, ..self } }
     // TODO: Check sparsity pattern indexes against shape?
     pub fn with_shape_and_sparsity<const N : usize>(self, shape : &[usize;N], sparsity : &[[usize;N]]) -> LinearProtoDomain<N> {
-        let st = shape.to_strides();        
+        let st = shape.to_strides();
+        let mut sp : Vec<usize> = sparsity.iter().map(|i| st.to_linear(i)).collect();
+        sp.sort();
+
         LinearProtoDomain{
             shape : *shape,
             domain_type : self.domain_type,
             offset : Either::Left(self.offset),
-            sparsity : Some(sparsity.iter().map(|i| st.to_linear(i)).collect()),
+            sparsity : Some(sp),
             is_integer : self.is_integer
         }
     }
@@ -123,7 +128,6 @@ impl<const N : usize> LinearProtoDomain<N> {
     pub fn with_sparsity(self, sparsity : &[[usize;N]]) -> Self {
         let st = self.shape.to_strides();
         let sparsity = sparsity.iter().map(|i| st.to_linear(i)).collect();
-
         LinearProtoDomain{
             sparsity : Some(sparsity),
             ..self
@@ -148,42 +152,82 @@ impl<const N : usize> IntoDomain for LinearProtoDomain<N> {
     fn try_into_domain(self) -> Result<Self::Result,String> {
         let st = self.shape.to_strides();                
         let totalsize : usize = self.shape.iter().product();
-        if let Some(sp) = &self.sparsity {
-            if let Some((a,b)) = sp.iter().zip(sp[1..].iter()).find(|(a,b)| a >= b) {
-                return Err(format!("Sparsity pattern unsorted or contains duplicates: {:?} and {:?}", st.to_index(*a), st.to_index(*b)));
-            }
-            if let Some(i) = sp.iter().max() {
-                if *i >= totalsize {
-                    return Err(format!("Element in sparsity pattern is out of bounds: {:?}", st.to_index(*i)));
+        let (sparsity,offset) = 
+            if let Some(mut sp) = self.sparsity {
+                if let Some(i) = sp.iter().max() {
+                    if *i >= totalsize {
+                        return Err(format!("Element in sparsity pattern is out of bounds: {:?}", st.to_index(*i)));
+                    }
+                }
+                if let Either::Right(offset) = &self.offset {
+                    if sp.len() != offset.len() {
+                        return Err(format!("Sparsity and offset lengths do not match"));
+                    }
+                }
+
+                if ! sp.is_sorted() {
+                    match self.offset {
+                        Either::Left(v) => {
+                            sp.sort();
+                            let n = sp.len();
+                            if let Some((a,b)) = sp.iter().zip(sp[1..].iter()).find(|(a,b)| a >= b) {
+                                return Err(format!("Sparsity contains duplicates: {:?} and {:?}", st.to_index(*a), st.to_index(*b)));
+                            }
+
+                            (Some(sp),vec![v; n])
+                        },
+                        Either::Right(offset) => {
+                            if sp.len() != offset.len() {
+                                return Err(format!("Sparsity and offset lengths do not match"));
+                            }
+
+                            let mut p : Vec<usize> = (0..sp.len()).collect();
+                            p.sort_by_key(|&i| unsafe{*sp.get_unchecked(i)});
+                            let perm = Permutation::from(p.as_slice());
+                            let sp : Vec<usize> = perm.apply(sp.as_slice()).unwrap().iter().cloned().collect();
+                
+                            if let Some((a,b)) = sp.iter().zip(sp[1..].iter()).find(|(a,b)| a >= b) {
+                                return Err(format!("Sparsity contains duplicates: {:?} and {:?}", st.to_index(*a), st.to_index(*b)));
+                            }
+
+                            (Some(sp),perm.apply(offset.as_slice()).unwrap().iter().cloned().collect())
+                        }
+                    }
+                }
+                else if let Some((a,b)) = sp.iter().zip(sp[1..].iter()).find(|(a,b)| a >= b) {
+                    return Err(format!("Sparsity contains duplicates: {:?} and {:?}", st.to_index(*a), st.to_index(*b)));
+                } 
+                else {
+                    match self.offset {
+                        Either::Left(v) => {
+                            let n = sp.len();
+                            (Some(sp),vec![v; n])
+                        },
+                        Either::Right(offset) => {
+                            if sp.len() != offset.len() {
+                                return Err(format!("Offset and shape lengths do not match"));
+                            }
+                            (Some(sp),offset)
+                        }
+                    }
                 }
             }
-            if let Either::Right(offset) = &self.offset {
-                if sp.len() != offset.len() {
-                    return Err(format!("Sparsity and offset lengths do not match"));
-                }
-            }
-
-
-        }
-        else if let Either::Right(v) = &self.offset {
-            if totalsize != v.len() {
-                return Err(format!("Offset and shape lengths do not match"));
-            }
-        }
-
-        let offset = 
-            match self.offset {
-                Either::Right(v) => v,
-                Either::Left(v) => {
-                    let n = self.sparsity.as_ref().map(|v| v.len()).unwrap_or(totalsize);
-                    vec![v; n]
+            else {
+                match self.offset {
+                    Either::Left(v) => (None,vec![v;totalsize]),
+                    Either::Right(v) => {
+                        if totalsize != v.len() {
+                            return Err(format!("Offset and shape lengths do not match"));
+                        }
+                        (None,v)
+                    }
                 }
             };
 
         Ok(LinearDomain{
             shape       : self.shape,
             offset,
-            sparsity    : self.sparsity,
+            sparsity,
             domain_type : self.domain_type,
             is_integer  : self.is_integer
         })
