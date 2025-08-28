@@ -2,8 +2,9 @@
 #![allow(dead_code)]
 pub mod iter;
 
-use itertools::izip;
+use std::{marker::PhantomData, ptr::NonNull};
 
+use itertools::izip;
 
 #[derive(Debug,Clone,Copy)]
 pub struct Strides<const N : usize> {
@@ -135,13 +136,26 @@ pub struct Permutation<'b> {
 /// A struct representing a permutation or mutation of a vector.
 pub struct AppliedPermutation<'a, 'b, T> {
     data : &'a [T],
-    perm : Permutation<'b>
+    perm : &'b [usize]
+}
+
+pub struct AppliedPermutationMut<'a, 'b, T> {
+    data : &'a mut [T],
+    perm : &'b [usize]
 }
 
 /// An iterator over a permutation of a vector.
 pub struct AppliedPermutationIterator<'a,'b,T> {
     perm : &'a [usize],
     data : &'b [T],
+    index : usize
+}
+
+/// An iterator over a permutation of a vector.
+pub struct AppliedPermutationMutIterator<'a,'b,T> {
+    perm : &'a [usize],
+    ptr : NonNull<T>,
+    _marker : PhantomData<&'b T>,
     index : usize
 }
 
@@ -162,7 +176,11 @@ impl<'b> Permutation<'b> {
     /// applied permutation, otherwise `None`.
     pub fn apply<'a,T>(&self, data : &'a[T]) -> Option<AppliedPermutation<'a,'b,T>> {
         if data.len() < self.max { None }
-        else { Some(AppliedPermutation{ data, perm : *self }) }
+        else { Some(AppliedPermutation{ data, perm : self.perm }) }
+    }
+    pub fn apply_mut<'a,T>(&self, data : &'a mut[T]) -> Option<AppliedPermutationMut<'a,'b,T>> {
+        if data.len() < self.max { None }
+        else { Some(AppliedPermutationMut{ data, perm : self.perm }) }
     }
 
     /// Length of the permutation
@@ -173,11 +191,19 @@ impl<'a,'b,T> std::ops::Index<usize> for AppliedPermutation<'a,'b,T> {
     type Output = T;
     fn index(&self, i : usize) -> &T {
         unsafe {
-            self.data.get_unchecked(self.perm.perm[i])
+            self.data.get_unchecked(self.perm[i])
         }
     }
 }
 
+//impl<'a,'b,T> std::ops::Index<usize> for AppliedPermutationMut<'a,'b,T> {
+//    type Output = T;
+//    fn index(&self, i : usize) -> &mut T {
+//        unsafe {
+//            self.data.get_unchecked_mut(self.perm[i])
+//        }
+//    }
+//}
 
 impl<'a,'b,T> Iterator for AppliedPermutationIterator<'a,'b,T> {
     type Item = &'b T;
@@ -194,11 +220,22 @@ impl<'a,'b,T> Iterator for AppliedPermutationIterator<'a,'b,T> {
     }
 }
 
+impl<'a,'b,T> Iterator for AppliedPermutationMutIterator<'a,'b,T> {
+    type Item = &'b mut T;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.perm.get(self.index)
+            .and_then(|&index| { 
+                self.index += 1; 
+                Some(unsafe{self.ptr.as_ptr().add(index).as_mut().unwrap()}) 
+            })
+    }
+}
+
 impl<'a,'b,T> AppliedPermutation<'a,'b,T> {
     /// Return an iterator over the permited elements.
     pub fn iter(&self) -> AppliedPermutationIterator<'b,'a,T> {
         AppliedPermutationIterator{
-            perm : self.perm.perm,
+            perm : self.perm,
             data : self.data,
             index : 0
         }
@@ -207,6 +244,19 @@ impl<'a,'b,T> AppliedPermutation<'a,'b,T> {
     pub fn len(&self) -> usize { self.perm.len() }
 }
 
+impl<'a,'b,T> AppliedPermutationMut<'a,'b,T> {
+    /// Return an iterator over the permited elements.
+    pub fn iter(self) -> AppliedPermutationMutIterator<'b,'a,T> {
+        AppliedPermutationMutIterator{
+            perm : self.perm,
+            ptr : NonNull::from(self.data).cast(), 
+            _marker : PhantomData,
+            index : 0
+        }
+    }
+    /// Length of the underlying permutation
+    pub fn len(&self) -> usize { self.perm.len() }
+}
 
 
 
