@@ -148,31 +148,25 @@ fn main() {
         .run();
 }
 
-//fn screen_shot( time       : Res<Time>,
-//                main_window: Query<Entity, With<PrimaryWindow>>,
-//                mut screenshot_manager: ResMut<ScreenshotManager>,
-//                mut counter: Local<u32>)
-//{
-//    let sec = time.elapsed_seconds();
-//    let path = format!("./screenshot-{}.png", *counter);
-//    *counter += 1;
-//    let _ = screenshot_manager
-//        .save_screenshot_to_disk(main_window.single(), path)
-//        .unwrap();
-//}
-
 /// set up a simple 3D scene
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>) 
 {
-    commands.spawn((PbrBundle{
-        mesh : meshes.add(Sphere::new(1.0)),
-        material : materials.add(Color::srgba_u8(255,255, 255, 128)),
-        ..default()},
-        BoundingEllipsoid{} 
-        ));
+
+    commands.spawn((
+            Mesh3d(meshes.add(Sphere::new(1.0))),
+            MeshMaterial3d(materials.add(Color::srgba_u8(255,255, 255, 128))),
+            BoundingEllipsoid{}));
+            //Transform::from_xyz(0.0,0.0,0.0)));
+
+    //commands.spawn((PbrBundle{
+    //    mesh : meshes.add(Sphere::new(1.0)),
+    //    material : materials.add(Color::srgba_u8(255,255, 255, 128)),
+    //    ..default()},
+    //        BoundingEllipsoid{} 
+    //    ));
 
 
     let color = Color::srgba_u8(192,128,0,255);
@@ -185,41 +179,55 @@ fn setup(
 
 
     for _ in 0..N {
-        commands.spawn((PbrBundle{
-            mesh : meshes.add(Sphere::new(1.0)),
-            material : materials.add(StandardMaterial{
-                base_color : Color::srgb_u8(rand::random::<u8>()/2+127,rand::random::<u8>()/2+127, rand::random::<u8>()/2+127),
-                metallic : 0.8,
-                reflectance : 0.5,
-                ..default()
-            }),
-            ..default()},
-
-            //EllipseTransform::rand(3.0, (0.2,1.5),(1.0/15.0,1.0/2.0), (1.0/10.0, 1.0) )
-            EllipseTransform::rand(3.0, (0.5,1.5),(1.0/15.0,1.0/2.0), (1.0/10.0, 1.0) )
-            ));
+        commands.spawn((
+                Mesh3d(meshes.add(Sphere::new(1.0))),
+                MeshMaterial3d(materials.add(StandardMaterial{
+                    base_color : Color::srgb_u8(rand::random::<u8>()/2+127,rand::random::<u8>()/2+127, rand::random::<u8>()/2+127),
+                    metallic : 0.8,
+                    reflectance : 0.5,
+                    ..default()
+                })),
+                //EllipseTransform::rand(3.0, (0.2,1.5),(1.0/15.0,1.0/2.0), (1.0/10.0, 1.0) )
+                EllipseTransform::rand(3.0, (0.5,1.5),(1.0/15.0,1.0/2.0), (1.0/10.0, 1.0) )
+                ));
+//        commands.spawn((PbrBundle{
+//            mesh : meshes.add(Sphere::new(1.0)),
+//            material : materials.add(StandardMaterial{
+//                base_color : Color::srgb_u8(rand::random::<u8>()/2+127,rand::random::<u8>()/2+127, rand::random::<u8>()/2+127),
+//                metallic : 0.8,
+//                reflectance : 0.5,
+//                ..default()
+//            }),
+//            ..default()},
+//
+//            //EllipseTransform::rand(3.0, (0.2,1.5),(1.0/15.0,1.0/2.0), (1.0/10.0, 1.0) )
+//            EllipseTransform::rand(3.0, (0.5,1.5),(1.0/15.0,1.0/2.0), (1.0/10.0, 1.0) )
+//            ));
     }
 
     // light
-    commands.spawn(PointLightBundle {
-        point_light: PointLight {
+    commands.spawn((
+        PointLight {
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(4.0, 8.0, 4.0),
-        ..default()
-    });
+        Transform::from_xyz(4.0, 8.0, 4.0)));
+
+    commands.spawn((
+            Camera3d::default(),
+            Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
+            CameraTransform{ rps:1.0/30.0 }));
     // camera
-    commands.spawn((Camera3dBundle {
-        transform: Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..default() },
-        CameraTransform{ rps:1.0/30.0 }));
+    //commands.spawn((Camera3dBundle {
+    //    transform: Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
+    //    ..default() },
+    //    CameraTransform{ rps:1.0/30.0 }));
 }
 
 
 
 fn update_camera(time: Res<Time>, mut query: Query<(&mut Transform,&CameraTransform)>) {
-    let t = time.elapsed_seconds();
+    let t = time.elapsed_secs();
     for (mut transform, c) in &mut query {
         let camloc = Quat::from_rotation_y(2.0*std::f32::consts::PI*c.rps*t).mul_vec3(Vec3::new(-2.5, 4.5, 9.0)) ;
         let tf = Transform::from_xyz(camloc.x,camloc.y,camloc.z).looking_at(Vec3::ZERO, Vec3::Y);
@@ -232,7 +240,7 @@ fn update(time       : Res<Time>,
           mut query  : Query<(&mut Transform, &EllipseTransform)>, 
           mut qbound : Query<&mut Transform, Without<EllipseTransform>>,
           mut gizmos : Gizmos) {
-    let t = time.elapsed_seconds();
+    let t = time.elapsed_secs();
     let dt = t;
 
     let ellipses : Vec<Ellipsoid<3>> = (&mut query).iter_mut().map(|(mut transform,e)| {

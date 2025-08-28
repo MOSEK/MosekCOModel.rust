@@ -97,10 +97,9 @@ fn setup(
 
     // cubes providing a point cloud
     for _ in 0..8 {
-        commands.spawn((PbrBundle {
-            mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-            material: materials.add(Color::rgb_u8(rand::random::<u8>()/2+128,rand::random::<u8>()/2+128,rand::random::<u8>()/2+128)),
-            ..default()},
+        commands.spawn((
+            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+            MeshMaterial3d(materials.add(Color::srgb_u8(rand::random::<u8>()/2+128,rand::random::<u8>()/2+128,rand::random::<u8>()/2+128))),
             MyObject::random(2.0, (-1.0,1.0),(-1.0,1.0),(0.5,2.5))
             ));
     }
@@ -117,34 +116,27 @@ fn setup(
         ));
     */
     commands.spawn((
-        PbrBundle{
-            mesh: meshes.add(Sphere::new(1.0)),
-            //mesh: meshes.add(Cuboid::new(2.0,2.0,2.0)),
-            material: materials.add(Color::rgba_u8(255,255,255,32)),
-            ..default() },
-        BoundingEllipsoid{}
+            Mesh3d(meshes.add(Sphere::new(1.0))),
+            MeshMaterial3d(materials.add(Color::srgba_u8(255,255,255,32))),
+            BoundingEllipsoid{}
         ));
 
     // light
-    commands.spawn(PointLightBundle {
-        point_light: PointLight {
-            shadows_enabled: true,
-            ..default()
-        },
-        transform: Transform::from_xyz(4.0, 8.0, 4.0),
-        ..default()
-    });
+    commands.spawn((
+        PointLight { shadows_enabled: true, ..default() },
+        Transform::from_xyz(4.0, 8.0, 4.0)
+        ));
     // camera
-    commands.spawn((Camera3dBundle {
-        transform: Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..default() },
-        CameraTransform{ rps:1.0/30.0 }));
+    commands.spawn((
+            Camera3d::default(),
+            Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
+            CameraTransform{ rps:1.0/30.0 }));
 }
 
 
 
 fn update_camera(time: Res<Time>, mut query: Query<(&mut Transform,&CameraTransform)>) {
-    let t = time.elapsed_seconds();
+    let t = time.elapsed_secs();
     for (mut transform, c) in &mut query {
         let camloc = Quat::from_rotation_y(2.0*PI*c.rps*t).mul_vec3(Vec3::new(-2.5, 4.5, 9.0)) ;
         let tf = Transform::from_xyz(camloc.x,camloc.y,camloc.z).looking_at(Vec3::ZERO, Vec3::Y);
@@ -157,8 +149,8 @@ fn update(time: Res<Time>,
           mut query: Query<(&mut Transform, &MyObject)>, 
           mut qbound: Query<(&mut Transform, &BoundingEllipsoid), Without<MyObject>>, 
           mut gizmos: Gizmos) {
-    //let t = (time.elapsed_seconds().sin() + 1.) / 2.;
-    let t = time.elapsed_seconds();
+    //let t = (time.elapsed_secs().sin() + 1.) / 2.;
+    let t = time.elapsed_secs();
 
     let cube_points = [ Vec3::new(-0.5,-0.5,-0.5),
                         Vec3::new( 0.5,-0.5,-0.5),
