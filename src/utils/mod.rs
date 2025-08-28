@@ -123,29 +123,49 @@ impl NameAppender for usize {
 
 
 
+
+
+/// A struct representing a permutation or mutation of indexes.
 #[derive(Clone,Copy)]
 pub struct Permutation<'b> {
     perm : &'b [usize],
     max  : usize
 }
 
+/// A struct representing a permutation or mutation of a vector.
 pub struct AppliedPermutation<'a, 'b, T> {
     data : &'a [T],
     perm : Permutation<'b>
 }
 
+/// An iterator over a permutation of a vector.
+pub struct AppliedPermutationIterator<'a,'b,T> {
+    perm : &'a [usize],
+    data : &'b [T],
+    index : usize
+}
+
 impl<'b> Permutation<'b> {
+    /// Create a permutation from a vector of indexes.
     pub fn from(perm : & 'b[usize]) -> Permutation<'b> {
         Permutation{
             perm,
             max : perm.iter().max().map(|&v| v+1).unwrap_or(0)
         }
     }
+    /// Apply the permutation to a vector
+    ///
+    /// # Arguments
+    /// - `data` The array to permute
+    /// # Returns
+    /// If the permutation is valid for the given array (all indexes are within bounds), return an
+    /// applied permutation, otherwise `None`.
     pub fn apply<'a,T>(&self, data : &'a[T]) -> Option<AppliedPermutation<'a,'b,T>> {
         if data.len() < self.max { None }
         else { Some(AppliedPermutation{ data, perm : *self }) }
     }
 
+    /// Length of the permutation
     pub fn len(&self) -> usize { self.perm.len() }
 }
 
@@ -158,11 +178,6 @@ impl<'a,'b,T> std::ops::Index<usize> for AppliedPermutation<'a,'b,T> {
     }
 }
 
-pub struct AppliedPermutationIterator<'a,'b,T> {
-    perm : &'a [usize],
-    data : &'b [T],
-    index : usize
-}
 
 impl<'a,'b,T> Iterator for AppliedPermutationIterator<'a,'b,T> {
     type Item = &'b T;
@@ -180,6 +195,7 @@ impl<'a,'b,T> Iterator for AppliedPermutationIterator<'a,'b,T> {
 }
 
 impl<'a,'b,T> AppliedPermutation<'a,'b,T> {
+    /// Return an iterator over the permited elements.
     pub fn iter(&self) -> AppliedPermutationIterator<'b,'a,T> {
         AppliedPermutationIterator{
             perm : self.perm.perm,
@@ -187,8 +203,13 @@ impl<'a,'b,T> AppliedPermutation<'a,'b,T> {
             index : 0
         }
     }
+    /// Length of the underlying permutation
     pub fn len(&self) -> usize { self.perm.len() }
 }
+
+
+
+
 
 
 pub trait SwapEx where Self : Copy {
