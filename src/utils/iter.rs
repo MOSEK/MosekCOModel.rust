@@ -90,54 +90,54 @@ impl<'a,'b,T> PermuteByEx<'a,'b,T> for &'b Vec<T>  {
 ////////////////////////////////////////////////////////////
 // Mutable permutation iterator
 
-/// Mutable permutation iterator.
-///
-/// NOTE: Mutable iterators cannot be implemented in purely safe Rust. Ideas stolen from implementation
-/// of std::iter::IterMut
-pub struct PermIterMut<'a,'b,T : 'b> {
-    perm : & 'a [usize],
-    ptr  : NonNull<T>,
-    _marker : PhantomData<&'b T>,
-    i : usize
-}
-
-impl<'a,'b,T> Iterator for PermIterMut<'a,'b,T> {
-    type Item = & 'b mut T;
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(&i) = self.perm.get(self.i) {
-            self.i += 1;
-            Some(unsafe{ &mut (*self.ptr.as_ptr().add(i).as_mut().unwrap()) })
-        }
-        else {
-            None
-        }
-    }
-}
-
-impl<'a,'b,T> PermIterMut<'a,'b,T> {
-    pub fn new(data : & 'b mut [T], perm : & 'a [usize]) -> Self {
-        if let Some(&v) = perm.iter().max() { if v >= data.len() { panic!("Permutation index out of bounds")} }
-        PermIterMut{ 
-            perm, 
-            ptr : NonNull::from(data).cast(),
-            _marker : PhantomData,
-            i:0 }
-    }
-}
-
-impl<'a,'b,T> PermuteByMutEx<'a,'b,T> for &'b mut [T] {
-    fn permute_by_mut(self,perm:&'a [usize]) -> PermIterMut<'a,'b,T> {
-        PermIterMut::new(self,perm)
-    }
-}
-
-pub trait PermuteByMutEx<'a,'b,T> {
-    /// Return a mutable iterator that traverses the elements of `self` in some order given by
-    /// `perm`.
-    ///
-    /// The function will panic if the permutation contains indexes that are out of bounds.
-    fn permute_by_mut(self,perm:&'a[usize]) -> PermIterMut<'a,'b,T>; 
-}
+///// Mutable permutation iterator.
+/////
+///// NOTE: Mutable iterators cannot be implemented in purely safe Rust. Ideas stolen from implementation
+///// of std::iter::IterMut
+//pub struct PermIterMut<'a,'b,T : 'b> {
+//    perm : & 'a [usize],
+//    ptr  : NonNull<T>,
+//    _marker : PhantomData<&'b T>,
+//    i : usize
+//}
+//
+//impl<'a,'b,T> Iterator for PermIterMut<'a,'b,T> {
+//    type Item = & 'b mut T;
+//    fn next(&mut self) -> Option<Self::Item> {
+//        if let Some(&i) = self.perm.get(self.i) {
+//            self.i += 1;
+//            Some(unsafe{ &mut (*self.ptr.as_ptr().add(i).as_mut().unwrap()) })
+//        }
+//        else {
+//            None
+//        }
+//    }
+//}
+//
+//impl<'a,'b,T> PermIterMut<'a,'b,T> {
+//    pub fn new(data : & 'b mut [T], perm : & 'a [usize]) -> Self {
+//        if let Some(&v) = perm.iter().max() { if v >= data.len() { panic!("Permutation index out of bounds")} }
+//        PermIterMut{ 
+//            perm, 
+//            ptr : NonNull::from(data).cast(),
+//            _marker : PhantomData,
+//            i:0 }
+//    }
+//}
+//
+//impl<'a,'b,T> PermuteByMutEx<'a,'b,T> for &'b mut [T] {
+//    fn permute_by_mut(self,perm:&'a [usize]) -> PermIterMut<'a,'b,T> {
+//        PermIterMut::new(self,perm)
+//    }
+//}
+//
+//pub trait PermuteByMutEx<'a,'b,T> {
+//    /// Return a mutable iterator that traverses the elements of `self` in some order given by
+//    /// `perm`.
+//    ///
+//    /// The function will panic if the permutation contains indexes that are out of bounds.
+//    fn permute_by_mut(self,perm:&'a[usize]) -> PermIterMut<'a,'b,T>; 
+//}
 
 ////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////

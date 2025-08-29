@@ -2,10 +2,11 @@
 //! This module implements a dummy backend that allows inputting data, but has no support for
 //! solving or writing data.
 //!
+use crate::utils::Permutation;
 use crate::*;
 use crate::model::{DJCDomainTrait, DJCModelTrait, IntSolutionManager, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, VectorConeModelTrait};
 use crate::domain::*;
-use crate::utils::iter::{ChunksByIterExt, PermuteByMutEx};
+use crate::utils::iter::{ChunksByIterExt};
 use std::f64;
 use std::ops::ControlFlow;
 use std::path::Path;
@@ -80,7 +81,6 @@ pub struct Backend {
     djc_clause_ptr : Vec<usize>,  // index into djc_dom, djc_a_row
     djc_term_ptr  : Vec<usize>, // index into djc_clause_ptr
     djc_ptr       : Vec<usize>,
-
 
     sense_max     : bool,
     c_subj        : Vec<usize>,
@@ -552,6 +552,7 @@ impl<const N : usize> DJCDomainTrait<Backend> for LinearDomain<N> {
 
         let ofs = if let Some(sp) = sparsity {
             let mut res = vec![0.0; shape.iter().product()];
+            Permutation::from(sp.as_slice())
             res.permute_by_mut(sp.as_slice()).zip(ofs.iter()).for_each(|(t,&s)| *t = s);
             res
         }
