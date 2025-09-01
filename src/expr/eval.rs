@@ -2,10 +2,11 @@
 // evaluation part that is not concerned with expression sub-part
 // types.
 
-use std::{iter::once};
+use std::iter::once;
 use super::*;
 use super::workstack::WorkStack;
-use crate::utils::{*,iter::*};
+use crate::utils::*;
+use crate::utils::iter::*;
 
 use itertools::{izip,iproduct};
 
@@ -345,11 +346,13 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
         perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
         perm.sort_by_key(|&i| xsp[i]);
 
+        let perm = Permutation::from(perm);
+
         rptr.iter_mut().for_each(|p| *p = 0);
-        rsp.iter_mut().zip(xsp.permute_by(perm)).for_each(|(t,&s)| *t = s);
+        rsp.iter_mut().zip(xsp.permute_by(&perm)).for_each(|(t,&s)| *t = s);
 
         let mut p = 0usize;
-        for (rptr,&i) in izip!(rptr[1..].iter_mut(), xidx.permute_by(perm)) {
+        for (rptr,&i) in izip!(rptr[1..].iter_mut(), xidx.permute_by(&perm)) {
             let ptrb = ptr[i];
             let ptre = ptr[i+1];
             let n = ptre-ptrb;
@@ -417,7 +420,8 @@ pub fn permute_axes<const N : usize>(
     }
     let shape = { let mut r = [0usize; N]; r.copy_from_slice(shape); r };
     let mut rshape = [usize::MAX; N];
-    rshape.iter_mut().zip(shape.permute_by(perm))
+    let p = Permutation::from(perm); 
+    rshape.iter_mut().zip(shape.permute_by(p))
         .for_each(|(d,&s)| {
             if *d < usize::MAX {
                 panic!("Invalid permutation {:?}",perm);
@@ -439,7 +443,7 @@ pub fn permute_axes<const N : usize>(
     let rstrides = rshape.to_strides();
 
     let mut prstrides = [0usize;N];
-    prstrides.permute_by_mut(perm).zip(rstrides.iter()).for_each(|(d,&s)| *d = s);
+    prstrides.permute_by_mut(p).zip(rstrides.iter()).for_each(|(d,&s)| *d = s);
 
     if let Some(sp) = sp {
         spx.iter_mut().zip(sp.iter()).for_each(|(ix,&i)| {
@@ -449,6 +453,7 @@ pub fn permute_axes<const N : usize>(
 
         elmperm.iter_mut().enumerate().for_each(|(i,t)| *t = i);
         elmperm.sort_by_key(|&i| unsafe{* spx.get_unchecked(i) });
+        let elmperm = Permutation::from(elmperm);
        
         // apply permutation
         if let Some(rsp) = rsp { 
@@ -592,6 +597,7 @@ pub fn add(n  : usize,
         let perm = & mut hperm[..rnelm];
         perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
         perm.sort_by_key(|&i| unsafe{* hindex.get_unchecked(i) });
+        let perm = Permutation::from(perm);
         // copy data to solution
         if let Some(rsp) = & mut rsp {
             rsp.iter_mut().for_each(|i| *i = 0);
@@ -940,7 +946,7 @@ pub fn dot_rows(mshape : [usize;2],
         (Some(msp),None) => {
             let num_m_rows = msp.chunk_by(|a,b| a/shape[1] == b/shape[1]).count();
             let rnelem = num_m_rows;
-            let rnnz = ptr.permute_by(msp).zip(ptr[1..].permute_by(msp)).map(|(p0,p1)| p1-p0).sum();
+            let rnnz = ptr.permute_by(*msp).zip(ptr[1..].permute_by(*msp)).map(|(p0,p1)| p1-p0).sum();
 
             let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
 
@@ -964,8 +970,8 @@ pub fn dot_rows(mshape : [usize;2],
             }
 
             izip!(mdata.iter(),
-                  ptr.permute_by(msp),
-                  ptr[1..].permute_by(msp))
+                  ptr.permute_by(*msp),
+                  ptr[1..].permute_by(*msp))
                 .flat_map(|(&mc,&p0,&p1)| izip!(std::iter::repeat(mc),unsafe{subj.get_unchecked(p0..p1)},unsafe{cof.get_unchecked(p0..p1)}) )
                 .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
                 .for_each(|((mc,&j,&c),(rj,rc))| {
@@ -1261,6 +1267,7 @@ pub fn mul_left_sparse(mheight : usize,
         // build column-major ordering permutation and ptr for expression
         perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
         perm.sort_by_key(|&i| unsafe{(*sp.get_unchecked(i) % ewidth,*sp.get_unchecked(i)/ewidth)});
+        let perm : &[usize] = perm;
 
         let numecols = {
             let mut colidx = 0; let mut coli = usize::MAX;
@@ -2108,12 +2115,14 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
 
         xperm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
         xperm[..rnelm].sort_by_key(|&i| xsp[i]);
+        let xperm = Permutation::from(xperm);
 
         if let Some(rsp) = rsp {
             xsp.permute_by(xperm).zip(rsp.iter_mut()).for_each(|(&i,spi)| *spi = i);            
         }
-        let xperm2 = xsp; 
+        let xperm2 = xsp;
         xsrc.permute_by(xperm).zip(xperm2.iter_mut()).for_each(|(&si,i)| *i = si);
+        let xperm2 = Permutation::from(xperm2);
 
         rptr[0] = 0;
         for (&pb,&pe,p) in izip!(ptr.permute_by(xperm2),
@@ -2320,7 +2329,7 @@ pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut Work
         pp.sort_by_key(|&p| unsafe{ *subj.get_unchecked(p) });
         *xptr = 
             if pp.len() > 1 {
-                subj.permute_by(pp).zip(subj.permute_by(&pp[1..])).filter(|(&a,&b)| a != b ).count()+1
+                subj.permute_by(Permutation::from(pp)).zip(subj.permute_by(&pp[1..])).filter(|(&a,&b)| a != b ).count()+1
             }
             else {
                 pp.len()

@@ -1,9 +1,10 @@
 //! This module implements a backend that uses a MOSEK OptServer instance for solving, for example
 //! [solve.mosek.com:30080](http://solve.mosek.com). 
 //!
+use crate::utils::ApplyPermutationEx;
 use crate::*;
 use crate::domain::*;
-use crate::utils::iter::{ChunksByIterExt, PermuteByEx};
+use crate::utils::iter::ChunksByIterExt;
 use itertools::izip;
 use json::JSON;
 use std::fs::File;

@@ -133,8 +133,9 @@ use itertools::*;
 
 use mosekcomodel::domain::{AsymmetricConeType, ExponentialCone, GeometricMeanCone, LinearRangeDomain, PowerCone, QuadraticCone, SVecPSDCone, VectorDomain, VectorDomainTrait};
 use mosekcomodel::expr::workstack::WorkStack;
-use mosekcomodel::utils::{NameAppender, ShapeToStridesEx};
+use mosekcomodel::utils::{ApplyPermutationEx, NameAppender, ShapeToStridesEx};
 use mosekcomodel::utils::iter::*;
+use mosekcomodel::utils::*;
 use mosekcomodel::*;
 
 use mosekcomodel::model::{BaseModelTrait, DJCDomainTrait, DJCModelTrait, Disjunction, IntSolutionManager, ModelWithControlCallback, ModelWithIntSolutionCallback, ModelWithLogCallback, PSDModelTrait, Sense, Solution, VectorConeModelTrait, WhichLinearBound};

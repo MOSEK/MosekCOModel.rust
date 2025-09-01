@@ -552,8 +552,8 @@ impl<const N : usize> DJCDomainTrait<Backend> for LinearDomain<N> {
 
         let ofs = if let Some(sp) = sparsity {
             let mut res = vec![0.0; shape.iter().product()];
-            Permutation::from(sp.as_slice())
-            res.permute_by_mut(sp.as_slice()).zip(ofs.iter()).for_each(|(t,&s)| *t = s);
+            Permutation::from(sp.as_slice()).apply_mut(res.as_mut_slice()).unwrap().iter().zip(ofs.iter()).for_each(|(t,&s)| *t = s);
+            //res.permute_by_mut(sp.as_slice()).zip(ofs.iter()).for_each(|(t,&s)| *t = s);
             res
         }
         else {

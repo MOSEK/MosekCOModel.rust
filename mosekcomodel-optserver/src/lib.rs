@@ -4,7 +4,8 @@
 use mosekcomodel::domain::VectorDomainType;
 use mosekcomodel::*;
 use mosekcomodel::model::{IntSolutionManager, ModelWithIntSolutionCallback, ModelWithLogCallback};
-use mosekcomodel::utils::iter::{Chunkation, PermuteByEx, PermuteByMutEx};
+use mosekcomodel::utils::iter::Chunkation;
+use mosekcomodel::utils::*;
 use itertools::{iproduct, izip};
 use std::collections::HashMap;
 use std::fs::File;

@@ -1,7 +1,8 @@
 #![allow(unused)]
 
 use itertools::izip;
-use mosekcomodel::utils::iter::{ChunksByIterExt, Permutation, PermuteByEx, PermuteByMutEx};
+use mosekcomodel::utils::iter::ChunksByIterExt;
+use mosekcomodel::utils::*;
 
 
 #[derive(Default)]
@@ -32,28 +33,6 @@ impl MatrixStore {
         res
     }
 
-//    pub fn append_rows(&mut self, ptr : &[usize], subj : &[usize], cof : &[f64], b : &[f64]) -> std::ops::Range<usize> {
-//        assert_eq!(subj.len(),cof.len());
-//        assert!(ptr.iter().zip(ptr[1..].iter()).all(|(a,b)| *a <= *b));
-//        assert_eq!(*ptr.last().unwrap(),subj.len());
-//        assert_eq!(ptr.len(),b.len()+1);
-//        let len0 = self.subj.len();
-//        self.subj.extend_from_slice(subj);
-//        self.cof.extend_from_slice(cof);
-//        self.b.extend_from_slice(b);
-//        
-//        let row0 = self.map.len();
-//        for i in self.ptr.len()..self.ptr.len()+ptr.len()-1 { self.map.push(i); }
-//        let row1 = self.map.len();
-//                   
-//        for (p,l) in ptr.iter().zip(ptr[1..].iter()).scan(len0,|len,(p0,p1)| { let l = *len; *len = p1-p0; Some((l,p1-p0)) }) {
-//            self.ptr.push(p);
-//            self.len.push(l);
-//        }
-//
-//        row0..row1
-//    }
-//
     pub fn num_row(&self) -> usize { self.map.len() }
 
     pub fn get<'a>(&'a self, i : usize) -> Option<(&'a[usize],&'a[f64],f64)> {
@@ -136,11 +115,12 @@ impl MatrixStore {
     }
 
     pub fn row_iter<'a>(&'a self) -> impl Iterator<Item=(&'a [usize],&'a[f64],f64)> {
-        let perm = Permutation::new(self.map.as_slice());
+        let perm = Permutation::from(&self.map);
 
-        izip!(perm.permute(self.ptr.as_slice()).unwrap(),
-              perm.permute(self.len.as_slice()).unwrap(),
-              perm.permute(self.b.as_slice()).unwrap())
+
+        izip!(self.ptr.permute_by(perm),
+              self.len.permute_by(perm),
+              self.b.permute_by(perm))
             .map(|(&p,&l,&b)| {
                 (unsafe{self.subj.get_unchecked(p..p+l)},
                  unsafe{self.cof.get_unchecked(p..p+l)},
@@ -149,11 +129,11 @@ impl MatrixStore {
     }
 
     pub fn eval_into(&self, x : &[f64], res : &mut Vec<f64>) -> Result<(),()> {        
-        let perm = Permutation::new(self.map.as_slice());
+        let perm = Permutation::from(&self.map);
 
-        for (&p,&l,&b) in izip!(perm.permute(self.ptr.as_slice()).unwrap(),
-                                perm.permute(self.len.as_slice()).unwrap(),
-                                perm.permute(self.b.as_slice()).unwrap()) 
+        for (&p,&l,&b) in izip!(self.ptr.permute_by(perm),
+                                self.len.permute_by(perm),
+                                self.b.permute_by(perm))
         {
             let subj = unsafe{ self.subj.get_unchecked(p..p+l) };
             let cof  = unsafe{ self.cof.get_unchecked(p..p+l) };

@@ -33,7 +33,7 @@ use crate::matrix::Matrix;
 use itertools::izip;
 use workstack::WorkStack;
 use super::matrix;
-use crate::utils::{iter::*, ShapeToStridesEx};
+use crate::utils::{iter::*, ApplyPermutationEx, ApplyPermutationMutEx, Permutation, ShapeToStridesEx};
 use std::iter::{Peekable,Zip};
 use std::slice::Iter;
 
@@ -1193,9 +1193,10 @@ impl<const N : usize, const M : usize, F, E> ExprTrait<M> for ExprMap<N,M,F,E>
 
                 xperm.copy_from_iter(0..nelm);
                 xperm.sort_by_key(|&i| unsafe{ *xsp.get_unchecked(i) });
-                xoptrb.copy_from_iter(xptrb.permute_by(xperm).cloned());
-                xoptre.copy_from_iter(xptre.permute_by(xperm).cloned());
-                xosp.copy_from_iter(xsp.permute_by(xperm).cloned());
+                let xperm = Permutation::from(xperm);
+                xoptrb.copy_from_iter(xperm.apply(xptrb).unwrap().iter().cloned());
+                xoptre.copy_from_iter(xperm.apply(xptre).unwrap().iter().cloned());
+                xosp.copy_from_iter(xperm.apply(xsp).unwrap().iter().cloned());
 
                 (xoptrb,xoptre,xosp)
             }
@@ -1889,16 +1890,17 @@ impl<const N : usize, E : ExprTrait<N>> ExprTrait<N> for ExprFlip<N,E> {
             }));
         }
         perm.sort_by_key(|&i| unsafe{ *ridxs.get_unchecked_mut(i) });
-        xptrb.copy_from_iter(ptr.permute_by(perm).cloned());
-        xptre.copy_from_iter(ptr[1..].permute_by(perm).cloned());
+        let perm = Permutation::from(perm);
+        xptrb.copy_from_iter(ptr.permute_by(&perm).cloned());
+        xptre.copy_from_iter(ptr[1..].permute_by(&perm).cloned());
         
         rptr[0] = 0;
-        izip!(ptr.permute_by(perm),
-              ptr[1..].permute_by(perm),
+        izip!(ptr.permute_by(&perm),
+              ptr[1..].permute_by(&perm),
               rptr[1..].iter_mut())
             .fold(0,|p,(&p0,&p1,rp)| { *rp = p+p1-p0; *rp });
         if let Some(rsp) = rsp {
-            rsp.copy_from_iter(ridxs.permute_by(perm).cloned());
+            rsp.copy_from_iter(ridxs.permute_by(&perm).cloned());
             println!("flip : sp = {:?}",rsp);
         }
 

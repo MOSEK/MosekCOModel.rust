@@ -4,11 +4,12 @@ use std::fmt::Debug;
 use std::ops::ControlFlow;
 use std::path::Path;
 use crate::{disjunction, IntoExpr, ExprTrait, NDArray};
-use crate::utils::iter::*;
+use crate::utils::{iter::*, Permutation};
 use crate::domain::*;
 use crate::variable::*;
 use crate::WorkStack;
 use crate::constraint::*;
+use crate::utils::{ApplyPermutationMutEx,ApplyPermutationEx};
 
 //pub mod mosekmodel;
 
@@ -281,7 +282,8 @@ impl<'a> IntSolutionManager {
         res.resize(sz,0.0);
 
         if let Some(sp) = index.sparsity() {
-            for (&src,dst) in self.xx.permute_by(index.idxs()).zip(res.permute_by_mut(sp)) {
+            let perm = Permutation::from(index.idxs());
+            for (&src,dst) in self.xx.permute_by(&perm).zip(res.permute_by_mut(sp)) {
                 *dst = src;
             }
         }

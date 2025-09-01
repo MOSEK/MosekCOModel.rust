@@ -16,7 +16,6 @@ pub trait CopyFromIterExt<I> where I : Iterator, I::Item : Copy
     fn copy_from_iter(&mut self, it : I) -> usize;
 }
 
-
 impl<I> CopyFromIterExt<I> for [I::Item]
     where 
         I : Iterator,
@@ -37,110 +36,6 @@ impl<I> CopyFromIterExt<I> for Vec<I::Item>
     }
 }
 
-
-
-////////////////////////////////////////////////////////////
-
-/// Permutation iterator. For an indexable object (for example a slice or a vector), this is an
-/// iterator that iterates over the elements of that object in some mutated or permutated order. A
-/// permutation may contain duplicate indexes and may not map to all elements in the object.
-pub struct PermIter<'a,'b,T> {
-    data : & 'b [T],
-    perm : & 'a [usize],
-    i : usize
-}
-
-impl<'a,'b,T> Iterator for PermIter<'a,'b,T> {
-    type Item = & 'b T;
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(&i) = self.perm.get(self.i) {
-            self.i += 1;
-            Some(unsafe{self.data.get_unchecked(i)})
-        }
-        else {
-            None
-        }
-    }
-}
-
-/// Extends objects with `permute_by` function.
-pub trait PermuteByEx<'a,'b,T> {
-    /// Return an iterator that traverses `self` in some order given by `perm`.
-    ///
-    /// The function will panic if the permutation is not valid (if it contains indexes that are
-    /// out of bound).
-    fn permute_by(self,perm:&'a[usize]) -> PermIter<'a,'b,T>; 
-}
-
-
-impl<'a,'b,T> PermuteByEx<'a,'b,T> for &'b [T] {
-    fn permute_by(self,perm:&'a [usize]) -> PermIter<'a,'b,T> {
-        if let Some(&v) = perm.iter().max() { if v >= self.len() { panic!("Permutation index out of bounds")} }
-        PermIter{ data: self,perm, i:0 }
-    }
-}
-
-impl<'a,'b,T> PermuteByEx<'a,'b,T> for &'b Vec<T>  {
-    fn permute_by(self,perm:&'a [usize]) -> PermIter<'a,'b,T> {
-        if let Some(&v) = perm.iter().max() { if v >= self.len() { panic!("Permutation index out of bounds")} }
-        PermIter{ data: self.as_slice(),perm, i:0 }
-    }
-}
-
-////////////////////////////////////////////////////////////
-// Mutable permutation iterator
-
-///// Mutable permutation iterator.
-/////
-///// NOTE: Mutable iterators cannot be implemented in purely safe Rust. Ideas stolen from implementation
-///// of std::iter::IterMut
-//pub struct PermIterMut<'a,'b,T : 'b> {
-//    perm : & 'a [usize],
-//    ptr  : NonNull<T>,
-//    _marker : PhantomData<&'b T>,
-//    i : usize
-//}
-//
-//impl<'a,'b,T> Iterator for PermIterMut<'a,'b,T> {
-//    type Item = & 'b mut T;
-//    fn next(&mut self) -> Option<Self::Item> {
-//        if let Some(&i) = self.perm.get(self.i) {
-//            self.i += 1;
-//            Some(unsafe{ &mut (*self.ptr.as_ptr().add(i).as_mut().unwrap()) })
-//        }
-//        else {
-//            None
-//        }
-//    }
-//}
-//
-//impl<'a,'b,T> PermIterMut<'a,'b,T> {
-//    pub fn new(data : & 'b mut [T], perm : & 'a [usize]) -> Self {
-//        if let Some(&v) = perm.iter().max() { if v >= data.len() { panic!("Permutation index out of bounds")} }
-//        PermIterMut{ 
-//            perm, 
-//            ptr : NonNull::from(data).cast(),
-//            _marker : PhantomData,
-//            i:0 }
-//    }
-//}
-//
-//impl<'a,'b,T> PermuteByMutEx<'a,'b,T> for &'b mut [T] {
-//    fn permute_by_mut(self,perm:&'a [usize]) -> PermIterMut<'a,'b,T> {
-//        PermIterMut::new(self,perm)
-//    }
-//}
-//
-//pub trait PermuteByMutEx<'a,'b,T> {
-//    /// Return a mutable iterator that traverses the elements of `self` in some order given by
-//    /// `perm`.
-//    ///
-//    /// The function will panic if the permutation contains indexes that are out of bounds.
-//    fn permute_by_mut(self,perm:&'a[usize]) -> PermIterMut<'a,'b,T>; 
-//}
-
-////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////
 
 /// Given a shape, iterate over all indexes in that shape.
 pub struct IndexIterator<const N : usize> {
@@ -521,48 +416,6 @@ impl<'a, I> Iterator for InterleaveN<'a,I> where I : Iterator {
     }
 }
 
-////////////////////////////////////////////////////////////
-//
-//trait CopyFromIterEx<I,T> where T:Copy, I : Iterator<Item=T> {
-//    fn copy_from_iter(&mut self, it : I);
-//}
-//trait CloneFromIterEx<I,T> where T:Clone, I : Iterator<Item=T> {
-//    fn clone_from_iter(&mut self, it : I);
-//}
-//
-//impl<I,T> CopyFromIterEx<I,T> for [T] where T:Copy, I:Iterator<Item=T> {
-//    fn copy_from_iter(&mut self, it : I) {
-//        for (t,s)
-//    }
-//}
-//
-////////////////////////////////////////////////////////////
-
-
-
-/// Permutation of an array. Really, it is a mutation, since it may contain duplicate indexes.
-pub struct Permutation<'a> {
-    perm : &'a[usize],
-    min  : usize,
-    max  : usize
-}
-
-impl<'a> Permutation<'a> {
-    pub fn new(perm : &'a[usize]) -> Permutation<'a> { 
-        let (min,max) = if perm.is_empty() { (0,0) } else { perm.iter().fold((usize::MAX,0),|(min,max),&v| (v.min(min),v.max(max))) };
-        Permutation{ perm,min,max }
-    } 
-
-    pub fn permute<'b,T>(&self,data : &'b [T]) -> Result<PermIter<'a,'b,T>,()> {
-        if data.len() <= self.max { Err(()) }
-        else { Ok(PermIter{data,perm:self.perm,i:0}) }
-    }
-    pub fn permute_mut<'b,T>(&self,data : &'b mut[T]) -> Result<PermIterMut<'a,'b,T>,()> {
-        if data.len() <= self.max { Err(()) }
-        else { Ok(PermIterMut::new(data,self.perm)) }
-    }
-}
-
 pub struct ChunksByIter2<'a,'b,T>
 {
     data : &'a [T],
@@ -650,21 +503,21 @@ impl<'a> Chunkation<'a> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn perm_iter_mut() {
-        let vals = &mut [11,10,9,8,7,6,5,4,3,2];
-        let perm : &[usize] = &[9,8,7,6,5,4,3,2,1,0];
-
-        let ptr : &[usize] = &[0,3,5,7,9,10];
-
-        
-        assert_eq!(vals.permute_by(perm).cloned().collect::<Vec<usize>>().as_slice(),&[2,3,4,5,6,7,8,9,10,11]);
-
-        for (i,v) in vals.permute_by_mut(perm).enumerate() { 
-            //intln!("{} : perm = {}, v = {}",i,*p,*v);
-            *v = i*2;
-        }
-        println!("vals = {:?}",vals);
-        assert_eq!(vals,&[18,16,14,12,10,8,6,4,2,0]);
-    }
+//    #[test]
+//    fn perm_iter_mut() {
+//        let vals = &mut [11,10,9,8,7,6,5,4,3,2];
+//        let perm : &[usize] = &[9,8,7,6,5,4,3,2,1,0];
+//
+//        let ptr : &[usize] = &[0,3,5,7,9,10];
+//
+//        
+//        assert_eq!(vals.permute_by(perm).cloned().collect::<Vec<usize>>().as_slice(),&[2,3,4,5,6,7,8,9,10,11]);
+//
+//        for (i,v) in vals.permute_by_mut(perm).enumerate() { 
+//            //intln!("{} : perm = {}, v = {}",i,*p,*v);
+//            *v = i*2;
+//        }
+//        println!("vals = {:?}",vals);
+//        assert_eq!(vals,&[18,16,14,12,10,8,6,4,2,0]);
+//    }
 }

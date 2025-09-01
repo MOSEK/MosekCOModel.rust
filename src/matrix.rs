@@ -1,6 +1,5 @@
 //! This module provides basic array functionality.
 //!
-use iter::PermuteByEx;
 use itertools::{izip, EitherOrBoth};
 use crate::expr::{Expr, IntoExpr};
 use crate::utils::*;

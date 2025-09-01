@@ -55,10 +55,8 @@ impl<const N : usize> ShapeToStridesEx<N> for [usize;N] {
 
 
 
-
-
 pub trait Cummulate {
-    fn cummulate(& mut self);
+    fn cummulate(&mut self);
 }
 
 impl<T> Cummulate for [T] where
@@ -257,6 +255,55 @@ impl<'a,'b,T> AppliedPermutationMut<'a,'b,T> {
     /// Length of the underlying permutation
     pub fn len(&self) -> usize { self.perm.len() }
 }
+
+
+
+impl<'a> From<&Permutation<'a>> for Permutation<'a> {
+    fn from(value: &Permutation<'a>) -> Self { *value }
+}
+impl<'a> From<&'a[usize]> for Permutation<'a> {
+    fn from(value: &'a[usize]) -> Self { Permutation::from(value) }
+}
+impl<'a> From<&'a Vec<usize>> for Permutation<'a> {
+    fn from(value: &'a Vec<usize>) -> Self {
+        Permutation::from(value.as_slice())
+    }
+}
+
+
+pub trait ApplyPermutationEx<T> {
+    fn try_permute_by<'a,'b,P>(&'b self, perm : P) ->  Option<AppliedPermutationIterator<'a,'b,T>> where P : Into<Permutation<'a>>;
+    fn permute_by<'a,'b,P>(&'b self, perm : P) ->  AppliedPermutationIterator<'a,'b,T> where P : Into<Permutation<'a>> { self.try_permute_by(perm).unwrap() } 
+}
+pub trait ApplyPermutationMutEx<T> {
+    fn try_permute_by_mut<'a,'b,P>(&'b mut self, perm : P) ->  Option<AppliedPermutationMutIterator<'a,'b,T>> where P : Into<Permutation<'a>>;
+    fn permute_by_mut<'a,'b,P>(&'b mut self, perm : P) ->  AppliedPermutationMutIterator<'a,'b,T> where P : Into<Permutation<'a>> { self.try_permute_by_mut(perm).unwrap() }
+}
+
+impl<T> ApplyPermutationEx<T> for Vec<T> {
+    fn try_permute_by<'a,'b,P>(&'b self, perm : P) ->  Option<AppliedPermutationIterator<'a,'b,T>> where P : Into<Permutation<'a>> {
+        perm.into().apply(self.as_ref()).map(|a| a.iter())
+    }
+}
+
+impl<T> ApplyPermutationEx<T> for [T] {
+    fn try_permute_by<'a,'b,P>(&'b self, perm : P) ->  Option<AppliedPermutationIterator<'a,'b,T>> where P : Into<Permutation<'a>> {
+        perm.into().apply(self).map(|a| a.iter())
+    }
+}
+
+impl<T> ApplyPermutationMutEx<T> for Vec<T> {
+    fn try_permute_by_mut<'a,'b,P>(&'b mut self, perm : P) ->  Option<AppliedPermutationMutIterator<'a,'b,T>> where P : Into<Permutation<'a>> {
+        perm.into().apply_mut(self.as_mut()).map(|a| a.iter())
+    }
+}
+
+impl<T> ApplyPermutationMutEx<T> for [T] {
+    fn try_permute_by_mut<'a,'b,P>(&'b mut self, perm : P) ->  Option<AppliedPermutationMutIterator<'a,'b,T>> where P : Into<Permutation<'a>> {
+        perm.into().apply_mut(self).map(|a| a.iter())
+    }
+}
+
 
 
 

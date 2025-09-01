@@ -7,13 +7,12 @@ use model::BaseModelTrait;
 use std::{fmt::Debug, rc::Rc};
 
 use expr::ExprEvalError;
-use utils::*;
+use utils::{self,*};
 
-use crate::{expr::{ExprRightElmMultipliable, ExprDotRows}, utils::iter::PermuteByEx};
+use crate::expr::{ExprRightElmMultipliable, ExprDotRows};
 
 use super::*;
 use itertools::{iproduct, izip};
-use super::utils;
 
 
 /// A Variable object is basically a wrapper around a variable index
@@ -292,7 +291,8 @@ impl<const N : usize> Variable<N> {
 
     /// Perform axis-permutation. In two dimensions this is a `transpose`.
     pub fn axispermute(&self, perm : &[usize; N]) -> Variable<N> { 
-        let mut newshape = [usize::MAX; N]; newshape.iter_mut().zip(self.shape.permute_by(perm)).for_each(|(t,&s)| *t = s);
+        let perm = Permutation::from(perm);
+        let mut newshape = [usize::MAX; N]; newshape.iter_mut().zip(self.shape.permute_by(&perm)).for_each(|(t,&s)| *t = s);
         let st    = utils::Strides::from_shape(&self.shape);
         let newst = utils::Strides::from_shape(&newshape);
 
@@ -300,8 +300,9 @@ impl<const N : usize> Variable<N> {
             let mut p : Vec<usize> = (0..idx.len()).collect();
             p.sort_by_key(|&i| unsafe{ *idx.get_unchecked(i) });
 
-            let idxs : Vec<usize> = self.idxs.permute_by(p.as_slice()).cloned().collect();
-            let sparsity : Vec<usize> = idx.permute_by(p.as_slice()).cloned().collect();
+            let perm = Permutation::from(p.as_slice());
+            let idxs : Vec<usize> = self.idxs.permute_by(&perm).cloned().collect();
+            let sparsity : Vec<usize> = idx.permute_by(&perm).cloned().collect();
 
             Variable{
                 shape : newshape,
@@ -313,7 +314,7 @@ impl<const N : usize> Variable<N> {
             let idxs = (0..self.shape.iter().product())
                 .map(|i| {
                     let mut idx = [0usize; N];
-                    st.to_index(i).permute_by(perm).zip(idx.iter_mut()).for_each(|(&s,t)| *t = s);
+                    st.to_index(i).permute_by(&perm).zip(idx.iter_mut()).for_each(|(&s,t)| *t = s);
                     newst.to_linear(&idx) })
                 .collect();
 
@@ -337,9 +338,10 @@ impl<const N : usize> Variable<N> {
                 }).collect::<Vec<usize>>();
             let mut perm = (0..idxs.len()).collect::<Vec<usize>>();
             perm.sort_unstable_by_key(|&i| unsafe{ *idxs.get_unchecked(i) });
+            let perm = Permutation::from(perm.as_slice());
 
-            let rsp = idxs.as_slice().permute_by(perm.as_slice()).cloned().collect();
-            let jj  = self.idxs.as_slice().permute_by(perm.as_slice()).cloned().collect();
+            let rsp = idxs.as_slice().permute_by(&perm).cloned().collect();
+            let jj  = self.idxs.as_slice().permute_by(&perm).cloned().collect();
             Variable {
                 shape : self.shape,
                 sparsity : Some(Rc::new(rsp)),

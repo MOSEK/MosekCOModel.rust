@@ -63,7 +63,8 @@ extern crate mosekcomodel;
 extern crate highs;
 
 use mosekcomodel::*;
-use mosekcomodel::utils::iter::{ChunksByIterExt, PermuteByEx, PermuteByMutEx};
+use mosekcomodel::utils::iter::ChunksByIterExt;
+use mosekcomodel::utils::*;
 use std::path::Path;
 use itertools::izip;
 

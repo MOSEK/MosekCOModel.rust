@@ -24,7 +24,6 @@
 //!
 #![doc = include_str!("../../js/mathjax.tag")]
 
-use iter::PermuteByMutEx;
 use itertools::Either;
 use super::matrix::NDArray;
 use crate::utils::*;
