@@ -7,6 +7,16 @@
 expect rough corners and untested cases, and the API is subject to change. Any
 comments and suggestions are welcome!**
 
+# Dependencies
+
+The amount of external dependencies is minimal.
+
+- The crate directly depend in `itertools` and nothing else.
+- Some examples depend no `rand_distr`
+- Benchmarking tests require `criterion` and `rand`.
+
+
+
 # MosekCOModel
 
 The `MosekCOModel` crate is a modeling package for building linear and conic optimization models. The crate does not directly include a solver - these are implemented in separate projects, currently:
@@ -231,13 +241,4 @@ Very simple implementation of the traveling salesman problem. Run with `--help` 
 ```sh 
 cargo run --release -p tsp
 ```
-
-# Dependencies
-
-The amount of external dependencies is minimal.
-
-- The crate directly depend in `itertools` and `mosek`. 
-- Some examples depend no `rand_distr`
-- Benchmarking tests require `criterion` and `rand`.
-
 
