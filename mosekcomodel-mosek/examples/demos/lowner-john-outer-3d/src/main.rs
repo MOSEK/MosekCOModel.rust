@@ -7,8 +7,8 @@ extern crate mosekcomodel_ellipsoids;
 use bevy::math::{DMat3, DVec3};
 use bevy::prelude::*;
 use bevy::reflect::Reflect;
-use bevy::render::mesh::PrimitiveTopology;
-use bevy::render::render_asset::RenderAssetUsages;
+//use bevy::render::mesh::PrimitiveTopology;
+///use bevy::render::render_asset::RenderAssetUsages;
 
 use std::cell::RefCell;
 use std::rc::Rc;

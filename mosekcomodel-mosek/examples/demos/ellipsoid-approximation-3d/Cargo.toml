@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 #bevy = { version = "0.13.2", default_features = false, features = ["bevy_core_pipeline","bevy_render","x11","bevy_ui","bevy_scene", "bevy_gizmos","bevy_pbr"]  }
-itertools = "0.13.0"
+itertools = "0.14.0"
 mosek = "*"
 mosekcomodel = "0.4.3"
 mosekcomodel_mosek = "0.4.1"
@@ -16,7 +16,7 @@ rand = "0.8.5"
 opt-level = 3
 
 [dependencies.bevy]
-version = "0.16.1"
+version = "0.17.3"
 default-features = false
 features = [
     ## DEFAULT FEATURES
@@ -46,7 +46,7 @@ features = [
     #"vorbis",
     #"webgl2",
     "x11",
-    #"zstd"
+    "zstd_rust"
 
     ## NON-DEFAULT FEATURES
         
