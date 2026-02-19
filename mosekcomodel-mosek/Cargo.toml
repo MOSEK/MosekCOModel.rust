@@ -1,6 +1,6 @@
 [package]
 name = "mosekcomodel_mosek"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2021"
 homepage = "https://mosek.com"
 description = "MOSEK backend for mosekcomodel"
@@ -11,9 +11,9 @@ license = "MIT"
 categories = ["mathematics","science"]
 
 [dependencies]
-mosek = "~11.0.0"
+mosek = "~11.1.0"
 itertools = "0.14"
-mosekcomodel = { version="0.4.0", path=".." }
+mosekcomodel = { version="~0.4.0", path=".." }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = [ "html_reports" ] }

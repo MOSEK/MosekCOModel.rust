@@ -1,11 +1,11 @@
 [package]
 name = "mosekcomodel_ellipsoids"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
 itertools = "0.13.0"
-mosekcomodel = "0.4.3"
+mosekcomodel = { version = "0.4.3", path = ".." }
 
 [dev-dependencies]
-mosekcomodel_mosek = "0.4.1"
+mosekcomodel_mosek = { version = "0.5.0", path = "../mosekcomodel-mosek" }
