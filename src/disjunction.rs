@@ -1,11 +1,11 @@
 
 //! Structures and functions for formulating disjunctive constraints.
 //!
-//! A disjunctive constraint is a constraint of the form 
+//! A disjunctive constraint is a constraint of the form
 //! $$
 //!   A_1x+b_1\\in K_1\\ \\mathrm{or}\\ldots\\ \\mathrm{or}\\ A_nx+b_n\\in K_n
 //! $$
-//! Each \\(A_ix+b_i\\) is called a _term_ (see [constr]). A term can be composed if multiple _clauses_:
+//! Each \\(A_ix+b_i\\) is called a _term_. A term can be composed if multiple _clauses_:
 //! $$
 //!   \\left[
 //!     \\begin{array}{c}
@@ -15,11 +15,11 @@
 //!     \\end{array}
 //!   \\right]x
 //!   +\\left[\\begin{array}{c}b_{i,1}\\\\ \\vdots \\\\ b_{i,m_i} \\end{array}\\right]
-//!   \\in 
+//!   \\in
 //!   K_i = K_{i,1}\\times\\cdots K_{i,m_i}
 //! $$
 //!
-#![doc = include_str!("../js/mathjax.tag")]
+//! <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
 
 use std::marker::PhantomData;
 
@@ -42,6 +42,7 @@ use crate::model::{DJCDomainTrait, DJCModelTrait};
 ///     \\end{}
 /// \\right]
 /// $$
+/// <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
 pub trait ConjunctionTrait<M> where M : DJCModelTrait
 {
     /// Evaluate conjunction expression and pushes them on the stack in order.
@@ -105,7 +106,7 @@ pub trait DisjunctionTrait<M> where M : DJCModelTrait
 }
 
 /// A single constraint block `A x + b ∈ D`.
-pub struct AffineConstraint<const N : usize,E,D,M> 
+pub struct AffineConstraint<const N : usize,E,D,M>
     where M : DJCModelTrait,
           E : ExprTrait<N>,
           D : IntoShapedDomain<N>,
@@ -126,12 +127,12 @@ impl<const N : usize,E,D,M> AffineConstraint<N,E,D,M>
     /// constraints.
     ///
     /// # Arguments
-    /// - `expr` Something that can be turned into an expression via [IntoExpr]. 
-    /// - `domain` Something that can be turned into a [crate::ConicDomain].
+    /// - `expr` Something that can be turned into an expression via [IntoExpr].
+    /// - `domain` Something that can be turned into a [crate::VectorDomain].
     pub fn new(expr : E, domain : D) -> Self {
         AffineConstraint{
-            m      : PhantomData::default(),     
-            expr   : expr.into_expr(),                
+            m      : PhantomData::default(),
+            expr   : expr.into_expr(),
             domain : Some(domain),
         }
     }
@@ -193,7 +194,7 @@ impl<const N : usize,E,D,M> AffineConstraint<N,E,D,M>
     }
 }
 
-impl<const N : usize,E,D,M> ConjunctionTrait<M> for AffineConstraint<N,E,D,M> 
+impl<const N : usize,E,D,M> ConjunctionTrait<M> for AffineConstraint<N,E,D,M>
     where M : DJCModelTrait,
           E : ExprTrait<N>,
           D : IntoShapedDomain<N>,
@@ -203,7 +204,7 @@ impl<const N : usize,E,D,M> ConjunctionTrait<M> for AffineConstraint<N,E,D,M>
             domains : & mut Vec<Box<dyn DJCDomainTrait<M>>>,
             rs : &mut WorkStack,
             ws : &mut WorkStack,
-            xs : &mut WorkStack) -> Result<usize,String> 
+            xs : &mut WorkStack) -> Result<usize,String>
     {
         self.expr.eval_finalize(rs,ws,xs).map_err(|e| format!("{:?}",e))?;
         let (eshape,_,_,_,_) = rs.peek_expr();
@@ -246,7 +247,7 @@ impl<const N : usize,E,D,M> ConjunctionTrait<M> for AffineConstraint<N,E,D,M>
 //}
 
 
-impl<const N : usize,E,D,M> DisjunctionTrait<M> for AffineConstraint<N,E,D,M> 
+impl<const N : usize,E,D,M> DisjunctionTrait<M> for AffineConstraint<N,E,D,M>
     where M : DJCModelTrait,
           E : ExprTrait<N>,
           D : IntoShapedDomain<N>,
@@ -261,7 +262,7 @@ impl<const N : usize,E,D,M> DisjunctionTrait<M> for AffineConstraint<N,E,D,M>
             term_size : & mut Vec<usize>,
             rs : &mut WorkStack,
             ws : &mut WorkStack,
-            xs : &mut WorkStack) -> Result<(),String> 
+            xs : &mut WorkStack) -> Result<(),String>
     {
         term_size.push(<AffineConstraint<N,E,D,M> as ConjunctionTrait<M>>::eval(self,domains,rs,ws,xs)?);
         Ok(())
@@ -297,8 +298,8 @@ impl<C,M> DisjunctionTrait<M> for Vec<C> where C : ConjunctionTrait<M>, M : DJCM
 // AffineConstraintsAnd
 
 /// Represents the construction `A_1x+b_1 ∈ K_1 AND A_2x+b_2 ∈ K_2`.
-pub struct AffineConstraintsAnd<C0,C1,M> 
-    where 
+pub struct AffineConstraintsAnd<C0,C1,M>
+    where
         M : DJCModelTrait,
         C0 : ConjunctionTrait<M>,
         C1 : ConjunctionTrait<M>
@@ -308,8 +309,8 @@ pub struct AffineConstraintsAnd<C0,C1,M>
      c1 : C1
 }
 
-impl<C0,C1,M> AffineConstraintsAnd<C0,C1,M> 
-    where 
+impl<C0,C1,M> AffineConstraintsAnd<C0,C1,M>
+    where
         M : DJCModelTrait,
         C0 : ConjunctionTrait<M>,
         C1 : ConjunctionTrait<M>
@@ -321,8 +322,8 @@ impl<C0,C1,M> AffineConstraintsAnd<C0,C1,M>
         DisjunctionOr { m : Default::default(), c0: self, c1: other }
     }
 }
-impl<C0,C1,M> ConjunctionTrait<M> for AffineConstraintsAnd<C0,C1,M> 
-    where 
+impl<C0,C1,M> ConjunctionTrait<M> for AffineConstraintsAnd<C0,C1,M>
+    where
         M : DJCModelTrait,
         C0 : ConjunctionTrait<M>,
         C1 : ConjunctionTrait<M>
@@ -331,14 +332,14 @@ impl<C0,C1,M> ConjunctionTrait<M> for AffineConstraintsAnd<C0,C1,M>
             domains : & mut Vec<Box<dyn DJCDomainTrait<M>>>,
             rs : &mut WorkStack,
             ws : &mut WorkStack,
-            xs : &mut WorkStack) -> Result<usize,String> 
+            xs : &mut WorkStack) -> Result<usize,String>
     {
         Ok(self.c0.eval(domains,rs,ws,xs)? + self.c1.eval(domains,rs,ws,xs)?)
     }
 }
 
-impl<C0,C1,M> DisjunctionTrait<M> for AffineConstraintsAnd<C0,C1,M> 
-    where 
+impl<C0,C1,M> DisjunctionTrait<M> for AffineConstraintsAnd<C0,C1,M>
+    where
         M : DJCModelTrait,
         C0 : ConjunctionTrait<M>,
         C1 : ConjunctionTrait<M>
@@ -352,10 +353,10 @@ impl<C0,C1,M> DisjunctionTrait<M> for AffineConstraintsAnd<C0,C1,M>
             term_size : & mut Vec<usize>,
             rs : &mut WorkStack,
             ws : &mut WorkStack,
-            xs : &mut WorkStack) -> Result<(),String> 
+            xs : &mut WorkStack) -> Result<(),String>
     {
         term_size.push(<Self as ConjunctionTrait<M>>::eval(self,domains, rs, ws, xs)?);
-        Ok(())    
+        Ok(())
     }
 }
 
@@ -364,8 +365,8 @@ impl<C0,C1,M> DisjunctionTrait<M> for AffineConstraintsAnd<C0,C1,M>
 
 /// Represents the construction `A OR B` where `A` is set of affine constraints and `B` is another
 /// disjunction clause
-pub struct DisjunctionOr<C0,C1,M> 
-    where 
+pub struct DisjunctionOr<C0,C1,M>
+    where
         M : DJCModelTrait,
         C0 : ConjunctionTrait<M>,
         C1 : DisjunctionTrait<M>
@@ -375,7 +376,7 @@ pub struct DisjunctionOr<C0,C1,M>
      c1 : C1
 }
 
-impl<C0,C1,M> DisjunctionOr<C0,C1,M> 
+impl<C0,C1,M> DisjunctionOr<C0,C1,M>
     where
         M : DJCModelTrait,
         C0 : ConjunctionTrait<M>,
@@ -386,8 +387,8 @@ impl<C0,C1,M> DisjunctionOr<C0,C1,M>
     }
 }
 
-impl<C0,C1,M> DisjunctionTrait<M> for DisjunctionOr<C0,C1,M>  
-    where 
+impl<C0,C1,M> DisjunctionTrait<M> for DisjunctionOr<C0,C1,M>
+    where
         C0 : ConjunctionTrait<M>,
         C1 : DisjunctionTrait<M>,
         M : DJCModelTrait

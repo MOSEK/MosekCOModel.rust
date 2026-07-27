@@ -17,7 +17,7 @@ use itertools::{izip,iproduct};
 /// - `anti` False for normal diagonal, true for antidiagonal
 /// - `index` Index of the diagonal. 0 is the corner-to-corner diagonal, while positive and
 ///   negative indexes in corresponds to diagonals if the upper and lower triangular part.
-pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
+pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nd = shape.len();
@@ -43,11 +43,11 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
         let (rnnz,rnelm) = izip!(sp.iter(),
                                ptr.iter(),
                                ptr[1..].iter())
-            .filter(|(&i,_,_)| (i < last && 
+            .filter(|(&i,_,_)| i < last &&
                                 (((!anti) && index >= 0 && i%d == i/d + absidx) ||
-                                 ((!anti) && index <  0 && i%d - absidx == i/d) || 
-                                 ( anti && index >= 0 && d-i%d - absidx == i/d) || 
-                                 ( anti && index <  0 && d-i%d + absidx == i/d))))
+                                 ((!anti) && index <  0 && i%d - absidx == i/d) ||
+                                 ( anti && index >= 0 && d-i%d - absidx == i/d) ||
+                                 ( anti && index <  0 && d-i%d + absidx == i/d)))
             .fold((0,0),|(nzi,elmi),(_,&p0,&p1)| (nzi+p1-p0,elmi+1));
 
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&[d],rnnz,rnelm);
@@ -56,11 +56,11 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
         rptr[0] = 0;
         if let Some(rsp) = rsp {
             izip!(sp.iter(),ptr.iter(),ptr[1..].iter())
-                .filter(|(&i,_,_)| (i < last && 
+                .filter(|(&i,_,_)| i < last &&
                                     ((!anti && index >= 0 && i%d == i/d + absidx) ||
-                                     (!anti && index <  0 && i%d - absidx == i/d) || 
-                                     ( anti && index >= 0 && d-i%d - absidx == i/d) || 
-                                     ( anti && index <  0 && d-i%d + absidx == i/d))))
+                                     (!anti && index <  0 && i%d - absidx == i/d) ||
+                                     ( anti && index >= 0 && d-i%d - absidx == i/d) ||
+                                     ( anti && index <  0 && d-i%d + absidx == i/d)))
                 .zip(rptr[1..].iter_mut().zip(rsp.iter_mut()))
                 .for_each(|((&i,&p0,&p1),(rp,ri))| {
                     *rp = p1-p0;
@@ -72,11 +72,11 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
         }
         else {
             izip!(sp.iter(),ptr.iter(),ptr[1..].iter())
-                .filter(|(&i,_,_)| (i < last && 
+                .filter(|(&i,_,_)| i < last &&
                                     ((!anti && index >= 0 && i%d == i/d + absidx) ||
-                                     (!anti && index <  0 && i%d - absidx == i/d) || 
-                                     ( anti && index >= 0 && d-i%d - absidx == i/d) || 
-                                     ( anti && index <  0 && d-i%d + absidx == i/d))))
+                                     (!anti && index <  0 && i%d - absidx == i/d) ||
+                                     ( anti && index >= 0 && d-i%d - absidx == i/d) ||
+                                     ( anti && index <  0 && d-i%d + absidx == i/d)))
                 .zip(rptr[1..].iter_mut())
                 .for_each(|((_,&p0,&p1),rp)| {
                     *rp = p1-p0;
@@ -84,8 +84,8 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
                     rcof[nzi..nzi+p1-p0].copy_from_slice(&cof[p0..p1]);
                     nzi += p1-p0;
                 })
-        }   
-    } 
+        }
+    }
     else {
         let (first,num,step) = match (anti,index >= 0) {
             (false,true)  => (absidx,    d-absidx, d+1),
@@ -93,7 +93,7 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
             (true,true)   => (d-absidx,  d-absidx, d-1),
             (true,false)  => (d*absidx-1,d-absidx, d-1)
         };
-        
+
         let rnnz = izip!(0..num,
                          ptr[first..].iter().step_by(step),
                          ptr[first+1..].iter().step_by(step))
@@ -124,7 +124,7 @@ pub fn diag(anti : bool, index : i64, rs : & mut WorkStack, ws : & mut WorkStack
 /// # Arguments
 /// - `upper` Indicates if we request the upper or the lower part of the matrix.
 /// - `with_diag` Indicates if the diagonal elements should be included.
-pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
+pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
 
     let nd = shape.len();
@@ -137,7 +137,7 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
     if let Some(sp) = sp {
         let rnelm = sp.iter()
             .filter(|&spi| { let (i,j) = (spi / d, spi % d); (upper && i < j) || (! upper && i > j) || (with_diag && i == j) })
-            .count(); 
+            .count();
         let rnnz = izip!(sp.iter().map(|i| (i/d,i%d)),ptr.iter(),ptr[1..].iter())
             .filter(|((i,j),_,_)| (upper && i < j) || (! upper && i > j) || (with_diag && i == j) )
             .map(|(_,pb,pe)| pe-pb)
@@ -160,7 +160,7 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
             .for_each(|((&pb,&pe,(i,j)),(rp,spi))|  { *rp = pe-pb; *spi = i * d + j } );
         rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
     }
-    else {  
+    else {
         //println!("  case 2: Dense");
         let rnelm = if with_diag { d * (d+1)/2 } else { d * (d-1) / 2 };
         let rnnz : usize = match (upper,with_diag) {
@@ -175,7 +175,7 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
         izip!(subj.chunks_ptr(ptr),
               cof.chunks_ptr(ptr),
               iproduct!(0..d,0..d))
-            .filter(|(_,_,(i,j))| 
+            .filter(|(_,_,(i,j))|
                 (upper     && i  < j) ||
                 (! upper   && i  > j) ||
                 (with_diag && i == j))
@@ -186,13 +186,13 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
         rptr[0] = 0; rptr.iter_mut().for_each(|v| *v = 0);
         let rsp = rsp.unwrap();
         izip!(ptr.iter(),ptr[1..].iter(),iproduct!(0..d,0..d))
-            .filter(|(_,_,(i,j))| 
+            .filter(|(_,_,(i,j))|
                 (upper     && i  < j) ||
                 (! upper   && i  > j) ||
                 (with_diag && i == j))
             .zip(rptr[1..].iter_mut().zip(rsp.iter_mut()))
-            .for_each(|((&pb,&pe,(i,j)),(rp,spi))| { 
-                *rp = pe-pb; 
+            .for_each(|((&pb,&pe,(i,j)),(rp,spi))| {
+                *rp = pe-pb;
                 *spi = i * d + j;
             });
         rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
@@ -202,7 +202,7 @@ pub fn triangular_part(upper : bool, with_diag : bool, rs : & mut WorkStack, ws 
 }
 
 /// Given an expression of any shape, sum all elements producing a scalar expression.
-pub fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
+pub fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
     let (rptr,_rsp,rsubj,rcof)    = rs.alloc_expr(&[],*ptr.last().unwrap(),1);
     rptr[0] = 0;
@@ -218,7 +218,7 @@ pub fn sum(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) ->
 /// # Arguments
 /// - `begin` Array of length `n` of starting indexes in each dimension
 /// - `end`  Array of length `n` of ending indexes in each dimension
-pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> { 
+pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nnz = *ptr.last().unwrap();
     let nelem = ptr.len()-1;
@@ -226,16 +226,16 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
 
     // check indexes
     assert!(n == begin.len() && n == end.len());
-    if shape.iter().zip(end.iter()).any(|(a,b)| a < b) { 
+    if shape.iter().zip(end.iter()).any(|(a,b)| a < b) {
         return Err(ExprEvalError::new(file!(),line!(),"Index out of bounds"));
     }
 
     let (urest,fpart) = xs.alloc(n*5+nelem*2+1+nnz,nnz);
-    let (strides,urest) = urest.split_at_mut(n); 
-    let (rstrides,urest) = urest.split_at_mut(n); 
-    let (rshape,urest) = urest.split_at_mut(n); 
-    let (ix,urest) = urest.split_at_mut(n); 
-    let (ix2,upart) = urest.split_at_mut(n); 
+    let (strides,urest) = urest.split_at_mut(n);
+    let (rstrides,urest) = urest.split_at_mut(n);
+    let (rshape,urest) = urest.split_at_mut(n);
+    let (ix,urest) = urest.split_at_mut(n);
+    let (ix2,upart) = urest.split_at_mut(n);
 
     let _ = strides.iter_mut().zip(shape.iter()).rev().fold(1,|v,(s,&d)| { *s = v; v*d } );
     let _ = izip!(rstrides.iter_mut(),begin.iter(),end.iter()).rev().fold(1,|v,(s,&b,&e)| { *s = v; v*(e-b) } );
@@ -250,7 +250,7 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
 
         let mut rnnz = 0usize;
         let mut rnelem = 0usize;
-        for ((&spi,&p0,&p1),(xp,xs)) in 
+        for ((&spi,&p0,&p1),(xp,xs)) in
             izip!(sp.iter(), ptr.iter(), ptr[1..].iter())
                 .filter(|(&spi,_,_)| {
                     ix.iter_mut().for_each(|v| *v = 0);
@@ -260,11 +260,11 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
 
             ix2.iter_mut().for_each(|v| *v = 0);
             let _ = ix2.iter_mut().zip(strides.iter()).fold(spi,|v,(i,&s)| { *i = v / s; v % s});
-           
+
             (*xs,_) = izip!(strides.iter(),rstrides.iter(),begin.iter()).fold((spi,0),|(i,r),(&s,&rs,&b)| (i%s, r + (i/s-b) * rs) );
             xsubj.copy_from_slice(&subj[p0..p1]);
             xcof.copy_from_slice(&cof[p0..p1]);
-            rnnz += p1-p0;                    
+            rnnz += p1-p0;
             *xp = rnnz;
             rnelem += 1;
         }
@@ -277,9 +277,9 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
         if let Some(rsp) = rsp {
             rsp.copy_from_slice(&xsp[..rnelem]);
         }
-    } 
+    }
     else {
-        let rnelem : usize = begin.iter().zip(end.iter()).map(|(&a,&b)| b-a).product(); 
+        let rnelem : usize = begin.iter().zip(end.iter()).map(|(&a,&b)| b-a).product();
         let xcof = fpart;
         let (xptr,xsubj) = upart.split_at_mut(rnelem+1);
         let mut rnnz = 0usize;
@@ -292,7 +292,7 @@ pub fn slice(begin : &[usize], end : &[usize], rs : & mut WorkStack, ws : & mut 
                     .fold(0,|v,(&i,&s,&b)| v+(i+b)*s);
 
                 let (&p0,&p1) = unsafe{ (ptr.get_unchecked(sofs),ptr.get_unchecked(sofs+1)) };
-                
+
                 xsubj[rnnz..rnnz+p1-p0].copy_from_slice(&subj[p0..p1]);
                 xcof[rnnz..rnnz+p1-p0].copy_from_slice(&cof[p0..p1]);
                 rnnz += p1-p0;
@@ -362,7 +362,7 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
             p += n;
         }
         _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
-    } 
+    }
     else { // dense
         let _d0 : usize = num * shape[..dim].iter().product::<usize>();
         let d1 : usize = shape[dim..].iter().product();
@@ -390,12 +390,12 @@ pub fn repeat(dim : usize, num : usize, rs : & mut WorkStack, ws : & mut WorkSta
         else {
             izip!(ptr.chunks(d1),ptr[1..].chunks(d1))
                 .flat_map(|item| std::iter::repeat(item).take(num))
-                .flat_map(|(pb,pe)| pb.iter().zip(pe)) 
+                .flat_map(|(pb,pe)| pb.iter().zip(pe))
                 .zip(rptr[1..].iter_mut())
                 .fold(0,|p,((p0,p1),rp)| { *rp = p+p1-p0; *rp });
             izip!(ptr.chunks(d1),ptr[1..].chunks(d1))
                 .flat_map(|item| std::iter::repeat(item).take(num))
-                .flat_map(|(ptrb,ptre)| ptrb.iter().zip(ptre.iter())) 
+                .flat_map(|(ptrb,ptre)| ptrb.iter().zip(ptre.iter()))
                 .flat_map(|(&pb,&pe)| unsafe{subj.get_unchecked(pb..pe)}.iter().zip(unsafe{cof.get_unchecked(pb..pe)}.iter()))
                 .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
                 .for_each(|((&j,&c),(rj,rc))| { *rj = j; *rc = c; });
@@ -410,7 +410,7 @@ pub fn permute_axes<const N : usize>(
     perm : &[usize;N],
     rs : & mut WorkStack,
     ws : & mut WorkStack,
-    xs : & mut WorkStack) -> Result<(),ExprEvalError> 
+    xs : & mut WorkStack) -> Result<(),ExprEvalError>
 {
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     let nelem = ptr.len()-1;
@@ -420,12 +420,12 @@ pub fn permute_axes<const N : usize>(
     }
     let shape = { let mut r = [0usize; N]; r.copy_from_slice(shape); r };
     let mut rshape = [usize::MAX; N];
-    let p = Permutation::from(perm); 
+    let p = Permutation::from(perm);
     rshape.iter_mut().zip(shape.permute_by(p))
         .for_each(|(d,&s)| {
             if *d < usize::MAX {
                 panic!("Invalid permutation {:?}",perm);
-            } 
+            }
             else {
                 *d = s;
             }
@@ -434,7 +434,7 @@ pub fn permute_axes<const N : usize>(
 
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape,nnz,nelem);
     rptr[0] = 0;
-        
+
     let (uslice,_)   = xs.alloc(nelem*2,0);
     let (spx,uslice) = uslice.split_at_mut(nelem);
     let (elmperm,_)  = uslice.split_at_mut(nelem);
@@ -454,18 +454,18 @@ pub fn permute_axes<const N : usize>(
         elmperm.iter_mut().enumerate().for_each(|(i,t)| *t = i);
         elmperm.sort_by_key(|&i| unsafe{* spx.get_unchecked(i) });
         let elmperm = Permutation::from(elmperm);
-       
+
         // apply permutation
-        if let Some(rsp) = rsp { 
+        if let Some(rsp) = rsp {
             for (t,&s) in rsp.iter_mut().zip(sp.permute_by(elmperm)) {
                 (_,*t) = izip!(strides.iter(),prstrides.iter()).fold((s,0),|(sv,r),(&s,&ps)| (sv % s,r + (sv/s)*ps)  );
             }
         };
         rptr.iter_mut().for_each(|p| *p = 0);
 
-        { 
+        {
             let mut nzi = 0;
-    
+
             for (&p0,&p1,p) in izip!(ptr[0..nelem].permute_by(elmperm),ptr[1..nelem+1].permute_by(elmperm),rptr[1..].iter_mut()) {
                 rsubj[nzi..nzi+p1-p0].copy_from_slice(&subj[p0..p1]);
                 rcof[nzi..nzi+p1-p0].copy_from_slice(&cof[p0..p1]);
@@ -482,7 +482,7 @@ pub fn permute_axes<const N : usize>(
             rptr[ti+1] = n
         }
         let _ = rptr.iter_mut().fold(0,|v,p| { *p += v; *p });
-        
+
         for (si,(ssubj,scof)) in izip!(subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)).enumerate() {
             let (_,ti) = strides.iter().zip(prstrides.iter()).fold((si,0),|(v,r),(&s,&rs)| (v%s,r+(v/s)*rs));
             let n = ssubj.len();
@@ -505,7 +505,7 @@ pub fn add(n  : usize,
     // check that shapes match
     let exprs = ws.pop_exprs(n);
 
-    if let Some((shape1,shape2)) = 
+    if let Some((shape1,shape2)) =
         exprs.iter().map(|(shape,_,_,_,_)| shape)
             .zip(exprs[1..].iter().map(|(shape,_,_,_,_)| shape))
             .find(|(shape1,shape2)| shape1 != shape2)
@@ -615,7 +615,7 @@ pub fn add(n  : usize,
         }
         // cummulate ptr
         _ = rptr.iter_mut().fold(0,|c,p| { *p += c; *p });
-                 
+
         // Create a mapping from linear sparsity index into sp/ptr index
         hdata.iter_mut().enumerate().for_each(|(i,d)| *d = i);
         let h = IndexHashMap::with_data(&mut hdata[..rnelm],
@@ -678,7 +678,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                 .cycle()
                 .zip(rptr[1..].iter_mut())
                 .fold(0,|v,((p0,p1),rp)| { *rp = v+p1-p0; *rp });
-    
+
             // build rsubj
             for jj in rsubj.chunks_mut(nnz) { jj.copy_from_slice(subj); }
             // build cof
@@ -758,23 +758,23 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                 let nonempty_rows = sp.chunk_by(|&i0,&i1| i0 / shape[1] == i1 / shape[1]).count();
                 let rnelem = mshape.0*nonempty_rows;
                 let rnnz = mshape.0*nnz;
-                
+
                 let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&rshape, rnnz, rnelem);
-       
+
                 // build rptr
                 rptr[0] = 0;
                 (0..mshape.0)
                     .flat_map(|_| {
                         sp.chunk_by(|i0,i1| i0/shape[1] == i1/shape[1])
-                            .scan(0,|p, row| { 
-                                let (p0,p1) = (*p,*p+row.len()); 
+                            .scan(0,|p, row| {
+                                let (p0,p1) = (*p,*p+row.len());
                                 *p = p1;
                                 Some(unsafe{ (ptr.get_unchecked(p0),ptr.get_unchecked(p1)) })
                             })})
                     .zip(rptr[1..].iter_mut())
                     .fold(0usize,|p,((p0,p1),rp)| {
-                        *rp = p+(p1-p0); 
-                        *rp 
+                        *rp = p+(p1-p0);
+                        *rp
                     });
 
                 if let Some(rsp) = rsp {
@@ -808,8 +808,8 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                     })
                     .flat_map(|(mc,&p0,&p1)| izip!(std::iter::repeat(mc),unsafe{cof.get_unchecked(p0..p1)}.iter()))
                     .zip(rcof.iter_mut().enumerate())
-                    .for_each(|((mc,c),(_i,rc))| { 
-                        *rc = mc*c; 
+                    .for_each(|((mc,c),(_i,rc))| {
+                        *rc = mc*c;
                     })
                     ;
             }
@@ -824,7 +824,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                 let enum_nnz_rows = sp.chunk_by(|&a,&b| a / shape[1] == b / shape[1]).count();
 
                 // For each matrix row
-                let (rnelem,rnnz) = 
+                let (rnelem,rnnz) =
                     izip!(
                         msp.chunk_by(|&a,&b| a/mshape.1 == b/mshape.1)
                             .scan(0,|p,row| { let (p0,p1) = (*p,*p+row.len()); *p = p1; Some((row,unsafe{mdata.get_unchecked(p0..p1)})) } )
@@ -836,7 +836,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                             let i = unsafe{ *mrowi.get_unchecked(0) } / mshape.1;
                             let j = unsafe{ *erowi.get_unchecked(0) } / shape[1];
                             ( i * shape[0] + j,
-                              mrowi.iter().inner_join_by(|&a,b| (a%mshape.1).cmp(&(b.0%shape[1])), izip!(erowi.iter(),erowptrs.iter(),erowptrs[1..].iter())).map(|(_,(_,epb,epe))| epe-epb ).sum::<usize>()) 
+                              mrowi.iter().inner_join_by(|&a,b| (a%mshape.1).cmp(&(b.0%shape[1])), izip!(erowi.iter(),erowptrs.iter(),erowptrs[1..].iter())).map(|(_,(_,epb,epe))| epe-epb ).sum::<usize>())
                         })
                         .fold((0,0),|(rnelm,rnnz),(_, nnz)| if nnz > 0 { (rnelm+1,rnnz+nnz) } else { (rnelm,rnnz) });
 
@@ -862,7 +862,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                     .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
                     .for_each(|((&j,c),(rj,rc))| { *rj = j; *rc = c; });
                 // compute ptr
-                let it = 
+                let it =
                     izip!(
                         msp.chunk_by(|&a,&b| a/mshape.1 == b/mshape.1)
                             .scan(0,|p,row| { let (p0,p1) = (*p,*p+row.len()); *p = p1; Some((row,unsafe{mdata.get_unchecked(p0..p1)})) } )
@@ -874,7 +874,7 @@ pub fn mul_matrix_expr_transpose(mshape : (usize,usize),
                         .map(|((mrowi,mrowc),(erowi,erowptrs))| {
                             let i = unsafe{ *mrowi.get_unchecked(0) } / mshape.1;
                             let j = unsafe{ *erowi.get_unchecked(0) } / shape[1];
-                            let nnz = 
+                            let nnz =
                                 mrowi.iter().zip(mrowc.iter())
                                     .inner_join_by(|a,b| (a.0%mshape.1).cmp(&(b.0%shape[1])), izip!(erowi.iter(),erowptrs.iter(),erowptrs[1..].iter()))
                                     .map(|(_,b)| b.2-b.1)
@@ -930,7 +930,7 @@ pub fn dot_rows(mshape : [usize;2],
             if let Some(rsp) = rsp {
                 sp.chunk_by(|a,b| a/shape[1] == b/shape[1]).zip(rsp.iter_mut()).for_each(|(ii,ri)| *ri = ii[0] / shape[1]);
             }
-           
+
             rptr[0] = 0;
             sp.chunk_by(|a,b| a/shape[1] == b/shape[1])
                 .zip(rptr[1..].iter_mut())
@@ -956,17 +956,17 @@ pub fn dot_rows(mshape : [usize;2],
                 .scan(0,|p,ii| { let (p0,p1) = (*p,*p+ii.len()); *p = p1; Some(unsafe{ ptr.get_unchecked(p0..=p1)})})
                 .zip(rptr[1..].iter_mut())
                 .fold(0,|p,(eprow,rp)| {
-                    let rownnz = *eprow.last().unwrap() - eprow[0];                        
+                    let rownnz = *eprow.last().unwrap() - eprow[0];
                     *rp = p + rownnz;
                     *rp
                 });
-            if let Some(rsp) = rsp { 
+            if let Some(rsp) = rsp {
                 msp.iter()
                     .scan(usize::MAX,|prev,mi| { let oldp = *prev; *prev = mi/shape[1]; Some((oldp,*prev)) })
                     .filter(|(a,b)| *a != *b)
                     .zip(rsp.iter_mut())
                     .for_each(|((_,i),ri)| *ri = i);
-                
+
             }
 
             izip!(mdata.iter(),
@@ -984,11 +984,11 @@ pub fn dot_rows(mshape : [usize;2],
             let (rnelem,rnnz,_) = msp.iter().peekable()
                 .inner_join_by(|a,b| a.cmp(&b.0), izip!(sp.iter(),ptr.iter(),ptr[1..].iter()).peekable())
                 .fold((0,0,usize::MAX),|(nelem,nnz,prev),(&mi,(_,&p0,&p1))| {
-                    if mi/shape[1] != prev { 
-                        (nelem+1, nnz+p1-p0, mi/shape[1]) 
+                    if mi/shape[1] != prev {
+                        (nelem+1, nnz+p1-p0, mi/shape[1])
                     }
                     else {
-                        (nelem, nnz+p1-p0, prev) 
+                        (nelem, nnz+p1-p0, prev)
                     }
                 });
 
@@ -1020,7 +1020,7 @@ pub fn dot_rows(mshape : [usize;2],
             // build subj and cof
             msp.iter().zip(mdata.iter())
                 .inner_join_by(|a,b| a.0.cmp(&b.0), izip!(sp.iter(),subj.chunks_ptr(ptr),cof.chunks_ptr(ptr)))
-                .map(|((_,mc),(_,js,cs))| (mc,js,cs)) 
+                .map(|((_,mc),(_,js,cs))| (mc,js,cs))
                 .flat_map(|(&mc,js,cs)| js.iter().zip(cs.iter().map(move |&v| v * mc)))
                 .zip(rsubj.iter_mut().zip(rcof.iter_mut()))
                 .for_each(|((&j,c),(rj,rc))| { *rj = j; *rc = c;} );
@@ -1030,7 +1030,7 @@ pub fn dot_rows(mshape : [usize;2],
 
     Ok(())
 
-    
+
 
 }
 
@@ -1093,7 +1093,7 @@ pub fn mul_left_dense(mdata : &[f64],
         let _ = rptr.iter_mut().fold(0,|v,p| { let prev = *p; *p = v; prev });
     }
     // dense expr
-    else {        
+    else {
         rptr[0] = 0;
         let mut nzi = 0;
         for (mrow,rptrrow) in mdata.chunks(mdimj).zip(rptr[1..].chunks_mut(edimj)) {
@@ -1139,7 +1139,7 @@ pub fn mul_right_dense(mdata : &[f64],
     if let Some(sp) = sp {
         // count non-empty rows in expression
         let rnelm = sp.chunk_by(|i0,i1| i0/edimj == i1/edimj).count() * rdimj;
-        
+
         let (rptr,rsp,rsubj,rcof) = if nd == 2 {
             rs.alloc_expr(&[rdimi,rdimj],rnnz,rnelm)
         }
@@ -1154,12 +1154,12 @@ pub fn mul_right_dense(mdata : &[f64],
                 .for_each(|((colj,i0),ri)| *ri = i0*mdimj+colj )
                 ;
         }
-        
+
         // transpose m
         let (_,mxdata) = xs.alloc(0,mdata.len());
         mxdata.iter_mut().zip( (0..mdimj).flat_map(|i| mdata[i..].iter().step_by(mdimj)))
             .for_each(|(t,&s)| *t = s);
-            
+
 
         // NOTE: Constructing the result expression efficiently without using unsafe is really
         // difficult. I have not yet found a good abstraction that allows this.
@@ -1168,13 +1168,13 @@ pub fn mul_right_dense(mdata : &[f64],
             let mut rptri = 0usize;
             let mut ri = 0usize;
             rptr[0] = 0;
-            for (rowsp,rowptr) in 
+            for (rowsp,rowptr) in
                 sp.chunk_by(|i0,i1| i0/edimj == i1/edimj)
                     .scan(0,|p,row| { let p0 = *p; *p += row.len(); Some((row,&ptr[p0..*p+1])) })
             {
-                for mcol in mxdata.chunks(mdimi) 
+                for mcol in mxdata.chunks(mdimi)
                 {
-                    for (spi,&p0,&p1) in izip!( rowsp.iter(), rowptr.iter(), rowptr[1..].iter()) 
+                    for (spi,&p0,&p1) in izip!( rowsp.iter(), rowptr.iter(), rowptr[1..].iter())
                     {
                         unsafe {
                             let mc = *mcol.get_unchecked(spi%edimj);
@@ -1301,10 +1301,10 @@ pub fn mul_left_sparse(mheight : usize,
                     match (mi % mwidth).cmp(&(ei / ewidth)) {
                         std::cmp::Ordering::Less    => { let _ = mspi.next(); },
                         std::cmp::Ordering::Greater => { let _ = espi.next(); },
-                        std::cmp::Ordering::Equal => { 
+                        std::cmp::Ordering::Equal => {
                             let _ = espi.next();
                             let _ = mspi.next();
-                            ijnnz += p1-p0; 
+                            ijnnz += p1-p0;
                         }
                     }
                 }
@@ -1440,7 +1440,7 @@ pub fn mul_right_sparse(mheight : usize,
     let mcolptr = &mcolptr[..mnumnzcol+1];
     let msubj   = &msubj[..mnumnzcol];
     //------------------------------------
-    
+
     if let Some(sp) = sp {
         let mut rnelm    = 0;
         let mut rnnz     = 0;
@@ -1464,7 +1464,7 @@ pub fn mul_right_sparse(mheight : usize,
                         std::cmp::Ordering::Greater => { let _ = mi.next(); },
                         std::cmp::Ordering::Equal => {
                             let _ = ei.next();
-                            elmnnz += p1-p0; 
+                            elmnnz += p1-p0;
                             let _ = mi.next();
                         },
                     }
@@ -1582,7 +1582,7 @@ pub fn dot_sparse(_sparsity : &[usize],
                   ws       : & mut WorkStack,
                   _xs      : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (_shape,_ptr,_sp,_subj,_cof) = ws.pop_expr();
-   
+
     return Err(ExprEvalError::new(file!(),line!(),"TODO"));
 }
 
@@ -1664,7 +1664,7 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
             let (irest,_) = xs.alloc(3*(n+1),0);
             let (chunkp,irest) = irest.split_at_mut(n+1);
             let (nnzp,offsets) = irest.split_at_mut(n+1);
-            chunkp[0]  = 0; 
+            chunkp[0]  = 0;
             nnzp[0]    = 0;
             offsets[0] = 0;
             izip!(chunkp[1..].iter_mut(),
@@ -1678,7 +1678,7 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
                     (*elmptr,*nzptr,*offset)
                 });
             //println!("offsets = {:?}",offsets);
-            
+
             rptr[0] = 0;
             izip!(
                 nnzp.iter(),
@@ -1704,7 +1704,7 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
         else {
             let (irest,_) = xs.alloc(2*(n+1),0);
             let (chunkp,nnzp) = irest.split_at_mut(n+1);
-            chunkp[0]  = 0; 
+            chunkp[0]  = 0;
             nnzp[0]    = 0;
             izip!(chunkp[1..].iter_mut(),
                   nnzp[1..].iter_mut(),
@@ -1714,7 +1714,7 @@ pub fn stack(dim : usize, n : usize, rs : & mut WorkStack, ws : & mut WorkStack,
                     *nzptr  = nzi+subj.len();
                     (*elmptr,*nzptr)
                 });
-            
+
             rptr[0] = 0;
             izip!(
                 nnzp.iter(),
@@ -1863,7 +1863,7 @@ pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : &
                 sp.iter().zip(sp[1..].iter()).filter(|(&i0,&i1)| i0/d < i1/d).count()+1
             };
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(), subj.len(), rnelm);
-        
+
         rptr[0] = 0;
         if let Some(rsp) = rsp {
             for (rp,r,(p,v)) in izip!(rptr[1..].iter_mut(),
@@ -1885,13 +1885,13 @@ pub fn sum_last(num : usize, rs : & mut WorkStack, ws : & mut WorkStack, _xs : &
                                       .map(|(&p,&i0,_)| (p,i0/d))) {
                 *rp = p
             }
-            
+
         }
         rsubj.copy_from_slice(subj);
         rcof.copy_from_slice(cof);
-    } 
+    }
     else {
-        let rnelm = shape.iter().product::<usize>()/d; 
+        let rnelm = shape.iter().product::<usize>()/d;
         let (rptr,_,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(),subj.len(),rnelm);
 
         rsubj.copy_from_slice(subj);
@@ -1928,8 +1928,8 @@ pub fn mul_elem(mshape: &[usize],
 
     match (msp,sp) {
         (Some(msp),Some(esp)) => {
-            
-            let (rnelem,rnnz) = 
+
+            let (rnelem,rnnz) =
                 msp.iter()
                     .inner_join_by(|&mi,(&ei,_,_)| mi.cmp(&ei), izip!(esp.iter(),ptr.iter(),ptr[1..].iter()))
                     .fold((0,0),|(elmi,nzi),(_,(_,p0,p1))| (elmi+1,nzi+p1-p0));
@@ -1941,10 +1941,10 @@ pub fn mul_elem(mshape: &[usize],
             msp.iter()
                 .inner_join_by(|mi,(ei,_,_)| mi.cmp(ei), izip!(esp.iter(),ptr.iter(),ptr[1..].iter()))
                 .zip(rptr[1..].iter_mut().zip(rsp.unwrap().iter_mut()))
-                .fold(0,|p, ((&mi,(_,&p0,&p1)),(rp,ri))| { 
-                    *rp = p + p1-p0; 
+                .fold(0,|p, ((&mi,(_,&p0,&p1)),(rp,ri))| {
+                    *rp = p + p1-p0;
                     *ri = mi;
-                    *rp 
+                    *rp
                 });
 
             // build subj, cof
@@ -1975,7 +1975,7 @@ pub fn mul_elem(mshape: &[usize],
                 rsubj[nzi..nzi+p1-p0].copy_from_slice(&subj[p0..p1]);
                 rcof[nzi..nzi+p1-p0].iter_mut().zip(cof[p0..p1].iter()).for_each(|(rc,&c)| *rc = c * mc);
                 nzi += p1-p0;
-                *rp = nzi; 
+                *rp = nzi;
             }
             //println!("ExprMulElm::eval(): rptr = {:?}",rptr);
         }
@@ -2014,9 +2014,9 @@ pub fn scalar_expr_mul
 (   datashape : &[usize],
     datasparsity : Option<&[usize]>,
     data : &[f64],
-    rs : & mut WorkStack, 
-    ws : & mut WorkStack, 
-    _xs : & mut WorkStack) -> Result<(),ExprEvalError> 
+    rs : & mut WorkStack,
+    ws : & mut WorkStack,
+    _xs : & mut WorkStack) -> Result<(),ExprEvalError>
 {
     use std::iter::repeat;
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
@@ -2030,14 +2030,14 @@ pub fn scalar_expr_mul
         let rnelem = data.len();
         let rnnz = nnz * rnelem;
         let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(&datashape, rnnz, rnelem);
-        
+
         rptr.iter_mut().fold(0,|c,r| { *r = c; c + nnz });
         if let (Some(rsp),Some(dsp)) = (rsp,datasparsity) {
             rsp.copy_from_slice(dsp);
         }
         rsubj.iter_mut().zip(subj[0..nnz].iter().cycle()).for_each(| (r,&s)| *r = s);
         izip!(rcof.iter_mut(),
-              data.iter().flat_map(|&v| repeat(v).take(nnz)),  
+              data.iter().flat_map(|&v| repeat(v).take(nnz)),
               cof[0..nnz].iter().cycle())
             .for_each(| (r,s0,&s1)| *r = s0 * s1);
     }
@@ -2052,12 +2052,12 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
     let (shape,ptr,sp,subj,cof) = ws.pop_expr();
     // check
     if dim + 2 > shape.len() { return Err(ExprEvalError::new(file!(),line!(),"Invalid dimension for symmetrization")); }
-    
+
     let n : usize = {
         let d = shape[dim]*shape[dim+1];
-        // n*(n+1) = 2d 
-        // n^2 + n - 2d = 0 
-        // n = (-1 + sqrt(1 + 8d)/2 
+        // n*(n+1) = 2d
+        // n^2 + n - 2d = 0
+        // n = (-1 + sqrt(1 + 8d)/2
 
         let n = (((1.0+8.0*d as f64).sqrt()-1.0)/2.0).floor() as usize;
         if n*(n+1)/2 != d {
@@ -2070,7 +2070,7 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
     let mut rshape = shape.to_vec();
     rshape[dim] = n;
     rshape[dim+1] = n;
-    
+
     let d0 = shape[..dim].iter().product();
     let d1 = shape[dim]*shape[dim+1];
     let d2 = shape[dim+2..].iter().product();
@@ -2118,7 +2118,7 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
         let xperm = Permutation::from(xperm);
 
         if let Some(rsp) = rsp {
-            xsp.permute_by(xperm).zip(rsp.iter_mut()).for_each(|(&i,spi)| *spi = i);            
+            xsp.permute_by(xperm).zip(rsp.iter_mut()).for_each(|(&i,spi)| *spi = i);
         }
         let xperm2 = xsp;
         xsrc.permute_by(xperm).zip(xperm2.iter_mut()).for_each(|(&si,i)| *i = si);
@@ -2142,18 +2142,18 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
     else {
         let rnelm : usize = rshape.iter().product();
         // count nnz
-        let rnnz : usize = 
+        let rnnz : usize =
             izip!(iproduct!(0..d0,0..n).flat_map(|(i0,i1a)| izip!(repeat(i0),repeat(i1a),0..i1a+1)),
                   ptr.iter().step_by(d2),
                   ptr[d2..].iter().step_by(d2))
                 .map(|((_,i1a,i1b),pb,pe)| if i1a == i1b { pe-pb } else { 2*(pe-pb) } )
                 .sum();
-        
+
         let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr(rshape.as_slice(), rnnz, rnelm);
 
         rptr[0] = 0;
         let mut nzi : usize = 0;
-        rptr[1..].iter_mut().enumerate().for_each(|(i,p)| { 
+        rptr[1..].iter_mut().enumerate().for_each(|(i,p)| {
             let i0  = i/(n*n*d2);
             let i1a = (i / (d2*n)) % n;
             let i1b = (i / d2) % n;
@@ -2165,10 +2165,10 @@ pub fn into_symmetric(dim : usize, rs : & mut WorkStack, ws : & mut WorkStack, x
             let p0 = ptr[si];
             let p1 = ptr[si+1];
             let rownzi = p1-p0;
-            
+
             rsubj[nzi..nzi+rownzi].copy_from_slice(&subj[p0..p1]);
             rcof[nzi..nzi+rownzi].copy_from_slice(&cof[p0..p1]);
-        
+
             nzi += rownzi;
             *p = nzi;
         });
@@ -2199,10 +2199,10 @@ pub fn inplace_reduce_shape(m : usize,rs : & mut WorkStack, xs : & mut WorkStack
     Ok(())
 }
 
-pub fn inplace_reshape_one_row(m : usize, dim : usize, rs : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError> 
+pub fn inplace_reshape_one_row(m : usize, dim : usize, rs : & mut WorkStack, xs : & mut WorkStack) -> Result<(),ExprEvalError>
 {
     if dim >= m { return Err(ExprEvalError::new(file!(),line!(),"Invalid dimension given")); }
-        
+
     let (newshape,_) = xs.alloc(m,0);
     newshape.iter_mut().for_each(|s| *s = 1 );
     newshape[dim] = {
@@ -2214,7 +2214,7 @@ pub fn inplace_reshape_one_row(m : usize, dim : usize, rs : & mut WorkStack, xs 
     Ok(())
 }
 
-pub fn inplace_reshape(rshape : &[usize],rs : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> 
+pub fn inplace_reshape(rshape : &[usize],rs : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError>
 {
     rs.validate_top().unwrap();
     {
@@ -2228,7 +2228,7 @@ pub fn inplace_reshape(rshape : &[usize],rs : & mut WorkStack, _xs : & mut WorkS
     Ok(())
 }
 
-pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> 
+pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError>
 {
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
 
@@ -2249,7 +2249,7 @@ pub fn scatter(rshape : &[usize], sparsity : &[usize], rs : & mut WorkStack, ws 
     Ok(())
 }
 
-pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> 
+pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError>
 {
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
 
@@ -2269,7 +2269,7 @@ pub fn gather(rshape : &[usize], rs : & mut WorkStack, ws : & mut WorkStack, _xs
 pub fn gather_to_vec(rs : & mut WorkStack, ws : & mut WorkStack, _xs : & mut WorkStack) -> Result<(),ExprEvalError> {
     let (_shape,ptr,_sp,subj,cof) = ws.pop_expr();
     let rnelm = ptr.len()-1;
-    let rnnz  = subj.len();        
+    let rnnz  = subj.len();
 
     let (rptr,_rsp,rsubj,rcof) = rs.alloc_expr( &[rnelm],rnnz,rnelm);
 
@@ -2290,9 +2290,9 @@ pub fn stack_scalars(rshape : &[usize], spx : Option<&[usize]>, rs : & mut WorkS
     let nelm = spx.map(|v| v.len()).unwrap_or(rshape.iter().product());
 
     let exprs = ws.pop_exprs(nelm);
-    
+
     let nnz = exprs.iter().map(|(_,_,_,subj,_)| subj.len()).sum::<usize>();
-    
+
     let (rptr,rsp,rsubj,rcof) = rs.alloc_expr(rshape, nnz, nelm);
 
     rptr[0] = 0;
@@ -2303,7 +2303,7 @@ pub fn stack_scalars(rshape : &[usize], spx : Option<&[usize]>, rs : & mut WorkS
     if let (Some(spx),Some(rsp)) = (spx,rsp) {
         rsp.copy_from_slice(spx);
     }
-    
+
     Ok(())
 }
 
@@ -2319,15 +2319,15 @@ pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut Work
     let rnnz  = subj.len();
     let rnelm = shape.iter().product();
     let (rptr,_,rsubj,rcof) = rs.alloc_expr(shape,rnnz,rnelm);
- 
+
     let (urest,_frest) = xs.alloc(rnnz+ptr.len(),0);
-    let (perm,xptr) = urest.split_at_mut(rnnz); 
+    let (perm,xptr) = urest.split_at_mut(rnnz);
     xptr[0] = 0;
     perm.iter_mut().enumerate().for_each(|(i,p)| *p = i);
     for (pp,xptr) in perm.chunks_ptr_mut(ptr, &ptr[1..]).zip(xptr[1..].iter_mut())
     {
         pp.sort_by_key(|&p| unsafe{ *subj.get_unchecked(p) });
-        *xptr = 
+        *xptr =
             if pp.len() > 1 {
                 subj.permute_by(Permutation::from(pp)).zip(subj.permute_by(&pp[1..])).filter(|(&a,&b)| a != b ).count()+1
             }
@@ -2343,7 +2343,7 @@ pub fn eval_finalize(rs : & mut WorkStack, ws : & mut WorkStack, xs : & mut Work
     {
         let mut sit = subj.permute_by(perm).zip(cof.permute_by(perm));
         let mut tit = rsubj.iter_mut().zip(rcof.iter_mut()).peekable();
-        
+
         if let Some((j,c)) = sit.next() {
             if let Some((jj,cc)) = tit.peek_mut() {
                 **jj = *j;
@@ -2395,7 +2395,7 @@ mod test {
         let mut rs = WorkStack::new(1024);
         let mut ws = WorkStack::new(1024);
         let mut xs = WorkStack::new(1024);
-   
+
         println!("Dense x Dense");
         {
             let (ptr,_sp,subj,cof) = ws.alloc_expr(&[3,3], 18, 9);
@@ -2410,7 +2410,7 @@ mod test {
                 &[1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,3.3],
                 & mut rs,& mut ws,&mut xs).unwrap();
             let (rshape,rptr,rsp,rsubj,rcof) = rs.pop_expr();
-            // | 1.1 1.2 1.3 |   | 1(x0+x9)  2(x1+x10) 3(x2+x11) | 
+            // | 1.1 1.2 1.3 |   | 1(x0+x9)  2(x1+x10) 3(x2+x11) |
             // | 2.1 2.2 2.3 | x | 4(x3+x12) 5(x4+x13) 6(x5+x14) |
             // | 3.1 3.2 3.3 |   | 7(x6+x15) 8(x7+x16) 9(x8+x17) |
 
@@ -2430,7 +2430,7 @@ mod test {
         let mut rs = WorkStack::new(1024);
         let mut ws = WorkStack::new(1024);
         let mut xs = WorkStack::new(1024);
-   
+
         println!("Sparse x Dense");
         {
             let (ptr,_sp,subj,cof) = ws.alloc_expr(&[3,3], 18, 9);
@@ -2439,7 +2439,7 @@ mod test {
             subj[1..].iter_mut().step_by(2).zip(9..18).for_each(|(j,i)| *j = i);
             cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i/2+1) as f64);
 
-            // | 1.1     1.3 |   | 1(x0+x9)  2(x1+x10) 3(x2+x11) | 
+            // | 1.1     1.3 |   | 1(x0+x9)  2(x1+x10) 3(x2+x11) |
             // |             | x | 4(x3+x12) 5(x4+x13) 6(x5+x14) |
             // |     3.2     |   | 7(x6+x15) 8(x7+x16) 9(x8+x17) |
 
@@ -2448,7 +2448,7 @@ mod test {
                 Some(&[0,2,7]),
                 &[1.1,1.3,3.2],
                 & mut rs,& mut ws,&mut xs).unwrap();
-            
+
             let (rshape,rptr,rsp,rsubj,rcof) = rs.pop_expr();
 
             assert_eq!(rshape,&[3,3]);
@@ -2464,7 +2464,7 @@ mod test {
         let mut rs = WorkStack::new(1024);
         let mut ws = WorkStack::new(1024);
         let mut xs = WorkStack::new(1024);
-   
+
         println!("Dense x Sparse");
         {
             let (ptr,sp,subj,cof) = ws.alloc_expr(&[3,3], 6, 3);
@@ -2473,7 +2473,7 @@ mod test {
             subj.copy_from_slice(&[0,9,2,11,7,16]);
             cof.iter_mut().enumerate().for_each(|(i,c)| *c = (i/2+1) as f64);
 
-            // | 1.1 1.2 1.3 |   | 1(x0+x9)            2(x2+x11) | 
+            // | 1.1 1.2 1.3 |   | 1(x0+x9)            2(x2+x11) |
             // | 2.1 2.2 2.3 | x |                               |
             // | 3.1 3.2 3.3 |   |           3(x7+x16)           |
 
@@ -2482,7 +2482,7 @@ mod test {
                 None,
                 &[1.1,1.2,1.3,2.1,2.2,2.3,3.1,3.2,3.3],
                 & mut rs,& mut ws,&mut xs).unwrap();
-            
+
             let (rshape,rptr,rsp,rsubj,rcof) = rs.pop_expr();
 
             assert_eq!(rshape.len(),2);
@@ -2503,7 +2503,7 @@ mod test {
         let mut rs = WorkStack::new(1024);
         let mut ws = WorkStack::new(1024);
         let mut xs = WorkStack::new(1024);
-   
+
         println!("Sparse x Sparse");
         {
             let (ptr,sp,subj,cof) = ws.alloc_expr(&[3,3], 6, 3);
@@ -2517,15 +2517,15 @@ mod test {
                 Some(&[0,2,4,5,7]),
                 &[1.1,1.3,2.2,2.3,3.2],
                 & mut rs,& mut ws,&mut xs).unwrap();
-            
+
             let (rshape,rptr,rsp,rsubj,rcof) = rs.pop_expr();
-            // | 1.1     1.3 |   | 1(x0+x9)            2(x2+x11) | 
+            // | 1.1     1.3 |   | 1(x0+x9)            2(x2+x11) |
             // |     2.2 2.3 | x |                               |
             // |     3.2     |   |           3(x7+x16)           |
 
             //   | A11*B11+A13*B13  .  .       |
             // = | A23*B13          .  A22*B32 |
-            //   | .                .  A32*B32 | 
+            //   | .                .  A32*B32 |
 
             assert_eq!(rshape, &[3,3]);
             assert_eq!(rptr,&[0,4,6,8,10]);
@@ -2536,4 +2536,3 @@ mod test {
         }
     }
 }
-

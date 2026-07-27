@@ -16,7 +16,7 @@ use itertools::{iproduct, izip};
 
 
 /// A Variable object is basically a wrapper around a variable index
-/// list with a shape and a sparsity pattern. It contains no reference to the [Model] object it
+/// list with a shape and a sparsity pattern. It contains no reference to the [ModelAPI] object it
 /// belongs to, so in a context of multiple Models, it is not possible to verify that it is used
 /// with the originating model.
 ///
@@ -72,7 +72,7 @@ impl Variable<1> {
 impl Variable<2> {
     pub fn dot_rows<M>(&self, other : M) -> ExprDotRows<ExprVariable<2>>
         where
-            M : Matrix 
+            M : Matrix
     {
         ExprTrait::<2>::dot_rows(IntoExpr::<2>::into(self), other)
     }
@@ -86,7 +86,7 @@ impl Variable<2> {
             let idxs : Vec<usize> = sp.iter().zip(self.idxs.iter()).filter(|(&i,_)| i/n == i%n).map(|v| *v.1).collect();
             let rsp = if idxs.len() < n {
                 Some(Rc::new(sp.iter().filter(|&i| i/n == i%n).map(|i| i / n).collect()))
-            } 
+            }
             else {
                 None
             };
@@ -105,7 +105,7 @@ impl Variable<2> {
             }
         }
     }
-    
+
     pub fn transpose(&self) -> Self {
         let mut shape = [0usize; 2];
         shape[0] = self.shape[1];
@@ -138,14 +138,14 @@ impl Variable<2> {
         }
     }
 
-    
+
 
     /// From a 2-dimensional variable, create a sparse variable of the same shape, but with only
     /// non-zeros in the lower triangular part.
     ///
     /// # Arguments
     /// - `with_diag` Indicates if the diagonal should be included.
-    pub fn tril(&self,with_diag:bool) -> Variable<2> { 
+    pub fn tril(&self,with_diag:bool) -> Variable<2> {
         let (_d0,d1) = (self.shape[0],self.shape[1]);
         if with_diag {
             self.filter(|i| i/d1 >= i%d1)
@@ -170,20 +170,20 @@ impl Variable<2> {
     }
 
     /// From a 2-dimensional variable, create a 1-dimensional variable with the elements from the
-    /// lower triangular par in row-major format. 
+    /// lower triangular par in row-major format.
     ///
     /// # Arguments
     /// - `with_diag` Indicates if the diagonal should be included.
 
-    pub fn trilvec(&self,with_diag:bool) -> Variable<1> { 
+    pub fn trilvec(&self,with_diag:bool) -> Variable<1> {
         let (d0,d1) = (self.shape[0],self.shape[1]);
         let v = self.tril(with_diag);
-        
-        let rshape = 
+
+        let rshape =
             if d0 == 0 && d1 == 0 {
                 [0]
             }
-            else if d0 > d1 { 
+            else if d0 > d1 {
                 if with_diag { [d1 * (d1+1)/2 + d1 * (d0-d1)] }
                 else         { [d1 * (d1-1)/2 + d1 * (d0-d1)] }
             }
@@ -221,15 +221,15 @@ impl Variable<2> {
             }
         }
     }
-    pub fn triuvec(&self,with_diag:bool) -> Variable<1> { 
+    pub fn triuvec(&self,with_diag:bool) -> Variable<1> {
         let (d0,d1) = (self.shape[0],self.shape[1]);
         let v = self.triu(with_diag);
-        
-        let rshape = 
+
+        let rshape =
             if d0 == 0 && d1 == 0 {
                 [0]
             }
-            else if d0 < d1 { 
+            else if d0 < d1 {
                 if with_diag { [d0 * (d0+1)/2 + d0 * (d1-d0)] }
                 else         { [d0 * (d0-1)/2 + d0 * (d1-d0)] }
             }
@@ -246,10 +246,10 @@ impl Variable<2> {
                     sparsity : None
                 }
             } else {
-                let sp : Vec<usize> = 
+                let sp : Vec<usize> =
                     // with    diag: i0*d1+i1 - i0*(i0-1)/2 = i0(2*d1 - i0 + 1)/2 + i1
                     // without diag: i0*d1+i1 - i0*(i0+1)/2 = i0(2*d1 - i0 - 1)/2 + i1
-                    if d1 > d0 { sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); i0*(2 * d1 - i0 + 1)/2 + i1}).collect() } 
+                    if d1 > d0 { sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); i0*(2 * d1 - i0 + 1)/2 + i1}).collect() }
                     else       { sp.iter().map(|&i| { let (i0,i1) = (i/d1,i%d1); i0*(2 * d1 - i0 - 1)/2 + i1}).collect() };
                 Variable{
                     shape : rshape,
@@ -290,7 +290,7 @@ impl<const N : usize> Variable<N> {
     pub fn shape(&self) -> &[usize] { self.shape.as_slice() }
 
     /// Perform axis-permutation. In two dimensions this is a `transpose`.
-    pub fn axispermute(&self, perm : &[usize; N]) -> Variable<N> { 
+    pub fn axispermute(&self, perm : &[usize; N]) -> Variable<N> {
         let perm = Permutation::from(perm);
         let mut newshape = [usize::MAX; N]; newshape.iter_mut().zip(self.shape.permute_by(&perm)).for_each(|(t,&s)| *t = s);
         let st    = utils::Strides::from_shape(&self.shape);
@@ -325,7 +325,7 @@ impl<const N : usize> Variable<N> {
             }
         }
     }
-   
+
     /// Reverse order of elements in a subset of dimensions
     pub fn flip(&self, dims : &[bool;N]) -> Self {
         let st = self.shape.to_strides();
@@ -365,17 +365,17 @@ impl<const N : usize> Variable<N> {
         }
     }
 
-    /// Maps to [ExprTrait::sum]. 
+    /// Maps to [ExprTrait::sum].
     pub fn sum(&self) -> impl ExprTrait<0> { ExprTrait::sum(IntoExpr::into(self)) }
-    /// Maps to [ExprTrait::neg]. 
+    /// Maps to [ExprTrait::neg].
     pub fn neg(&self) -> impl ExprTrait<N> { ExprTrait::<N>::neg(IntoExpr::into(self)) }
-    /// Maps to [ExprTrait::sum_on]. 
+    /// Maps to [ExprTrait::sum_on].
     pub fn sum_on<const K : usize>(&self, axes : &[usize; K]) -> impl ExprTrait<K> { ExprTrait::<N>::sum_on::<K>(IntoExpr::into(self),axes) }
-    /// Maps to [ExprTrait::add]. 
+    /// Maps to [ExprTrait::add].
     pub fn add<RHS>(&self, rhs : RHS) -> impl ExprTrait<N> where RHS : IntoExpr<N> { ExprTrait::<N>::add(IntoExpr::into(self),rhs) }
-    /// Maps to [ExprTrait::sub]. 
+    /// Maps to [ExprTrait::sub].
     pub fn sub<RHS>(&self, rhs : RHS) -> impl ExprTrait<N> where RHS : IntoExpr<N> { ExprTrait::<N>::sub(IntoExpr::into(self),rhs) }
-    /// Maps to [ExprTrait::mul_elem]. 
+    /// Maps to [ExprTrait::mul_elem].
     pub fn mul_elem<RHS>(&self, other : RHS) -> RHS::Result where RHS : ExprRightElmMultipliable<N,ExprVariable<N>> { other.mul_elem(IntoExpr::into(self)) }
 
     /// Method mapping [ExprTrait] behavior.
@@ -400,9 +400,9 @@ impl<const N : usize> Variable<N> {
         }
     }
 
-    /// Create a variable as an index or a slice of this variable. 
+    /// Create a variable as an index or a slice of this variable.
     ///
-    /// Generally, this does what one expects but there are a few irregularities. 
+    /// Generally, this does what one expects but there are a few irregularities.
     ///
     /// # Arguments
     /// - `idx` this is the index(es) or the range(s). By default following are accepted
@@ -416,12 +416,12 @@ impl<const N : usize> Variable<N> {
     ///           [Variable]`<1>`
     ///         - An array `[T; N]` where `T` is one of the range types above.
     ///     - Tuples of length `N` for `N` betweem 2 and 5, where each element is [usize] or one of the range types
-    ///       above. 
+    ///       above.
     ///
     /// # Example
     /// ```rust
     /// use mosekcomodel::*;
-    /// use mosekcomodel::dummy::Model; 
+    /// use mosekcomodel::dummy::Model;
     ///
     /// let mut m = Model::new(None);
     /// let x1 = m.variable(None, 10);
@@ -612,7 +612,7 @@ impl<const N : usize> Variable<N> {
         if ! sp.last().map_or_else(|| true, |&v| v < self.shape.iter().product()) {
             panic!("Sparsity pattern does not match the shape");
         }
-       
+
         Variable {
             idxs : self.idxs,
             sparsity : Some(Rc::new(sp)),
@@ -631,7 +631,7 @@ impl<const N : usize> Variable<N> {
         }
     }
 
-    pub fn sparse_primal_into<M:BaseModelTrait>(&self,m : &ModelAPI<M>,solid : SolutionType, res : & mut [f64], idx : & mut [[usize;N]]) -> Result<usize,String> 
+    pub fn sparse_primal_into<M:BaseModelTrait>(&self,m : &ModelAPI<M>,solid : SolutionType, res : & mut [f64], idx : & mut [[usize;N]]) -> Result<usize,String>
     {
         let sz = self.numnonzeros();
         if res.len() < sz || idx.len() < sz { panic!("Result array too small") }
@@ -652,7 +652,7 @@ impl<const N : usize> Variable<N> {
             Ok(sz)
         }
     }
-    
+
     fn filter<F>(&self, mut f : F) -> Variable<N> where F : FnMut(usize) -> bool {
         if let Some(ref sp) = self.sparsity {
             let mut rsp = vec![0usize; sp.len()];
@@ -717,4 +717,3 @@ impl<const N : usize> ExprTrait<N> for ExprVariable<N> {
         Ok(())
     }
 }
-

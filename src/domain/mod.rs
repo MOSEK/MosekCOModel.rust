@@ -1,5 +1,5 @@
-//! 
-//! This module and the submodules define domain functionality. 
+//!
+//! This module and the submodules define domain functionality.
 //!
 //! Domains are divided into different types, so a model can support some subset of domains. The
 //! [super::ModelAPI] object requires support for linear and ranged constraints as well as integer
@@ -16,7 +16,7 @@
 //!
 //! Domains are created with a builder-like logic. An object is created, then modified with various
 //! properties. The builder object will be passed to [super::ModelAPI::variable] or
-//! [super::ModelAPI::constraint], which will turn it into a concrete domain. 
+//! [super::ModelAPI::constraint], which will turn it into a concrete domain.
 //! Creating a variable requires a domain that explicitly or implicitly defines a shape since the
 //! shape is not otherwise given - something implementing the [IntoDomain] trait. For constraints,
 //! the expression will specify the dimensionality, and the domain must implement the
@@ -55,9 +55,9 @@ pub struct PowerCone(pub Vec<f64>,pub AsymmetricConeType);
 #[derive(Clone,Copy)]
 pub struct LinearCone(LinearDomainType);
 
-/// Trait for all vector domains. A vector domain is a domain that is a product of identical cones. Unlike linear  
+/// Trait for all vector domains. A vector domain is a domain that is a product of identical cones. Unlike linear
 pub trait VectorDomainTrait {
-    /// Check if the cone type is compatible with a given cone size. 
+    /// Check if the cone type is compatible with a given cone size.
     fn check_conesize(&self, d : usize) -> Result<(),String>;
     fn to_conic_domain_type(&self) -> VectorDomainType;
 }
@@ -70,12 +70,12 @@ pub trait DomainTrait<const N : usize> { }
 /// When creating a variable, the domain is an [IntoDomain], and the variable calls the
 /// [IntoDomain::try_into_domain] function to turn it into a concrete domain.
 pub trait IntoDomain {
-    type Result : 'static; 
+    type Result : 'static;
     fn try_into_domain(self) -> Result<Self::Result,String>;
 }
 
 /// Trait for structs that given a shape can be turned into a domain and either checking the shape
-/// or scaling to conform to the shape. 
+/// or scaling to conform to the shape.
 pub trait IntoShapedDomain<const N : usize> {
     type Result : DomainTrait<N>+'static;
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String>;
@@ -104,11 +104,11 @@ impl VectorDomainTrait for QuadraticCone {
 impl VectorDomainTrait for SVecPSDCone {
     fn check_conesize(&self, d : usize) -> Result<(),String> {
         if d < 1 {
-            return Err(format!("Size of SVecPSDCone must be at least 1, got: {}", d)); 
+            return Err(format!("Size of SVecPSDCone must be at least 1, got: {}", d));
         }
         let n = ((((1 + d*8) as f64).sqrt()-1.0)/2.0) as usize;
         if n * (n+1)/2 != d {
-            return Err(format!("Size of SVecPSDCone must correspond to the lower triangular part of a square matrix, but got: {}", d)); 
+            return Err(format!("Size of SVecPSDCone must correspond to the lower triangular part of a square matrix, but got: {}", d));
         }
         Ok(())
     }
@@ -118,7 +118,7 @@ impl VectorDomainTrait for SVecPSDCone {
 }
 impl VectorDomainTrait for GeometricMeanCone {
     fn check_conesize(&self, d : usize) -> Result<(),String> { if d >= 1 { Ok(()) } else { Err("Invalid dimension for geometric mean code".to_string()) } }
-    fn to_conic_domain_type(&self) -> VectorDomainType { 
+    fn to_conic_domain_type(&self) -> VectorDomainType {
         match self.0 {
             AsymmetricConeType::Primal => VectorDomainType::GeometricMeanCone,
             AsymmetricConeType::Dual => VectorDomainType::DualGeometricMeanCone
@@ -135,8 +135,8 @@ impl VectorDomainTrait for ExponentialCone {
     }
 }
 impl VectorDomainTrait for PowerCone {
-    fn check_conesize(&self, d : usize) -> Result<(),String> { 
-        if d >= self.0.len() { Ok(()) } else { Err("Invalid dimension for power cone".to_string()) } 
+    fn check_conesize(&self, d : usize) -> Result<(),String> {
+        if d >= self.0.len() { Ok(()) } else { Err("Invalid dimension for power cone".to_string()) }
     }
     fn to_conic_domain_type(&self) -> VectorDomainType {
         match self.1 {
@@ -184,8 +184,8 @@ impl<const N : usize> DomainTrait<N>   for LinearRangeDomain<N> {}
 
 
 //impl<const N : usize,D> AnyVectorDomain for VectorDomain<N,D> where D : VectorDomainTrait {
-//    fn extract(&self) -> (&D,&[f64],&[usize],usize,bool) { 
-//        (&self.domain_type,self.offset.as_slice(),&self.shape,self.conedim,self.is_integer) 
+//    fn extract(&self) -> (&D,&[f64],&[usize],usize,bool) {
+//        (&self.domain_type,self.offset.as_slice(),&self.shape,self.conedim,self.is_integer)
 //    }
 //}
 
@@ -201,7 +201,7 @@ pub struct ScalableVectorDomain<D> where D : VectorDomainTrait {
 /// A struct that can be turned into [VectorDomain] via [IntoDomain] or [IntoShapedDomain].
 ///
 /// The struct acts as a factory where the domain properties can be updated. Internally in the
-/// [crate::Model] object it is turned into a [VectorDomain] and consistency is checked.
+/// [crate::ModelAPI] object it is turned into a [VectorDomain] and consistency is checked.
 pub struct VectorProtoDomain<const N : usize,D> where D : VectorDomainTrait {
     shape       : [usize;N],
     domain_type : D,
@@ -217,7 +217,7 @@ pub struct VectorProtoDomain<const N : usize,D> where D : VectorDomainTrait {
 pub struct VectorDomain<const N : usize, D> {
     /// Cone type, including any cone parameters (like the powers for a power cone)
     domain_type : D,
-    /// Offset 
+    /// Offset
     offset  : Vec<f64>,
     /// Shape if the domain
     shape   : [usize; N],
@@ -232,15 +232,15 @@ pub struct VectorDomain<const N : usize, D> {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl<D> ScalableVectorDomain<D> where D : VectorDomainTrait {
-    pub fn with_shape<const N : usize>(self, shape : &[usize;N]) -> VectorProtoDomain<N,D> { 
+    pub fn with_shape<const N : usize>(self, shape : &[usize;N]) -> VectorProtoDomain<N,D> {
         let cone_dim = if let Some(cd) = self.cone_dim { cd } else { N.max(1) - 1 };
-        VectorProtoDomain{ 
-            shape : *shape,             
+        VectorProtoDomain{
+            shape : *shape,
             cone_dim,
             offset : vec![0.0; shape.iter().product()],
             domain_type : self.domain_type,
-            is_integer : self.is_integer 
-       } 
+            is_integer : self.is_integer
+       }
     }
     pub fn with_conedim(self,cone_dim : usize) -> Self { ScalableVectorDomain{ cone_dim : Some(cone_dim), ..self } }
     pub fn integer(self)    -> Self { ScalableVectorDomain{is_integer : true,  ..self} }
@@ -258,12 +258,12 @@ impl<const N : usize,D> IntoShapedDomain<N> for ScalableVectorDomain<D> where D 
     type Result = VectorDomain<N,D>;
     fn try_into_domain(self,shape : [usize;N]) -> Result<Self::Result,String> {
        // println!("{}:{}: IntoDomain::try_into_domain() shape = {:?}, conedim = {:?}",file!(),line!(),&shape,self.cone_dim);
-        let cd = 
+        let cd =
             if shape.len() == 0 {
                 1
             }
             else if let Some(d) = self.cone_dim {
-                *shape.get(d).ok_or_else(|| ("Invalid cone dimension index for this shape".to_string()))?
+                *shape.get(d).ok_or_else(|| "Invalid cone dimension index for this shape".to_string())?
             }
             else {
                 shape[N-1]
@@ -287,12 +287,12 @@ impl<const N : usize,D> IntoShapedDomain<N> for ScalableVectorDomain<D> where D 
 ///////////////////////////////////////////////////////////////////////////////
 
 impl<const N : usize,D> VectorProtoDomain<N,D> where D : VectorDomainTrait {
-    pub fn with_shape<const M : usize>(self, shape : &[usize;M]) -> VectorProtoDomain<M,D> { 
-        VectorProtoDomain{ 
-            shape : *shape, 
+    pub fn with_shape<const M : usize>(self, shape : &[usize;M]) -> VectorProtoDomain<M,D> {
+        VectorProtoDomain{
+            shape : *shape,
             domain_type : self.domain_type,
             offset : self.offset,
-            cone_dim : self.cone_dim, 
+            cone_dim : self.cone_dim,
             is_integer : self.is_integer
         }
     }
@@ -381,22 +381,22 @@ pub trait OffsetTrait {
 
 /// Domain of zeros of the given shape.
 pub fn zeros<const N : usize>(shape : &[usize; N]) -> LinearProtoDomain<N> { zero().with_shape(shape) }
-/// Domain of values greater than the offset `v`. 
-/// 
+/// Domain of values greater than the offset `v`.
+///
 /// # Arguments
 /// - `v` - Offset, the shape of the domain is taken from the shape of `v`. If `v` is a scalar, the
 ///   result is a scalable domain.
 pub fn greater_than<T : OffsetTrait>(v : T) -> T::Result { v.greater_than() }
 
-/// Domain of values less than the offset `v`. 
-/// 
+/// Domain of values less than the offset `v`.
+///
 /// # Arguments
 /// - `v` - Offset, the shape of the domain is taken from the shape of `v`. If `v` is a scalar, the
 ///   result is a scalable domain.
 pub fn less_than<T : OffsetTrait>(v : T) -> T::Result { v.less_than() }
 
-/// Domain of values equal to the offset `v`. 
-/// 
+/// Domain of values equal to the offset `v`.
+///
 /// # Arguments
 /// - `v` - Offset, the shape of the domain is taken from the shape of `v`. If `v` is a scalar, the
 ///   result is a scalable domain.
@@ -412,8 +412,8 @@ pub fn equal_to<T : OffsetTrait>(v : T) -> T::Result { v.equal_to() }
 /// \\left\\{ x \\in R^n | x_1^2 \\geq \\left\\Vert x_2^2 + \\cdots + x_n^2 \\right\\Vert^2, x₁ \\geq 0 \\right\\}
 /// $$
 ///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
-pub fn in_quadratic_cone() -> ScalableVectorDomain<QuadraticCone> { 
-        ScalableVectorDomain{ domain_type: QuadraticCone::Normal, is_integer : false, cone_dim : None} 
+pub fn in_quadratic_cone() -> ScalableVectorDomain<QuadraticCone> {
+        ScalableVectorDomain{ domain_type: QuadraticCone::Normal, is_integer : false, cone_dim : None}
 }
 
 /// Domain of a single rotated quadratic cone of unknown size. The size can subsequently be defined, or it
@@ -425,8 +425,8 @@ pub fn in_quadratic_cone() -> ScalableVectorDomain<QuadraticCone> {
 /// \\left\\{ x \in R^n | \\frac{1}{2} x_1 x_2 \geq \\left\\Vert x_3^2 + \\cdots + x_n^2 \\right\\Vert^2, x_1, x_2 \\geq 0 \\right\\}
 /// $$
 ///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
-pub fn in_rotated_quadratic_cone() -> ScalableVectorDomain<QuadraticCone> { 
-    ScalableVectorDomain{ domain_type: QuadraticCone::Rotated, is_integer : false, cone_dim : None} 
+pub fn in_rotated_quadratic_cone() -> ScalableVectorDomain<QuadraticCone> {
+    ScalableVectorDomain{ domain_type: QuadraticCone::Rotated, is_integer : false, cone_dim : None}
 }
 
 /// Domain of a single scaled vectorized PSD cone of unknown size. The size can subsequently be defined, or it
@@ -434,13 +434,13 @@ pub fn in_rotated_quadratic_cone() -> ScalableVectorDomain<QuadraticCone> {
 /// dimension.
 ///
 /// For an `n` dimensional positive symmetric matrix this
-/// is the scaled lower triangular part of the matrix in column-major format, i.e. 
+/// is the scaled lower triangular part of the matrix in column-major format, i.e.
 /// $$
 /// \\left\\{ x \\in R^{n(n+1)/2} | \\mathrm{sMat}(x) \\in S_+^n \\right\\}
 /// $$
 /// where
 /// $$
-/// \\mathrm{sMat}(x) = \\left[ \\begin{array}{cccc} 
+/// \\mathrm{sMat}(x) = \\left[ \\begin{array}{cccc}
 ///   x_1            & x_2/\\sqrt{2} & \\cdots & x_n/\\sqrt{2}      \\\\
 ///   x_2/\\sqrt{2}  & x_n+1         & \\cdots & x_{2n-1}/\\sqrt{2} \\\\
 ///                  &               & \\cdots &                    \\\\
@@ -448,8 +448,8 @@ pub fn in_rotated_quadratic_cone() -> ScalableVectorDomain<QuadraticCone> {
 /// \\end{array} \\right]
 /// $$
 ///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
-pub fn in_svecpsd_cone() -> ScalableVectorDomain<SVecPSDCone> { 
-    ScalableVectorDomain{ domain_type: SVecPSDCone(), is_integer : false, cone_dim : None} 
+pub fn in_svecpsd_cone() -> ScalableVectorDomain<SVecPSDCone> {
+    ScalableVectorDomain{ domain_type: SVecPSDCone(), is_integer : false, cone_dim : None}
 }
 /// Domain of a single geometric mean cone of unknown size. The size can subsequently be defined, or it
 /// can be deduced when used in a constraint. By default the cones are aligned in the inner-most
@@ -460,8 +460,8 @@ pub fn in_svecpsd_cone() -> ScalableVectorDomain<SVecPSDCone> {
 /// \\left\\{ x \\in R^n| (x_1\\cdots x_{n-1})^{1/(n-1)} |x_n|, x_1,\\ldots,x_{n-1} \\geq 0\\right\\}
 /// $$
 ///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
-pub fn in_geometric_mean_cone() -> ScalableVectorDomain<GeometricMeanCone> { 
-    ScalableVectorDomain{ domain_type: GeometricMeanCone(AsymmetricConeType::Primal), is_integer : false, cone_dim : None} 
+pub fn in_geometric_mean_cone() -> ScalableVectorDomain<GeometricMeanCone> {
+    ScalableVectorDomain{ domain_type: GeometricMeanCone(AsymmetricConeType::Primal), is_integer : false, cone_dim : None}
 }
 
 
@@ -474,8 +474,8 @@ pub fn in_geometric_mean_cone() -> ScalableVectorDomain<GeometricMeanCone> {
 /// \\left\\{ x \\in R^n | (n-1)(x_1 \\cdots x_{n-1})^{1/(n-1)} |x_n|, x_1,\\ldots,x_{n-1} \\geq 0\\right\\}
 /// $$
 ///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
-pub fn in_dual_geometric_mean_cone() -> ScalableVectorDomain<GeometricMeanCone> { 
-    ScalableVectorDomain{ domain_type: GeometricMeanCone(AsymmetricConeType::Dual), is_integer : false, cone_dim : None} 
+pub fn in_dual_geometric_mean_cone() -> ScalableVectorDomain<GeometricMeanCone> {
+    ScalableVectorDomain{ domain_type: GeometricMeanCone(AsymmetricConeType::Dual), is_integer : false, cone_dim : None}
 }
 /// domain of a single exponential cone of unknown size. By default the cones are aligned in the inner-most
 /// dimension, which must be 3
@@ -484,8 +484,8 @@ pub fn in_dual_geometric_mean_cone() -> ScalableVectorDomain<GeometricMeanCone> 
 /// $$
 /// \\left\\{ x \\in R^3 | x_1 \\geq x_1 e^{x_3/x_2}, x_0, x_1 \geq 0 \\right\\}
 /// $$
-pub fn in_exponential_cone() -> ScalableVectorDomain<ExponentialCone> { 
-    ScalableVectorDomain{ domain_type: ExponentialCone(AsymmetricConeType::Primal), is_integer : false, cone_dim : None} 
+pub fn in_exponential_cone() -> ScalableVectorDomain<ExponentialCone> {
+    ScalableVectorDomain{ domain_type: ExponentialCone(AsymmetricConeType::Primal), is_integer : false, cone_dim : None}
 }
 
 /// Domain of a single dual exponential cone of unknown size. The result is a vector domain of size `dim`. By default the cones are aligned in the inner-most
@@ -496,14 +496,14 @@ pub fn in_exponential_cone() -> ScalableVectorDomain<ExponentialCone> {
 /// \\left\\{ x \\in R^3 | x_1 \\geq -x_3 e^{-1} e^{x_2/x_3}, x_3 \\geq 0, x_1 \\geq 0 \\right\\}
 /// $$
 ///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
-pub fn in_dual_exponential_cone() -> ScalableVectorDomain<ExponentialCone> { 
-    ScalableVectorDomain{ domain_type: ExponentialCone(AsymmetricConeType::Dual),   is_integer : false, cone_dim : None} 
+pub fn in_dual_exponential_cone() -> ScalableVectorDomain<ExponentialCone> {
+    ScalableVectorDomain{ domain_type: ExponentialCone(AsymmetricConeType::Dual),   is_integer : false, cone_dim : None}
 }
 
 /// Domain of a power cone of unknown size. By default the cones are aligned in the inner-most
 /// dimension.
 ///
-/// The cone is defined as 
+/// The cone is defined as
 /// $$
 /// \\left\\{ x \\in R^n | x_2^{\\beta_1} \\cdots x_k^{\\beta_k} \\geq \\sqrt{x_{k+1}^2 \\cdots x_n^2}, x_0,\\ldots, x_k \geq 0 \\right\\}
 /// $$
@@ -512,10 +512,10 @@ pub fn in_dual_exponential_cone() -> ScalableVectorDomain<ExponentialCone> {
 ///   by `sum(alpha)`
 ///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
 pub fn in_power_cone(alpha : &[f64]) -> ScalableVectorDomain<PowerCone> {
-    let s : f64 = alpha.iter().sum(); 
-    ScalableVectorDomain{ 
+    let s : f64 = alpha.iter().sum();
+    ScalableVectorDomain{
         domain_type : PowerCone(alpha.iter().map(|a| a/s).collect(),AsymmetricConeType::Primal),
-        is_integer  : false, 
+        is_integer  : false,
         cone_dim    : None} }
 /// Domain of a single power cone. By default the cones are aligned in the inner-most
 /// dimension.
@@ -529,12 +529,12 @@ pub fn in_power_cone(alpha : &[f64]) -> ScalableVectorDomain<PowerCone> {
 /// - `alpha` The powers of the power cone. This will be normalized, i.e. each element is divided
 ///   by `sum(alpha)`
 ///<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
-pub fn in_dual_power_cone(alpha : &[f64]) -> ScalableVectorDomain<PowerCone> { 
+pub fn in_dual_power_cone(alpha : &[f64]) -> ScalableVectorDomain<PowerCone> {
     let s : f64 = alpha.iter().sum();
-    ScalableVectorDomain{ 
-        domain_type : PowerCone(alpha.iter().map(|a| a/s).collect(),AsymmetricConeType::Dual), 
+    ScalableVectorDomain{
+        domain_type : PowerCone(alpha.iter().map(|a| a/s).collect(),AsymmetricConeType::Dual),
         is_integer  : false,
-        cone_dim    : None } 
+        cone_dim    : None }
 }
 
 fn in_cones<const N : usize,D>(shape : &[usize; N], cone_dim : usize,domain_type : D) -> VectorProtoDomain<N,D> where D : VectorDomainTrait {
@@ -544,45 +544,45 @@ fn in_cones<const N : usize,D>(shape : &[usize; N], cone_dim : usize,domain_type
     VectorProtoDomain{domain_type,
                       offset : vec![0.0; shape.iter().product()],
                       shape:*shape,
-                      cone_dim, 
+                      cone_dim,
                       is_integer : false}
 }
 
 /// Domain of a multiple quadratic cones.
-/// 
+///
 /// See [in_quadratic_cone].
 ///
 /// # Arguments
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
-pub fn in_quadratic_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> VectorProtoDomain<N,QuadraticCone> { 
-    in_cones(shape,conedim,QuadraticCone::Normal) 
+pub fn in_quadratic_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> VectorProtoDomain<N,QuadraticCone> {
+    in_cones(shape,conedim,QuadraticCone::Normal)
 }
 /// domain of a multiple rotated quadratic cones.
-/// 
+///
 /// See [in_rotated_quadratic_cone].
 ///
 /// # arguments
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
 pub fn in_rotated_quadratic_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> VectorProtoDomain<N,QuadraticCone> {
-    in_cones(shape,conedim,QuadraticCone::Rotated) 
+    in_cones(shape,conedim,QuadraticCone::Rotated)
 }
 /// Domain of a multiple scaled vectorized PSD cones.
-/// 
+///
 /// See [in_svecpsd_cone].
 /// # Arguments
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
-pub fn in_svecpsd_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> VectorProtoDomain<N,SVecPSDCone> { 
+pub fn in_svecpsd_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> VectorProtoDomain<N,SVecPSDCone> {
     let dim = shape[conedim];
     let n = ((-1.0 + (1.0+8.0*dim as f64).sqrt())/2.0).floor() as usize;
     if n * (n+1)/2 != dim { panic!("Invalid dimension {} for svecpsd cone", dim) }
 
-    in_cones(shape,conedim,SVecPSDCone()) 
+    in_cones(shape,conedim,SVecPSDCone())
 }
 /// Domain of a multiple geometric mean cones.
-/// 
+///
 /// See [in_geometric_mean_cone].
 /// # Arguments
 /// - `shape` - shape of the cone.
@@ -596,27 +596,27 @@ pub fn in_geometric_mean_cones<const N : usize>(shape : &[usize; N], conedim : u
 /// # Arguments
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
-pub fn in_dual_geometric_mean_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> VectorProtoDomain<N,GeometricMeanCone> { 
+pub fn in_dual_geometric_mean_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> VectorProtoDomain<N,GeometricMeanCone> {
     in_cones(shape,conedim,GeometricMeanCone(AsymmetricConeType::Dual))
 }
 /// domain of a multiple exponential cones.
-/// 
+///
 /// See [in_exponential_cone].
 /// # arguments
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
-pub fn in_exponential_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> VectorProtoDomain<N,ExponentialCone> { 
+pub fn in_exponential_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> VectorProtoDomain<N,ExponentialCone> {
     if let Some(&d) = shape.get(conedim) { if d != 3 { panic!("Invalid shape or exponential cone") } }
-    in_cones(shape,conedim,ExponentialCone(AsymmetricConeType::Primal)) 
+    in_cones(shape,conedim,ExponentialCone(AsymmetricConeType::Primal))
 }
 /// Domain of a multiple dual exponential cones.
-/// 
+///
 /// See [in_dual_exponential_cone].
 ///
 /// # Arguments
 /// - `shape` - shape of the cone.
 /// - `conedim` - index of the dimension in which the cones are aligned.
-pub fn in_dual_exponential_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> VectorProtoDomain<N,ExponentialCone> { 
+pub fn in_dual_exponential_cones<const N : usize>(shape : &[usize; N], conedim : usize) -> VectorProtoDomain<N,ExponentialCone> {
     if let Some(&d) = shape.get(conedim) { if d != 3 { panic!("Invalid shape or exponential cone") } }
     in_cones(shape,conedim,ExponentialCone(AsymmetricConeType::Dual))
 }
@@ -657,9 +657,9 @@ pub fn in_dual_power_cones<const N : usize>(shape : &[usize;N], cone_dim : usize
         is_integer : false}
 }
 
-/// Define a range for use with [crate::Model::constraint] and
-/// [crate::Model::variable] to create ranged variables and constraints.
-/// 
+/// Define a range for use with [crate::ModelAPI::constraint] and
+/// [crate::ModelAPI::variable] to create ranged variables and constraints.
+///
 /// The two bounds must have same type and can be either a scalar or a vector. Shape and sparsity
 /// can be defined subsequently.
 /// # Arguments

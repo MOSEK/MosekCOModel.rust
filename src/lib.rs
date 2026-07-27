@@ -13,7 +13,7 @@
 //! The crate defines a dummy backend that allows inputting data, but cannot solve, write or do
 //! anything useful with it.
 //!
-//! The [Model] object encapsulates a model of the form
+//! The [ModelAPI] object encapsulates a model of the form
 //! $$
 //! \begin{array}{ll}
 //! \\mathrm{min/max}     & c^t x \\\\
@@ -28,47 +28,47 @@
 //!   [greater_than]).
 //! - Unbounded values (see [unbounded]).
 //! - Fixed values (see [zero] and [equal_to])
-//! - Second order cone(s) (see [in_quadratic_cone], [in_quadratic_cones]): 
+//! - Second order cone(s) (see [in_quadratic_cone], [in_quadratic_cones]):
 //!   $$
 //!   \\left\\{ x \\in R^n | x_1^2 \\geq \\left\\Vert x_2^2 + \\cdots + x_n^2 \\right\\Vert^2, x₁ \\geq 0 \\right\\}
 //!   $$
-//! - Rotated second order cone(s) (see [in_rotated_quadratic_cone], [in_rotated_quadratic_cones]): 
+//! - Rotated second order cone(s) (see [in_rotated_quadratic_cone], [in_rotated_quadratic_cones]):
 //!   $$
 //!   \\left\\{ x \in R^n | \\frac{1}{2} x_1 x_2 \geq \\left\\Vert x_3^2 + \\cdots + x_n^2 \\right\\Vert^2, x_1, x_2 \\geq 0 \\right\\}
 //!   $$
 //!<!-- - Symmetric positive semidefinite cone(s) if dimension `n > 1` (see [in_psd_cone], [in_psd_cones]).-->
-//! - Primal power cone(s) (see [in_power_cone], [in_power_cones]): 
+//! - Primal power cone(s) (see [in_power_cone], [in_power_cones]):
 //!   $$
 //!   \\left\\{ x \\in R^n | x_2^{\\beta_1} \\cdots x_k^{\\beta_k} \\geq \\sqrt{x_{k+1}^2 \\cdots x_n^2}, x_0,\\ldots, x_k \geq 0 \\right\\}
 //!   $$
-//! - Dual power cone(s) (see [in_dual_power_cone], [in_dual_power_cones]): 
+//! - Dual power cone(s) (see [in_dual_power_cone], [in_dual_power_cones]):
 //!   $$
 //!   \\left\\{ x \\in R^n | (x_1/\\beta_1)^{\\beta_1} \\cdots (x_k)^{\\beta_k} \geq \\sqrt{x_{k+1}^2 \\cdots x_n^2}, x_0,\\ldots, x_k \\geq 0 \\right\\}
 //!   $$
-//! - Primal exponential cone(s) (see [in_exponential_cone], [in_exponential_cones]): 
+//! - Primal exponential cone(s) (see [in_exponential_cone], [in_exponential_cones]):
 //!   $$
 //!   \\left\\{ x \\in R^3 | x_1 \\geq x_1 e^{x_3/x_2}, x_0, x_1 \geq 0 \\right\\}
 //!   $$
-//! - Dual exponential cone(s) (see [in_dual_exponential_cone], [in_dual_exponential_cones]): 
+//! - Dual exponential cone(s) (see [in_dual_exponential_cone], [in_dual_exponential_cones]):
 //!   $$
 //!   \\left\\{ x \\in R^3 | x_1 \\geq -x_3 e^{-1} e^{x_2/x_3}, x_3 \\geq 0, x_1 \\geq 0 \\right\\}
 //!   $$
-//! - Primal geometric mean cone(s) (see [in_geometric_mean_cone], [in_geometric_mean_cones]): 
+//! - Primal geometric mean cone(s) (see [in_geometric_mean_cone], [in_geometric_mean_cones]):
 //!   $$
 //!   \\left\\{ x \\in R^n| (x_1\\cdots x_{n-1})^{1/(n-1)} |x_n|, x_1,\\ldots,x_{n-1} \\geq 0\\right\\}
 //!   $$
-//! - Dual geometric mean cone(s) (see [in_dual_geometric_mean_cone], [in_dual_geometric_mean_cones]): 
+//! - Dual geometric mean cone(s) (see [in_dual_geometric_mean_cone], [in_dual_geometric_mean_cones]):
 //!   $$
 //!   \\left\\{ x \\in R^n | (n-1)(x_1 \\cdots x_{n-1})^{1/(n-1)} |x_n|, x_1,\\ldots,x_{n-1} \\geq 0\\right\\}
 //!   $$
 //! - Scaled vectorized positive semidefinite cone(s) (see [in_svecpsd_cone], [in_svecpsd_cones]). For a `n` dimensional positive symmetric matrix this
-//!   is the scaled lower triangular part of the matrix in column-major format, i.e. 
+//!   is the scaled lower triangular part of the matrix in column-major format, i.e.
 //!   $$
 //!   \\left\\{ x \\in R^{n(n+1)/2} | \\mathrm{sMat}(x) \\in S_+^n \\right\\}
 //!   $$
 //!   where
 //!   $$
-//!   \\mathrm{sMat}(x) = \\left[ \\begin{array}{cccc} 
+//!   \\mathrm{sMat}(x) = \\left[ \\begin{array}{cccc}
 //!     x_1            & x_2/\\sqrt{2} & \\cdots & x_n/\\sqrt{2}      \\\\
 //!     x_2/\\sqrt{2}  & x_n+1         & \\cdots & x_{2n-1}/\\sqrt{2} \\\\
 //!                    &               & \\cdots &                    \\\\
@@ -79,7 +79,7 @@
 //!   $$
 //!   X \\in \\mathcal{S}^n_+
 //!   $$
-//! 
+//!
 //! # Expressions and shapes
 //!
 //! The central traits for expressions are [ExprTrait], which all objects that must act as
@@ -93,15 +93,15 @@
 //! ```
 //! use mosekcomodel::{ExprTrait,IntoExpr};
 //!
-//! struct ExprAdd<const N : usize,E1,E2> 
-//!     where 
+//! struct ExprAdd<const N : usize,E1,E2>
+//!     where
 //!         E1 : ExprTrait<N>,
 //!         E2 : ExprTrait<N>
 //! {
 //!     e1 : E1,
 //!     e2 : E2
 //! }
-//! fn add<const N : usize, E1,E2>( e1 : E1, e2 : E2 ) -> ExprAdd<N,E1::Result,E2::Result> 
+//! fn add<const N : usize, E1,E2>( e1 : E1, e2 : E2 ) -> ExprAdd<N,E1::Result,E2::Result>
 //!     where E1 : IntoExpr<N>,
 //!           E2 : IntoExpr<N>
 //! {
@@ -136,7 +136,7 @@
 //! still have to be checked at runtime.
 //!
 //! ## Domains
-//! 
+//!
 //! A domain is an object that indicates things like type (cone type or domain type), cone
 //! parameters, right-hand sides, shape and sparsity pattern. This is used when creating constraint
 //! or variables to define their properties. Normally, the domain is not created directly, but
@@ -146,30 +146,30 @@
 //! create varibles and constraints.
 //!
 //! ## Constraints and Variables
-//! 
-//! Variables and constraints are created through the [Model] object. Functions creating variables
+//!
+//! Variables and constraints are created through the [ModelAPI] object. Functions creating variables
 //! and constraints have two versions, a `try_` and a plain version. The former will return a
-//! [Result::Err] whenever an error was encountered that left the [Model] in a consistent state.
+//! [Result::Err] whenever an error was encountered that left the [ModelAPI] in a consistent state.
 //! The latter version will `panic!` on any error.
 //!
 //! ### Variables
 //!
-//! When a [Variable] is created in a model as [Model::variable], the
+//! When a [Variable] is created in a model as [ModelAPI::variable], the
 //! model adds the necessary
 //! internal information to map a linear variable index to something in the underlying task, but
 //! after that, a variable is essentially a list of indexes of the scalar variables t a shape and
 //! sparsity. Variable objects can be stacked, indexed and sliced to obtain new variable objects.
 //!
 //! When a model has been optimized, the variable object is used to access the parts of the
-//! solution it represents through the [Model] object.
+//! solution it represents through the [ModelAPI] object.
 //!
 //! ### Constraints
 //!
-//! A constraint is created in a [Model] from an expression (something implementing [ExprTrait])
-//! and a domain using [Model::constraint]. The sparsity pattern of the domain is ignored, and a
+//! A constraint is created in a [ModelAPI] from an expression (something implementing [ExprTrait])
+//! and a domain using [ModelAPI::constraint]. The sparsity pattern of the domain is ignored, and a
 //! constraint is always dense. When a constraint has been created it can be indexed, sliced and
 //! stacked like a variable, and it can be used to access the relevant parts of the solution
-//! through the [Model] object.
+//! through the [ModelAPI] object.
 //!
 //! ## Expression
 //!
@@ -211,7 +211,7 @@
 //! // Set the objective function to (c^t * x)
 //! m.objective(Some("obj"), Sense::Maximize, x.dot(c.as_slice()));
 //! ```
-//! 
+//!
 //! The project does not include a solver directly, but it is possible to solve (currently
 //! linear-only) models by using the OptServer backend to offload to a MOSEK OptServer instance,
 //! for example [solve.mosek.com:30080](http://solve.mosek.com) or an instance running locally:
@@ -234,7 +234,7 @@
 //! # m.objective(Some("obj"), Sense::Maximize, x.dot(c.as_slice()));
 //!
 //! m.set_parameter((), optserver::SolverAddress("solve.mosek.com:30080".to_string()));
-//! 
+//!
 //! m.solve();
 //! let (psta,dsta) = m.solution_status(SolutionType::Default);
 //! println!("Status = {:?}/{:?}",psta,dsta);
@@ -244,13 +244,13 @@
 //! ```
 //!
 //! # Example: `portfolio_1_basic`
-//! 
+//!
 //! Example using second order cones to model risk in a basic portfolio model.
 //!
 //! ```rust
 //! use mosekcomodel::*;
 //! use mosekcomodel::dummy::Model;
-//! 
+//!
 //! // Computes the optimal portfolio for a given risk
 //! //
 //! // # Arguments
@@ -270,23 +270,23 @@
 //!     // Redirect log output from the solver to stdout for debugging.
 //!     // if uncommented.
 //!     model.set_log_handler(|msg| print!("{}",msg));
-//! 
+//!
 //!     // Defines the variables (holdings). Shortselling is not allowed.
 //!     let x = model.variable(Some("x"), greater_than(vec![0.0;n]));
-//! 
+//!
 //!     //  Maximize expected return
 //!     model.objective(Some("obj"), Sense::Maximize, x.dot(mu));
-//! 
+//!
 //!     // The amount invested  must be identical to intial wealth
 //!     model.constraint(Some("budget"), x.sum(), equal_to(w+x0.iter().sum::<f64>()));
-//! 
+//!
 //!     // Imposes a bound on the risk
-//!     model.constraint(Some("risk"), 
-//!                      vstack![Expr::from(gamma).reshape(&[1]), 
+//!     model.constraint(Some("risk"),
+//!                      vstack![Expr::from(gamma).reshape(&[1]),
 //!                              gt.mul(&x)], in_quadratic_cone());
 //!     model
 //! }
-//! 
+//!
 //! const N : usize   = 8;
 //! const W : f64     = 59.0;
 //! let mu            = [0.07197349, 0.15518171, 0.17535435, 0.0898094 , 0.42895777, 0.39291844, 0.32170722, 0.18378628];
@@ -301,7 +301,7 @@
 //!     0.     , 0.     , 0.     , 0.     , 0.     , 0.21552, 0.05663, 0.06187,
 //!     0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.22514, 0.03327,
 //!     0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.     , 0.2202 ]);
-//! 
+//!
 //! _ = basic_markowitz( N, &mu, &GT, &x0, W, gamma);
 //! ```
 //! <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>

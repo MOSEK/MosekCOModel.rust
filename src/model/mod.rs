@@ -1,4 +1,4 @@
-
+//! <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"> </script>
 use itertools::izip;
 use std::fmt::Debug;
 use std::ops::ControlFlow;
@@ -67,7 +67,7 @@ pub enum SolutionStatus {
     /// primal certificate prooves dual illposedness, and a dual certificate indicates primal
     /// illposedness.
     CertIllposed,
-    /// Indicates that the solution status is not known, basically it can be arbitrary values. 
+    /// Indicates that the solution status is not known, basically it can be arbitrary values.
     Unknown,
     /// Indicates that the solution is not available.
     Undefined
@@ -99,7 +99,7 @@ pub struct Solution {
 
 impl Solution {
     pub fn new() -> Solution { Solution{primal : SolutionPart::new(0,0) , dual : SolutionPart::new(0,0)  } }
-    
+
     pub fn resize(& mut self,numvar : usize, numcon : usize) {
         self.primal.resize(numvar,numcon);
         self.dual.resize(numvar,numcon);
@@ -115,15 +115,15 @@ impl Solution {
  *************************************************************************************************/
 
 /// Represents something that can be used as a domain for a variable.
-pub trait VarDomainTrait<M> 
+pub trait VarDomainTrait<M>
 {
-    type Result; 
+    type Result;
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String>;
 }
 
-impl<const N : usize,M,D> VarDomainTrait<M> for VectorDomain<N,D> 
-    where M : VectorConeModelTrait<D>, 
-          D : VectorDomainTrait  
+impl<const N : usize,M,D> VarDomainTrait<M> for VectorDomain<N,D>
+    where M : VectorConeModelTrait<D>,
+          D : VectorDomainTrait
 {
     type Result = Variable<N>;
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
@@ -131,7 +131,7 @@ impl<const N : usize,M,D> VarDomainTrait<M> for VectorDomain<N,D>
     }
 }
 
-impl<const N : usize,M> VarDomainTrait<M> for &[usize;N] where M : BaseModelTrait 
+impl<const N : usize,M> VarDomainTrait<M> for &[usize;N] where M : BaseModelTrait
 {
     type Result = Variable<N>;
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
@@ -139,7 +139,7 @@ impl<const N : usize,M> VarDomainTrait<M> for &[usize;N] where M : BaseModelTrai
     }
 }
 
-impl<const N : usize,M> VarDomainTrait<M> for LinearDomain<N> where M : BaseModelTrait 
+impl<const N : usize,M> VarDomainTrait<M> for LinearDomain<N> where M : BaseModelTrait
 {
     type Result = Variable<N>;
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
@@ -147,7 +147,7 @@ impl<const N : usize,M> VarDomainTrait<M> for LinearDomain<N> where M : BaseMode
     }
 }
 
-impl<M> VarDomainTrait<M> for usize where M : BaseModelTrait 
+impl<M> VarDomainTrait<M> for usize where M : BaseModelTrait
 {
     type Result = Variable<1>;
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
@@ -155,7 +155,7 @@ impl<M> VarDomainTrait<M> for usize where M : BaseModelTrait
     }
 }
 
-impl<const N : usize,M> VarDomainTrait<M> for LinearRangeDomain<N> where M : BaseModelTrait 
+impl<const N : usize,M> VarDomainTrait<M> for LinearRangeDomain<N> where M : BaseModelTrait
 {
     type Result = (Variable<N>,Variable<N>);
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
@@ -163,7 +163,7 @@ impl<const N : usize,M> VarDomainTrait<M> for LinearRangeDomain<N> where M : Bas
     }
 }
 
-impl<const N : usize, M> VarDomainTrait<M> for PSDDomain<N> where M : PSDModelTrait 
+impl<const N : usize, M> VarDomainTrait<M> for PSDDomain<N> where M : PSDModelTrait
 {
     type Result = Variable<N>;
     fn create(self, m : & mut M, name : Option<&str>) -> Result<Self::Result,String> {
@@ -180,7 +180,7 @@ impl<const N : usize, M> VarDomainTrait<M> for PSDDomain<N> where M : PSDModelTr
 //======================================================
 
 
-/// 
+///
 /// The trait defining basic functionality for an underlying model object. It defines functions for
 /// adding linear and ranged variables and constraints as well as for
 /// setting objective, parameters, updating constraints, and starting the optimizer.
@@ -193,19 +193,19 @@ pub trait BaseModelTrait {
          shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized;
 
     fn linear_variable<const N : usize,R>
-        (&mut self, 
+        (&mut self,
          name : Option<&str>,
-         dom : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String> 
-        where 
+         dom : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String>
+        where
             Self : Sized;
-    fn linear_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
-        where 
+    fn linear_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String>
+        where
             Self : Sized;
-    fn ranged_variable<const N : usize,R>(&mut self, name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> 
-        where 
+    fn ranged_variable<const N : usize,R>(&mut self, name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String>
+        where
             Self : Sized;
-    fn ranged_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearRangeDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
-        where 
+    fn ranged_constraint<const N : usize>(& mut self, name : Option<&str>, dom  : LinearRangeDomain<N>,shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String>
+        where
             Self : Sized;
 
     fn update(& mut self, idxs : &[usize], shape : &[usize], ptr : &[usize], subj : &[usize], cof : &[f64]) -> Result<(),String>;
@@ -255,8 +255,8 @@ pub trait DJCModelTrait {
     /// independently of the underlying domain type. The `DomainData` defines the type that is
     /// returned when extracting domain data from a domain.
     type DomainData;
-    fn disjunction(& mut self, name : Option<&str>, 
-                   exprs     : &[(&[usize],&[usize],&[usize],&[f64])], 
+    fn disjunction(& mut self, name : Option<&str>,
+                   exprs     : &[(&[usize],&[usize],&[usize],&[f64])],
                    domains   : &[Box<dyn DJCDomainTrait<Self>>],
                    term_size : &[usize]) -> Result<Disjunction,String>;
 }
@@ -359,11 +359,11 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
             sol_bas : Default::default(),
             sol_itr : Default::default(),
             sol_itg : Default::default(),
-        }        
+        }
     }
 
     /// Attach a log printer callback to the model. This will receive messages from the solver
-    /// while solving and during a few other calls like file reading/writing. 
+    /// while solving and during a few other calls like file reading/writing.
     ///
     /// # Arguments
     /// - `func` A function that will be called with strings from the log. Individual lines may be
@@ -395,7 +395,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// - `sense` Objective sense
     /// - `expr` Objective expression, this must contain exactly one
     ///   element. The shape is otherwise ignored.
-    pub fn try_objective<I>(& mut self, name : Option<&str>, sense : Sense, e : I) -> Result<(),String> where I : IntoExpr<0> 
+    pub fn try_objective<I>(& mut self, name : Option<&str>, sense : Sense, e : I) -> Result<(),String> where I : IntoExpr<0>
     {
         e.into_expr().eval_finalize(&mut self.rs, &mut self.ws, &mut self.xs).map_err(|er| er.to_string())?;
         let (shape,_ptr,sp,subj,cof) = self.rs.pop_expr();
@@ -410,7 +410,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
 
 
     /// Same as [ModelAPI::try_objective], but `panic`s on error.
-    pub fn objective<I>(& mut self, name : Option<&str>, sense : Sense, e : I) where I : IntoExpr<0> 
+    pub fn objective<I>(& mut self, name : Option<&str>, sense : Sense, e : I) where I : IntoExpr<0>
     {
         self.try_objective(name, sense, e).unwrap();
     }
@@ -428,10 +428,10 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     ///  while elements 1,3,5 are fixed to 0.0.
     ///
     ///  The domain is required to define the shape in some meaningful way. For example,
-    ///  - [LinearProtoDomain], [ConicProtoDomain], [PSDProtoDomain] for example from [zeros],
+    ///  - [LinearProtoDomain], [VectorProtoDomain], [PSDProtoDomain] for example from [zeros],
     ///   `greater_than(vec![1.0,1.0])` will produce a variable of the shape defined by the domain.
     ///  - [ScalableLinearDomain] as produced by for example [zero], [unbounded] or `greater_than(1.0)` the result is a scalar variable.
-    ///  - [ScalableConicDomain], [ScalablePSDDomain] will fail as they define no meaningful shape.
+    ///  - [ScalableVectorDomain], [ScalablePSDDomain] will fail as they define no meaningful shape.
     ///
     /// # Arguments
     /// - `name` Optional constraint name. This is currently only used to generate names passed to
@@ -448,7 +448,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     ///   string describing the error.
     /// - On non-recoverable errors: Panic.
     pub fn try_variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> Result<R,String>
-        where 
+        where
             I : IntoDomain<Result = D>,
             D : VarDomainTrait<T,Result = R>,
             T : Sized
@@ -464,7 +464,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     ///
     /// Panics on any error.
     pub fn variable<I,D,R>(& mut self, name : Option<&str>, dom : I) -> R
-        where 
+        where
             I : IntoDomain<Result = D>,
             D : VarDomainTrait<T,Result = R>,
             T : Sized
@@ -480,7 +480,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// corresponding expression element to be fixed to 0.0. So, for example in
     ///  ```rust
     ///  use mosekcomodel::*;
-    ///  use mosekcomodel::dummy::Model; 
+    ///  use mosekcomodel::dummy::Model;
     ///  let mut m = Model::new(None);
     ///  let x = m.variable(None, unbounded().with_shape(&[3]));
     ///  let c1 = m.constraint(None, &x,greater_than(vec![1.0,1.0]).with_shape_and_sparsity(&[3],&[[0],[2]]));
@@ -490,9 +490,9 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     ///
     ///  The domain is checked or expanded according to the shape of the `expr` argument. For
     ///  example:
-    ///  - [LinearProtoDomain], [ConicProtoDomain], [PSDProtoDomain] for example from [zeros],
+    ///  - [LinearProtoDomain], [VectorProtoDomain], [PSDProtoDomain] for example from [zeros],
     ///   `greater_than(vec![1.0,1.0])`, the expression shape must exactly match the domain shape.
-    ///  - [ScalableLinearDomain], [ScalableConicDomain] will be expanded to match the shape of the
+    ///  - [ScalableLinearDomain], [ScalableVectorDomain] will be expanded to match the shape of the
     ///    expression, and it will be checked that the shape is valid for the domain type - like
     ///    that an exponential cone has size 3. For conic domains, the cones are by default in the inner-most
     ///    dimension, so if  the expression shape is `[2,3,4]`, the cones in the domain will have
@@ -514,7 +514,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// - On any non-recoverable error: Panic.
     pub fn try_constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> Result<D::Result,String>
         where
-            E : IntoExpr<N>, 
+            E : IntoExpr<N>,
             <E as IntoExpr<N>>::Result : ExprTrait<N>,
             I : IntoShapedDomain<N,Result=D>,
             D : ConstraintDomain<N,T>,
@@ -536,7 +536,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// - On any failure: Panic.
     pub fn constraint<const N : usize,E,I,D>(& mut self, name : Option<&str>, expr :  E, dom : I) -> D::Result
         where
-            E : IntoExpr<N>, 
+            E : IntoExpr<N>,
             <E as IntoExpr<N>>::Result : ExprTrait<N>,
             I : IntoShapedDomain<N,Result = D>,
             D : ConstraintDomain<N,T>,
@@ -544,7 +544,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     {
         self.try_constraint(name, expr, dom).unwrap()
     }
-    
+
     /// Update the expression of a constraint in the model.
     pub fn try_update<const N : usize, E : IntoExpr<N>>(&mut self, item : &Constraint<N>, expr : E) -> Result<(),String>
     {
@@ -561,7 +561,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     {
         self.try_update(item,e).unwrap()
     }
-    
+
 
     /// Add a disjunctive constraint to the model. A disjunctive constraint is a logical constraint
     /// of the form
@@ -571,17 +571,17 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     ///     \\mathrm{or}      \\\\
     ///     \\vdots           \\\\
     ///     \\mathrm{or}      \\\\
-    ///     A_nx+b_n \\in K_n 
+    ///     A_nx+b_n \\in K_n
     /// \\end{array}
     /// $$
-    /// where each \\(K_\\cdot\\) is a single cone or a product of cones. 
+    /// where each \\(K_\\cdot\\) is a single cone or a product of cones.
     ///
     ///
     /// Another example is an indicator constraint like an indicator constraint
-    /// $$ 
-    ///     z\\in\\{0,1\\},\\ z=1 \\Rightarrow Ax+b\\in K_n 
     /// $$
-    /// implemented as 
+    ///     z\\in\\{0,1\\},\\ z=1 \\Rightarrow Ax+b\\in K_n
+    /// $$
+    /// implemented as
     /// $$
     ///     z\\in\\{0,1\\},\\ z = 0\\ \\vee\\ z = 1\\wedge Ax+b\\in K_n
     /// $$
@@ -591,20 +591,20 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// - `terms` Structure defining the terms of the disjunction.
     ///
     /// # Example: Simple disjunction
-    /// A Simple logical disjunctions like 
+    /// A Simple logical disjunctions like
     /// $$
     ///     a^Tx+b = 3 \\vee\\ b^Tx+c = 1.0
     /// $$
     /// can be implemented as:
     /// ```rust
     /// use mosekcomodel::*;
-    /// use mosekcomodel::dummy::Model; 
+    /// use mosekcomodel::dummy::Model;
     /// let mut model = Model::new(None);
     /// let x = model.variable(Some("x"), 5);
     /// let y = model.variable(Some("y"), 3);
     /// let a = vec![1.0,2.0,3.0,4.0,5.0];
     /// let b = vec![5.0,4.0,3.0];
-    /// model.disjunction(None, 
+    /// model.disjunction(None,
     ///                   model.clause(x.dot(a), equal_to(3.0))
     ///                     .or(model.clause(y.dot(b), equal_to(1.0))));
     /// ```
@@ -615,13 +615,13 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// $$
     ///     z = 1 \\Rightarrow a^T x+b = 1
     /// $$
-    //  is implemented as 
+    //  is implemented as
     //  $$
     //      z = 0\\ \\vee\\ \\left[ z=1\\ \\wedge\\ a^Tx+b=1 \\right]
     //  $$
     /// ```rust
     /// use mosekcomodel::*;
-    /// use mosekcomodel::dummy::Model; 
+    /// use mosekcomodel::dummy::Model;
     /// let mut model = Model::new(None);
     /// let a = vec![1.0,2.0,3.0,4.0,5.0];
     /// let x = model.variable(Some("x"), 5);
@@ -632,24 +632,24 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     ///                     .or(model.clause(z, equal_to(1.0))
     ///                           .and(model.clause(x.dot(a), equal_to(1.0)))));
     /// ```
-    pub fn try_disjunction<D>(& mut self, name : Option<&str>, mut terms : D) -> Result<Disjunction,String> 
-        where 
-            D : disjunction::DisjunctionTrait<T>, 
-            T : DJCModelTrait 
+    pub fn try_disjunction<D>(& mut self, name : Option<&str>, mut terms : D) -> Result<Disjunction,String>
+        where
+            D : disjunction::DisjunctionTrait<T>,
+            T : DJCModelTrait
     {
         let mut domains = Vec::new();
         let mut term_size = Vec::new();
         terms.eval(&mut domains, & mut term_size, &mut self.rs, &mut self.ws, &mut self.xs)?;
 
         let nexprs = term_size.iter().sum();
-        let exprs : Vec<(&[usize],&[usize],&[usize],&[f64])> = 
+        let exprs : Vec<(&[usize],&[usize],&[usize],&[f64])> =
             self.rs.pop_exprs(nexprs).iter().rev()
                 .map(|(shape,ptr,sp,subj,cof)| { if sp.is_some() { panic!("Internal invalid: Sparse evaluated expression") } (*shape,*ptr,*subj,*cof) })
                 .collect();
-        
+
         self.inner.disjunction(name,exprs.as_slice(), domains.as_slice(), term_size.as_slice())
     }
-  
+
     pub fn clause<const N : usize,D,E,I>(&self, expr : I, domain : D) -> disjunction::AffineConstraint<N,E,D,T>
         where T : DJCModelTrait,
               I : IntoExpr<N,Result=E>,
@@ -684,7 +684,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// Solve the problem and extract the solution.
     ///
     /// This will fail if the optimizer fails with an error. Not producing a solution (stalling or
-    /// otherwise failing), producing a non-optimal solution or a certificate of infeasibility 
+    /// otherwise failing), producing a non-optimal solution or a certificate of infeasibility
     /// is *not* an error.
     pub fn try_solve(& mut self) -> Result<(),String> {
         self.sol_bas.primal.status = SolutionStatus::Undefined;
@@ -725,10 +725,10 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     ///
     /// The primal objective is only available if the primal solution is defined.
     pub fn primal_objective(&self, solid : SolutionType) -> Option<f64> {
-        self.select_sol(solid)    
+        self.select_sol(solid)
             .map(|sol| sol.primal.obj)
     }
-    
+
     /// Get dual objective value, if available.
     ///
     /// The dual objective is only available if the dual solution is defined.
@@ -811,7 +811,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     pub fn primal_solution<const N : usize, I:ModelItem<N,T>>(&self, solid : SolutionType, item : &I) -> Result<Vec<f64>,String> {
         item.primal(self,solid)
     }
-    
+
     /// Get primal solution values for an a sparse variable or constraint.
     ///
     /// # Arguments
@@ -819,8 +819,8 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// - `item` The constraint or variable for which the solution values are wanted.
     ///
     /// # Returns
-    /// - `Err(msg)` is returned if the requested solution is not available 
-    /// - `Some((vals,idxs))` is returned, where 
+    /// - `Err(msg)` is returned if the requested solution is not available
+    /// - `Some((vals,idxs))` is returned, where
     ///   - `vals` are the solution values for non-zero entries
     ///   - `idxs` are the indexes.
     pub fn sparse_primal_solution<const N : usize, I:ModelItem<N,T>>(&self, solid : SolutionType, item : &I) -> Result<(Vec<f64>,Vec<[usize; N]>),String> {
@@ -856,8 +856,8 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         item.primal_into(self,solid,res)
     }
 
-    
-    /// Evaluate an expression in the (primal) solution. 
+
+    /// Evaluate an expression in the (primal) solution.
     ///
     /// # Arguments
     /// - `solid` The solution in which to evaluate the expression.
@@ -909,7 +909,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
 
 
 
-    
+
 
     fn select_sol(&self, solid : SolutionType) -> Option<&Solution> {
         match solid {
@@ -921,12 +921,12 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
                     SolutionStatus::Undefined => None,
                     _ => Some(& self.sol_itg)
                 })
-                .or_else(|| 
+                .or_else(||
                     match (self.sol_bas.primal.status,self.sol_bas.dual.status) {
                         (SolutionStatus::Undefined,SolutionStatus::Undefined) => None,
                         _ => Some(&self.sol_bas)
                     })
-                .or_else(|| 
+                .or_else(||
                     match (self.sol_itr.primal.status,self.sol_itr.dual.status) {
                         (SolutionStatus::Undefined,SolutionStatus::Undefined) => None,
                         _ => Some(&self.sol_itr)
@@ -939,7 +939,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
         let (shape,ptr,sp,subj,cof) = {
             self.rs.peek_expr()
         };
-        let sol = 
+        let sol =
             if let Some(sol) = self.select_sol(solid) {
                 if let SolutionStatus::Undefined = sol.primal.status {
                     return Err("Solution part is not defined".to_string())
@@ -964,7 +964,7 @@ impl<T> ModelAPI<T> where T : BaseModelTrait {
     /// Set a parameter in the underlying solver.
     ///
     /// For each solver type, the [SolverParameterValue] must be implemented for all parameter
-    /// types (e.g. integer or double parameters). It can in principle be used to pass any 
+    /// types (e.g. integer or double parameters). It can in principle be used to pass any
     /// information
     pub fn try_set_param<V : SolverParameterValue<T>>(&mut self, parname : V::Key, parval : V) -> Result<(),String> {
         self.inner.set_parameter(parname, parval)
@@ -1070,7 +1070,7 @@ impl<const N : usize,M> ModelItem<N,M> for Constraint <N> where M : BaseModelTra
 impl<const N : usize,M> ModelItem<N,M> for Variable<N> where M : BaseModelTrait {
     fn len(&self) -> usize { return self.shape.iter().product(); }
     fn shape(&self) -> [usize; N] { self.shape }
-    
+
     fn sparse_primal(&self,m : &ModelAPI<M>,solid : SolutionType) -> Result<(Vec<f64>,Vec<[usize;N]>),String> {
         let mut nnz = vec![0.0; self.numnonzeros()];
         let dflt = [0usize; N];
@@ -1107,5 +1107,3 @@ pub trait SolverParameterValue<M : BaseModelTrait> {
     type Key : Sized;
     fn set(self,parname : Self::Key, model : & mut M) -> Result<(),String>;
 }
-
-
