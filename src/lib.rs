@@ -15,7 +15,7 @@
 //!
 //! The [ModelAPI] object encapsulates a model of the form
 //! $$
-//! \begin{array}{ll}
+//! \\begin{array}{ll}
 //! \\mathrm{min/max}     & c^t x \\\\
 //! \\mathrm{such\\ that} & A x + b \\in K_c\\\\
 //!                       & X \\in K_x
