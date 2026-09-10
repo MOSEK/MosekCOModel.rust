@@ -631,12 +631,12 @@ impl<const N : usize> Variable<N> {
         }
     }
 
-    pub fn sparse_primal_into<M:BaseModelTrait>(&self,m : &ModelAPI<M>,solid : SolutionType, res : & mut [f64], idx : & mut [[usize;N]]) -> Result<usize,String>
+    pub fn sparse_primal_into<M:BaseModelTrait>(&self,m : &ModelAPI<M>,solidx : u32, res : & mut [f64], idx : & mut [[usize;N]]) -> Result<usize,String>
     {
         let sz = self.numnonzeros();
         if res.len() < sz || idx.len() < sz { panic!("Result array too small") }
         else {
-            m.primal_var_solution(solid,self.idxs.as_slice(),res)?;
+            m.primal_var_solution(solidx,self.idxs.as_slice(),res)?;
             let mut strides = [0; N];
             _ = strides.iter_mut().zip(self.shape.iter()).rev().fold(1,|c,(s,&d)| { *s = c; *s * d} );
             if let Some(ref sp) = self.sparsity {

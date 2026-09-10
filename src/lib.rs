@@ -1,5 +1,5 @@
 //!
-//! # MosekModel library
+//! # MosekCOModel l5ibrary
 //!
 //! MosekModel is a crate for setting up conic optimization models. The crate does not directly
 //! link to a solver - these links are implemented in separate crates, currently:

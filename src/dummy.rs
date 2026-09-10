@@ -24,14 +24,14 @@ enum Item {
 }
 
 impl Item {
-    fn index(&self) -> usize { 
+    fn index(&self) -> usize {
         match self {
             Item::Conic { index } => *index,
             Item::Linear { index } => *index,
             Item::RangedUpper { index } => *index,
             Item::RangedLower { index } => *index
         }
-    } 
+    }
 }
 
 #[derive(Clone)]
@@ -100,7 +100,7 @@ impl BaseModelTrait for Backend {
     fn free_variable<const N : usize>
         (&mut self,
          _name  : Option<&str>,
-         shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized 
+         shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized
     {
         let n = shape.iter().product::<usize>();
         let first = self.var_elt.len();
@@ -119,10 +119,10 @@ impl BaseModelTrait for Backend {
     }
 
     fn linear_variable<const N : usize,R>
-        (&mut self, 
+        (&mut self,
          _name : Option<&str>,
-         dom  : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String>    
-        where 
+         dom  : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String>
+        where
             Self : Sized
     {
         let (dt,b,sp,shape,is_integer) = dom.dissolve();
@@ -158,10 +158,10 @@ impl BaseModelTrait for Backend {
 
         Ok(Variable::new((firstvari..firstvari+n).collect::<Vec<usize>>(), sp, &shape))
     }
-    
-    fn ranged_variable<const N : usize,R>(&mut self, _name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> 
-        where 
-            Self : Sized 
+
+    fn ranged_variable<const N : usize,R>(&mut self, _name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String>
+        where
+            Self : Sized
     {
         let (shape,bl,bu,sp,is_integer) = dom.dissolve();
 
@@ -187,28 +187,28 @@ impl BaseModelTrait for Backend {
     }
 
     fn linear_constraint<const N : usize>
-        (& mut self, 
+        (& mut self,
          name  : Option<&str>,
          dom   : LinearDomain<N>,
-         _eshape : &[usize], 
-         ptr   : &[usize], 
-         subj  : &[usize], 
-         cof   : &[f64]) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
+         _eshape : &[usize],
+         ptr   : &[usize],
+         subj  : &[usize],
+         cof   : &[f64]) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String>
     {
         let (dt,b,sp,shape,_is_integer) = dom.dissolve();
 
         if let Some(sp) = &sp {
-            assert_eq!(b.len(),sp.len()); 
+            assert_eq!(b.len(),sp.len());
         }
         else {
-            assert_eq!(b.len(),ptr.len()-1); 
+            assert_eq!(b.len(),ptr.len()-1);
         }
         let nrow = b.len();
 
         let a_row0 = self.a_ptr.len();
         let con_row0 = self.con_a_row.len();
         let n = shape.iter().product::<usize>();
-        
+
         self.a_ptr.reserve(n);
         {
             for (b,n) in ptr.iter().zip(ptr[1..].iter()).scan(self.a_subj.len(),|p,(&p0,&p1)| { let (b,n) = (*p,p1-p0); *p += n; Some((b,n)) }) {
@@ -221,7 +221,7 @@ impl BaseModelTrait for Backend {
         self.a_cof.extend_from_slice(cof);
         self.con_a_row.reserve(n); for i in a_row0..a_row0+n { self.con_a_row.push(i); }
         self.cons.reserve(n); for i in con_row0..con_row0+n { self.cons.push(Item::Linear { index: i }) }
-        
+
         match dt {
             LinearDomainType::Zero => {
                 self.con_elt.reserve(con_row0+nrow);
@@ -229,7 +229,7 @@ impl BaseModelTrait for Backend {
                     self.con_elt.push(Element::Linear { lb: b, ub: b });
                 }
             },
-            LinearDomainType::Free => { 
+            LinearDomainType::Free => {
                 self.con_elt.resize(con_row0+nrow,Element::Linear { lb: f64::NEG_INFINITY, ub: f64::INFINITY });
             },
             LinearDomainType::NonNegative => {
@@ -250,13 +250,13 @@ impl BaseModelTrait for Backend {
     }
 
     fn ranged_constraint<const N : usize>
-        (& mut self, 
-         name : Option<&str>, 
+        (& mut self,
+         name : Option<&str>,
          dom  : LinearRangeDomain<N>,
-         _eshape : &[usize], 
-         ptr : &[usize], 
-         subj : &[usize], 
-         cof : &[f64]) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
+         _eshape : &[usize],
+         ptr : &[usize],
+         subj : &[usize],
+         cof : &[f64]) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String>
     {
         let (shape,bl,bu,_,_) = dom.dissolve();
 
@@ -264,7 +264,7 @@ impl BaseModelTrait for Backend {
         let con_row0 = self.con_a_row.len();
 
         let n = shape.iter().product::<usize>();
-        
+
         self.a_ptr.reserve(n);
         for (b,n) in izip!(ptr.iter(),ptr[1..].iter()).scan(self.a_subj.len(),|p,(&p0,&p1)| { let (b,n) = (*p,p1-p0); *p += n; Some((b,n)) }) {
             self.a_ptr.push([b,n]);
@@ -326,7 +326,7 @@ impl BaseModelTrait for Backend {
         Err("Writing problem not supported".to_string())
     }
 
-    fn solve(& mut self, _sol_bas : & mut Solution, _sol_itr : &mut Solution, _sol_itg : &mut Solution) -> Result<(),String>
+    fn solve(& mut self, _solutions : & mut Vec<Solution>) -> Result<(),String>
     {
         unimplemented!("Dummy Backend does not implement solve")
     }
@@ -349,7 +349,7 @@ impl BaseModelTrait for Backend {
 
 impl ModelWithLogCallback for Backend {
     /// Attach a log printer callback to the Backend. This will receive messages from the solver
-    /// while solving and during a few other calls like file reading/writing. 
+    /// while solving and during a few other calls like file reading/writing.
     ///
     /// # Arguments
     /// - `func` A function that will be called with strings from the log. Individual lines may be
@@ -361,7 +361,7 @@ impl ModelWithLogCallback for Backend {
 }
 
 impl ModelWithIntSolutionCallback for Backend {
-    /// Attach a solution callback function. This is called for each new integer solution 
+    /// Attach a solution callback function. This is called for each new integer solution
     fn set_solution_callback<F>(&mut self, mut _func : F) where F : 'static+FnMut(&IntSolutionManager) {
         // do nothing
     }
@@ -384,13 +384,13 @@ impl VectorConeForDummy for ExponentialCone { fn to_conetype(self) -> ConeType {
 
 impl<D> VectorConeModelTrait<D> for Backend where D : VectorConeForDummy+'static {
     fn conic_constraint<const N : usize>
-       (& mut self, 
-        name   : Option<&str>, 
+       (& mut self,
+        name   : Option<&str>,
         dom    : VectorDomain<N,D>,
-        _shape : &[usize], 
-        ptr    : &[usize], 
-        subj   : &[usize], 
-        cof    : &[f64]) -> Result<Constraint<N>,String> 
+        _shape : &[usize],
+        ptr    : &[usize],
+        subj   : &[usize],
+        cof    : &[f64]) -> Result<Constraint<N>,String>
     {
         let (ct,offset,shape,conedim,_is_integer) = dom.dissolve();
         let dt = ct.to_conetype();
@@ -412,7 +412,7 @@ impl<D> VectorConeModelTrait<D> for Backend where D : VectorConeForDummy+'static
         self.cones.reserve(ncones);
         for _ in 0..ncones { self.cones.push(dt.clone()) }
 
-        self.con_elt.reserve(n);        
+        self.con_elt.reserve(n);
 
         self.a_ptr.reserve(n);
         for (b,n) in ptr.iter().zip(ptr[1..].iter()).scan(self.a_subj.len(),|p,(&p0,&p1)| { let (b,n) = (*p,p1-p0); *p += n; Some((b,n)) }) {
@@ -427,7 +427,7 @@ impl<D> VectorConeModelTrait<D> for Backend where D : VectorConeForDummy+'static
         for (i0,i,i1,&b) in iproduct!(0..d0,0..d,0..d1,offset.iter()) {
             self.con_elt.push(Element::Conic { coneidx: firstcone+i0*d1+i1, offset: i, b });
         }
-                 
+
         self.cons.reserve(n);
         for index in first..last {
            self.cons.push(Item::Conic{index});
@@ -450,9 +450,9 @@ impl<D> VectorConeModelTrait<D> for Backend where D : VectorConeForDummy+'static
 
         let firstvar = self.vars.len();
         let _lastvar = firstvar+n;
-        
+
         let firstcone = self.cones.len();
-        
+
         self.cones.reserve(ncones);
         for _ in 0..ncones { self.cones.push(dt.clone()) }
 
@@ -462,7 +462,7 @@ impl<D> VectorConeModelTrait<D> for Backend where D : VectorConeForDummy+'static
         for ((i0,i,i1),&b) in iproduct!(0..d0,0..d,0..d1).zip(offset.iter()) {
             self.var_elt.push(Element::Conic { coneidx: firstcone+i0*d1+i1, offset: i, b });
         }
-                 
+
         self.vars.reserve(n);
         for index in first..last {
            self.vars.push(Item::Conic{index});
@@ -477,7 +477,7 @@ impl<D> VectorConeModelTrait<D> for Backend where D : VectorConeForDummy+'static
 impl PSDModelTrait for Backend {
     fn psd_variable<const N : usize>(&mut self, name : Option<&str>, dom : PSDDomain<N>) -> Result<Variable<N>,String> {
         let (shape,(conedim0,conedim1)) = dom.dissolve();
-        
+
         let (cd0,cd1) = if conedim0 < conedim1 { (conedim0,conedim1) } else { (conedim1,conedim0) };
 
         let (d0,d1,d2,d3,d4) = (shape[0..cd0].iter().product(),
@@ -494,9 +494,9 @@ impl PSDModelTrait for Backend {
 
         let firstvar = self.vars.len();
         let lastvar = firstvar+n;
-        
+
         let firstcone = self.cones.len();
-       
+
         for i in 0..ncones {
             self.cones.push(ConeType::PSD);
         }
@@ -511,7 +511,7 @@ impl PSDModelTrait for Backend {
 
         println!("firstvar = {}, lastvar = {} / {}, dim = {}/{}, ncones = {}, conesize = {}, n = {}",firstvar,lastvar,self.vars.len(),d1,d3,ncones,conesize,n);
 
-        
+
         let mut res = Vec::with_capacity(ncones*d1*d3);
 
         if conedim0 < conedim1 {
@@ -530,7 +530,7 @@ impl PSDModelTrait for Backend {
                 res.push(firstvar+coneidx*conesize+offset);
             }
         }
-        
+
         Ok(Variable::new(res, None, &shape))
     }
 
@@ -566,11 +566,11 @@ impl<const N : usize> DJCDomainTrait<Backend> for LinearDomain<N> {
 
 impl DJCModelTrait for Backend {
     type DomainData = (ConeType,Vec<f64>,Vec<usize>,usize); // conetype,offset,shape,conedim
-    fn disjunction(& mut self, 
-                   name : Option<&str>, 
-                   exprs     : &[(&[usize],&[usize],&[usize],&[f64])], 
+    fn disjunction(& mut self,
+                   name : Option<&str>,
+                   exprs     : &[(&[usize],&[usize],&[usize],&[f64])],
                    domains   : &[Box<dyn model::DJCDomainTrait<Self>>],
-                   term_size : &[usize]) -> Result<model::Disjunction,String> {        
+                   term_size : &[usize]) -> Result<model::Disjunction,String> {
         let djci = self.djc_term_ptr.len()-1;
         let first_a_row = self.a_ptr.len();
 
@@ -600,7 +600,7 @@ impl DJCModelTrait for Backend {
             }
             nblocks.push(n)
         }
-            
+
         let mut term_ptr0 = 0;
         for (p0,p1) in term_size.iter().scan(0usize,|c,s| { let r = (*c,*c+s); *c += s; Some(r) }) {
             let nb : usize = nblocks[p0..p1].iter().sum();

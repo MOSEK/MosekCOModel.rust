@@ -1,6 +1,6 @@
 [package]
 name = "mosekcomodel"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2021"
 rust-version = "1.85.0"
 description = "Library for Conic Optimization Modeling with Mosek"
@@ -17,7 +17,7 @@ readme = "README.md"
 resolver = "3"
 
 [dependencies]
-itertools = "0.14"
+itertools = "0.15"
 
 [dev-dependencies]
 rand = "0.8.5"

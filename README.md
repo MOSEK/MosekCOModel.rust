@@ -1,32 +1,68 @@
 [<img alt="crates.io" src="https://img.shields.io/crates/v/mosekcomodel?logo=rust" height="20">](https:/crates.io/crates/mosekcomodel)&nbsp;
 [<img alt="github.com" src="https://img.shields.io/github/last-commit/mosek/mosekcomodel.rust/master?logo=github" height="20">](https://github.com/mosek/mosekcomodel.rust)&nbsp;
 [<img alt="docs.rs" src="https://img.shields.io/docsrs/mosekcomodel" height="20">](https://docs.rs/mosekcomodel)
+
+MOSEK Conic Model crate is a library for formulating linear, conic and mixed-integer optimization problems. This crate defines the modeling front-end API, and a set other crates define back-ends for various solvers.
+
+The focus of this package is to provide functions for formulating and efficiently build complicated expressions and constraints, and for accessing solutions, inspired by MOSEK Fusion and MathOptInterface. The design philosophy is to allow writing complex, maintainable and efficient optimization models while easily switching between different solvers. Furthermore, the plan is to keep dependency on external packages to a minumum.
+
+Following is an example solving a small linear problem using the MOSEK backend:
+```
+use mosekcomodel::*;
+use mosekcomodel_mosek::Model;
+
+fn lp() -> (SolutionStatus,SolutionStatus,Vec<f64>) {
+    // Create a model with the name 'lo1'
+    let mut m = Model::new(Some("lo1"));
+    // Create variable vector 'x' of length 3
+    let x = m.variable(Some("x"), nonnegative().with_shape(&[3]));
+    // Create scalar ranged variable
+    let (y,_) = m.variable(Some("y"), in_range(0.0, 10.0));
+
+    // Create constraints
+    m.constraint(Some("c1"), x.dot(&[3.0,2.0,0.0] as &[f64]).add(&y), equal_to(30.0));
+    m.constraint(Some("c2"), x.dot(&[2.0,3.0,1.0] as &[f64]).add(&y), greater_than(15.0));
+    m.constraint(Some("c3"), x.dot(&[0.0,0.0,3.0] as &[f64]).add(y.mul(3.0)), less_than(25.0));
+
+    // Set the objective function
+    
+    m.objective(Some("obj"), Sense::Maximize, x.dot(&[3.0,5.0,1.0] as &[f64]).add(&y));
+
+    // Solve the problem
+    m.solve();
+
+    // Get the solution values
+    let (psta,dsta) = m.solution_status(SolutionType::Default);
+    let mut res = m.primal_solution(SolutionType::Default,&x);
+    let yval = m.primal_solution(SolutionType::Default,&y);
+    res.push(yval[0]);
+
+    (psta,dsta,Ok(res)):w
+    )
+}
+fn main() {
+    let (psta,dsta,xx) = lp();
+    println!("Status = {:?}/{:?}",psta,dsta);
+    println!("(x0,x1,x2,y) = {:?}", xx);
+}
+```
  
 
-**`MosekCOModel` is still an experimental project project. Use with caution,
-expect rough corners and untested cases, and the API is subject to change. Any
-comments and suggestions are welcome!**
+# Back-ends
 
-# Dependencies
-
-The amount of external dependencies is minimal.
-
-- The crate directly depend in `itertools` and nothing else.
-- Some examples depend no `rand_distr`
-- Benchmarking tests require `criterion` and `rand`.
-
-
-
-# MosekCOModel
-
-The `MosekCOModel` crate is a modeling package for building linear and conic optimization models. The crate does not directly include a solver - these are implemented in separate projects, currently:
-- [MOSEK](https://crates.io/crates/mosekcomodel_mosek) 
+The `MosekCOModel` crate provides only a modeling API and does not directly include a solver - these are implemented in separate projects, currently:
+- [MOSEK](https://crates.io/crates/mosekcomodel_mosek)
 - [HIGHS](https://crates.io/crates/mosekcomodel_highs) (linear and integer optimization)
 - [OptServer](https://crates.io/crates/mosekcomodel_optserver) MOSEK via optserver (linear, conic and integer)
 
-Published crates: https://crates.io/crates/mosekcomodel
+Published crates are at: [MosekCOModel](https://crates.io/crates/mosekcomodel).
 
-Documentation for latest crates: https://docs.rs/mosekcomodel/latest/mosekcomodel/
+Documentation for latest crates: [Docs](https://docs.rs/mosekcomodel/latest/mosekcomodel/)
+
+Runnable examples are found in the Github repositories for the backends.
+
+- The [MOSEK](https://github.com/MOSEK/mosekcomodel-mosek) backend includes examples in `examples/` and graphical demos `examples/demos`.
+- The [HIGHS](https://github.com/MOSEK/mosekcomodel-hight) backend includes a few simple examples in `examples/`
 
 # Design principle
 `MosekModel` allows building a model of the form
@@ -60,6 +96,9 @@ Constraints are added to the model, created from a linear expression and a
 domain. Constraints cannot be integer constrained.
 
 Constraint objects can be used to access solution values.
+
+# Simple linear example
+
 
 # Simple conic example
 Implementing the models
@@ -242,3 +281,11 @@ Very simple implementation of the traveling salesman problem. Run with `--help` 
 cargo run --release -p tsp
 ```
 
+
+# Dependencies
+
+The amount of external dependencies is minimal.
+
+- The crate directly depend in `itertools` and nothing else.
+- Some examples depend no `rand_distr`
+- Benchmarking tests require `criterion` and `rand`.

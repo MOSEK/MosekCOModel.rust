@@ -1,5 +1,5 @@
 //! This module implements a backend that uses a MOSEK OptServer instance for solving, for example
-//! [solve.mosek.com:30080](http://solve.mosek.com). 
+//! [solve.mosek.com:30080](http://solve.mosek.com).
 //!
 use crate::utils::ApplyPermutationEx;
 use crate::*;
@@ -24,13 +24,13 @@ enum Item {
 }
 
 impl Item {
-    fn index(&self) -> usize { 
+    fn index(&self) -> usize {
         match self {
             Item::Linear { index } => *index,
             Item::RangedUpper { index } => *index,
             Item::RangedLower { index } => *index
         }
-    } 
+    }
 }
 
 #[derive(Clone,Copy)]
@@ -72,32 +72,32 @@ impl BaseModelTrait for Backend {
     fn new(name : Option<&str>) -> Self {
         Backend{
             name : name.map(|v| v.to_string()),
-            var_elt    : Default::default(), 
-            var_int    : Default::default(), 
+            var_elt    : Default::default(),
+            var_int    : Default::default(),
 
-            vars       : Default::default(), 
+            vars       : Default::default(),
             var_names  : Default::default(),
 
-            a_ptr      : Default::default(), 
-            a_subj     : Default::default(), 
-            a_cof      : Default::default(), 
+            a_ptr      : Default::default(),
+            a_subj     : Default::default(),
+            a_cof      : Default::default(),
 
-            con_elt    : Default::default(), 
-            con_a_row  : Default::default(), 
-            cons       : Default::default(), 
+            con_elt    : Default::default(),
+            con_a_row  : Default::default(),
+            cons       : Default::default(),
             con_names  : Default::default(),
 
-            sense_max  : Default::default(), 
-            c_subj     : Default::default(), 
-            c_cof      : Default::default(), 
+            sense_max  : Default::default(),
+            c_subj     : Default::default(),
+            c_cof      : Default::default(),
 
-            address    : Default::default(), 
+            address    : Default::default(),
         }
     }
     fn free_variable<const N : usize>
         (&mut self,
          name  : Option<&str>,
-         shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized 
+         shape : &[usize;N]) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result, String> where Self : Sized
     {
         let n = shape.iter().product::<usize>();
         let first = self.var_elt.len();
@@ -114,9 +114,9 @@ impl BaseModelTrait for Backend {
         }
 
         if let Some(name) = name {
-            (0..n).scan([0usize;N],|i,_| { 
-                let r = format!("{}{:?}",name,i); 
-                i.iter_mut().zip(shape.iter()).rev().fold(1,|c,(v,&d)| { *v += c; if *v >= d { *v = 0; 1 } else { 0 }}); 
+            (0..n).scan([0usize;N],|i,_| {
+                let r = format!("{}{:?}",name,i);
+                i.iter_mut().zip(shape.iter()).rev().fold(1,|c,(v,&d)| { *v += c; if *v >= d { *v = 0; 1 } else { 0 }});
                 Some(r)
             })
                 .zip(self.var_names[first..last].iter_mut())
@@ -127,10 +127,10 @@ impl BaseModelTrait for Backend {
     }
 
     fn linear_variable<const N : usize,R>
-        (&mut self, 
+        (&mut self,
          _name : Option<&str>,
-         dom  : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String>    
-        where 
+         dom  : LinearDomain<N>) -> Result<<LinearDomain<N> as VarDomainTrait<Self>>::Result,String>
+        where
             Self : Sized
     {
         let (dt,b,sp,shape,is_integer) = dom.dissolve();
@@ -166,10 +166,10 @@ impl BaseModelTrait for Backend {
 
         Ok(Variable::new((firstvari..firstvari+n).collect::<Vec<usize>>(), sp, &shape))
     }
-    
-    fn ranged_variable<const N : usize,R>(&mut self, _name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String> 
-        where 
-            Self : Sized 
+
+    fn ranged_variable<const N : usize,R>(&mut self, _name : Option<&str>,dom : LinearRangeDomain<N>) -> Result<<LinearRangeDomain<N> as VarDomainTrait<Self>>::Result,String>
+        where
+            Self : Sized
     {
         let (shape,bl,bu,sp,is_integer) = dom.dissolve();
 
@@ -195,28 +195,28 @@ impl BaseModelTrait for Backend {
     }
 
     fn linear_constraint<const N : usize>
-        (& mut self, 
+        (& mut self,
          _name  : Option<&str>,
          dom   : LinearDomain<N>,
-         _eshape : &[usize], 
-         ptr   : &[usize], 
-         subj  : &[usize], 
-         cof   : &[f64]) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
+         _eshape : &[usize],
+         ptr   : &[usize],
+         subj  : &[usize],
+         cof   : &[f64]) -> Result<<LinearDomain<N> as ConstraintDomain<N,Self>>::Result,String>
     {
         let (dt,b,sp,shape,_is_integer) = dom.dissolve();
 
         if let Some(sp) = &sp {
-            assert_eq!(b.len(),sp.len()); 
+            assert_eq!(b.len(),sp.len());
         }
         else {
-            assert_eq!(b.len(),ptr.len()-1); 
+            assert_eq!(b.len(),ptr.len()-1);
         }
         let nrow = b.len();
 
         let a_row0 = self.a_ptr.len();
         let con_row0 = self.con_a_row.len();
         let n = shape.iter().product::<usize>();
-        
+
         self.a_ptr.reserve(n);
         {
             for (b,n) in ptr.iter().zip(ptr[1..].iter()).scan(self.a_subj.len(),|p,(&p0,&p1)| { let (b,n) = (*p,p1-p0); *p += n; Some((b,n)) }) {
@@ -229,7 +229,7 @@ impl BaseModelTrait for Backend {
         self.a_cof.extend_from_slice(cof);
         self.con_a_row.reserve(n); for i in a_row0..a_row0+n { self.con_a_row.push(i); }
         self.cons.reserve(n); for i in con_row0..con_row0+n { self.cons.push(Item::Linear { index: i }) }
-        
+
         match dt {
             LinearDomainType::Zero => {
                 self.con_elt.reserve(con_row0+nrow);
@@ -237,7 +237,7 @@ impl BaseModelTrait for Backend {
                     self.con_elt.push(Element{ lb: b, ub: b });
                 }
             },
-            LinearDomainType::Free => { 
+            LinearDomainType::Free => {
                 self.con_elt.resize(con_row0+nrow,Element{ lb: f64::NEG_INFINITY, ub: f64::INFINITY });
             },
             LinearDomainType::NonNegative => {
@@ -258,13 +258,13 @@ impl BaseModelTrait for Backend {
     }
 
     fn ranged_constraint<const N : usize>
-        (& mut self, 
-         _name : Option<&str>, 
+        (& mut self,
+         _name : Option<&str>,
          dom  : LinearRangeDomain<N>,
-         _eshape : &[usize], 
-         ptr : &[usize], 
-         subj : &[usize], 
-         cof : &[f64]) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String> 
+         _eshape : &[usize],
+         ptr : &[usize],
+         subj : &[usize],
+         cof : &[f64]) -> Result<<LinearRangeDomain<N> as ConstraintDomain<N,Self>>::Result,String>
     {
         let (shape,bl,bu,_,_) = dom.dissolve();
 
@@ -272,7 +272,7 @@ impl BaseModelTrait for Backend {
         let con_row0 = self.con_a_row.len();
 
         let n = shape.iter().product::<usize>();
-        
+
         self.a_ptr.reserve(n);
         for (b,n) in izip!(ptr.iter(),ptr[1..].iter()).scan(self.a_subj.len(),|p,(&p0,&p1)| { let (b,n) = (*p,p1-p0); *p += n; Some((b,n)) }) {
             self.a_ptr.push([b,n]);
@@ -346,7 +346,7 @@ impl BaseModelTrait for Backend {
         }
     }
 
-    fn solve(& mut self, sol_bas : & mut Solution, sol_itr : &mut Solution, sol_itg : &mut Solution) -> Result<(),String>
+    fn solve(& mut self, solutions : & mut Vec<Solution>) -> Result<(),String>
     {
         use http::*;
 
@@ -363,7 +363,7 @@ impl BaseModelTrait for Backend {
             .add_header("Accept", "application/x-mosek-jtask")
             .add_header("Host", self.address.as_str())
             .submit_with_writer(&mut con,|w| self.format_json_to(w).map_err(|e| e.to_string()))?;
-      
+
         if resp.code() != 200 {
             return Err(format!("OptServer responded with code {}: {}",resp.code(),resp.reason()))
         }
@@ -411,10 +411,10 @@ impl BaseModelTrait for Backend {
                                         "prim_and_dual_feas" => { psta = SolutionStatus::Feasible; dsta = SolutionStatus::Feasible; }
                                         "prim_feas" => { psta = SolutionStatus::Feasible; dsta = SolutionStatus::Unknown; }
                                         "dual_feas" => { psta = SolutionStatus::Unknown; dsta = SolutionStatus::Feasible; }
-                                        "prim_infeas_cer" =>  { psta = SolutionStatus::Undefined; dsta = SolutionStatus::CertInfeas; }  
-                                        "dual_infeas_cer" =>  { psta = SolutionStatus::CertInfeas; dsta = SolutionStatus::Undefined }  
-                                        "prim_illposed_cer" =>  { psta = SolutionStatus::Undefined; dsta = SolutionStatus::CertInfeas; }  
-                                        "dual_illposed_cer" =>  { psta = SolutionStatus::CertInfeas; dsta = SolutionStatus::Undefined; }  
+                                        "prim_infeas_cer" =>  { psta = SolutionStatus::Undefined; dsta = SolutionStatus::CertInfeas; }
+                                        "dual_infeas_cer" =>  { psta = SolutionStatus::CertInfeas; dsta = SolutionStatus::Undefined }
+                                        "prim_illposed_cer" =>  { psta = SolutionStatus::Undefined; dsta = SolutionStatus::CertInfeas; }
+                                        "dual_illposed_cer" =>  { psta = SolutionStatus::CertInfeas; dsta = SolutionStatus::Undefined; }
                                         _ => {}
                                     }
                                 },
@@ -428,8 +428,9 @@ impl BaseModelTrait for Backend {
                             }
                         }
 
+                        let mut sol = Solution::default();
                         self.copy_solution(
-                            match k.as_str() { "basic" => sol_bas, "interior" => sol_itr, "integer" => sol_itg, _ => continue },
+                            &mut sol,
                             psta,dsta,
                             xx.as_slice(),
                             slx.as_slice(),
@@ -437,6 +438,7 @@ impl BaseModelTrait for Backend {
                             xc.as_slice(),
                             slc.as_slice(),
                             suc.as_slice());
+                        solutions.push(sol);
                     }
                 }
             }
@@ -448,7 +450,7 @@ impl BaseModelTrait for Backend {
         // interpret data as solution
 
         Ok(())
-    } 
+    }
 
     fn objective(&mut self, _name : Option<&str>, sense : Sense, subj : &[usize],cof : &[f64]) -> Result<(),String>
     {
@@ -479,7 +481,7 @@ fn bnd_to_bk(lb : f64, ub : f64) -> &'static str {
     }
 }
 impl Backend {
-    fn copy_solution(&self, 
+    fn copy_solution(&self,
                      sol : &mut Solution,
                      psta : SolutionStatus,
                      dsta : SolutionStatus,
@@ -490,11 +492,11 @@ impl Backend {
                      slc : &[f64],
                      suc : &[f64])
     {
-        sol.primal.status = 
+        sol.primal.status =
             if xx.len() != self.var_elt.len() || xc.len() != self.con_elt.len() { SolutionStatus::Undefined } else { psta };
-        sol.dual.status = 
+        sol.dual.status =
             if slx.len() != self.var_elt.len() ||
-               sux.len() != self.var_elt.len() ||  
+               sux.len() != self.var_elt.len() ||
                slc.len() != self.con_elt.len() ||
                suc.len() != self.con_elt.len()  {
                 SolutionStatus::Undefined
@@ -507,11 +509,11 @@ impl Backend {
         let numcon = self.cons.len();
 
         if let SolutionStatus::Undefined = sol.primal.status {}
-        else {           
+        else {
             sol.primal.var.resize(numvar,0.0);
             sol.primal.con.resize(numcon,0.0);
             for (v,tgt) in self.vars.iter().zip(sol.primal.var.iter_mut()) {
-                *tgt = 
+                *tgt =
                     match v {
                         Item::Linear{index} => xx[*index],
                         Item::RangedUpper{index} => xx[*index],
@@ -519,21 +521,21 @@ impl Backend {
                     }
             }
             for (c,tgt) in self.cons.iter().zip(sol.primal.con.iter_mut()) {
-                *tgt = 
+                *tgt =
                     match c {
                         Item::Linear{index} => xc[*index],
                         Item::RangedUpper{index} => xc[*index],
                         Item::RangedLower{index} => xc[*index],
                     }
             }
-            
+
         }
-        if let SolutionStatus::Undefined = sol.dual.status {} 
+        if let SolutionStatus::Undefined = sol.dual.status {}
         else {
             sol.dual.var.resize(numvar,0.0);
             sol.dual.con.resize(numcon,0.0);
             for (v,tgt) in self.vars.iter().zip(sol.dual.var.iter_mut()) {
-                *tgt = 
+                *tgt =
                     match v {
                         Item::Linear{index} => slx[*index]-sux[*index],
                         Item::RangedUpper{index} => -sux[*index],
@@ -541,7 +543,7 @@ impl Backend {
                     }
             }
             for (c,tgt) in self.cons.iter().zip(sol.dual.con.iter_mut()) {
-                *tgt = 
+                *tgt =
                     match c {
                         Item::Linear{index} => slc[*index]-suc[*index],
                         Item::RangedUpper{index} => -suc[*index],
@@ -554,12 +556,12 @@ impl Backend {
     /// JSON Task format writer.
     ///
     /// See https://docs.mosek.com/latest/capi/json-format.html
-    fn format_json_to<S>(&self, strm : &mut S) -> std::io::Result<()> 
-        where 
-            S : std::io::Write 
+    fn format_json_to<S>(&self, strm : &mut S) -> std::io::Result<()>
+        where
+            S : std::io::Write
     {
         use json::JSON;
-        
+
         let mut doc = json::Dict::new();
         doc.append("$schema",JSON::String("http://mosek.com/json/schema#".to_string()));
 
@@ -573,7 +575,7 @@ impl Backend {
                 taskinfo.append("numvar",self.vars.len() as i64);
                 taskinfo.append("numcon",self.con_elt.len() as i64);
             }));
-            
+
         doc.append(
             "Task/data",
             json::Dict::from(|taskdata| {
@@ -599,7 +601,7 @@ impl Backend {
                     }));
                 }));
                 taskdata.append(
-                    "A", 
+                    "A",
                     json::Dict::from(|d| {
                         d.append("subi",JSON::List(self.a_ptr.permute_by(self.con_a_row.as_slice()).flat_map(|row| self.a_subj[row[0]..row[0]+row[1]].iter()).map(|&i| JSON::Int(i as i64)).collect()));
                         d.append("subj",JSON::List(self.a_ptr.permute_by(self.con_a_row.as_slice()).enumerate().flat_map(|(i,row)| std::iter::repeat(i).take(row[1])).map(|i| JSON::Int(i as i64)).collect()));
@@ -643,9 +645,9 @@ mod test {
         m.solve();
 
         // Get the solution values
-        let (psta,dsta) = m.solution_status(SolutionType::Default);
+        let (psta,dsta) = m.solution_status(solidx);
         println!("Status = {:?}/{:?}",psta,dsta);
-        let xx = m.primal_solution(SolutionType::Default,&x);
+        let xx = m.primal_solution(solidx,&x);
         println!("x = {:?}", xx);
     }
 }
