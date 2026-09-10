@@ -76,7 +76,6 @@ impl Default for SolutionStatus { fn default() -> Self { SolutionStatus::Undefin
 
 #[derive(Default)]
 pub struct SolutionPart {
-    pub kind   : SolutionType,
     pub status : SolutionStatus,
     pub var    : Vec<f64>,
     pub con    : Vec<f64>,
@@ -84,7 +83,7 @@ pub struct SolutionPart {
 }
 
 impl SolutionPart {
-    pub fn new(numvar : usize, numcon : usize) -> SolutionPart { SolutionPart{kind : SolutionType::Unknown, status : SolutionStatus::Unknown, var : vec![0.0; numvar], con : vec![0.0; numcon], obj : 0.0} }
+    pub fn new(numvar : usize, numcon : usize) -> SolutionPart { SolutionPart{status : SolutionStatus::Unknown, var : vec![0.0; numvar], con : vec![0.0; numcon], obj : 0.0} }
     pub fn resize(& mut self,numvar : usize, numcon : usize) {
         self.var.resize(numvar, 0.0);
         self.con.resize(numcon, 0.0);
@@ -93,12 +92,13 @@ impl SolutionPart {
 
 #[derive(Default)]
 pub struct Solution {
+    pub kind   : SolutionType,
     pub primal : SolutionPart,
     pub dual   : SolutionPart
 }
 
 impl Solution {
-    pub fn new() -> Solution { Solution{primal : SolutionPart::new(0,0) , dual : SolutionPart::new(0,0)  } }
+    pub fn new() -> Solution { Solution{kind : SolutionType::Unknown, primal : SolutionPart::new(0,0) , dual : SolutionPart::new(0,0)  } }
 
     pub fn resize(& mut self,numvar : usize, numcon : usize) {
         self.primal.resize(numvar,numcon);

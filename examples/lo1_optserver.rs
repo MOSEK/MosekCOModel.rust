@@ -29,9 +29,9 @@ fn lo1() {
     m.solve();
 
     // Get the solution values
-    let (psta,dsta) = m.solution_status(SolutionType::Default);
+    let (psta,dsta) = m.solution_status(0);
     println!("Status = {:?}/{:?}",psta,dsta);
-    let xx = m.primal_solution(SolutionType::Default,&x);
+    let xx = m.primal_solution(0,&x);
     println!("x = {:?}", xx);
 }
 
